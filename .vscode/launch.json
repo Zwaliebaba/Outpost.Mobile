@@ -1,0 +1,40 @@
+{
+  // ShipFeel is Windows/MSVC only, so both configurations use the Visual Studio debugger.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Normal F5. CMake Tools builds the active target first and hands back its path, so this
+      // follows whichever build variant (Debug/Release) is selected in the status bar.
+      "name": "Debug ShipFeel (CMake target)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${command:cmake.launchTargetPath}",
+      "args": [],
+      "stopAtEntry": false,
+      // The repository root: the exe walks up to find GameData and tuning.ini either way, but
+      // launching from here keeps captures/ and the .replay files next to the source.
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "console": "internalConsole"
+    },
+    {
+      // Same thing without CMake Tools in the loop, for when the extension is not configured yet.
+      "name": "Debug ShipFeel (build/ShipFeel.exe)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/ShipFeel.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "console": "internalConsole"
+    },
+    {
+      // Attach to a already-running ShipFeel.exe, e.g. one started outside the debugger.
+      "name": "Attach to ShipFeel",
+      "type": "cppvsdbg",
+      "request": "attach",
+      "processId": "${command:pickProcess}"
+    }
+  ]
+}

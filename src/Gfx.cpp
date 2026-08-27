@@ -525,7 +525,7 @@ void Gfx::EndFrame()
     m_cmd->SetDescriptorHeaps(1, heaps);
     m_cmd->SetGraphicsRoot32BitConstants(0, 2, invViewport, 0);
     m_cmd->SetGraphicsRootDescriptorTable(1, m_srvHeap->GetGPUDescriptorHandleForHeapStart());
-    m_cmd->IASetPrimitiveTopology(D3D12_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     m_cmd->IASetVertexBuffers(0, 1, &vbv);
     m_cmd->DrawInstanced(UINT(count), 1, 0, 0);
   }
@@ -986,7 +986,7 @@ void Gfx::BeginScene(const SceneFrame& _frame)
 {
   m_cmd->SetPipelineState(m_scenePso.Get());
   m_cmd->SetGraphicsRootSignature(m_sceneRs.Get());
-  m_cmd->IASetPrimitiveTopology(D3D12_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
   // The world matrix occupies DWORDs 0..15 and changes per draw; viewProj is set once here.
   m_cmd->SetGraphicsRoot32BitConstants(0, 16, &_frame.viewProj, 16);
@@ -1128,7 +1128,7 @@ void Gfx::CreateDecalPipelines()
 void Gfx::BeginDecals(const DirectX::XMFLOAT4X4& _viewProj, const DirectX::XMFLOAT3& _cameraPos)
 {
   m_cmd->SetGraphicsRootSignature(m_sceneRs.Get());
-  m_cmd->IASetPrimitiveTopology(D3D12_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
   m_cmd->SetGraphicsRoot32BitConstants(0, 16, &_viewProj, 16);
   const float eye[4] = {_cameraPos.x, _cameraPos.y, _cameraPos.z, 0.0f};
   m_cmd->SetGraphicsRoot32BitConstants(1, 4, eye, 16);
