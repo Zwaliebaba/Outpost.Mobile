@@ -364,3 +364,8 @@ FodyWeavers.xsd
 
 # Game Data is never ignored
 !GameData/**
+
+# Ship feel-tuning toy (throwaway)
+build/
+captures/
+*.replay
