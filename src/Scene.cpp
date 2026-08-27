@@ -458,6 +458,44 @@ void Scene::QueuePointerEvent(const PointerEvent& _event)
   m_pendingEvents.push_back(_event);
 }
 
+void Scene::ResetWorld()
+{
+  const int shipCount = int(m_ships.size());
+  for (int i = 0; i < shipCount; ++i)
+  {
+    Ship& ship = m_ships[size_t(i)];
+    ship.posWorld = XMFLOAT3((float(i) - float(shipCount - 1) * 0.5f) * g_tuning.startSpacing, 0.0f, 0.0f);
+    ship.prevPos = ship.posWorld;
+    ship.headingRad = 0.0f;
+    ship.prevHeading = 0.0f;
+    ship.speed = 0.0f;
+    ship.turnRateRadPerSec = 0.0f;
+    ship.order = OrderState::Idle;
+    ship.orderHasFacing = false;
+    ship.selected = false;
+
+    ship.accelSample = 0.0f;
+    ship.ringFade = 0.0f;
+    ship.ringScale = 0.0f;
+    ship.ringScaleVel = 0.0f;
+    ship.hoverAmount = 0.0f;
+    ship.bankRad = 0.0f;
+    ship.thrusterIntensity = 0.0f;
+    ship.trailCount = 0;
+    ship.trailHead = 0;
+  }
+  m_markers.clear();
+  m_pendingEvents.clear();
+  m_hoverShip = -1;
+  m_boxActive = false;
+  m_orderDragActive = false;
+  m_cameraGoal = XMFLOAT3(0.0f, 0.0f, 0.0f);
+  m_cameraTarget = XMFLOAT3(0.0f, g_tuning.cameraTargetHeight, 0.0f);
+  m_shakeAmount = 0.0f;
+  m_shakeOffset = XMFLOAT3(0.0f, 0.0f, 0.0f);
+  UpdateCamera();
+}
+
 void Scene::ClearSelection()
 {
   for (Ship& ship : m_ships)
@@ -840,6 +878,8 @@ void ApplyTwoFingerGesture(Scene& _scene, const PointerTrack& _first, const Poin
 
 void Scene::ApplyPointerEvent(const PointerEvent& _event)
 {
+  m_lastPointerQpc = _event.timestampQpc; // what the latency readout measures against
+
   if (_event.kind == PointerEvent::Kind::Wheel)
   {
     const float step = std::pow(std::max(1.001f, g_tuning.cameraZoomStepFactor), float(-_event.wheelNotches));

@@ -101,6 +101,10 @@ struct Scene
   void ClearSelection();
   int SelectedCount() const;
 
+  // Puts the ships, selection, camera and every trace of feedback back to how they started, so a
+  // recording and its replay begin from the same world.
+  void ResetWorld();
+
   // Once per frame: refresh the camera matrices, then drain the pointer queue against them.
   void Update(uint32_t _viewWidthPx, uint32_t _viewHeightPx);
 
@@ -143,7 +147,8 @@ struct Scene
   uint32_t m_viewWidthPx = 1;
   uint32_t m_viewHeightPx = 1;
 
-  int m_hoverShip = -1; // stage 4 draws the highlight; stage 3 just tracks it
+  int m_hoverShip = -1;
+  int64_t m_lastPointerQpc = 0; // newest event drained this frame, for the latency readout
   bool m_boxActive = false;
   float m_boxX0Px = 0.0f, m_boxY0Px = 0.0f, m_boxX1Px = 0.0f, m_boxY1Px = 0.0f;
   bool m_orderDragActive = false;

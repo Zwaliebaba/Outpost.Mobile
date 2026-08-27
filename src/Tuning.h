@@ -128,6 +128,13 @@ void TuningInit(HINSTANCE _instance, HWND _mainWindow);
 // Call once per frame: picks up an edited tuning.ini and refreshes the Tuner sliders.
 void TuningPoll();
 
+void TuningSaveTo(const wchar_t* _path);
+
+// A/B slots: store the live values, then flip between two sets while watching the same run.
+void TuningStoreSlot(int _slot);   // 1 stores A, 2 stores B
+void TuningToggleSlot();
+const char* TuningActiveSlot();    // "A", "B", or "-" if nothing has been stored yet
+
 void TuningShutdown();
 
 // Pushes the live values back onto the sliders, after something other than the Tuner moved them.

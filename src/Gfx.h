@@ -8,6 +8,7 @@
 #include <DirectXMath.h>
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -102,6 +103,10 @@ struct Gfx
   // atlas cell. Same queue as the text, so they land on top of the scene in EndFrame.
   void DrawScreenRect(float _x0Px, float _y0Px, float _x1Px, float _y1Px, Rgba _colour);
   void DrawScreenLine(float _x0Px, float _y0Px, float _x1Px, float _y1Px, float _thicknessPx, Rgba _colour);
+
+  // Copies the next completed back buffer into a readback heap and writes it out as a PNG through
+  // WIC. Stalls one frame, which is what a screenshot is allowed to cost.
+  void RequestCapture(const std::wstring& _pngPath);
   float TextAdvancePx(float _scale) const { return m_advancePx * _scale; }
   float TextLineHeightPx(float _scale) const { return m_cellHPx * _scale; }
 
@@ -146,6 +151,12 @@ struct Gfx
   float m_solidU = 0.0f; // centre of the one atlas cell with no glyph in it
   float m_solidV = 0.0f;
 
+  bool m_captureRequested = false;
+  std::wstring m_capturePath;
+  ComPtr<ID3D12Resource> m_captureReadback;
+  D3D12_PLACED_SUBRESOURCE_FOOTPRINT m_captureFootprint = {};
+  UINT m_captureRows = 0;
+
   void CreateSizedResources();
   void ReleaseSizedResources();
   void WaitForGpu();
@@ -153,4 +164,6 @@ struct Gfx
   void CreateTextPipeline();
   void CreateScenePipeline();
   void CreateDecalPipelines();
+  void RecordCaptureCopy();
+  void WriteCapturePng();
 };

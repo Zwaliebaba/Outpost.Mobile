@@ -81,6 +81,12 @@ Tuner g_tuner;
 Watch g_watch;
 std::wstring g_iniPath;
 
+Tuning g_slotA;
+Tuning g_slotB;
+bool g_slotAStored = false;
+bool g_slotBStored = false;
+int g_activeSlot = 0;
+
 int Scaled(int _units)
 {
   return int(float(_units) * g_tuner.scale + 0.5f);
@@ -197,7 +203,7 @@ bool LoadIni()
 
 } // namespace
 
-void TuningSave()
+void TuningSaveTo(const wchar_t* _path)
 {
   std::string text = "; ShipFeel tuning. Saved by the Tuner window, and reloaded while running whenever this\n"
                      "; file changes on disk -- so editing it by hand works just as well as dragging a slider.\n";
@@ -217,16 +223,21 @@ void TuningSave()
     text += line;
   }
 
-  HANDLE file = CreateFileW(g_iniPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  HANDLE file = CreateFileW(_path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file == INVALID_HANDLE_VALUE)
   {
-    DebugPrintf("cannot write %S\n", g_iniPath.c_str());
+    DebugPrintf("cannot write %S\n", _path);
     return;
   }
   DWORD written = 0;
   WriteFile(file, text.data(), DWORD(text.size()), &written, nullptr);
   CloseHandle(file);
-  DebugPrintf("wrote %S (%d values)\n", g_iniPath.c_str(), TUNING_COUNT);
+  DebugPrintf("wrote %S (%d values)\n", _path, TUNING_COUNT);
+}
+
+void TuningSave()
+{
+  TuningSaveTo(g_iniPath.c_str());
 }
 
 namespace
@@ -589,6 +600,51 @@ void TuningPoll()
 void TuningRefreshWindow()
 {
   RefreshControls();
+}
+
+void TuningStoreSlot(int _slot)
+{
+  if (_slot == 1)
+  {
+    g_slotA = g_tuning;
+    g_slotAStored = true;
+    g_activeSlot = 1;
+  }
+  else if (_slot == 2)
+  {
+    g_slotB = g_tuning;
+    g_slotBStored = true;
+    g_activeSlot = 2;
+  }
+  DebugPrintf("stored tuning slot %s\n", TuningActiveSlot());
+}
+
+// Flips to the other stored slot. Note that the camera framing lives in the tuning values too, so
+// a flip restores the view that was stored with the slot -- which is what makes two runs
+// comparable rather than a nuisance.
+void TuningToggleSlot()
+{
+  if (g_activeSlot != 1 && g_slotAStored)
+  {
+    g_tuning = g_slotA;
+    g_activeSlot = 1;
+  }
+  else if (g_activeSlot != 2 && g_slotBStored)
+  {
+    g_tuning = g_slotB;
+    g_activeSlot = 2;
+  }
+  else
+  {
+    return;
+  }
+  RefreshControls();
+  DebugPrintf("switched to tuning slot %s\n", TuningActiveSlot());
+}
+
+const char* TuningActiveSlot()
+{
+  return (g_activeSlot == 1) ? "A" : (g_activeSlot == 2) ? "B" : "-";
 }
 
 void TuningToggleWindow()

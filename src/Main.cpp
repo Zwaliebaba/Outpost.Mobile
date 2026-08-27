@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <string>
+#include <vector>
 
 namespace
 {
@@ -16,11 +18,171 @@ int64_t g_qpcFrequency = 1;
 uint64_t g_simTick = 0;
 bool g_sawPointerWheel = false; // once the pointer API delivers the wheel, ignore the legacy message
 
+float g_timeScale = 1.0f;
+bool g_paused = false;
+bool g_stepOnce = false;
+float g_latencyMs = 0.0f; // pointer event to present, measured right after Present returns
+
+// Record and replay. Each event carries the sim tick it was applied on, and replay injects it on
+// exactly that tick -- which is the whole reason the simulation is integer-tick-driven. The same
+// recording under two tuning sets then produces two runs that can be compared honestly.
+enum class ReplayMode : uint8_t
+{
+  Off,
+  Recording,
+  Playing
+};
+
+struct ReplayRecord
+{
+  uint64_t tick = 0;
+  uint32_t pointerId = 0;
+  float xPx = 0.0f;
+  float yPx = 0.0f;
+  int32_t wheelNotches = 0;
+  uint8_t kind = 0;
+  uint8_t buttons = 0;
+  uint8_t flags = 0; // bit 0 touch, bit 1 shift
+  uint8_t pad = 0;
+};
+
+ReplayMode g_replayMode = ReplayMode::Off;
+std::vector<ReplayRecord> g_replay;
+size_t g_replayCursor = 0;
+uint64_t g_replayBaseTick = 0;
+uint64_t g_replayLastTick = 0;
+
+float ElapsedMs(int64_t _fromQpc, int64_t _toQpc)
+{
+  return float(double(_toQpc - _fromQpc) / double(g_qpcFrequency) * 1000.0);
+}
+
+std::wstring ReplayPath()
+{
+  return FindDataRoot() + L"last.replay";
+}
+
 int64_t NowQpc()
 {
   LARGE_INTEGER now = {};
   QueryPerformanceCounter(&now);
   return now.QuadPart;
+}
+
+// Every pointer event goes through here so recording and replay can sit on one seam.
+void QueuePointer(const PointerEvent& _event)
+{
+  if (g_replayMode == ReplayMode::Playing)
+  {
+    return; // a replay is not a replay if live input can steer it
+  }
+  if (g_replayMode == ReplayMode::Recording)
+  {
+    ReplayRecord record;
+    record.tick = g_simTick - g_replayBaseTick;
+    record.pointerId = _event.pointerId;
+    record.xPx = _event.xPx;
+    record.yPx = _event.yPx;
+    record.wheelNotches = _event.wheelNotches;
+    record.kind = uint8_t(_event.kind);
+    record.buttons = uint8_t(_event.buttons);
+    record.flags = uint8_t((_event.isTouch ? 1u : 0u) | (_event.shift ? 2u : 0u));
+    g_replay.push_back(record);
+  }
+  g_scene.QueuePointerEvent(_event);
+}
+
+void InjectReplayTick(uint64_t _relativeTick)
+{
+  while (g_replayCursor < g_replay.size() && g_replay[g_replayCursor].tick <= _relativeTick)
+  {
+    const ReplayRecord& record = g_replay[g_replayCursor];
+    PointerEvent event;
+    event.kind = PointerEvent::Kind(record.kind);
+    event.pointerId = record.pointerId;
+    event.xPx = record.xPx;
+    event.yPx = record.yPx;
+    event.buttons = record.buttons;
+    event.isTouch = (record.flags & 1u) != 0;
+    event.shift = (record.flags & 2u) != 0;
+    event.wheelNotches = record.wheelNotches;
+    event.timestampQpc = NowQpc();
+    g_scene.QueuePointerEvent(event);
+    ++g_replayCursor;
+  }
+}
+
+void WriteReplayFile()
+{
+  const std::wstring path = ReplayPath();
+  HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE)
+  {
+    DebugPrintf("cannot write %S\n", path.c_str());
+    return;
+  }
+  const uint32_t header[2] = {0x50524653u, uint32_t(g_replay.size())}; // 'SFRP'
+  DWORD written = 0;
+  WriteFile(file, header, sizeof(header), &written, nullptr);
+  if (!g_replay.empty())
+  {
+    WriteFile(file, g_replay.data(), DWORD(g_replay.size() * sizeof(ReplayRecord)), &written, nullptr);
+  }
+  CloseHandle(file);
+  DebugPrintf("wrote %S (%zu events over %llu ticks)\n", path.c_str(), g_replay.size(),
+              static_cast<unsigned long long>(g_replayLastTick));
+}
+
+bool ReadReplayFile()
+{
+  const std::wstring path = ReplayPath();
+  HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE)
+  {
+    DebugPrintf("no %S to replay\n", path.c_str());
+    return false;
+  }
+  uint32_t header[2] = {};
+  DWORD read = 0;
+  const bool headerOk = ReadFile(file, header, sizeof(header), &read, nullptr) && read == sizeof(header) && header[0] == 0x50524653u;
+  if (!headerOk)
+  {
+    CloseHandle(file);
+    DebugPrintf("%S is not a replay file\n", path.c_str());
+    return false;
+  }
+  g_replay.assign(header[1], ReplayRecord{});
+  if (header[1] != 0)
+  {
+    ReadFile(file, g_replay.data(), DWORD(g_replay.size() * sizeof(ReplayRecord)), &read, nullptr);
+    g_replay.resize(read / sizeof(ReplayRecord));
+  }
+  CloseHandle(file);
+  g_replayLastTick = g_replay.empty() ? 0 : g_replay.back().tick;
+  DebugPrintf("loaded %zu events over %llu ticks\n", g_replay.size(), static_cast<unsigned long long>(g_replayLastTick));
+  return !g_replay.empty();
+}
+
+// F12: the PNG and a copy of the tuning values that produced it, side by side, so any screenshot
+// can be reproduced later.
+void CaptureScreenshot()
+{
+  const std::wstring directory = FindDataRoot() + L"captures";
+  CreateDirectoryW(directory.c_str(), nullptr);
+  for (int index = 1; index < 10000; ++index)
+  {
+    wchar_t stem[MAX_PATH] = {};
+    std::swprintf(stem, MAX_PATH, L"%s\\shipfeel_%04d", directory.c_str(), index);
+    const std::wstring png = std::wstring(stem) + L".png";
+    if (GetFileAttributesW(png.c_str()) != INVALID_FILE_ATTRIBUTES)
+    {
+      continue;
+    }
+    TuningSaveTo((std::wstring(stem) + L".ini").c_str());
+    g_gfx.RequestCapture(png);
+    return;
+  }
+  DebugPrintf("captures folder is full\n");
 }
 
 // WM_POINTER covers mouse, pen and touch with one path, which is the whole reason for using it:
@@ -103,7 +265,7 @@ LRESULT CALLBACK WndProc(HWND _hwnd, UINT _msg, WPARAM _wparam, LPARAM _lparam)
         ReleaseCapture();
       }
     }
-    g_scene.QueuePointerEvent(event);
+    QueuePointer(event);
     return 0;
   }
 
@@ -117,7 +279,7 @@ LRESULT CALLBACK WndProc(HWND _hwnd, UINT _msg, WPARAM _wparam, LPARAM _lparam)
     g_sawPointerWheel = true;
     event.kind = PointerEvent::Kind::Wheel;
     event.wheelNotches = GET_WHEEL_DELTA_WPARAM(_wparam) / WHEEL_DELTA;
-    g_scene.QueuePointerEvent(event);
+    QueuePointer(event);
     return 0;
   }
 
@@ -131,7 +293,7 @@ LRESULT CALLBACK WndProc(HWND _hwnd, UINT _msg, WPARAM _wparam, LPARAM _lparam)
     event.kind = PointerEvent::Kind::Wheel;
     event.wheelNotches = GET_WHEEL_DELTA_WPARAM(_wparam) / WHEEL_DELTA;
     event.timestampQpc = NowQpc();
-    g_scene.QueuePointerEvent(event);
+    QueuePointer(event);
     return 0;
   }
 
@@ -168,6 +330,71 @@ LRESULT CALLBACK WndProc(HWND _hwnd, UINT _msg, WPARAM _wparam, LPARAM _lparam)
     {
       g_scene.TriggerCameraShake(); // the debug hook, so the shake curve can be tuned on demand
     }
+    else if (_wparam == VK_F5 || _wparam == VK_F6)
+    {
+      TuningStoreSlot(_wparam == VK_F5 ? 1 : 2);
+    }
+    else if (_wparam == VK_F7)
+    {
+      TuningToggleSlot();
+    }
+    else if (_wparam == VK_F9)
+    {
+      // Recording starts from a known world, or the replay has nothing to reproduce against.
+      g_scene.ResetWorld();
+      g_replay.clear();
+      g_replayBaseTick = g_simTick;
+      g_replayLastTick = 0;
+      g_replayMode = ReplayMode::Recording;
+      DebugPrintf("recording\n");
+    }
+    else if (_wparam == VK_F10)
+    {
+      if (g_replayMode == ReplayMode::Recording)
+      {
+        g_replayLastTick = g_replay.empty() ? 0 : g_replay.back().tick;
+        g_replayMode = ReplayMode::Off;
+        WriteReplayFile();
+      }
+    }
+    else if (_wparam == VK_F11)
+    {
+      if (ReadReplayFile())
+      {
+        g_scene.ResetWorld();
+        g_replayCursor = 0;
+        g_replayBaseTick = g_simTick;
+        g_replayMode = ReplayMode::Playing;
+      }
+    }
+    else if (_wparam == VK_F12)
+    {
+      CaptureScreenshot();
+    }
+    else if (_wparam == '1')
+    {
+      g_timeScale = 0.25f;
+      g_paused = false;
+    }
+    else if (_wparam == '2')
+    {
+      g_timeScale = 1.0f;
+      g_paused = false;
+    }
+    else if (_wparam == '3')
+    {
+      g_timeScale = 4.0f;
+      g_paused = false;
+    }
+    else if (_wparam == VK_SPACE)
+    {
+      g_paused = !g_paused;
+    }
+    else if (_wparam == VK_OEM_PERIOD)
+    {
+      g_paused = true;
+      g_stepOnce = true; // one sim tick, then stop again
+    }
     return 0;
 
   case WM_CLOSE:
@@ -189,6 +416,7 @@ LRESULT CALLBACK WndProc(HWND _hwnd, UINT _msg, WPARAM _wparam, LPARAM _lparam)
 int WINAPI wWinMain(HINSTANCE _instance, HINSTANCE, LPWSTR, int)
 {
   SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+  CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE); // WIC, for F12
 
   WNDCLASSEXW wc = {};
   wc.cbSize = sizeof(wc);
@@ -226,9 +454,7 @@ int WINAPI wWinMain(HINSTANCE _instance, HINSTANCE, LPWSTR, int)
 
   float fpsSmoothed = 0.0f;
   float frameMsSmoothed = 0.0f;
-  uint64_t frameCount = 0;
   float simAccumulator = 0.0f;
-  float timeScale = 1.0f;
 
   while (g_running)
   {
@@ -256,7 +482,6 @@ int WINAPI wWinMain(HINSTANCE _instance, HINSTANCE, LPWSTR, int)
 
     fpsSmoothed = SmoothTowards(fpsSmoothed, dtSec > 0.0f ? 1.0f / dtSec : 0.0f, dtSec, 0.25f);
     frameMsSmoothed = SmoothTowards(frameMsSmoothed, dtSec * 1000.0f, dtSec, 0.25f);
-    ++frameCount;
 
     if (g_gfx.m_widthPx == 0 || g_gfx.m_heightPx == 0)
     {
@@ -267,13 +492,48 @@ int WINAPI wWinMain(HINSTANCE _instance, HINSTANCE, LPWSTR, int)
 
     // Fixed 60 Hz simulation with an accumulator; the leftover fraction interpolates the render.
     // Capped so a stall (a dragged window, a breakpoint) cannot spiral into a burst of ticks.
-    simAccumulator = std::min(simAccumulator + dtSec * timeScale, 0.25f);
-    while (simAccumulator >= SIM_DT)
+    // A replay injects and drains its events inside this loop rather than once per frame, so each
+    // one lands on exactly the tick it was recorded on however many ticks this frame happens to
+    // cover.
+    if (g_paused)
     {
-      g_scene.Step();
-      simAccumulator -= SIM_DT;
-      ++g_simTick;
+      simAccumulator = 0.0f;
+      if (g_stepOnce)
+      {
+        if (g_replayMode == ReplayMode::Playing)
+        {
+          InjectReplayTick(g_simTick - g_replayBaseTick);
+          g_scene.Update(g_gfx.m_widthPx, g_gfx.m_heightPx);
+        }
+        g_scene.Step();
+        ++g_simTick;
+        g_stepOnce = false;
+      }
     }
+    else
+    {
+      simAccumulator = std::min(simAccumulator + dtSec * g_timeScale, 0.25f);
+      while (simAccumulator >= SIM_DT)
+      {
+        if (g_replayMode == ReplayMode::Playing)
+        {
+          InjectReplayTick(g_simTick - g_replayBaseTick);
+          g_scene.Update(g_gfx.m_widthPx, g_gfx.m_heightPx);
+        }
+        g_scene.Step();
+        simAccumulator -= SIM_DT;
+        ++g_simTick;
+      }
+    }
+
+    // Let the last order play out before handing control back.
+    if (g_replayMode == ReplayMode::Playing && g_replayCursor >= g_replay.size() &&
+        (g_simTick - g_replayBaseTick) > g_replayLastTick + 120)
+    {
+      g_replayMode = ReplayMode::Off;
+      DebugPrintf("replay finished\n");
+    }
+
     const float simAlpha = simAccumulator / SIM_DT;
 
     // Rings, banking, thrusters, markers and the camera all ease on real time rather than sim
@@ -284,16 +544,32 @@ int WINAPI wWinMain(HINSTANCE _instance, HINSTANCE, LPWSTR, int)
     g_scene.Render(g_gfx, simAlpha);
 
     const float hudScale = float(GetDpiForWindow(hwnd)) / 96.0f;
-    char hud[256] = {};
-    std::snprintf(hud, sizeof(hud), "fps      %6.1f\nframe    %6.2f ms\nsim tick %llu\nselected %d of %zu\nframes   %llu",
-                  double(fpsSmoothed), double(frameMsSmoothed), static_cast<unsigned long long>(g_simTick), g_scene.SelectedCount(),
-                  g_scene.m_ships.size(), static_cast<unsigned long long>(frameCount));
+    const char* transport = (g_replayMode == ReplayMode::Recording) ? "recording"
+                            : (g_replayMode == ReplayMode::Playing) ? "replaying"
+                            : g_paused                              ? "paused"
+                                                                    : "live";
+    char hud[512] = {};
+    std::snprintf(hud, sizeof(hud),
+                  "fps       %6.1f\nframe     %6.2f ms\nlatency   %6.2f ms\nsim tick  %6llu\nselected  %6d of %zu\n"
+                  "slot      %6s\ntime      %5.2fx\n%-9s %6zu events",
+                  double(fpsSmoothed), double(frameMsSmoothed), double(g_latencyMs), static_cast<unsigned long long>(g_simTick),
+                  g_scene.SelectedCount(), g_scene.m_ships.size(), TuningActiveSlot(), double(g_paused ? 0.0f : g_timeScale), transport,
+                  g_replay.size());
     g_gfx.DrawTextLine(12.0f * hudScale, 10.0f * hudScale, hudScale, Rgba{0.78f, 0.87f, 0.96f, 1.0f}, hud);
 
     g_gfx.EndFrame();
+
+    // Pointer message in, Present out. Measured the moment Present returns, which is as close to
+    // the frame leaving as the API lets us get.
+    if (g_scene.m_lastPointerQpc != 0)
+    {
+      g_latencyMs = ElapsedMs(g_scene.m_lastPointerQpc, NowQpc());
+      g_scene.m_lastPointerQpc = 0;
+    }
   }
 
   TuningShutdown();
   g_gfx.Shutdown();
+  CoUninitialize();
   return 0;
 }

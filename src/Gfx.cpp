@@ -1,6 +1,7 @@
 #include "Gfx.h"
 
 #include <d3dcompiler.h>
+#include <wincodec.h>
 
 #include <algorithm>
 #include <cmath>
@@ -529,8 +530,13 @@ void Gfx::EndFrame()
     m_cmd->DrawInstanced(UINT(count), 1, 0, 0);
   }
 
-  const D3D12_RESOURCE_BARRIER toPresent =
-      Transition(m_backBuffers[m_frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+  if (m_captureRequested)
+  {
+    RecordCaptureCopy();
+  }
+
+  const D3D12_RESOURCE_STATES from = m_captureRequested ? D3D12_RESOURCE_STATE_COPY_SOURCE : D3D12_RESOURCE_STATE_RENDER_TARGET;
+  const D3D12_RESOURCE_BARRIER toPresent = Transition(m_backBuffers[m_frameIndex].Get(), from, D3D12_RESOURCE_STATE_PRESENT);
   m_cmd->ResourceBarrier(1, &toPresent);
   CHECK_HR(m_cmd->Close());
 
@@ -541,6 +547,13 @@ void Gfx::EndFrame()
   const UINT64 target = ++m_fenceNext;
   CHECK_HR(m_queue->Signal(m_fence.Get(), target));
   m_fenceValues[m_frameIndex] = target;
+
+  if (m_captureRequested)
+  {
+    WaitForGpu(); // the readback has to have landed before it can be encoded
+    WriteCapturePng();
+    m_captureRequested = false;
+  }
 }
 
 void Gfx::BakeFontAtlas()
@@ -1151,4 +1164,101 @@ void Gfx::DrawGlow(UINT _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _colour, 
   m_cmd->SetGraphicsRoot32BitConstants(1, 4, params, 4);
   m_cmd->IASetVertexBuffers(0, 1, &m_meshes[_mesh].vbv);
   m_cmd->DrawInstanced(m_meshes[_mesh].vertexCount, 1, 0, 0);
+}
+
+void Gfx::RequestCapture(const std::wstring& _pngPath)
+{
+  m_capturePath = _pngPath;
+  m_captureRequested = true;
+}
+
+void Gfx::RecordCaptureCopy()
+{
+  const D3D12_RESOURCE_DESC backBuffer = m_backBuffers[m_frameIndex]->GetDesc();
+  UINT64 totalBytes = 0;
+  m_device->GetCopyableFootprints(&backBuffer, 0, 1, 0, &m_captureFootprint, &m_captureRows, nullptr, &totalBytes);
+
+  const D3D12_HEAP_PROPERTIES hp = HeapProps(D3D12_HEAP_TYPE_READBACK);
+  const D3D12_RESOURCE_DESC rd = BufferDesc(totalBytes);
+  m_captureReadback.Reset();
+  CHECK_HR(m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                                             IID_PPV_ARGS(&m_captureReadback)));
+
+  const D3D12_RESOURCE_BARRIER toCopy =
+      Transition(m_backBuffers[m_frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
+  m_cmd->ResourceBarrier(1, &toCopy);
+
+  D3D12_TEXTURE_COPY_LOCATION destination = {};
+  destination.pResource = m_captureReadback.Get();
+  destination.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+  destination.PlacedFootprint = m_captureFootprint;
+  D3D12_TEXTURE_COPY_LOCATION source = {};
+  source.pResource = m_backBuffers[m_frameIndex].Get();
+  source.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+  source.SubresourceIndex = 0;
+  m_cmd->CopyTextureRegion(&destination, 0, 0, 0, &source, nullptr);
+  // The caller transitions COPY_SOURCE straight to PRESENT.
+}
+
+void Gfx::WriteCapturePng()
+{
+  const UINT width = m_captureFootprint.Footprint.Width;
+  const UINT height = m_captureFootprint.Footprint.Height;
+  const UINT rowPitch = m_captureFootprint.Footprint.RowPitch;
+
+  uint8_t* mapped = nullptr;
+  D3D12_RANGE readRange = {0, SIZE_T(rowPitch) * SIZE_T(m_captureRows)};
+  if (FAILED(m_captureReadback->Map(0, &readRange, reinterpret_cast<void**>(&mapped))))
+  {
+    DebugPrintf("capture: could not map the readback buffer\n");
+    return;
+  }
+
+  // The back buffer is RGBA and the PNG encoder wants BGRA, and the readback rows are padded to
+  // 256 bytes, so repack into a tight buffer. Alpha is forced opaque: the swapchain's is not
+  // meaningful and a half-transparent screenshot is no use.
+  std::vector<uint8_t> pixels(size_t(width) * size_t(height) * 4);
+  for (UINT y = 0; y < height; ++y)
+  {
+    const uint8_t* sourceRow = mapped + size_t(y) * rowPitch;
+    uint8_t* destinationRow = pixels.data() + size_t(y) * size_t(width) * 4;
+    for (UINT x = 0; x < width; ++x)
+    {
+      destinationRow[x * 4 + 0] = sourceRow[x * 4 + 2];
+      destinationRow[x * 4 + 1] = sourceRow[x * 4 + 1];
+      destinationRow[x * 4 + 2] = sourceRow[x * 4 + 0];
+      destinationRow[x * 4 + 3] = 255;
+    }
+  }
+  const D3D12_RANGE wroteNothing = {0, 0};
+  m_captureReadback->Unmap(0, &wroteNothing);
+
+  ComPtr<IWICImagingFactory> factory;
+  if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))))
+  {
+    DebugPrintf("capture: no WIC factory\n");
+    return;
+  }
+
+  ComPtr<IWICStream> stream;
+  ComPtr<IWICBitmapEncoder> encoder;
+  ComPtr<IWICBitmapFrameEncode> frame;
+  ComPtr<IPropertyBag2> frameProperties;
+  WICPixelFormatGUID format = GUID_WICPixelFormat32bppBGRA;
+
+  if (FAILED(factory->CreateStream(&stream)) || FAILED(stream->InitializeFromFilename(m_capturePath.c_str(), GENERIC_WRITE)) ||
+      FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder)) ||
+      FAILED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache)) || FAILED(encoder->CreateNewFrame(&frame, &frameProperties)) ||
+      FAILED(frame->Initialize(frameProperties.Get())) || FAILED(frame->SetSize(width, height)) || FAILED(frame->SetPixelFormat(&format)))
+  {
+    DebugPrintf("capture: could not start the PNG encoder for %S\n", m_capturePath.c_str());
+    return;
+  }
+  if (FAILED(frame->WritePixels(height, width * 4, UINT(pixels.size()), pixels.data())) || FAILED(frame->Commit()) ||
+      FAILED(encoder->Commit()))
+  {
+    DebugPrintf("capture: could not write %S\n", m_capturePath.c_str());
+    return;
+  }
+  DebugPrintf("captured %S (%u x %u)\n", m_capturePath.c_str(), width, height);
 }
