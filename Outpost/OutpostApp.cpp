@@ -1,0 +1,177 @@
+#include "pch.h"
+#include "OutpostApp.h"
+
+#include "ViewTuning.h"
+
+using namespace DirectX;
+using namespace Neuron;
+
+namespace Outpost
+{
+namespace
+{
+const std::wstring MESH_DIR = L"Meshes\\";
+const std::wstring STARTING_HULLS[] = {L"Bomber", L"Corvette", L"Frigate"};
+} // namespace
+
+void OutpostApp::Init(HINSTANCE _instance)
+{
+  AppWindow::Desc windowDesc;
+  windowDesc.title = L"Outpost";
+  windowDesc.className = L"OutpostWindow";
+  m_window.Create(windowDesc, _instance);
+
+  m_window.onResize = [this](std::uint32_t _widthPx, std::uint32_t _heightPx) { OnResize(_widthPx, _heightPx); };
+  m_window.onKeyDown = [this](std::uint32_t _virtualKey) { OnKeyDown(_virtualKey); };
+  m_window.onPointerLeave = [this] { m_view.ClearHover(); };
+  m_window.onPointer = [this](const PointerEvent& _event) { m_pendingEvents.push_back(_event); };
+
+  m_gpu.Init(m_window.Handle());
+  m_sceneRenderer.Init(m_gpu);
+  m_textRenderer.Init(m_gpu); // records the atlas upload into the command list, so it goes last
+
+  Camera::Desc cameraDesc;
+  cameraDesc.minZoom = CAMERA_MIN_ZOOM;
+  cameraDesc.maxZoom = CAMERA_MAX_ZOOM;
+  cameraDesc.targetHeight = CAMERA_TARGET_HEIGHT;
+  cameraDesc.fovDeg = CAMERA_FOV_DEG;
+  cameraDesc.nearPlane = CAMERA_NEAR_PLANE;
+  cameraDesc.farPlane = CAMERA_FAR_PLANE;
+  cameraDesc.minPitchDeg = CAMERA_MIN_PITCH_DEG;
+  cameraDesc.maxPitchDeg = CAMERA_MAX_PITCH_DEG;
+  cameraDesc.rotateSpeedDegPerPx = CAMERA_ROTATE_SPEED_DEG_PER_PX;
+  cameraDesc.zoomStepFactor = CAMERA_ZOOM_STEP_FACTOR;
+  cameraDesc.panSpeed = CAMERA_PAN_SPEED;
+  cameraDesc.followHalfLife = CAMERA_FOLLOW_HALF_LIFE;
+  cameraDesc.shakeAmplitude = CAMERA_SHAKE_AMPLITUDE;
+  cameraDesc.shakeDecayHalfLife = CAMERA_SHAKE_DECAY_HALF_LIFE;
+  cameraDesc.shakeFrequencyHz = CAMERA_SHAKE_FREQUENCY_HZ;
+  m_camera.Init(cameraDesc);
+
+  PointerTracker::Desc pointerDesc;
+  pointerDesc.dragThresholdPx = INPUT_DRAG_THRESHOLD_PX;
+  pointerDesc.tapMaxDurationMs = INPUT_TAP_MAX_DURATION_MS;
+  pointerDesc.doubleTapWindowMs = INPUT_DOUBLE_TAP_WINDOW_MS;
+  m_pointers.Init(pointerDesc);
+
+  ServerHost::Desc hostDesc;
+  hostDesc.tickHz = Game::TICK_HZ;
+  m_host.Init(hostDesc, m_simulation);
+
+  m_view.Init(m_world, m_camera, m_meshes, m_sceneRenderer.UnitQuad());
+  m_view.SetTracker(m_pointers);
+  SpawnStartingFleet();
+
+  m_window.Show();
+}
+
+void OutpostApp::SpawnStartingFleet()
+{
+  constexpr int hullCount = static_cast<int>(std::size(STARTING_HULLS));
+  for (int i = 0; i < hullCount; ++i)
+  {
+    const MeshHandle mesh = m_meshes.Load(m_gpu, m_sceneRenderer, MESH_DIR, STARTING_HULLS[i]);
+    if (mesh == INVALID_MESH)
+      continue; // a missing hull is a content diagnostic, not a reason to fail boot
+
+    const float x = (static_cast<float>(i) - static_cast<float>(hullCount - 1) * 0.5f) * START_SPACING;
+    m_world.SpawnShip(XMFLOAT3(x, 0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(i));
+    m_view.AddShip(mesh);
+  }
+}
+
+void OutpostApp::OnResize(std::uint32_t _widthPx, std::uint32_t _heightPx)
+{
+  m_gpu.Resize(_widthPx, _heightPx);
+}
+
+void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
+{
+  switch (_virtualKey)
+  {
+  case VK_ESCAPE:
+    // Drops the selection first; only quits once nothing is selected.
+    if (m_view.SelectedCount() > 0)
+      m_view.ClearSelection();
+    else
+      m_window.RequestClose();
+    break;
+  case VK_F3:
+    m_view.TriggerCameraShake(); // the debug hook, so the shake curve can be tuned on demand
+    break;
+  case '1':
+    m_timeScale = 0.25f;
+    break;
+  case '2':
+    m_timeScale = 1.0f;
+    break;
+  case '3':
+    m_timeScale = 4.0f;
+    break;
+  default:
+    break;
+  }
+}
+
+void OutpostApp::Update()
+{
+  m_camera.SetViewport(m_gpu.WidthPx(), m_gpu.HeightPx());
+  m_camera.Update(); // picking needs matrices that match what was on screen when the pointer moved
+  for (const PointerEvent& event : m_pendingEvents)
+    m_pointers.Apply(event, m_camera, m_view);
+  m_pendingEvents.clear();
+  m_camera.Update(); // input may have moved it again
+}
+
+void OutpostApp::Render()
+{
+  m_gpu.BeginFrame(SKY_COLOUR);
+  m_textRenderer.BeginFrame();
+
+  m_view.Render(m_sceneRenderer, m_gpu, m_textRenderer, m_host.InterpolationAlpha());
+
+  Hud::Stats stats;
+  stats.fps = m_clock.Fps();
+  stats.frameMs = m_clock.FrameMs();
+  stats.tick = m_host.Tick();
+  stats.selectedCount = m_view.SelectedCount();
+  stats.shipCount = m_world.ShipCount();
+  stats.timeScale = m_timeScale;
+  m_hud.Draw(m_textRenderer, stats, m_window.DpiScale());
+
+  m_textRenderer.Flush(m_gpu); // the overlay goes on last, before the frame is presented
+  m_gpu.EndFrame();
+}
+
+void OutpostApp::Run()
+{
+  while (m_window.PumpMessages())
+  {
+    const float dtSec = m_clock.Tick();
+
+    // A minimised or zero-sized window has nothing to draw and no viewport to pick against, so the
+    // frame is skipped whole rather than half-run.
+    if (!m_gpu.Ready())
+      continue;
+
+    Update();
+
+    // The simulation runs at its own fixed rate; the render frame interpolates between its last two
+    // ticks. Time scaling stretches the simulation only, so the display stays at the refresh rate.
+    const int steps = m_host.Advance(dtSec * m_timeScale);
+    for (int step = 0; step < steps; ++step)
+      m_view.SampleTrails();
+
+    // Feedback eases on real time rather than sim time, so it stays smooth however far the
+    // swapchain runs ahead of the tick rate.
+    m_view.UpdateFeedback(dtSec);
+
+    Render();
+  }
+}
+
+void OutpostApp::Shutdown()
+{
+  m_gpu.Shutdown();
+}
+} // namespace Outpost

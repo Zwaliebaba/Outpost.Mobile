@@ -1,28 +1,29 @@
 {
-  // ShipFeel is Windows/MSVC only, so both configurations use the Visual Studio debugger.
+  // Outpost is Windows/MSVC only, so every configuration uses the Visual Studio debugger.
+  //
+  // The build is MSBuild, not CMake: Outpost.slnx is the solution, and the executable lands in
+  // x64\<Configuration>\Outpost.exe. Build it first (AGENTS.md 6) -- these configurations launch
+  // what is already there rather than building it.
   "version": "0.2.0",
   "configurations": [
     {
-      // Normal F5. CMake Tools builds the active target first and hands back its path, so this
-      // follows whichever build variant (Debug/Release) is selected in the status bar.
-      "name": "Debug ShipFeel (CMake target)",
+      "name": "Debug Outpost (x64)",
       "type": "cppvsdbg",
       "request": "launch",
-      "program": "${command:cmake.launchTargetPath}",
+      "program": "${workspaceFolder}/x64/Debug/Outpost.exe",
       "args": [],
       "stopAtEntry": false,
-      // The repository root: the exe walks up to find GameData and tuning.ini either way, but
-      // launching from here keeps captures/ and the .replay files next to the source.
+      // Assets are resolved relative to the executable, not the working directory, so this only
+      // decides where any files the game writes end up.
       "cwd": "${workspaceFolder}",
       "environment": [],
       "console": "internalConsole"
     },
     {
-      // Same thing without CMake Tools in the loop, for when the extension is not configured yet.
-      "name": "Debug ShipFeel (build/ShipFeel.exe)",
+      "name": "Release Outpost (x64)",
       "type": "cppvsdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/build/ShipFeel.exe",
+      "program": "${workspaceFolder}/x64/Release/Outpost.exe",
       "args": [],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}",
@@ -30,8 +31,7 @@
       "console": "internalConsole"
     },
     {
-      // Attach to a already-running ShipFeel.exe, e.g. one started outside the debugger.
-      "name": "Attach to ShipFeel",
+      "name": "Attach to Outpost",
       "type": "cppvsdbg",
       "request": "attach",
       "processId": "${command:pickProcess}"

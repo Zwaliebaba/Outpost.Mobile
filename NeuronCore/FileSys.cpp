@@ -12,9 +12,9 @@ namespace
   }
 
   // Shared for writing too: a file the user is editing must not fail the read.
-  byte_buffer_t ReadAllBytes(const std::wstring& _fullName)
+  ByteBuffer ReadAllBytes(const std::wstring& _fullName)
   {
-    ScopedHandle hFile(safe_handle(CreateFile2(_fullName.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, OPEN_EXISTING, nullptr)));
+    ScopedHandle hFile(SafeHandle(CreateFile2(_fullName.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, OPEN_EXISTING, nullptr)));
     if (!hFile)
       return {};
 
@@ -28,7 +28,7 @@ namespace
       return {};
 
     // Create enough space for the file data.
-    byte_buffer_t data(fileInfo.EndOfFile.LowPart);
+    ByteBuffer data(fileInfo.EndOfFile.LowPart);
 
     // Read the data in.
     DWORD bytesRead = 0;
@@ -44,7 +44,7 @@ namespace
 
   bool WriteAllBytes(const std::wstring& _fullName, const void* _data, size_t _size)
   {
-    ScopedHandle hFile(safe_handle(CreateFile2(_fullName.c_str(), GENERIC_WRITE, FILE_SHARE_READ, CREATE_ALWAYS, nullptr)));
+    ScopedHandle hFile(SafeHandle(CreateFile2(_fullName.c_str(), GENERIC_WRITE, FILE_SHARE_READ, CREATE_ALWAYS, nullptr)));
     if (!hFile)
       return false;
 
@@ -86,6 +86,8 @@ namespace
   }
 }
 
+namespace Neuron
+{
 std::wstring FileSys::ResolvePath(const std::wstring& _fileName)
 {
   if (IsAbsolute(_fileName))
@@ -94,12 +96,12 @@ std::wstring FileSys::ResolvePath(const std::wstring& _fileName)
   return m_homeDir + _fileName;
 }
 
-byte_buffer_t BinaryFile::ReadFile(const std::wstring& _fileName)
+ByteBuffer BinaryFile::ReadFile(const std::wstring& _fileName)
 {
   return ReadAllBytes(ResolvePath(_fileName));
 }
 
-bool BinaryFile::WriteFile(const std::wstring& _fileName, const byte_buffer_t& _data)
+bool BinaryFile::WriteFile(const std::wstring& _fileName, const ByteBuffer& _data)
 {
   return WriteAllBytes(ResolvePath(_fileName), _data.data(), _data.size());
 }
@@ -111,7 +113,7 @@ std::wstring TextFile::ReadFile(const std::wstring& _fileName)
 
 std::string TextFile::ReadFileA(const std::wstring& _fileName)
 {
-  const byte_buffer_t data = ReadAllBytes(ResolvePath(_fileName));
+  const ByteBuffer data = ReadAllBytes(ResolvePath(_fileName));
 
   return std::string(reinterpret_cast<const char*>(data.data()), data.size());
 }
@@ -125,3 +127,4 @@ bool TextFile::WriteFileA(const std::wstring& _fileName, std::string_view _text)
 {
   return WriteAllBytes(ResolvePath(_fileName), _text.data(), _text.size());
 }
+} // namespace Neuron

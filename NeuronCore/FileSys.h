@@ -2,7 +2,7 @@
 
 namespace Neuron
 {
-  using byte_buffer_t = std::vector<uint8_t>;
+  using ByteBuffer = std::vector<uint8_t>;
 
   class FileSys
   {
@@ -40,8 +40,8 @@ namespace Neuron
   class BinaryFile : public FileSys
   {
     public:
-      [[nodiscard]] static byte_buffer_t ReadFile(const std::wstring& _fileName);
-      static bool WriteFile(const std::wstring& _fileName, const byte_buffer_t& _data);
+      [[nodiscard]] static ByteBuffer ReadFile(const std::wstring& _fileName);
+      static bool WriteFile(const std::wstring& _fileName, const ByteBuffer& _data);
   };
 
   // Text on disk is UTF-8. The wide overloads convert; the narrow ones hand the bytes over as they

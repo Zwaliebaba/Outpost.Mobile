@@ -4,7 +4,15 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
+  <Folder Name="/Build/">
+    <File Path="AGENTS.md" />
+    <File Path="Outpost.Compile.props" />
+    <File Path="Outpost.Toolset.props" />
+  </Folder>
   <Folder Name="/Tests/">
+    <Project Path="GameLogicTests/GameLogicTests.vcxproj">
+      <Platform Solution="*|ARM64" Project="x64" />
+    </Project>
     <Project Path="NeuronClientTests/NeuronClientTests.vcxproj">
       <Platform Solution="*|ARM64" Project="x64" />
     </Project>
@@ -15,6 +23,9 @@
       <Platform Solution="*|ARM64" Project="x64" />
     </Project>
   </Folder>
+  <Project Path="GameLogic/GameLogic.vcxproj" Id="7d4a1f36-2b58-4c0e-9a71-0f5d6c83be14">
+    <Platform Solution="*|ARM64" Project="x64" />
+  </Project>
   <Project Path="NeuronClient/NeuronClient.vcxproj" Id="4cfb6201-cce9-4f52-ac14-22449b28e6f2">
     <Platform Solution="*|ARM64" Project="x64" />
   </Project>

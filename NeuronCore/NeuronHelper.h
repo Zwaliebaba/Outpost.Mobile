@@ -72,7 +72,7 @@ namespace Neuron
     NonCopyable& operator=(const NonCopyable&) = delete;
   };
 
-  struct handle_closer
+  struct HandleCloser
   {
     void operator()(HANDLE h) const noexcept
     {
@@ -81,6 +81,6 @@ namespace Neuron
     }
   };
 
-  using ScopedHandle = std::unique_ptr<void, handle_closer>;
-  inline HANDLE safe_handle(HANDLE h) noexcept { return (h == INVALID_HANDLE_VALUE) ? nullptr : h; }
+  using ScopedHandle = std::unique_ptr<void, HandleCloser>;
+  inline HANDLE SafeHandle(HANDLE h) noexcept { return (h == INVALID_HANDLE_VALUE) ? nullptr : h; }
 }

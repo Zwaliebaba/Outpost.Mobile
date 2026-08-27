@@ -1,12 +1,28 @@
 #pragma once
 
+// The NeuronCore umbrella. Every project's pch.h reaches the engine through one of these three
+// umbrella headers -- NeuronCore.h, NeuronClient.h, NeuronServer.h -- so the Windows headers are
+// configured in exactly one place and in the one order that works.
+//
+// NeuronCore holds engine primitives with no game semantics in them: diagnostics, file IO, easing,
+// timing, mesh data, format parsers, and the declared client/server transport seam. Nothing here
+// knows what a ship is, and nothing here touches a graphics API.
+
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <cwchar>
+#include <exception>
+#include <format>
+#include <memory>
+#include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <unordered_map>
 #include <vector>
 
 // Use the C++ standard templated min/max
@@ -48,8 +64,13 @@
 using namespace winrt;
 
 #include "Debug.h"
-#include "FileSys.h"
 #include "NeuronHelper.h"
+#include "Ease.h"
+#include "FileSys.h"
+#include "FrameClock.h"
+#include "MeshData.h"
+#include "ObjParser.h"
+#include "Transport.h"
 
 using namespace Neuron;
 

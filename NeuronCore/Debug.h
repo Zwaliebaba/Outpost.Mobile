@@ -44,6 +44,16 @@ namespace Neuron
     __debugbreak();
     throw std::exception("Fatal Error");
   }
+
+  // There is no third error path. An HRESULT that had to succeed goes through
+  // winrt::check_hresult, a Win32 call that had to succeed through winrt::throw_last_error, and a
+  // broken invariant through ASSERT below. All three end up as one exception, caught once at the
+  // composition root, which is the only place that knows how to tell a person about it.
+  //
+  // Two deliberate exceptions to that. A capability *probe* -- SUCCEEDED on an optional feature,
+  // adapter enumeration, the debug layer -- is control flow, not error checking. And anything
+  // parsing content or configuration reports a diagnostic and fails closed rather than throwing:
+  // a malformed mesh is the author's mistake, not the program's.
 }
 
 #define ASSERT(expression)                   (void)((!!(expression)) || (Neuron::Fatal(_CRT_WIDE("Assert Failure")), 0))
