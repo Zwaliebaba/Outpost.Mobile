@@ -1,0 +1,30 @@
+<Solution>
+  <Configurations>
+    <Platform Name="ARM64" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/Tests/">
+    <Project Path="NeuronClientTests/NeuronClientTests.vcxproj">
+      <Platform Solution="*|ARM64" Project="x64" />
+    </Project>
+    <Project Path="NeuronCoreTests/NeuronCoreTests.vcxproj">
+      <Platform Solution="*|ARM64" Project="x64" />
+    </Project>
+    <Project Path="NeuronServerTests/NeuronServerTests.vcxproj">
+      <Platform Solution="*|ARM64" Project="x64" />
+    </Project>
+  </Folder>
+  <Project Path="NeuronClient/NeuronClient.vcxproj" Id="4cfb6201-cce9-4f52-ac14-22449b28e6f2">
+    <Platform Solution="*|ARM64" Project="x64" />
+  </Project>
+  <Project Path="NeuronCore/NeuronCore.vcxproj" Id="b10d634c-43a1-4101-b5e6-788825429aab">
+    <Platform Solution="*|ARM64" Project="x64" />
+  </Project>
+  <Project Path="NeuronServer/NeuronServer.vcxproj" Id="512284cd-a17a-4816-8e0a-9e9dadbfc464">
+    <Platform Solution="*|ARM64" Project="x64" />
+  </Project>
+  <Project Path="Outpost/Outpost.vcxproj" Id="e901e26f-65e6-494a-aad7-e58e089a729c">
+    <Deploy />
+  </Project>
+</Solution>

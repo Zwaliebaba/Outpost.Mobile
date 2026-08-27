@@ -1,18 +1,16 @@
+#include "pch.h"
 #include "Gfx.h"
 
 #include <d3dcompiler.h>
-#include <wincodec.h>
 
 #include <algorithm>
 #include <cmath>
-#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include <utility>
 
 namespace
 {
-
 constexpr int FIRST_GLYPH = 32;
 constexpr int LAST_GLYPH = 126;
 constexpr int GLYPH_COLS = 16;
@@ -22,7 +20,7 @@ constexpr int FONT_HEIGHT_PX = 16;
 constexpr DXGI_FORMAT BACK_BUFFER_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
 constexpr DXGI_FORMAT DEPTH_FORMAT = DXGI_FORMAT_D32_FLOAT;
 
-const char* const TEXT_SHADER = R"HLSL(
+const auto TEXT_SHADER = R"HLSL(
 cbuffer Root : register(b0)
 {
   float2 invViewportPx;
@@ -52,7 +50,7 @@ float4 PsMain(VsOut i) : SV_Target
 
 // Ships and ground share this. `row_major` matches XMFLOAT4X4's storage so mul(rowVector, matrix)
 // means what DirectXMath means by it.
-const char* const SCENE_SHADER = R"HLSL(
+const auto SCENE_SHADER = R"HLSL(
 cbuffer VsConstants : register(b0)
 {
   row_major float4x4 world;
@@ -114,7 +112,7 @@ float4 PsMain(VsOut i) : SV_Target
 // Rings, order markers and thruster glows. Shares the scene root signature -- 32 vertex DWORDs of
 // matrices, 20 pixel DWORDs -- and reads the same unit quad, shaping it entirely in the pixel
 // shader so radius, thickness and falloff are all just constants.
-const char* const DECAL_SHADER = R"HLSL(
+const auto DECAL_SHADER = R"HLSL(
 cbuffer VsConstants : register(b0)
 {
   row_major float4x4 world;
@@ -206,47 +204,34 @@ D3D12_RESOURCE_BARRIER Transition(ID3D12Resource* _res, D3D12_RESOURCE_STATES _b
   return b;
 }
 
-ComPtr<ID3DBlob> CompileShader(const char* _source, const char* _entry, const char* _target)
+com_ptr<ID3DBlob> CompileShader(const char* _source, const char* _entry, const char* _target)
 {
   UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
 #ifndef NDEBUG
   flags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
 #endif
-  ComPtr<ID3DBlob> code;
-  ComPtr<ID3DBlob> errors;
-  const HRESULT hr =
-      D3DCompile(_source, std::strlen(_source), "ShipFeel", nullptr, nullptr, _entry, _target, flags, 0, &code, &errors);
+  com_ptr<ID3DBlob> code;
+  com_ptr<ID3DBlob> errors;
+  const HRESULT hr = D3DCompile(_source, std::strlen(_source), "ShipFeel", nullptr, nullptr, _entry, _target, flags, 0, code.put(),
+                                errors.put());
   if (FAILED(hr))
   {
-    DebugPrintf("shader %s failed: %s\n", _entry, errors ? static_cast<const char*>(errors->GetBufferPointer()) : "(no message)");
+    DebugTrace("shader {} failed: {}\n", _entry, errors ? static_cast<const char*>(errors->GetBufferPointer()) : "(no message)");
     FatalHr(_entry, hr);
   }
   return code;
 }
-
 } // namespace
 
 void FatalHr(const char* _what, HRESULT _hr)
 {
   char msg[512] = {};
   std::snprintf(msg, sizeof(msg), "Fatal: %s\nHRESULT 0x%08X", _what, static_cast<unsigned>(_hr));
-  DebugPrintf("%s\n", msg);
+  DebugTrace("{}\n", msg);
   wchar_t wide[512] = {};
   MultiByteToWideChar(CP_UTF8, 0, msg, -1, wide, 512);
   MessageBoxW(nullptr, wide, L"ShipFeel", MB_OK | MB_ICONERROR);
   ExitProcess(1);
-}
-
-void DebugPrintf(const char* _fmt, ...)
-{
-  char msg[1024] = {};
-  va_list args;
-  va_start(args, _fmt);
-  std::vsnprintf(msg, sizeof(msg), _fmt, args);
-  va_end(args);
-  wchar_t wide[1024] = {};
-  MultiByteToWideChar(CP_UTF8, 0, msg, -1, wide, 1024);
-  OutputDebugStringW(wide);
 }
 
 void Gfx::Init(HWND _hwnd)
@@ -254,7 +239,7 @@ void Gfx::Init(HWND _hwnd)
   UINT factoryFlags = 0;
 #ifndef NDEBUG
   {
-    ComPtr<ID3D12Debug> debug;
+    com_ptr<ID3D12Debug> debug;
     if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug))))
     {
       debug->EnableDebugLayer();
@@ -263,38 +248,32 @@ void Gfx::Init(HWND _hwnd)
   }
 #endif
 
-  CHECK_HR(CreateDXGIFactory2(factoryFlags, IID_PPV_ARGS(&m_factory)));
+  check_hresult(CreateDXGIFactory2(factoryFlags, IID_PPV_ARGS(&m_factory)));
 
-  ComPtr<IDXGIAdapter1> adapter;
+  com_ptr<IDXGIAdapter1> adapter;
   for (UINT i = 0;; ++i)
   {
     if (m_factory->EnumAdapterByGpuPreference(i, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&adapter)) == DXGI_ERROR_NOT_FOUND)
-    {
       break;
-    }
     DXGI_ADAPTER_DESC1 ad = {};
     adapter->GetDesc1(&ad);
     if ((ad.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0)
-    {
       continue;
-    }
-    if (SUCCEEDED(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_device))))
+    if (SUCCEEDED(D3D12CreateDevice(adapter.get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_device))))
     {
-      DebugPrintf("adapter: %S\n", ad.Description);
+      DebugTrace(L"adapter: {}\n", ad.Description);
       break;
     }
   }
   if (!m_device)
-  {
     FatalHr("no D3D12 feature level 11_0 adapter", DXGI_ERROR_NOT_FOUND);
-  }
 
   D3D12_COMMAND_QUEUE_DESC qd = {};
   qd.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
   qd.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
   qd.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
   qd.NodeMask = 0;
-  CHECK_HR(m_device->CreateCommandQueue(&qd, IID_PPV_ARGS(&m_queue)));
+  check_hresult(m_device->CreateCommandQueue(&qd, IID_PPV_ARGS(&m_queue)));
 
   DXGI_SWAP_CHAIN_DESC1 scd = {};
   scd.Width = 0; // take the client area
@@ -310,40 +289,36 @@ void Gfx::Init(HWND _hwnd)
   scd.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
   scd.Flags = 0;
 
-  ComPtr<IDXGISwapChain1> swapChain1;
-  CHECK_HR(m_factory->CreateSwapChainForHwnd(m_queue.Get(), _hwnd, &scd, nullptr, nullptr, &swapChain1));
-  CHECK_HR(m_factory->MakeWindowAssociation(_hwnd, DXGI_MWA_NO_ALT_ENTER)); // windowed only, no exclusive mode
-  CHECK_HR(swapChain1.As(&m_swapChain));
+  com_ptr<IDXGISwapChain1> swapChain1;
+  check_hresult(m_factory->CreateSwapChainForHwnd(m_queue.get(), _hwnd, &scd, nullptr, nullptr, swapChain1.put()));
+  check_hresult(m_factory->MakeWindowAssociation(_hwnd, DXGI_MWA_NO_ALT_ENTER)); // windowed only, no exclusive mode
+  swapChain1.as(m_swapChain);
 
   D3D12_DESCRIPTOR_HEAP_DESC hd = {};
   hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
   hd.NumDescriptors = FRAME_COUNT;
   hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
   hd.NodeMask = 0;
-  CHECK_HR(m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_rtvHeap)));
+  check_hresult(m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_rtvHeap)));
   m_rtvStride = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
   hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
   hd.NumDescriptors = 1;
-  CHECK_HR(m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_dsvHeap)));
+  check_hresult(m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_dsvHeap)));
 
   hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
   hd.NumDescriptors = 1; // slot 0: the font atlas
   hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-  CHECK_HR(m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_srvHeap)));
+  check_hresult(m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_srvHeap)));
 
   for (UINT i = 0; i < FRAME_COUNT; ++i)
-  {
-    CHECK_HR(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_allocators[i])));
-  }
-  CHECK_HR(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_allocators[0].Get(), nullptr, IID_PPV_ARGS(&m_cmd)));
+    check_hresult(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_allocators[i])));
+  check_hresult(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_allocators[0].get(), nullptr, IID_PPV_ARGS(&m_cmd)));
 
-  CHECK_HR(m_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence)));
+  check_hresult(m_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence)));
   m_fenceEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
   if (!m_fenceEvent)
-  {
     FatalHr("CreateEventW", HRESULT_FROM_WIN32(GetLastError()));
-  }
 
   CreateSizedResources();
   CreateTextPipeline();
@@ -353,11 +328,11 @@ void Gfx::Init(HWND _hwnd)
   for (UINT i = 0; i < FRAME_COUNT; ++i)
   {
     const D3D12_HEAP_PROPERTIES hp = HeapProps(D3D12_HEAP_TYPE_UPLOAD);
-    const D3D12_RESOURCE_DESC rd = BufferDesc(UINT64(MAX_TEXT_VERTS) * sizeof(TextVertex));
-    CHECK_HR(m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                                               IID_PPV_ARGS(&m_textVb[i])));
+    const D3D12_RESOURCE_DESC rd = BufferDesc(static_cast<UINT64>(MAX_TEXT_VERTS) * sizeof(TextVertex));
+    check_hresult(m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                                                    IID_PPV_ARGS(&m_textVb[i])));
     D3D12_RANGE noRead = {0, 0};
-    CHECK_HR(m_textVb[i]->Map(0, &noRead, reinterpret_cast<void**>(&m_textVbCpu[i]))); // mapped for the whole run
+    check_hresult(m_textVb[i]->Map(0, &noRead, reinterpret_cast<void**>(&m_textVbCpu[i]))); // mapped for the whole run
   }
 
   BakeFontAtlas(); // records into m_cmd, then executes and waits
@@ -367,9 +342,7 @@ void Gfx::Init(HWND _hwnd)
 void Gfx::Shutdown()
 {
   if (m_device)
-  {
     WaitForGpu();
-  }
   if (m_fenceEvent)
   {
     CloseHandle(m_fenceEvent);
@@ -380,15 +353,15 @@ void Gfx::Shutdown()
 void Gfx::CreateSizedResources()
 {
   DXGI_SWAP_CHAIN_DESC1 scd = {};
-  CHECK_HR(m_swapChain->GetDesc1(&scd));
+  check_hresult(m_swapChain->GetDesc1(&scd));
   m_widthPx = scd.Width;
   m_heightPx = scd.Height;
 
   D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
   for (UINT i = 0; i < FRAME_COUNT; ++i)
   {
-    CHECK_HR(m_swapChain->GetBuffer(i, IID_PPV_ARGS(&m_backBuffers[i])));
-    m_device->CreateRenderTargetView(m_backBuffers[i].Get(), nullptr, rtv);
+    check_hresult(m_swapChain->GetBuffer(i, IID_PPV_ARGS(&m_backBuffers[i])));
+    m_device->CreateRenderTargetView(m_backBuffers[i].get(), nullptr, rtv);
     rtv.ptr += m_rtvStride;
   }
 
@@ -411,58 +384,48 @@ void Gfx::CreateSizedResources()
   clear.DepthStencil.Stencil = 0;
 
   const D3D12_HEAP_PROPERTIES hp = HeapProps(D3D12_HEAP_TYPE_DEFAULT);
-  CHECK_HR(m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &dd, D3D12_RESOURCE_STATE_DEPTH_WRITE, &clear,
-                                             IID_PPV_ARGS(&m_depth)));
+  check_hresult(m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &dd, D3D12_RESOURCE_STATE_DEPTH_WRITE, &clear,
+                                                  IID_PPV_ARGS(&m_depth)));
 
   D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
   dsvDesc.Format = DEPTH_FORMAT;
   dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
   dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
-  m_device->CreateDepthStencilView(m_depth.Get(), &dsvDesc, m_dsvHeap->GetCPUDescriptorHandleForHeapStart());
+  m_device->CreateDepthStencilView(m_depth.get(), &dsvDesc, m_dsvHeap->GetCPUDescriptorHandleForHeapStart());
 }
 
 void Gfx::ReleaseSizedResources()
 {
   for (UINT i = 0; i < FRAME_COUNT; ++i)
-  {
-    m_backBuffers[i].Reset();
-  }
-  m_depth.Reset();
+    m_backBuffers[i] = nullptr;
+  m_depth = nullptr;
 }
 
 void Gfx::Resize(UINT _widthPx, UINT _heightPx)
 {
   if (!m_device || _widthPx == 0 || _heightPx == 0)
-  {
     return;
-  }
   if (_widthPx == m_widthPx && _heightPx == m_heightPx)
-  {
     return;
-  }
   WaitForGpu();
   ReleaseSizedResources();
-  CHECK_HR(m_swapChain->ResizeBuffers(FRAME_COUNT, _widthPx, _heightPx, BACK_BUFFER_FORMAT, 0));
+  check_hresult(m_swapChain->ResizeBuffers(FRAME_COUNT, _widthPx, _heightPx, BACK_BUFFER_FORMAT, 0));
   CreateSizedResources();
 }
 
 void Gfx::WaitForGpu()
 {
   if (!m_queue || !m_fence)
-  {
     return;
-  }
   const UINT64 target = ++m_fenceNext;
-  CHECK_HR(m_queue->Signal(m_fence.Get(), target));
+  check_hresult(m_queue->Signal(m_fence.get(), target));
   if (m_fence->GetCompletedValue() < target)
   {
-    CHECK_HR(m_fence->SetEventOnCompletion(target, m_fenceEvent));
+    check_hresult(m_fence->SetEventOnCompletion(target, m_fenceEvent));
     WaitForSingleObject(m_fenceEvent, INFINITE);
   }
   for (UINT i = 0; i < FRAME_COUNT; ++i)
-  {
     m_fenceValues[i] = target;
-  }
 }
 
 void Gfx::BeginFrame(Rgba _clear)
@@ -470,31 +433,31 @@ void Gfx::BeginFrame(Rgba _clear)
   m_frameIndex = m_swapChain->GetCurrentBackBufferIndex();
   if (m_fence->GetCompletedValue() < m_fenceValues[m_frameIndex])
   {
-    CHECK_HR(m_fence->SetEventOnCompletion(m_fenceValues[m_frameIndex], m_fenceEvent));
+    check_hresult(m_fence->SetEventOnCompletion(m_fenceValues[m_frameIndex], m_fenceEvent));
     WaitForSingleObject(m_fenceEvent, INFINITE);
   }
 
   m_textVerts.clear();
-  CHECK_HR(m_allocators[m_frameIndex]->Reset());
-  CHECK_HR(m_cmd->Reset(m_allocators[m_frameIndex].Get(), nullptr));
+  check_hresult(m_allocators[m_frameIndex]->Reset());
+  check_hresult(m_cmd->Reset(m_allocators[m_frameIndex].get(), nullptr));
 
-  const D3D12_RESOURCE_BARRIER toTarget =
-      Transition(m_backBuffers[m_frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+  const D3D12_RESOURCE_BARRIER toTarget = Transition(m_backBuffers[m_frameIndex].get(), D3D12_RESOURCE_STATE_PRESENT,
+                                                     D3D12_RESOURCE_STATE_RENDER_TARGET);
   m_cmd->ResourceBarrier(1, &toTarget);
 
   D3D12_VIEWPORT vp = {};
   vp.TopLeftX = 0.0f;
   vp.TopLeftY = 0.0f;
-  vp.Width = float(m_widthPx);
-  vp.Height = float(m_heightPx);
+  vp.Width = static_cast<float>(m_widthPx);
+  vp.Height = static_cast<float>(m_heightPx);
   vp.MinDepth = 0.0f;
   vp.MaxDepth = 1.0f;
-  D3D12_RECT scissor = {0, 0, LONG(m_widthPx), LONG(m_heightPx)};
+  D3D12_RECT scissor = {0, 0, static_cast<LONG>(m_widthPx), static_cast<LONG>(m_heightPx)};
   m_cmd->RSSetViewports(1, &vp);
   m_cmd->RSSetScissorRects(1, &scissor);
 
   D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
-  rtv.ptr += SIZE_T(m_frameIndex) * m_rtvStride;
+  rtv.ptr += static_cast<SIZE_T>(m_frameIndex) * m_rtvStride;
   const D3D12_CPU_DESCRIPTOR_HANDLE dsv = m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
   m_cmd->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
   m_cmd->ClearRenderTargetView(rtv, &_clear.r, 0, nullptr);
@@ -504,7 +467,7 @@ void Gfx::BeginFrame(Rgba _clear)
 void Gfx::EndFrame()
 {
   D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
-  rtv.ptr += SIZE_T(m_frameIndex) * m_rtvStride;
+  rtv.ptr += static_cast<SIZE_T>(m_frameIndex) * m_rtvStride;
 
   if (!m_textVerts.empty())
   {
@@ -513,47 +476,35 @@ void Gfx::EndFrame()
 
     D3D12_VERTEX_BUFFER_VIEW vbv = {};
     vbv.BufferLocation = m_textVb[m_frameIndex]->GetGPUVirtualAddress();
-    vbv.SizeInBytes = UINT(count * sizeof(TextVertex));
+    vbv.SizeInBytes = static_cast<UINT>(count * sizeof(TextVertex));
     vbv.StrideInBytes = sizeof(TextVertex);
 
-    const float invViewport[2] = {1.0f / float(m_widthPx), 1.0f / float(m_heightPx)};
-    ID3D12DescriptorHeap* heaps[] = {m_srvHeap.Get()};
+    const float invViewport[2] = {1.0f / static_cast<float>(m_widthPx), 1.0f / static_cast<float>(m_heightPx)};
+    ID3D12DescriptorHeap* heaps[] = {m_srvHeap.get()};
 
     m_cmd->OMSetRenderTargets(1, &rtv, FALSE, nullptr); // HUD sits on top, no depth
-    m_cmd->SetPipelineState(m_textPso.Get());
-    m_cmd->SetGraphicsRootSignature(m_textRs.Get());
+    m_cmd->SetPipelineState(m_textPso.get());
+    m_cmd->SetGraphicsRootSignature(m_textRs.get());
     m_cmd->SetDescriptorHeaps(1, heaps);
     m_cmd->SetGraphicsRoot32BitConstants(0, 2, invViewport, 0);
     m_cmd->SetGraphicsRootDescriptorTable(1, m_srvHeap->GetGPUDescriptorHandleForHeapStart());
     m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     m_cmd->IASetVertexBuffers(0, 1, &vbv);
-    m_cmd->DrawInstanced(UINT(count), 1, 0, 0);
+    m_cmd->DrawInstanced(static_cast<UINT>(count), 1, 0, 0);
   }
 
-  if (m_captureRequested)
-  {
-    RecordCaptureCopy();
-  }
-
-  const D3D12_RESOURCE_STATES from = m_captureRequested ? D3D12_RESOURCE_STATE_COPY_SOURCE : D3D12_RESOURCE_STATE_RENDER_TARGET;
-  const D3D12_RESOURCE_BARRIER toPresent = Transition(m_backBuffers[m_frameIndex].Get(), from, D3D12_RESOURCE_STATE_PRESENT);
+  const D3D12_RESOURCE_BARRIER toPresent =
+    Transition(m_backBuffers[m_frameIndex].get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
   m_cmd->ResourceBarrier(1, &toPresent);
-  CHECK_HR(m_cmd->Close());
+  check_hresult(m_cmd->Close());
 
-  ID3D12CommandList* lists[] = {m_cmd.Get()};
+  ID3D12CommandList* lists[] = {m_cmd.get()};
   m_queue->ExecuteCommandLists(1, lists);
-  CHECK_HR(m_swapChain->Present(1, 0)); // vsync on, always
+  check_hresult(m_swapChain->Present(1, 0)); // vsync on, always
 
   const UINT64 target = ++m_fenceNext;
-  CHECK_HR(m_queue->Signal(m_fence.Get(), target));
+  check_hresult(m_queue->Signal(m_fence.get(), target));
   m_fenceValues[m_frameIndex] = target;
-
-  if (m_captureRequested)
-  {
-    WaitForGpu(); // the readback has to have landed before it can be encoded
-    WriteCapturePng();
-    m_captureRequested = false;
-  }
 }
 
 void Gfx::BakeFontAtlas()
@@ -591,24 +542,22 @@ void Gfx::BakeFontAtlas()
   SetTextAlign(dc, TA_LEFT | TA_TOP);
   for (int i = 0; i <= LAST_GLYPH - FIRST_GLYPH; ++i)
   {
-    const wchar_t ch = wchar_t(FIRST_GLYPH + i);
+    const wchar_t ch = static_cast<wchar_t>(FIRST_GLYPH + i);
     TextOutW(dc, (i % GLYPH_COLS) * cellW, (i / GLYPH_COLS) * cellH, &ch, 1);
   }
   // 95 printable glyphs sit in 96 cells. Fill the spare one solid so untextured screen quads --
   // selection boxes, order lines -- can share the text pipeline instead of needing their own.
-  const int solidIndex = LAST_GLYPH - FIRST_GLYPH + 1;
-  const int solidCol = solidIndex % GLYPH_COLS;
-  const int solidRow = solidIndex / GLYPH_COLS;
+  constexpr int solidIndex = LAST_GLYPH - FIRST_GLYPH + 1;
+  constexpr int solidCol = solidIndex % GLYPH_COLS;
+  constexpr int solidRow = solidIndex / GLYPH_COLS;
   PatBlt(dc, solidCol * cellW, solidRow * cellH, cellW, cellH, WHITENESS);
   GdiFlush();
 
   // GDI leaves alpha at zero, so take coverage from the white-on-black luminance.
-  std::vector<uint8_t> coverage(size_t(atlasW) * size_t(atlasH));
-  const uint8_t* src = static_cast<const uint8_t*>(bits);
+  std::vector<uint8_t> coverage(static_cast<size_t>(atlasW) * static_cast<size_t>(atlasH));
+  auto src = static_cast<const uint8_t*>(bits);
   for (size_t i = 0; i < coverage.size(); ++i)
-  {
     coverage[i] = std::max({src[i * 4 + 0], src[i * 4 + 1], src[i * 4 + 2]});
-  }
 
   SelectObject(dc, oldBmp);
   SelectObject(dc, oldFont);
@@ -616,20 +565,20 @@ void Gfx::BakeFontAtlas()
   DeleteObject(font);
   DeleteDC(dc);
 
-  m_cellWPx = float(cellW);
-  m_cellHPx = float(cellH);
-  m_advancePx = float(tm.tmAveCharWidth); // fixed pitch, so this is the true advance
-  m_atlasWPx = float(atlasW);
-  m_atlasHPx = float(atlasH);
-  m_solidU = (float(solidCol) + 0.5f) * float(cellW) / float(atlasW);
-  m_solidV = (float(solidRow) + 0.5f) * float(cellH) / float(atlasH);
-  DebugPrintf("font atlas %dx%d, cell %dx%d, advance %d\n", atlasW, atlasH, cellW, cellH, tm.tmAveCharWidth);
+  m_cellWPx = static_cast<float>(cellW);
+  m_cellHPx = static_cast<float>(cellH);
+  m_advancePx = static_cast<float>(tm.tmAveCharWidth); // fixed pitch, so this is the true advance
+  m_atlasWPx = static_cast<float>(atlasW);
+  m_atlasHPx = static_cast<float>(atlasH);
+  m_solidU = (static_cast<float>(solidCol) + 0.5f) * static_cast<float>(cellW) / static_cast<float>(atlasW);
+  m_solidV = (static_cast<float>(solidRow) + 0.5f) * static_cast<float>(cellH) / static_cast<float>(atlasH);
+  DebugTrace("font atlas {}x{}, cell {}x{}, advance {}\n", atlasW, atlasH, cellW, cellH, tm.tmAveCharWidth);
 
   D3D12_RESOURCE_DESC td = {};
   td.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
   td.Alignment = 0;
-  td.Width = UINT64(atlasW);
-  td.Height = UINT(atlasH);
+  td.Width = static_cast<UINT64>(atlasW);
+  td.Height = static_cast<UINT>(atlasH);
   td.DepthOrArraySize = 1;
   td.MipLevels = 1;
   td.Format = DXGI_FORMAT_R8_UNORM;
@@ -639,8 +588,8 @@ void Gfx::BakeFontAtlas()
   td.Flags = D3D12_RESOURCE_FLAG_NONE;
 
   D3D12_HEAP_PROPERTIES hp = HeapProps(D3D12_HEAP_TYPE_DEFAULT);
-  CHECK_HR(m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &td, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
-                                             IID_PPV_ARGS(&m_fontTex)));
+  check_hresult(m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &td, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                                                  IID_PPV_ARGS(&m_fontTex)));
 
   D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint = {};
   UINT rowCount = 0;
@@ -648,33 +597,32 @@ void Gfx::BakeFontAtlas()
   UINT64 totalBytes = 0;
   m_device->GetCopyableFootprints(&td, 0, 1, 0, &footprint, &rowCount, &rowBytes, &totalBytes);
 
-  ComPtr<ID3D12Resource> upload;
+  com_ptr<ID3D12Resource> upload;
   hp = HeapProps(D3D12_HEAP_TYPE_UPLOAD);
   const D3D12_RESOURCE_DESC ud = BufferDesc(totalBytes);
-  CHECK_HR(m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &ud, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                                             IID_PPV_ARGS(&upload)));
+  check_hresult(m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &ud, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                                                  IID_PPV_ARGS(&upload)));
 
   uint8_t* dst = nullptr;
   D3D12_RANGE noRead = {0, 0};
-  CHECK_HR(upload->Map(0, &noRead, reinterpret_cast<void**>(&dst)));
+  check_hresult(upload->Map(0, &noRead, reinterpret_cast<void**>(&dst)));
   for (UINT row = 0; row < rowCount; ++row)
-  {
-    std::memcpy(dst + size_t(row) * footprint.Footprint.RowPitch, coverage.data() + size_t(row) * size_t(atlasW), size_t(rowBytes));
-  }
+    std::memcpy(dst + static_cast<size_t>(row) * footprint.Footprint.RowPitch,
+                coverage.data() + static_cast<size_t>(row) * static_cast<size_t>(atlasW), static_cast<size_t>(rowBytes));
   upload->Unmap(0, nullptr);
 
   D3D12_TEXTURE_COPY_LOCATION copyDst = {};
-  copyDst.pResource = m_fontTex.Get();
+  copyDst.pResource = m_fontTex.get();
   copyDst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
   copyDst.SubresourceIndex = 0;
   D3D12_TEXTURE_COPY_LOCATION copySrc = {};
-  copySrc.pResource = upload.Get();
+  copySrc.pResource = upload.get();
   copySrc.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
   copySrc.PlacedFootprint = footprint;
   m_cmd->CopyTextureRegion(&copyDst, 0, 0, 0, &copySrc, nullptr);
 
-  const D3D12_RESOURCE_BARRIER toShader =
-      Transition(m_fontTex.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+  const D3D12_RESOURCE_BARRIER toShader = Transition(m_fontTex.get(), D3D12_RESOURCE_STATE_COPY_DEST,
+                                                     D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
   m_cmd->ResourceBarrier(1, &toShader);
 
   D3D12_SHADER_RESOURCE_VIEW_DESC srv = {};
@@ -685,10 +633,10 @@ void Gfx::BakeFontAtlas()
   srv.Texture2D.MipLevels = 1;
   srv.Texture2D.PlaneSlice = 0;
   srv.Texture2D.ResourceMinLODClamp = 0.0f;
-  m_device->CreateShaderResourceView(m_fontTex.Get(), &srv, m_srvHeap->GetCPUDescriptorHandleForHeapStart());
+  m_device->CreateShaderResourceView(m_fontTex.get(), &srv, m_srvHeap->GetCPUDescriptorHandleForHeapStart());
 
-  CHECK_HR(m_cmd->Close());
-  ID3D12CommandList* lists[] = {m_cmd.Get()};
+  check_hresult(m_cmd->Close());
+  ID3D12CommandList* lists[] = {m_cmd.get()};
   m_queue->ExecuteCommandLists(1, lists);
   WaitForGpu(); // upload stays alive until here
 }
@@ -735,27 +683,26 @@ void Gfx::CreateTextPipeline()
   rsDesc.pStaticSamplers = &samp;
   rsDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
-  ComPtr<ID3DBlob> rsBlob;
-  ComPtr<ID3DBlob> rsError;
-  const HRESULT hr = D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1, &rsBlob, &rsError);
+  com_ptr<ID3DBlob> rsBlob;
+  com_ptr<ID3DBlob> rsError;
+  const HRESULT hr = D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1, rsBlob.put(), rsError.put());
   if (FAILED(hr))
   {
-    DebugPrintf("root signature: %s\n", rsError ? static_cast<const char*>(rsError->GetBufferPointer()) : "(no message)");
+    DebugTrace("root signature: {}\n", rsError ? static_cast<const char*>(rsError->GetBufferPointer()) : "(no message)");
     FatalHr("D3D12SerializeRootSignature", hr);
   }
-  CHECK_HR(m_device->CreateRootSignature(0, rsBlob->GetBufferPointer(), rsBlob->GetBufferSize(), IID_PPV_ARGS(&m_textRs)));
+  check_hresult(m_device->CreateRootSignature(0, rsBlob->GetBufferPointer(), rsBlob->GetBufferSize(), IID_PPV_ARGS(&m_textRs)));
 
-  ComPtr<ID3DBlob> vs = CompileShader(TEXT_SHADER, "VsMain", "vs_5_1");
-  ComPtr<ID3DBlob> ps = CompileShader(TEXT_SHADER, "PsMain", "ps_5_1");
+  com_ptr<ID3DBlob> vs = CompileShader(TEXT_SHADER, "VsMain", "vs_5_1");
+  com_ptr<ID3DBlob> ps = CompileShader(TEXT_SHADER, "PsMain", "ps_5_1");
 
-  const D3D12_INPUT_ELEMENT_DESC elements[] = {
-      {"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-      {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-      {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 16, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-  };
+  constexpr D3D12_INPUT_ELEMENT_DESC elements[] = {
+    {"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+    {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+    {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 16, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},};
 
   D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = {};
-  pso.pRootSignature = m_textRs.Get();
+  pso.pRootSignature = m_textRs.get();
   pso.VS.pShaderBytecode = vs->GetBufferPointer();
   pso.VS.BytecodeLength = vs->GetBufferSize();
   pso.PS.pShaderBytecode = ps->GetBufferPointer();
@@ -796,7 +743,7 @@ void Gfx::CreateTextPipeline()
   pso.DepthStencilState.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
   pso.DepthStencilState.BackFace = pso.DepthStencilState.FrontFace;
   pso.InputLayout.pInputElementDescs = elements;
-  pso.InputLayout.NumElements = UINT(std::size(elements));
+  pso.InputLayout.NumElements = static_cast<UINT>(std::size(elements));
   pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
   pso.NumRenderTargets = 1;
   pso.RTVFormats[0] = BACK_BUFFER_FORMAT;
@@ -805,7 +752,7 @@ void Gfx::CreateTextPipeline()
   pso.SampleDesc.Quality = 0;
   pso.NodeMask = 0;
   pso.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
-  CHECK_HR(m_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_textPso)));
+  check_hresult(m_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_textPso)));
 }
 
 void Gfx::DrawTextLine(float _xPx, float _yPx, float _scale, Rgba _colour, std::string_view _text)
@@ -832,13 +779,11 @@ void Gfx::DrawTextLine(float _xPx, float _yPx, float _scale, Rgba _colour, std::
       continue;
     }
     if (m_textVerts.size() + 6 > MAX_TEXT_VERTS)
-    {
       return;
-    }
 
     const int index = c - FIRST_GLYPH;
-    const float u0 = float(index % GLYPH_COLS) * uStep;
-    const float v0 = float(index / GLYPH_COLS) * vStep;
+    const float u0 = static_cast<float>(index % GLYPH_COLS) * uStep;
+    const float v0 = static_cast<float>(index / GLYPH_COLS) * vStep;
     const float u1 = u0 + uStep;
     const float v1 = v0 + vStep;
     const float x0 = penX;
@@ -879,26 +824,25 @@ void Gfx::CreateScenePipeline()
   rsDesc.pStaticSamplers = nullptr;
   rsDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
-  ComPtr<ID3DBlob> rsBlob;
-  ComPtr<ID3DBlob> rsError;
-  const HRESULT hr = D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1, &rsBlob, &rsError);
+  com_ptr<ID3DBlob> rsBlob;
+  com_ptr<ID3DBlob> rsError;
+  const HRESULT hr = D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1, rsBlob.put(), rsError.put());
   if (FAILED(hr))
   {
-    DebugPrintf("scene root signature: %s\n", rsError ? static_cast<const char*>(rsError->GetBufferPointer()) : "(no message)");
+    DebugTrace("scene root signature: {}\n", rsError ? static_cast<const char*>(rsError->GetBufferPointer()) : "(no message)");
     FatalHr("D3D12SerializeRootSignature (scene)", hr);
   }
-  CHECK_HR(m_device->CreateRootSignature(0, rsBlob->GetBufferPointer(), rsBlob->GetBufferSize(), IID_PPV_ARGS(&m_sceneRs)));
+  check_hresult(m_device->CreateRootSignature(0, rsBlob->GetBufferPointer(), rsBlob->GetBufferSize(), IID_PPV_ARGS(&m_sceneRs)));
 
-  ComPtr<ID3DBlob> vs = CompileShader(SCENE_SHADER, "VsMain", "vs_5_1");
-  ComPtr<ID3DBlob> ps = CompileShader(SCENE_SHADER, "PsMain", "ps_5_1");
+  com_ptr<ID3DBlob> vs = CompileShader(SCENE_SHADER, "VsMain", "vs_5_1");
+  com_ptr<ID3DBlob> ps = CompileShader(SCENE_SHADER, "PsMain", "ps_5_1");
 
-  const D3D12_INPUT_ELEMENT_DESC elements[] = {
-      {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-      {"COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-  };
+  constexpr D3D12_INPUT_ELEMENT_DESC elements[] = {
+    {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+    {"COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},};
 
   D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = {};
-  pso.pRootSignature = m_sceneRs.Get();
+  pso.pRootSignature = m_sceneRs.get();
   pso.VS.pShaderBytecode = vs->GetBufferPointer();
   pso.VS.BytecodeLength = vs->GetBufferSize();
   pso.PS.pShaderBytecode = ps->GetBufferPointer();
@@ -941,7 +885,7 @@ void Gfx::CreateScenePipeline()
   pso.DepthStencilState.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
   pso.DepthStencilState.BackFace = pso.DepthStencilState.FrontFace;
   pso.InputLayout.pInputElementDescs = elements;
-  pso.InputLayout.NumElements = UINT(std::size(elements));
+  pso.InputLayout.NumElements = static_cast<UINT>(std::size(elements));
   pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
   pso.NumRenderTargets = 1;
   pso.RTVFormats[0] = BACK_BUFFER_FORMAT;
@@ -950,63 +894,58 @@ void Gfx::CreateScenePipeline()
   pso.SampleDesc.Quality = 0;
   pso.NodeMask = 0;
   pso.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
-  CHECK_HR(m_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_scenePso)));
+  check_hresult(m_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_scenePso)));
 }
 
 UINT Gfx::UploadMesh(const std::vector<SceneVertex>& _verts)
 {
   GpuMesh mesh = {};
-  const UINT64 bytes = UINT64(_verts.size()) * sizeof(SceneVertex);
+  const UINT64 bytes = static_cast<UINT64>(_verts.size()) * sizeof(SceneVertex);
   if (bytes == 0)
   {
     m_meshes.push_back(std::move(mesh));
-    return UINT(m_meshes.size() - 1);
+    return static_cast<UINT>(m_meshes.size() - 1);
   }
 
   const D3D12_HEAP_PROPERTIES hp = HeapProps(D3D12_HEAP_TYPE_UPLOAD);
   const D3D12_RESOURCE_DESC rd = BufferDesc(bytes);
-  CHECK_HR(m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                                             IID_PPV_ARGS(&mesh.vb)));
+  check_hresult(m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                                                  IID_PPV_ARGS(&mesh.vb)));
 
   uint8_t* dst = nullptr;
   D3D12_RANGE noRead = {0, 0};
-  CHECK_HR(mesh.vb->Map(0, &noRead, reinterpret_cast<void**>(&dst)));
-  std::memcpy(dst, _verts.data(), size_t(bytes));
+  check_hresult(mesh.vb->Map(0, &noRead, reinterpret_cast<void**>(&dst)));
+  std::memcpy(dst, _verts.data(), static_cast<size_t>(bytes));
   mesh.vb->Unmap(0, nullptr);
 
   mesh.vbv.BufferLocation = mesh.vb->GetGPUVirtualAddress();
-  mesh.vbv.SizeInBytes = UINT(bytes);
+  mesh.vbv.SizeInBytes = static_cast<UINT>(bytes);
   mesh.vbv.StrideInBytes = sizeof(SceneVertex);
-  mesh.vertexCount = UINT(_verts.size());
+  mesh.vertexCount = static_cast<UINT>(_verts.size());
   m_meshes.push_back(std::move(mesh));
-  return UINT(m_meshes.size() - 1);
+  return static_cast<UINT>(m_meshes.size() - 1);
 }
 
 void Gfx::BeginScene(const SceneFrame& _frame)
 {
-  m_cmd->SetPipelineState(m_scenePso.Get());
-  m_cmd->SetGraphicsRootSignature(m_sceneRs.Get());
+  m_cmd->SetPipelineState(m_scenePso.get());
+  m_cmd->SetGraphicsRootSignature(m_sceneRs.get());
   m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
   // The world matrix occupies DWORDs 0..15 and changes per draw; viewProj is set once here.
   m_cmd->SetGraphicsRoot32BitConstants(0, 16, &_frame.viewProj, 16);
 
   // Everything after baseColour, which is also per draw.
-  const float shading[16] = {
-      _frame.lightDir.x,      _frame.lightDir.y,       _frame.lightDir.z,      _frame.ambient,
-      _frame.gridColour.r,    _frame.gridColour.g,     _frame.gridColour.b,    _frame.gridColour.a,
-      _frame.gridSpacing,     _frame.gridLineWidthPx,  _frame.gridFadeDistance, 0.0f,
-      _frame.cameraPos.x,     _frame.cameraPos.y,      _frame.cameraPos.z,     0.0f,
-  };
+  const float shading[16] = {_frame.lightDir.x, _frame.lightDir.y, _frame.lightDir.z, _frame.ambient, _frame.gridColour.r,
+                             _frame.gridColour.g, _frame.gridColour.b, _frame.gridColour.a, _frame.gridSpacing, _frame.gridLineWidthPx,
+                             _frame.gridFadeDistance, 0.0f, _frame.cameraPos.x, _frame.cameraPos.y, _frame.cameraPos.z, 0.0f,};
   m_cmd->SetGraphicsRoot32BitConstants(1, 16, shading, 4);
 }
 
 void Gfx::DrawMesh(UINT _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _baseColour, float _materialMix, bool _isGround)
 {
   if (_mesh >= m_meshes.size() || m_meshes[_mesh].vertexCount == 0)
-  {
     return;
-  }
   const GpuMesh& mesh = m_meshes[_mesh];
   const float base[4] = {_baseColour.r, _baseColour.g, _baseColour.b, _materialMix};
   const float mode = _isGround ? 1.0f : 0.0f;
@@ -1021,9 +960,7 @@ void Gfx::DrawMesh(UINT _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _baseColo
 void Gfx::DrawScreenRect(float _x0Px, float _y0Px, float _x1Px, float _y1Px, Rgba _colour)
 {
   if (m_textVerts.size() + 6 > MAX_TEXT_VERTS)
-  {
     return;
-  }
   const float u = m_solidU;
   const float v = m_solidV;
   m_textVerts.push_back({_x0Px, _y0Px, u, v, _colour});
@@ -1040,9 +977,7 @@ void Gfx::DrawScreenLine(float _x0Px, float _y0Px, float _x1Px, float _y1Px, flo
   const float dy = _y1Px - _y0Px;
   const float length = std::sqrt(dx * dx + dy * dy);
   if (length < 1e-4f || m_textVerts.size() + 6 > MAX_TEXT_VERTS)
-  {
     return;
-  }
   const float halfX = -dy / length * _thicknessPx * 0.5f;
   const float halfY = dx / length * _thicknessPx * 0.5f;
   const float u = m_solidU;
@@ -1057,16 +992,15 @@ void Gfx::DrawScreenLine(float _x0Px, float _y0Px, float _x1Px, float _y1Px, flo
 
 void Gfx::CreateDecalPipelines()
 {
-  ComPtr<ID3DBlob> vs = CompileShader(DECAL_SHADER, "VsMain", "vs_5_1");
-  ComPtr<ID3DBlob> ps = CompileShader(DECAL_SHADER, "PsMain", "ps_5_1");
+  com_ptr<ID3DBlob> vs = CompileShader(DECAL_SHADER, "VsMain", "vs_5_1");
+  com_ptr<ID3DBlob> ps = CompileShader(DECAL_SHADER, "PsMain", "ps_5_1");
 
-  const D3D12_INPUT_ELEMENT_DESC elements[] = {
-      {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-      {"COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-  };
+  constexpr D3D12_INPUT_ELEMENT_DESC elements[] = {
+    {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+    {"COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},};
 
   D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = {};
-  pso.pRootSignature = m_sceneRs.Get(); // same 32 + 20 root constants as the scene pass
+  pso.pRootSignature = m_sceneRs.get(); // same 32 + 20 root constants as the scene pass
   pso.VS.pShaderBytecode = vs->GetBufferPointer();
   pso.VS.BytecodeLength = vs->GetBufferSize();
   pso.PS.pShaderBytecode = ps->GetBufferPointer();
@@ -1109,7 +1043,7 @@ void Gfx::CreateDecalPipelines()
   pso.DepthStencilState.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
   pso.DepthStencilState.BackFace = pso.DepthStencilState.FrontFace;
   pso.InputLayout.pInputElementDescs = elements;
-  pso.InputLayout.NumElements = UINT(std::size(elements));
+  pso.InputLayout.NumElements = static_cast<UINT>(std::size(elements));
   pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
   pso.NumRenderTargets = 1;
   pso.RTVFormats[0] = BACK_BUFFER_FORMAT;
@@ -1118,16 +1052,16 @@ void Gfx::CreateDecalPipelines()
   pso.SampleDesc.Quality = 0;
   pso.NodeMask = 0;
   pso.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
-  CHECK_HR(m_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_decalPso)));
+  check_hresult(m_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_decalPso)));
 
   // Same shader, added rather than blended, for thruster glow and trail.
   pso.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
-  CHECK_HR(m_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_glowPso)));
+  check_hresult(m_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_glowPso)));
 }
 
 void Gfx::BeginDecals(const DirectX::XMFLOAT4X4& _viewProj, const DirectX::XMFLOAT3& _cameraPos)
 {
-  m_cmd->SetGraphicsRootSignature(m_sceneRs.Get());
+  m_cmd->SetGraphicsRootSignature(m_sceneRs.get());
   m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
   m_cmd->SetGraphicsRoot32BitConstants(0, 16, &_viewProj, 16);
   const float eye[4] = {_cameraPos.x, _cameraPos.y, _cameraPos.z, 0.0f};
@@ -1137,12 +1071,10 @@ void Gfx::BeginDecals(const DirectX::XMFLOAT4X4& _viewProj, const DirectX::XMFLO
 void Gfx::DrawDecal(UINT _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _colour, float _thickness, float _fill)
 {
   if (_mesh >= m_meshes.size() || m_meshes[_mesh].vertexCount == 0 || _colour.a <= 0.001f)
-  {
     return;
-  }
   const float colour[4] = {_colour.r, _colour.g, _colour.b, _colour.a};
   const float params[4] = {_thickness, _fill, 0.0f, 0.0f};
-  m_cmd->SetPipelineState(m_decalPso.Get());
+  m_cmd->SetPipelineState(m_decalPso.get());
   m_cmd->SetGraphicsRoot32BitConstants(0, 16, &_world, 0);
   m_cmd->SetGraphicsRoot32BitConstants(1, 4, colour, 0);
   m_cmd->SetGraphicsRoot32BitConstants(1, 4, params, 4);
@@ -1153,112 +1085,13 @@ void Gfx::DrawDecal(UINT _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _colour,
 void Gfx::DrawGlow(UINT _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _colour, float _falloff)
 {
   if (_mesh >= m_meshes.size() || m_meshes[_mesh].vertexCount == 0 || _colour.a <= 0.001f)
-  {
     return;
-  }
   const float colour[4] = {_colour.r, _colour.g, _colour.b, _colour.a};
   const float params[4] = {0.0f, _falloff, 1.0f, 0.0f};
-  m_cmd->SetPipelineState(m_glowPso.Get());
+  m_cmd->SetPipelineState(m_glowPso.get());
   m_cmd->SetGraphicsRoot32BitConstants(0, 16, &_world, 0);
   m_cmd->SetGraphicsRoot32BitConstants(1, 4, colour, 0);
   m_cmd->SetGraphicsRoot32BitConstants(1, 4, params, 4);
   m_cmd->IASetVertexBuffers(0, 1, &m_meshes[_mesh].vbv);
   m_cmd->DrawInstanced(m_meshes[_mesh].vertexCount, 1, 0, 0);
-}
-
-void Gfx::RequestCapture(const std::wstring& _pngPath)
-{
-  m_capturePath = _pngPath;
-  m_captureRequested = true;
-}
-
-void Gfx::RecordCaptureCopy()
-{
-  const D3D12_RESOURCE_DESC backBuffer = m_backBuffers[m_frameIndex]->GetDesc();
-  UINT64 totalBytes = 0;
-  m_device->GetCopyableFootprints(&backBuffer, 0, 1, 0, &m_captureFootprint, &m_captureRows, nullptr, &totalBytes);
-
-  const D3D12_HEAP_PROPERTIES hp = HeapProps(D3D12_HEAP_TYPE_READBACK);
-  const D3D12_RESOURCE_DESC rd = BufferDesc(totalBytes);
-  m_captureReadback.Reset();
-  CHECK_HR(m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
-                                             IID_PPV_ARGS(&m_captureReadback)));
-
-  const D3D12_RESOURCE_BARRIER toCopy =
-      Transition(m_backBuffers[m_frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
-  m_cmd->ResourceBarrier(1, &toCopy);
-
-  D3D12_TEXTURE_COPY_LOCATION destination = {};
-  destination.pResource = m_captureReadback.Get();
-  destination.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-  destination.PlacedFootprint = m_captureFootprint;
-  D3D12_TEXTURE_COPY_LOCATION source = {};
-  source.pResource = m_backBuffers[m_frameIndex].Get();
-  source.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-  source.SubresourceIndex = 0;
-  m_cmd->CopyTextureRegion(&destination, 0, 0, 0, &source, nullptr);
-  // The caller transitions COPY_SOURCE straight to PRESENT.
-}
-
-void Gfx::WriteCapturePng()
-{
-  const UINT width = m_captureFootprint.Footprint.Width;
-  const UINT height = m_captureFootprint.Footprint.Height;
-  const UINT rowPitch = m_captureFootprint.Footprint.RowPitch;
-
-  uint8_t* mapped = nullptr;
-  D3D12_RANGE readRange = {0, SIZE_T(rowPitch) * SIZE_T(m_captureRows)};
-  if (FAILED(m_captureReadback->Map(0, &readRange, reinterpret_cast<void**>(&mapped))))
-  {
-    DebugPrintf("capture: could not map the readback buffer\n");
-    return;
-  }
-
-  // The back buffer is RGBA and the PNG encoder wants BGRA, and the readback rows are padded to
-  // 256 bytes, so repack into a tight buffer. Alpha is forced opaque: the swapchain's is not
-  // meaningful and a half-transparent screenshot is no use.
-  std::vector<uint8_t> pixels(size_t(width) * size_t(height) * 4);
-  for (UINT y = 0; y < height; ++y)
-  {
-    const uint8_t* sourceRow = mapped + size_t(y) * rowPitch;
-    uint8_t* destinationRow = pixels.data() + size_t(y) * size_t(width) * 4;
-    for (UINT x = 0; x < width; ++x)
-    {
-      destinationRow[x * 4 + 0] = sourceRow[x * 4 + 2];
-      destinationRow[x * 4 + 1] = sourceRow[x * 4 + 1];
-      destinationRow[x * 4 + 2] = sourceRow[x * 4 + 0];
-      destinationRow[x * 4 + 3] = 255;
-    }
-  }
-  const D3D12_RANGE wroteNothing = {0, 0};
-  m_captureReadback->Unmap(0, &wroteNothing);
-
-  ComPtr<IWICImagingFactory> factory;
-  if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))))
-  {
-    DebugPrintf("capture: no WIC factory\n");
-    return;
-  }
-
-  ComPtr<IWICStream> stream;
-  ComPtr<IWICBitmapEncoder> encoder;
-  ComPtr<IWICBitmapFrameEncode> frame;
-  ComPtr<IPropertyBag2> frameProperties;
-  WICPixelFormatGUID format = GUID_WICPixelFormat32bppBGRA;
-
-  if (FAILED(factory->CreateStream(&stream)) || FAILED(stream->InitializeFromFilename(m_capturePath.c_str(), GENERIC_WRITE)) ||
-      FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder)) ||
-      FAILED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache)) || FAILED(encoder->CreateNewFrame(&frame, &frameProperties)) ||
-      FAILED(frame->Initialize(frameProperties.Get())) || FAILED(frame->SetSize(width, height)) || FAILED(frame->SetPixelFormat(&format)))
-  {
-    DebugPrintf("capture: could not start the PNG encoder for %S\n", m_capturePath.c_str());
-    return;
-  }
-  if (FAILED(frame->WritePixels(height, width * 4, UINT(pixels.size()), pixels.data())) || FAILED(frame->Commit()) ||
-      FAILED(encoder->Commit()))
-  {
-    DebugPrintf("capture: could not write %S\n", m_capturePath.c_str());
-    return;
-  }
-  DebugPrintf("captured %S (%u x %u)\n", m_capturePath.c_str(), width, height);
 }

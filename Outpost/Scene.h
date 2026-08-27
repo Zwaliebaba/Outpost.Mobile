@@ -1,23 +1,14 @@
 #pragma once
 
 #include "Gfx.h"
-
 #include <DirectXMath.h>
-
-#include <string>
-#include <vector>
-
-// Walks up from the executable looking for the folder that holds GameData and tuning.ini, so the
-// toy runs from a build tree or from the repository root without a configured path.
-std::wstring FindDataRoot();
 
 constexpr float SIM_HZ = 60.0f;
 constexpr float SIM_DT = 1.0f / SIM_HZ;
 constexpr int TRAIL_SAMPLES = 32; // half a second of thruster history at the sim rate
 
 // Everything the toy knows about a pointer, decoded from WM_POINTER* in Main.cpp and queued rather
-// than acted on immediately: the frame loop drains it once the camera matrices are current, and
-// stage 5 records the same queue.
+// than acted on immediately: the frame loop drains it once the camera matrices are current.
 struct PointerEvent
 {
   enum class Kind : uint8_t
@@ -42,8 +33,9 @@ struct PointerEvent
 enum class OrderState : uint8_t
 {
   Idle,
-  Moving,   // steering towards orderPos
-  Aligning  // arrived; turning onto the ordered facing
+  Moving,
+  // steering towards orderPos
+  Aligning // arrived; turning onto the ordered facing
 };
 
 struct Ship
@@ -65,9 +57,9 @@ struct Ship
 
   // Feedback state. None of this feeds back into the simulation, so it is free to run per frame on
   // real time while Step stays fixed and deterministic.
-  float accelSample = 0.0f;       // from the last tick; drives thruster glow and trail
-  float ringFade = 0.0f;          // 0..1 alpha ramp on select and deselect
-  float ringScale = 0.0f;         // chases ringFade through a spring, so it overshoots
+  float accelSample = 0.0f; // from the last tick; drives thruster glow and trail
+  float ringFade = 0.0f;    // 0..1 alpha ramp on select and deselect
+  float ringScale = 0.0f;   // chases ringFade through a spring, so it overshoots
   float ringScaleVel = 0.0f;
   float hoverAmount = 0.0f;
   float bankRad = 0.0f;
@@ -105,10 +97,6 @@ struct Scene
   void ClearSelection();
   int SelectedCount() const;
 
-  // Puts the ships, selection, camera and every trace of feedback back to how they started, so a
-  // recording and its replay begin from the same world.
-  void ResetWorld();
-
   // Once per frame: refresh the camera matrices, then drain the pointer queue against them.
   void Update(uint32_t _viewWidthPx, uint32_t _viewHeightPx);
 
@@ -123,6 +111,9 @@ struct Scene
   // _alpha is the fraction of a tick already accumulated, for interpolation.
   void Render(Gfx& _gfx, float _alpha);
 
+  // What the frame is cleared to, so the sky and the ground come from the same place.
+  Rgba SkyColour() const;
+
   void UpdateCamera();
   void ScreenRay(float _xPx, float _yPx, DirectX::XMFLOAT3& _origin, DirectX::XMFLOAT3& _direction) const;
   bool RayToGround(float _xPx, float _yPx, DirectX::XMFLOAT3& _point) const;
@@ -136,6 +127,11 @@ struct Scene
 
   std::vector<Ship> m_ships;
   UINT m_groundMesh = 0;
+
+  // Orbit, driven by the drag and pinch gestures; the starting framing of the scene.
+  float m_cameraYawDeg = 0.0f;
+  float m_cameraPitchDeg = 52.0f;
+  float m_cameraDistance = 190.0f;
 
   DirectX::XMFLOAT3 m_cameraGoal{0.0f, 0.0f, 0.0f};   // where panning and following put it
   DirectX::XMFLOAT3 m_cameraTarget{0.0f, 0.0f, 0.0f}; // where the camera has actually eased to
@@ -152,7 +148,6 @@ struct Scene
   uint32_t m_viewHeightPx = 1;
 
   int m_hoverShip = -1;
-  int64_t m_lastPointerQpc = 0; // newest event drained this frame, for the latency readout
   bool m_boxActive = false;
   float m_boxX0Px = 0.0f, m_boxY0Px = 0.0f, m_boxX1Px = 0.0f, m_boxY1Px = 0.0f;
   bool m_orderDragActive = false;

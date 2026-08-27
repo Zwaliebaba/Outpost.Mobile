@@ -363,7 +363,7 @@ MigrationBackup/
 FodyWeavers.xsd
 
 # Game Data is never ignored
-!GameData/**
+!Outpost/Assets/**
 
 # Ship feel-tuning toy (throwaway)
 build/

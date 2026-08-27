@@ -1,0 +1,24 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClInclude Include="pch.h" />
+    <ClInclude Include="NeuronCore.h" />
+    <ClInclude Include="Debug.h" />
+    <ClInclude Include="FileSys.h" />
+    <ClInclude Include="NeuronHelper.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="pch.cpp" />
+    <ClCompile Include="FileSys.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Project Files">
+      <UniqueIdentifier>{46a1c5a8-4d1c-41d8-9223-f430edc38e0a}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config">
+      <Filter>Project Files</Filter>
+    </None>
+  </ItemGroup>
+</Project>
