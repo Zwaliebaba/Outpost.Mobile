@@ -1,4 +1,4 @@
-# Outpost: Frontier — C++ layout (AGENTS.md §4).
+# Outpost — C++ layout (AGENTS.md §4).
 #
 # Conformance authority: AGENTS.md. clang-format owns WHITESPACE; /.clang-tidy owns NAMING and
 # semantics. The two never overlap: clang-tidy has no check that reports a wrong brace position
@@ -12,7 +12,8 @@
 #
 # ── Status: no CI step runs this yet ───────────────────────────────────────────────────────
 #
-# Until one exists, it is enforced by review and by editors that pick the file up. Keep
+# There is no CI in this repository at all (AGENTS.md §6), so this is enforced by review and by
+# editors that pick the file up. Keep
 # ColumnLimit and IndentWidth in step with /.editorconfig; if you change one, change the other in
 # the same commit or they start lying to each other.
 #

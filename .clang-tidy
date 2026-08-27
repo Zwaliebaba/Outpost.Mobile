@@ -8,14 +8,12 @@
 # overlap: clang-tidy has no check that reports a wrong brace position or an over-long line, and
 # clang-format cannot see that a parameter is missing its `_`.
 #
-# ── Status: CI runs this over GameLogic, and it gates ──────────────────────────────────────
+# ── Status: nothing runs this for you ──────────────────────────────────────────────────────
 #
-# There is a `Run clang-tidy` step in CI since ADR-018 A24. It sweeps GameLogic and **fails the
-# step on a finding** -- it landed non-blocking, came back clean on its second run, and was
-# promoted, which was the promise it made. It covers GameLogic only; the engine projects reach
-# D3D12, C++/WinRT, XAudio2 and msquic headers and have not been through it, so widening the
-# step should land the same way: non-blocking until a run is clean. The .vcxproj files still do
-# not enable MSBuild code analysis. Run it by hand ON THE FILES YOU WROTE:
+# There is no CI in this repository (AGENTS.md §6) and the .vcxproj files do not enable MSBuild
+# code analysis, so this file is enforced by review and by whoever remembers to run it. Run it by
+# hand ON THE FILES YOU WROTE -- not on the tree, where the engine projects reach D3D12 and
+# C++/WinRT headers that have never been swept and will bury your own findings:
 #
 #   clang-tidy --quiet NeuronCore/YourNewFile.cpp -- -I . -D _WIN32 -D _DEBUG /std:c++latest
 #
@@ -53,19 +51,18 @@ Checks: >
 # `-clang-analyzer-optin.performance.Padding` is a judgement call, not a mechanical exclusion. It
 # is an OPT-IN analyzer that arrives with clang-tidy's defaults because this list does not begin
 # with `-*`. Wire records, mesh vertices and GPU instance structs have layouts that are
-# load-bearing — a snapshot record is 20 bytes because the wire says so (ADR-004) — and
+# load-bearing — a snapshot record is the size the wire says it is — and
 # reordering fields to save padding is exactly the change this repository must not make casually.
 #
 # `-bugprone-narrowing-conversions` is off because quantisation is pervasive and deliberate:
 # metres to centimetres, radians to turns16, float to the integer wire types. It would fire on
 # most of the serialization layer, where the narrowing IS the design.
 #
-# `-performance-enum-size` is off for the same reason as the padding check, and was turned off by
-# the first run that ever happened (the CI step, ADR-018 A24): it asks `OrderReason` to become a
-# u8 because eight enumerators fit in one, and `OrderReason` is two bytes because ADR-004 §7 says
-# the reason code on the wire is two bytes. Every closed taxonomy in this tree is a wire value
-# first and a C++ type second, so "no enumerator needs that many bits yet" is an argument for
-# renumbering a protocol, which is the change this repository must not make casually.
+# `-performance-enum-size` is off for the same reason as the padding check: it asks a closed
+# taxonomy to shrink to the smallest type its current enumerators happen to fit in. Every such
+# taxonomy in this tree is a wire value first and a C++ type second, so "no enumerator needs that
+# many bits yet" is an argument for renumbering a protocol, which is the change this repository
+# must not make casually.
 #
 # NOTE ON THE FORMAT: `Checks:` is a FOLDED scalar, so a `#` line indented under it is not a
 # comment — it folds into the value and corrupts the check list. Every comment belongs here.
