@@ -2,6 +2,7 @@
 #include "Scene.h"
 #include "Tuning.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -11,6 +12,44 @@ namespace
 Gfx g_gfx;
 Scene g_scene;
 bool g_running = true;
+int64_t g_qpcFrequency = 1;
+uint64_t g_simTick = 0;
+bool g_sawPointerWheel = false; // once the pointer API delivers the wheel, ignore the legacy message
+
+int64_t NowQpc()
+{
+  LARGE_INTEGER now = {};
+  QueryPerformanceCounter(&now);
+  return now.QuadPart;
+}
+
+// WM_POINTER covers mouse, pen and touch with one path, which is the whole reason for using it:
+// the same build works on a desktop and on a tablet with no second code path.
+bool DecodePointer(HWND _hwnd, WPARAM _wparam, PointerEvent& _event)
+{
+  const UINT32 pointerId = GET_POINTERID_WPARAM(_wparam);
+  POINTER_INFO info = {};
+  if (!GetPointerInfo(pointerId, &info))
+  {
+    return false;
+  }
+  POINT point = info.ptPixelLocation;
+  ScreenToClient(_hwnd, &point);
+
+  _event.pointerId = pointerId;
+  _event.xPx = float(point.x);
+  _event.yPx = float(point.y);
+  _event.isTouch = info.pointerType == PT_TOUCH || info.pointerType == PT_PEN;
+  _event.buttons = 0;
+  _event.buttons |= (info.pointerFlags & POINTER_FLAG_FIRSTBUTTON) ? 1u : 0u;
+  _event.buttons |= (info.pointerFlags & POINTER_FLAG_SECONDBUTTON) ? 2u : 0u;
+  _event.buttons |= (info.pointerFlags & POINTER_FLAG_THIRDBUTTON) ? 4u : 0u;
+  _event.shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+  // PerformanceCount is when the hardware reported the contact, which is what the stage 5 latency
+  // readout wants; it is not always populated, so fall back to now.
+  _event.timestampQpc = info.PerformanceCount != 0 ? int64_t(info.PerformanceCount) : NowQpc();
+  return true;
+}
 
 // Framerate-independent easing, used for everything that eases, HUD readouts included.
 float SmoothTowards(float _current, float _target, float _dtSec, float _halfLifeSec)
@@ -34,6 +73,72 @@ LRESULT CALLBACK WndProc(HWND _hwnd, UINT _msg, WPARAM _wparam, LPARAM _lparam)
     }
     return 0;
 
+  case WM_POINTERDOWN:
+  case WM_POINTERUPDATE:
+  case WM_POINTERUP:
+  case WM_POINTERCAPTURECHANGED:
+  {
+    PointerEvent event;
+    if (!DecodePointer(_hwnd, _wparam, event))
+    {
+      return 0;
+    }
+    if (_msg == WM_POINTERDOWN)
+    {
+      event.kind = PointerEvent::Kind::Down;
+      if (!event.isTouch)
+      {
+        SetCapture(_hwnd); // so a mouse drag that leaves the window still reports
+      }
+    }
+    else if (_msg == WM_POINTERUPDATE)
+    {
+      event.kind = PointerEvent::Kind::Update;
+    }
+    else
+    {
+      event.kind = PointerEvent::Kind::Up;
+      if (!event.isTouch) // touch contacts are captured implicitly, per contact
+      {
+        ReleaseCapture();
+      }
+    }
+    g_scene.QueuePointerEvent(event);
+    return 0;
+  }
+
+  case WM_POINTERWHEEL:
+  {
+    PointerEvent event;
+    if (!DecodePointer(_hwnd, _wparam, event))
+    {
+      return 0;
+    }
+    g_sawPointerWheel = true;
+    event.kind = PointerEvent::Kind::Wheel;
+    event.wheelNotches = GET_WHEEL_DELTA_WPARAM(_wparam) / WHEEL_DELTA;
+    g_scene.QueuePointerEvent(event);
+    return 0;
+  }
+
+  case WM_MOUSEWHEEL: // only reached where WM_POINTERWHEEL is not delivered
+  {
+    if (g_sawPointerWheel)
+    {
+      return 0;
+    }
+    PointerEvent event;
+    event.kind = PointerEvent::Kind::Wheel;
+    event.wheelNotches = GET_WHEEL_DELTA_WPARAM(_wparam) / WHEEL_DELTA;
+    event.timestampQpc = NowQpc();
+    g_scene.QueuePointerEvent(event);
+    return 0;
+  }
+
+  case WM_POINTERLEAVE:
+    g_scene.m_hoverShip = -1;
+    return 0;
+
   case WM_DPICHANGED:
   {
     const RECT* suggested = reinterpret_cast<const RECT*>(_lparam);
@@ -45,7 +150,15 @@ LRESULT CALLBACK WndProc(HWND _hwnd, UINT _msg, WPARAM _wparam, LPARAM _lparam)
   case WM_KEYDOWN:
     if (_wparam == VK_ESCAPE)
     {
-      PostMessageW(_hwnd, WM_CLOSE, 0, 0);
+      // Drops the selection first; only quits once nothing is selected.
+      if (g_scene.SelectedCount() > 0)
+      {
+        g_scene.ClearSelection();
+      }
+      else
+      {
+        PostMessageW(_hwnd, WM_CLOSE, 0, 0);
+      }
     }
     else if (_wparam == VK_F2)
     {
@@ -103,12 +216,15 @@ int WINAPI wWinMain(HINSTANCE _instance, HINSTANCE, LPWSTR, int)
 
   LARGE_INTEGER qpcFreq = {};
   QueryPerformanceFrequency(&qpcFreq);
+  g_qpcFrequency = qpcFreq.QuadPart;
   LARGE_INTEGER qpcPrev = {};
   QueryPerformanceCounter(&qpcPrev);
 
   float fpsSmoothed = 0.0f;
   float frameMsSmoothed = 0.0f;
   uint64_t frameCount = 0;
+  float simAccumulator = 0.0f;
+  float timeScale = 1.0f;
 
   while (g_running)
   {
@@ -143,14 +259,27 @@ int WINAPI wWinMain(HINSTANCE _instance, HINSTANCE, LPWSTR, int)
       continue;
     }
 
+    g_scene.Update(g_gfx.m_widthPx, g_gfx.m_heightPx);
+
+    // Fixed 60 Hz simulation with an accumulator; the leftover fraction interpolates the render.
+    // Capped so a stall (a dragged window, a breakpoint) cannot spiral into a burst of ticks.
+    simAccumulator = std::min(simAccumulator + dtSec * timeScale, 0.25f);
+    while (simAccumulator >= SIM_DT)
+    {
+      g_scene.Step();
+      simAccumulator -= SIM_DT;
+      ++g_simTick;
+    }
+    const float simAlpha = simAccumulator / SIM_DT;
+
     g_gfx.BeginFrame(Rgba{g_tuning.skyColourR, g_tuning.skyColourG, g_tuning.skyColourB, 1.0f});
-    g_scene.Render(g_gfx);
+    g_scene.Render(g_gfx, simAlpha);
 
     const float hudScale = float(GetDpiForWindow(hwnd)) / 96.0f;
     char hud[256] = {};
-    std::snprintf(hud, sizeof(hud), "fps      %6.1f\nframe    %6.2f ms\nviewport %u x %u\nships    %zu\nframes   %llu",
-                  double(fpsSmoothed), double(frameMsSmoothed), g_gfx.m_widthPx, g_gfx.m_heightPx, g_scene.m_ships.size(),
-                  static_cast<unsigned long long>(frameCount));
+    std::snprintf(hud, sizeof(hud), "fps      %6.1f\nframe    %6.2f ms\nsim tick %llu\nselected %d of %zu\nframes   %llu",
+                  double(fpsSmoothed), double(frameMsSmoothed), static_cast<unsigned long long>(g_simTick), g_scene.SelectedCount(),
+                  g_scene.m_ships.size(), static_cast<unsigned long long>(frameCount));
     g_gfx.DrawTextLine(12.0f * hudScale, 10.0f * hudScale, hudScale, Rgba{0.78f, 0.87f, 0.96f, 1.0f}, hud);
 
     g_gfx.EndFrame();

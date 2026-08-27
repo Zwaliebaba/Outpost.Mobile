@@ -19,7 +19,8 @@ const wchar_t* const SHIP_MESHES[] = {L"Bomber", L"Corvette", L"Frigate"};
 struct LoadedMesh
 {
   std::vector<SceneVertex> verts;
-  float minY = 0.0f;
+  DirectX::XMFLOAT3 boundsMin{0.0f, 0.0f, 0.0f};
+  DirectX::XMFLOAT3 boundsMax{0.0f, 0.0f, 0.0f};
 };
 
 std::string ReadWholeFile(const std::wstring& _path)
@@ -144,7 +145,8 @@ bool LoadObj(const std::wstring& _dir, const std::wstring& _name, LoadedMesh& _o
 
   std::vector<XMFLOAT3> positions;
   XMFLOAT3 colour(0.7f, 0.7f, 0.7f);
-  float minY = 1e30f;
+  XMFLOAT3 boundsMin(1e30f, 1e30f, 1e30f);
+  XMFLOAT3 boundsMax(-1e30f, -1e30f, -1e30f);
   int badFaces = 0;
 
   for (const std::string_view line : SplitLines(text))
@@ -158,7 +160,8 @@ bool LoadObj(const std::wstring& _dir, const std::wstring& _name, LoadedMesh& _o
         const float y = float(std::atof(std::string(tokens[2]).c_str()));
         const float z = float(std::atof(std::string(tokens[3]).c_str()));
         positions.push_back(XMFLOAT3(x, y, -z));
-        minY = std::min(minY, y);
+        boundsMin = XMFLOAT3(std::min(boundsMin.x, x), std::min(boundsMin.y, y), std::min(boundsMin.z, -z));
+        boundsMax = XMFLOAT3(std::max(boundsMax.x, x), std::max(boundsMax.y, y), std::max(boundsMax.z, -z));
       }
     }
     else if (StartsWith(line, "usemtl "))
@@ -205,9 +208,15 @@ bool LoadObj(const std::wstring& _dir, const std::wstring& _name, LoadedMesh& _o
   {
     _out.verts.resize(_out.verts.size() - _out.verts.size() % 3);
   }
-  _out.minY = (minY < 1e29f) ? minY : 0.0f;
-  DebugPrintf("%S: %zu tris, minY %.2f%s\n", _name.c_str(), _out.verts.size() / 3, _out.minY,
-              badFaces ? " (skipped malformed faces)" : "");
+  if (boundsMin.x > boundsMax.x)
+  {
+    boundsMin = XMFLOAT3(0.0f, 0.0f, 0.0f);
+    boundsMax = XMFLOAT3(0.0f, 0.0f, 0.0f);
+  }
+  _out.boundsMin = boundsMin;
+  _out.boundsMax = boundsMax;
+  DebugPrintf("%S: %zu tris, %.1f x %.1f x %.1f%s\n", _name.c_str(), _out.verts.size() / 3, boundsMax.x - boundsMin.x,
+              boundsMax.y - boundsMin.y, boundsMax.z - boundsMin.z, badFaces ? " (skipped malformed faces)" : "");
   return !_out.verts.empty();
 }
 
@@ -220,6 +229,149 @@ std::vector<SceneVertex> BuildGroundQuad()
       SceneVertex{-h, 0.0f, -h, 1.0f, 1.0f, 1.0f}, SceneVertex{-h, 0.0f, h, 1.0f, 1.0f, 1.0f}, SceneVertex{h, 0.0f, h, 1.0f, 1.0f, 1.0f},
       SceneVertex{-h, 0.0f, -h, 1.0f, 1.0f, 1.0f}, SceneVertex{h, 0.0f, h, 1.0f, 1.0f, 1.0f},  SceneVertex{h, 0.0f, -h, 1.0f, 1.0f, 1.0f},
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Feel maths. Everything that eases uses the half-life form, never a per-frame constant, so the
+// same tuning value produces the same motion at any frame rate.
+
+float HalfLifeBlend(float _dtSec, float _halfLifeSec)
+{
+  return (_halfLifeSec <= 0.0f) ? 1.0f : 1.0f - std::exp2(-_dtSec / _halfLifeSec);
+}
+
+float MoveTowards(float _current, float _target, float _maxDelta)
+{
+  const float delta = _target - _current;
+  if (std::fabs(delta) <= _maxDelta)
+  {
+    return _target;
+  }
+  return _current + ((delta > 0.0f) ? _maxDelta : -_maxDelta);
+}
+
+float Distance2D(float _ax, float _ay, float _bx, float _by)
+{
+  const float dx = _bx - _ax;
+  const float dy = _by - _ay;
+  return std::sqrt(dx * dx + dy * dy);
+}
+
+// Slot offsets in formation space: x to starboard, y forward.
+XMFLOAT2 FormationOffset(int _slot, int _count, int _shape, float _spacing)
+{
+  const float lane = float(_slot) - float(_count - 1) * 0.5f;
+  switch (_shape)
+  {
+  case 0: // line abreast
+    return XMFLOAT2(lane * _spacing, 0.0f);
+  case 2: // box
+  {
+    const int columns = std::max(1, int(std::ceil(std::sqrt(float(_count)))));
+    const int row = _slot / columns;
+    const int column = _slot % columns;
+    const int inRow = std::min(columns, _count - row * columns);
+    return XMFLOAT2((float(column) - float(inRow - 1) * 0.5f) * _spacing, -float(row) * _spacing);
+  }
+  case 3: // circle
+  {
+    if (_count < 2)
+    {
+      return XMFLOAT2(0.0f, 0.0f);
+    }
+    const float angle = XM_2PI * float(_slot) / float(_count);
+    const float radius = _spacing * float(_count) / XM_2PI;
+    return XMFLOAT2(std::sin(angle) * radius, std::cos(angle) * radius);
+  }
+  default: // 1: wedge
+    return XMFLOAT2(lane * _spacing, -std::fabs(lane) * _spacing * 0.8f);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Pointer bookkeeping. One entry per contact, so a mouse and several fingers share one path.
+
+constexpr int MAX_POINTERS = 4;
+
+struct PointerTrack
+{
+  uint32_t id = 0;
+  bool active = false;
+  bool isTouch = false;
+  uint32_t buttons = 0;
+  float startXPx = 0.0f, startYPx = 0.0f;
+  float xPx = 0.0f, yPx = 0.0f;
+  float prevXPx = 0.0f, prevYPx = 0.0f;
+  int64_t downQpc = 0;
+  bool dragging = false;
+  bool boxSelecting = false;
+  bool cameraDrag = false;    // held with the second or third button
+  bool inGesture = false;     // part of a two-finger gesture, so its release means nothing
+};
+
+PointerTrack g_pointers[MAX_POINTERS];
+int64_t g_qpcFrequency = 1;
+int64_t g_lastGroundTapQpc = 0;
+float g_lastGroundTapXPx = 0.0f;
+float g_lastGroundTapYPx = 0.0f;
+bool g_cameraMoved = false; // pushes the camera values back onto the Tuner sliders when the drag ends
+
+// Two-finger gesture, remembered between updates so pan, pinch and twist all read clean deltas.
+bool g_gestureActive = false;
+float g_gestureCentroidXPx = 0.0f;
+float g_gestureCentroidYPx = 0.0f;
+float g_gestureSpreadPx = 0.0f;
+float g_gestureAngleRad = 0.0f;
+
+PointerTrack* FindTrack(uint32_t _id)
+{
+  for (PointerTrack& track : g_pointers)
+  {
+    if (track.active && track.id == _id)
+    {
+      return &track;
+    }
+  }
+  return nullptr;
+}
+
+int ActiveTouchCount()
+{
+  int count = 0;
+  for (const PointerTrack& track : g_pointers)
+  {
+    count += (track.active && track.isTouch) ? 1 : 0;
+  }
+  return count;
+}
+
+// The two oldest live touches, in slot order.
+bool TwoTouches(PointerTrack*& _a, PointerTrack*& _b)
+{
+  _a = nullptr;
+  _b = nullptr;
+  for (PointerTrack& track : g_pointers)
+  {
+    if (!track.active || !track.isTouch)
+    {
+      continue;
+    }
+    if (!_a)
+    {
+      _a = &track;
+    }
+    else if (!_b)
+    {
+      _b = &track;
+      return true;
+    }
+  }
+  return false;
+}
+
+float ElapsedMs(int64_t _fromQpc, int64_t _toQpc)
+{
+  return float(double(_toQpc - _fromQpc) / double(g_qpcFrequency) * 1000.0);
 }
 
 } // namespace
@@ -252,8 +404,11 @@ std::wstring FindDataRoot()
 
 void Scene::Init(Gfx& _gfx)
 {
-  const std::wstring meshDir = FindDataRoot() + L"GameData\\Meshes\\";
+  LARGE_INTEGER frequency = {};
+  QueryPerformanceFrequency(&frequency);
+  g_qpcFrequency = frequency.QuadPart;
 
+  const std::wstring meshDir = FindDataRoot() + L"GameData\\Meshes\\";
   const int shipCount = int(std::size(SHIP_MESHES));
   for (int i = 0; i < shipCount; ++i)
   {
@@ -264,37 +419,628 @@ void Scene::Init(Gfx& _gfx)
     }
     Ship ship;
     ship.mesh = _gfx.UploadMesh(loaded.verts);
-    ship.restY = -loaded.minY;
-    ship.headingRad = 0.0f;
+    ship.restY = -loaded.boundsMin.y;
+    ship.pickCentre = XMFLOAT3((loaded.boundsMin.x + loaded.boundsMax.x) * 0.5f, (loaded.boundsMin.y + loaded.boundsMax.y) * 0.5f,
+                               (loaded.boundsMin.z + loaded.boundsMax.z) * 0.5f);
+    ship.halfExtents = XMFLOAT3(std::max(0.5f, (loaded.boundsMax.x - loaded.boundsMin.x) * 0.5f),
+                                std::max(0.5f, (loaded.boundsMax.y - loaded.boundsMin.y) * 0.5f),
+                                std::max(0.5f, (loaded.boundsMax.z - loaded.boundsMin.z) * 0.5f));
     ship.posWorld = XMFLOAT3((float(i) - float(shipCount - 1) * 0.5f) * g_tuning.startSpacing, 0.0f, 0.0f);
+    ship.prevPos = ship.posWorld;
     m_ships.push_back(ship);
   }
 
   m_groundMesh = _gfx.UploadMesh(BuildGroundQuad());
 }
 
-void Scene::Render(Gfx& _gfx)
+void Scene::QueuePointerEvent(const PointerEvent& _event)
 {
-  // Stage 1 has no pointer input yet, so the camera reads straight from the tuning values; stage 3
-  // takes the wheel and drag over yaw and distance.
-  m_yawRad = XMConvertToRadians(g_tuning.cameraYawDeg);
-  m_pitchRad = XMConvertToRadians(std::clamp(g_tuning.cameraPitchDeg, 5.0f, 89.0f));
-  m_distance = std::clamp(g_tuning.cameraDistance, g_tuning.cameraMinZoom, g_tuning.cameraMaxZoom);
+  m_pendingEvents.push_back(_event);
+}
+
+void Scene::ClearSelection()
+{
+  for (Ship& ship : m_ships)
+  {
+    ship.selected = false;
+  }
+}
+
+int Scene::SelectedCount() const
+{
+  int count = 0;
+  for (const Ship& ship : m_ships)
+  {
+    count += ship.selected ? 1 : 0;
+  }
+  return count;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Camera and projection
+
+void Scene::UpdateCamera()
+{
+  const float yaw = XMConvertToRadians(g_tuning.cameraYawDeg);
+  const float pitch = XMConvertToRadians(std::clamp(g_tuning.cameraPitchDeg, 5.0f, 89.0f));
+  const float distance = std::clamp(g_tuning.cameraDistance, g_tuning.cameraMinZoom, g_tuning.cameraMaxZoom);
   m_cameraTarget.y = g_tuning.cameraTargetHeight;
 
-  const float cosPitch = std::cos(m_pitchRad);
+  const float cosPitch = std::cos(pitch);
   const XMVECTOR target = XMLoadFloat3(&m_cameraTarget);
-  const XMVECTOR offset = XMVectorSet(std::sin(m_yawRad) * cosPitch, std::sin(m_pitchRad), -std::cos(m_yawRad) * cosPitch, 0.0f);
-  const XMVECTOR eye = XMVectorMultiplyAdd(offset, XMVectorReplicate(m_distance), target);
+  const XMVECTOR offset = XMVectorSet(std::sin(yaw) * cosPitch, std::sin(pitch), -std::cos(yaw) * cosPitch, 0.0f);
+  const XMVECTOR eye = XMVectorMultiplyAdd(offset, XMVectorReplicate(distance), target);
   XMStoreFloat3(&m_cameraEye, eye);
 
-  const float aspect = float(_gfx.m_widthPx) / float(std::max(1u, _gfx.m_heightPx));
+  const float aspect = float(m_viewWidthPx) / float(std::max(1u, m_viewHeightPx));
   const XMMATRIX view = XMMatrixLookAtLH(eye, target, XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f));
-  const XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(g_tuning.cameraFovDeg), aspect,
-                                                 std::max(0.01f, g_tuning.cameraNearPlane), g_tuning.cameraFarPlane);
+  const XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(std::clamp(g_tuning.cameraFovDeg, 5.0f, 170.0f)), aspect,
+                                                 std::max(0.01f, g_tuning.cameraNearPlane), std::max(1.0f, g_tuning.cameraFarPlane));
+  const XMMATRIX viewProj = view * proj;
+  XMStoreFloat4x4(&m_viewProj, viewProj);
+  XMStoreFloat4x4(&m_invViewProj, XMMatrixInverse(nullptr, viewProj));
+}
 
+void Scene::ScreenRay(float _xPx, float _yPx, XMFLOAT3& _origin, XMFLOAT3& _direction) const
+{
+  const float ndcX = (_xPx / float(m_viewWidthPx)) * 2.0f - 1.0f;
+  const float ndcY = 1.0f - (_yPx / float(m_viewHeightPx)) * 2.0f;
+  const XMMATRIX inverse = XMLoadFloat4x4(&m_invViewProj);
+  const XMVECTOR nearPoint = XMVector3TransformCoord(XMVectorSet(ndcX, ndcY, 0.0f, 1.0f), inverse);
+  const XMVECTOR farPoint = XMVector3TransformCoord(XMVectorSet(ndcX, ndcY, 1.0f, 1.0f), inverse);
+  XMStoreFloat3(&_origin, nearPoint);
+  XMStoreFloat3(&_direction, XMVector3Normalize(XMVectorSubtract(farPoint, nearPoint)));
+}
+
+bool Scene::RayToGround(float _xPx, float _yPx, XMFLOAT3& _point) const
+{
+  XMFLOAT3 origin;
+  XMFLOAT3 direction;
+  ScreenRay(_xPx, _yPx, origin, direction);
+  if (direction.y > -1e-5f) // at or above the horizon
+  {
+    return false;
+  }
+  const float t = -origin.y / direction.y;
+  _point = XMFLOAT3(origin.x + direction.x * t, 0.0f, origin.z + direction.z * t);
+  return true;
+}
+
+bool Scene::WorldToScreen(const XMFLOAT3& _world, float& _xPx, float& _yPx) const
+{
+  const XMVECTOR clip = XMVector3Transform(XMLoadFloat3(&_world), XMLoadFloat4x4(&m_viewProj));
+  const float w = XMVectorGetW(clip);
+  if (w <= 1e-4f) // behind the eye
+  {
+    return false;
+  }
+  _xPx = (XMVectorGetX(clip) / w * 0.5f + 0.5f) * float(m_viewWidthPx);
+  _yPx = (0.5f - XMVectorGetY(clip) / w * 0.5f) * float(m_viewHeightPx);
+  return true;
+}
+
+// Ray against each hull's oriented bounding box. A sphere would be far too loose on a hull three
+// times longer than it is wide.
+int Scene::PickShip(float _xPx, float _yPx) const
+{
+  XMFLOAT3 origin;
+  XMFLOAT3 direction;
+  ScreenRay(_xPx, _yPx, origin, direction);
+  const float scale = std::max(0.01f, g_tuning.shipScale);
+  const float padding = std::max(1.0f, g_tuning.inputPickPadding);
+
+  int best = -1;
+  float bestT = 1e30f;
+  for (int i = 0; i < int(m_ships.size()); ++i)
+  {
+    const Ship& ship = m_ships[i];
+    const float cosH = std::cos(ship.headingRad);
+    const float sinH = std::sin(ship.headingRad);
+
+    const XMFLOAT3 centre(ship.posWorld.x + (ship.pickCentre.x * cosH + ship.pickCentre.z * sinH) * scale,
+                          ship.posWorld.y + (ship.restY + ship.pickCentre.y) * scale,
+                          ship.posWorld.z + (-ship.pickCentre.x * sinH + ship.pickCentre.z * cosH) * scale);
+
+    // Into hull space: to the centre, undo the heading, undo the scale.
+    const float rx = origin.x - centre.x;
+    const float rz = origin.z - centre.z;
+    const float localOrigin[3] = {(rx * cosH - rz * sinH) / scale, (origin.y - centre.y) / scale, (rx * sinH + rz * cosH) / scale};
+    const float localDir[3] = {(direction.x * cosH - direction.z * sinH) / scale, direction.y / scale,
+                               (direction.x * sinH + direction.z * cosH) / scale};
+    const float extent[3] = {ship.halfExtents.x * padding, ship.halfExtents.y * padding, ship.halfExtents.z * padding};
+
+    float tMin = 0.0f;
+    float tMax = 1e30f;
+    bool hit = true;
+    for (int axis = 0; axis < 3 && hit; ++axis)
+    {
+      if (std::fabs(localDir[axis]) < 1e-8f)
+      {
+        hit = std::fabs(localOrigin[axis]) <= extent[axis];
+        continue;
+      }
+      float t1 = (-extent[axis] - localOrigin[axis]) / localDir[axis];
+      float t2 = (extent[axis] - localOrigin[axis]) / localDir[axis];
+      if (t1 > t2)
+      {
+        std::swap(t1, t2);
+      }
+      tMin = std::max(tMin, t1);
+      tMax = std::min(tMax, t2);
+      hit = tMax >= tMin;
+    }
+    if (hit && tMin < bestT)
+    {
+      bestT = tMin;
+      best = i;
+    }
+  }
+  return best;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Orders
+
+void Scene::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float _facingRad)
+{
+  std::vector<int> chosen;
+  for (int i = 0; i < int(m_ships.size()); ++i)
+  {
+    if (m_ships[i].selected)
+    {
+      chosen.push_back(i);
+    }
+  }
+  if (chosen.empty())
+  {
+    return;
+  }
+
+  // Point the formation along the ordered facing, or along the way the group is about to travel.
+  float heading = _facingRad;
+  if (!_hasFacing)
+  {
+    float centreX = 0.0f;
+    float centreZ = 0.0f;
+    for (const int index : chosen)
+    {
+      centreX += m_ships[size_t(index)].posWorld.x;
+      centreZ += m_ships[size_t(index)].posWorld.z;
+    }
+    centreX /= float(chosen.size());
+    centreZ /= float(chosen.size());
+    const float dx = _point.x - centreX;
+    const float dz = _point.z - centreZ;
+    heading = (dx * dx + dz * dz > 1e-4f) ? std::atan2(dx, dz) : m_ships[size_t(chosen[0])].headingRad;
+  }
+
+  // Hand out slots in the order the ships already lie across the formation, so they do not have to
+  // cross each other on the way in.
+  const float rightX = std::cos(heading);
+  const float rightZ = -std::sin(heading);
+  std::sort(chosen.begin(), chosen.end(),
+            [&](int _a, int _b)
+            {
+              return m_ships[size_t(_a)].posWorld.x * rightX + m_ships[size_t(_a)].posWorld.z * rightZ <
+                     m_ships[size_t(_b)].posWorld.x * rightX + m_ships[size_t(_b)].posWorld.z * rightZ;
+            });
+
+  const int count = int(chosen.size());
+  const int shape = std::clamp(int(g_tuning.motionFormationShape + 0.5f), 0, 3);
+  const float spacing = std::max(0.0f, g_tuning.motionFormationSpacing);
+  const float cosH = std::cos(heading);
+  const float sinH = std::sin(heading);
+
+  for (int slot = 0; slot < count; ++slot)
+  {
+    const XMFLOAT2 local = FormationOffset(slot, count, shape, spacing);
+    Ship& ship = m_ships[size_t(chosen[size_t(slot)])];
+    ship.orderPos = XMFLOAT3(_point.x + local.x * cosH + local.y * sinH, 0.0f, _point.z - local.x * sinH + local.y * cosH);
+    ship.orderFacingRad = heading;
+    ship.orderHasFacing = _hasFacing;
+    ship.order = OrderState::Moving;
+  }
+}
+
+void Scene::HandleTap(float _xPx, float _yPx, bool _shift, int64_t _qpc)
+{
+  const int hit = PickShip(_xPx, _yPx);
+  if (hit >= 0)
+  {
+    if (_shift)
+    {
+      m_ships[size_t(hit)].selected = !m_ships[size_t(hit)].selected;
+    }
+    else
+    {
+      ClearSelection();
+      m_ships[size_t(hit)].selected = true;
+    }
+    g_lastGroundTapQpc = 0; // tapping a hull does not begin a double tap
+    return;
+  }
+
+  const bool doubleTap = g_lastGroundTapQpc != 0 && ElapsedMs(g_lastGroundTapQpc, _qpc) <= g_tuning.inputDoubleTapWindowMs &&
+                         Distance2D(g_lastGroundTapXPx, g_lastGroundTapYPx, _xPx, _yPx) <= g_tuning.inputDragThresholdPx * 3.0f;
+  g_lastGroundTapQpc = _qpc;
+  g_lastGroundTapXPx = _xPx;
+  g_lastGroundTapYPx = _yPx;
+
+  // Double tapping empty ground is how a selection is dropped, since a single tap with a selection
+  // is already a move order.
+  if (doubleTap)
+  {
+    ClearSelection();
+    return;
+  }
+  if (SelectedCount() == 0)
+  {
+    return;
+  }
+  XMFLOAT3 point;
+  if (RayToGround(_xPx, _yPx, point))
+  {
+    IssueMoveOrder(point, false, 0.0f);
+  }
+}
+
+void Scene::FinishBoxSelect(float _x0Px, float _y0Px, float _x1Px, float _y1Px, bool _additive)
+{
+  const float left = std::min(_x0Px, _x1Px);
+  const float right = std::max(_x0Px, _x1Px);
+  const float top = std::min(_y0Px, _y1Px);
+  const float bottom = std::max(_y0Px, _y1Px);
+  if (!_additive)
+  {
+    ClearSelection();
+  }
+  const float scale = std::max(0.01f, g_tuning.shipScale);
+  for (Ship& ship : m_ships)
+  {
+    const XMFLOAT3 centre(ship.posWorld.x, ship.posWorld.y + ship.halfExtents.y * scale, ship.posWorld.z);
+    float xPx = 0.0f;
+    float yPx = 0.0f;
+    if (WorldToScreen(centre, xPx, yPx) && xPx >= left && xPx <= right && yPx >= top && yPx <= bottom)
+    {
+      ship.selected = true;
+    }
+  }
+}
+
+void Scene::FinishOrderDrag(float _x0Px, float _y0Px, float _x1Px, float _y1Px)
+{
+  XMFLOAT3 from;
+  XMFLOAT3 to;
+  if (!RayToGround(_x0Px, _y0Px, from))
+  {
+    return;
+  }
+  if (!RayToGround(_x1Px, _y1Px, to))
+  {
+    IssueMoveOrder(from, false, 0.0f);
+    return;
+  }
+  const float dx = to.x - from.x;
+  const float dz = to.z - from.z;
+  const bool hasFacing = (dx * dx + dz * dz) > 1.0f;
+  IssueMoveOrder(from, hasFacing, hasFacing ? std::atan2(dx, dz) : 0.0f);
+}
+
+namespace
+{
+
+// Second button orbits, third button pans. Panning unprojects both pointer positions onto the
+// ground so the world stays stuck to the finger, which makes panSpeed a plain multiplier on that.
+void ApplyCameraDrag(Scene& _scene, const PointerTrack& _track)
+{
+  const float dx = _track.xPx - _track.prevXPx;
+  const float dy = _track.yPx - _track.prevYPx;
+  if (dx == 0.0f && dy == 0.0f)
+  {
+    return;
+  }
+  g_cameraMoved = true;
+
+  if ((_track.buttons & 0x2u) != 0) // second button: orbit
+  {
+    g_tuning.cameraYawDeg = std::remainder(g_tuning.cameraYawDeg + dx * g_tuning.cameraRotateSpeedDegPerPx, 360.0f);
+    g_tuning.cameraPitchDeg = std::clamp(g_tuning.cameraPitchDeg - dy * g_tuning.cameraRotateSpeedDegPerPx, 5.0f, 89.0f);
+    _scene.UpdateCamera();
+    return;
+  }
+
+  XMFLOAT3 before;
+  XMFLOAT3 after;
+  if (_scene.RayToGround(_track.prevXPx, _track.prevYPx, before) && _scene.RayToGround(_track.xPx, _track.yPx, after))
+  {
+    _scene.m_cameraTarget.x -= (after.x - before.x) * g_tuning.cameraPanSpeed;
+    _scene.m_cameraTarget.z -= (after.z - before.z) * g_tuning.cameraPanSpeed;
+    _scene.UpdateCamera();
+  }
+}
+
+// Two fingers: the centroid pans, the spread zooms, the twist orbits. Cheap enough to be worth it,
+// since without it a tablet has no camera control at all.
+void ApplyTwoFingerGesture(Scene& _scene, const PointerTrack& _first, const PointerTrack& _second)
+{
+  const float centroidX = (_first.xPx + _second.xPx) * 0.5f;
+  const float centroidY = (_first.yPx + _second.yPx) * 0.5f;
+  const float spread = std::max(1.0f, Distance2D(_first.xPx, _first.yPx, _second.xPx, _second.yPx));
+  const float angle = std::atan2(_second.yPx - _first.yPx, _second.xPx - _first.xPx);
+
+  if (!g_gestureActive)
+  {
+    g_gestureActive = true;
+    g_gestureCentroidXPx = centroidX;
+    g_gestureCentroidYPx = centroidY;
+    g_gestureSpreadPx = spread;
+    g_gestureAngleRad = angle;
+    return;
+  }
+
+  g_tuning.cameraDistance =
+      std::clamp(g_tuning.cameraDistance * (g_gestureSpreadPx / spread), g_tuning.cameraMinZoom, g_tuning.cameraMaxZoom);
+  const float twistDeg = XMConvertToDegrees(std::remainder(angle - g_gestureAngleRad, XM_2PI));
+  g_tuning.cameraYawDeg = std::remainder(g_tuning.cameraYawDeg + twistDeg, 360.0f);
+  _scene.UpdateCamera();
+
+  XMFLOAT3 before;
+  XMFLOAT3 after;
+  if (_scene.RayToGround(g_gestureCentroidXPx, g_gestureCentroidYPx, before) && _scene.RayToGround(centroidX, centroidY, after))
+  {
+    _scene.m_cameraTarget.x -= (after.x - before.x) * g_tuning.cameraPanSpeed;
+    _scene.m_cameraTarget.z -= (after.z - before.z) * g_tuning.cameraPanSpeed;
+    _scene.UpdateCamera();
+  }
+
+  g_gestureCentroidXPx = centroidX;
+  g_gestureCentroidYPx = centroidY;
+  g_gestureSpreadPx = spread;
+  g_gestureAngleRad = angle;
+  g_cameraMoved = true;
+}
+
+} // namespace
+
+// ---------------------------------------------------------------------------------------------
+// Pointer handling. One path for mouse and touch: WM_POINTER gives both, and the second and third
+// buttons drive the camera so a single contact is always free for selection and orders.
+
+void Scene::ApplyPointerEvent(const PointerEvent& _event)
+{
+  if (_event.kind == PointerEvent::Kind::Wheel)
+  {
+    const float step = std::pow(std::max(1.001f, g_tuning.cameraZoomStepFactor), float(-_event.wheelNotches));
+    g_tuning.cameraDistance = std::clamp(g_tuning.cameraDistance * step, g_tuning.cameraMinZoom, g_tuning.cameraMaxZoom);
+    g_cameraMoved = true;
+    return;
+  }
+
+  if (_event.kind == PointerEvent::Kind::Down)
+  {
+    PointerTrack* slot = FindTrack(_event.pointerId);
+    if (!slot)
+    {
+      for (PointerTrack& candidate : g_pointers)
+      {
+        if (!candidate.active)
+        {
+          slot = &candidate;
+          break;
+        }
+      }
+    }
+    if (!slot)
+    {
+      return;
+    }
+    *slot = PointerTrack{};
+    slot->id = _event.pointerId;
+    slot->active = true;
+    slot->isTouch = _event.isTouch;
+    slot->buttons = _event.buttons;
+    slot->startXPx = slot->xPx = slot->prevXPx = _event.xPx;
+    slot->startYPx = slot->yPx = slot->prevYPx = _event.yPx;
+    slot->downQpc = _event.timestampQpc;
+    slot->cameraDrag = (_event.buttons & 0x6u) != 0; // second or third button
+    g_gestureActive = false;                         // a new contact restarts any gesture
+    return;
+  }
+
+  PointerTrack* track = FindTrack(_event.pointerId);
+  if (!track)
+  {
+    return;
+  }
+  track->prevXPx = track->xPx;
+  track->prevYPx = track->yPx;
+  track->xPx = _event.xPx;
+  track->yPx = _event.yPx;
+  track->buttons = _event.buttons;
+
+  if (_event.kind == PointerEvent::Kind::Update)
+  {
+    m_hoverShip = PickShip(_event.xPx, _event.yPx);
+
+    PointerTrack* first = nullptr;
+    PointerTrack* second = nullptr;
+    if (TwoTouches(first, second))
+    {
+      first->inGesture = true;
+      second->inGesture = true;
+      ApplyTwoFingerGesture(*this, *first, *second);
+      return;
+    }
+    g_gestureActive = false;
+
+    if (track->cameraDrag)
+    {
+      ApplyCameraDrag(*this, *track);
+      return;
+    }
+    if ((_event.buttons & 1u) == 0) // hovering, nothing held
+    {
+      return;
+    }
+
+    if (!track->dragging && Distance2D(track->startXPx, track->startYPx, track->xPx, track->yPx) >= g_tuning.inputDragThresholdPx)
+    {
+      track->dragging = true;
+      // With nothing selected a drag bands a box; with a selection it lays down a move order and
+      // its final facing. Shift forces the box either way.
+      track->boxSelecting = _event.shift || SelectedCount() == 0;
+    }
+    if (track->dragging)
+    {
+      m_boxActive = track->boxSelecting;
+      m_orderDragActive = !track->boxSelecting;
+      m_boxX0Px = m_orderX0Px = track->startXPx;
+      m_boxY0Px = m_orderY0Px = track->startYPx;
+      m_boxX1Px = m_orderX1Px = track->xPx;
+      m_boxY1Px = m_orderY1Px = track->yPx;
+    }
+    return;
+  }
+
+  // Release.
+  const PointerTrack finished = *track;
+  track->active = false;
+  m_boxActive = false;
+  m_orderDragActive = false;
+  if (ActiveTouchCount() < 2)
+  {
+    g_gestureActive = false;
+  }
+  bool anyStillDown = false;
+  for (const PointerTrack& other : g_pointers)
+  {
+    anyStillDown = anyStillDown || other.active;
+  }
+  if (!anyStillDown && g_cameraMoved)
+  {
+    g_cameraMoved = false;
+    TuningRefreshWindow(); // the sliders should show where the drag left the camera
+  }
+  if (finished.inGesture || finished.cameraDrag)
+  {
+    return;
+  }
+
+  if (finished.dragging)
+  {
+    if (finished.boxSelecting)
+    {
+      FinishBoxSelect(finished.startXPx, finished.startYPx, _event.xPx, _event.yPx, _event.shift);
+    }
+    else
+    {
+      FinishOrderDrag(finished.startXPx, finished.startYPx, _event.xPx, _event.yPx);
+    }
+    return;
+  }
+  if (ElapsedMs(finished.downQpc, _event.timestampQpc) <= g_tuning.inputTapMaxDurationMs)
+  {
+    HandleTap(_event.xPx, _event.yPx, _event.shift, _event.timestampQpc);
+  }
+}
+
+void Scene::Update(uint32_t _viewWidthPx, uint32_t _viewHeightPx)
+{
+  m_viewWidthPx = std::max(1u, _viewWidthPx);
+  m_viewHeightPx = std::max(1u, _viewHeightPx);
+  UpdateCamera(); // picking needs matrices that match what was on screen when the pointer moved
+  for (const PointerEvent& event : m_pendingEvents)
+  {
+    ApplyPointerEvent(event);
+  }
+  m_pendingEvents.clear();
+  UpdateCamera(); // input may have moved it again
+}
+
+// ---------------------------------------------------------------------------------------------
+// One fixed 60 Hz tick. Turn towards the target at a limited rate, drive forward along the facing,
+// slow down in time to stop on the point. No pathfinding and no avoidance, by design.
+
+void Scene::Step()
+{
+  const float maxSpeed = std::max(0.0f, g_tuning.motionMaxSpeed);
+  const float acceleration = std::max(0.01f, g_tuning.motionAcceleration);
+  const float deceleration = std::max(0.01f, g_tuning.motionDeceleration);
+  const float maxTurnRate = XMConvertToRadians(std::max(0.0f, g_tuning.motionTurnRateDegPerSec));
+  const float turnAcceleration = XMConvertToRadians(std::max(1.0f, g_tuning.motionTurnAcceleration));
+  const float arrivalRadius = std::max(0.01f, g_tuning.motionArrivalRadius);
+  const float stopBlend = HalfLifeBlend(SIM_DT, g_tuning.motionStopDampingHalfLife);
+
+  for (Ship& ship : m_ships)
+  {
+    ship.prevPos = ship.posWorld;
+    ship.prevHeading = ship.headingRad;
+
+    float desiredHeading = ship.headingRad;
+    float desiredSpeed = 0.0f;
+
+    if (ship.order == OrderState::Moving)
+    {
+      const float dx = ship.orderPos.x - ship.posWorld.x;
+      const float dz = ship.orderPos.z - ship.posWorld.z;
+      const float distance = std::sqrt(dx * dx + dz * dz);
+      if (distance <= arrivalRadius)
+      {
+        ship.order = ship.orderHasFacing ? OrderState::Aligning : OrderState::Idle;
+      }
+      else
+      {
+        desiredHeading = std::atan2(dx, dz);
+        // Never faster than can still be shed before the point.
+        desiredSpeed = std::min(maxSpeed, std::sqrt(2.0f * deceleration * (distance - arrivalRadius)));
+      }
+    }
+    else if (ship.order == OrderState::Aligning)
+    {
+      desiredHeading = ship.orderFacingRad;
+      if (std::fabs(XMScalarModAngle(desiredHeading - ship.headingRad)) < 0.02f && std::fabs(ship.speed) < 0.05f)
+      {
+        ship.order = OrderState::Idle;
+      }
+    }
+
+    // Angular velocity accelerates towards whatever closes the error, capped both by the turn rate
+    // and by what can still be brought to rest inside the angle that is left.
+    const float headingError = XMScalarModAngle(desiredHeading - ship.headingRad);
+    const float settleRate = std::sqrt(2.0f * turnAcceleration * std::fabs(headingError));
+    float targetRate = std::clamp(headingError / SIM_DT, -maxTurnRate, maxTurnRate);
+    targetRate = std::clamp(targetRate, -settleRate, settleRate);
+    ship.turnRateRadPerSec = MoveTowards(ship.turnRateRadPerSec, targetRate, turnAcceleration * SIM_DT);
+    ship.headingRad = XMScalarModAngle(ship.headingRad + ship.turnRateRadPerSec * SIM_DT);
+
+    // Only drive hard while roughly pointed the right way, so ships arc round instead of pivoting
+    // on the spot and then snapping into motion.
+    desiredSpeed *= std::max(0.0f, std::cos(headingError));
+
+    if (ship.order == OrderState::Moving)
+    {
+      ship.speed = MoveTowards(ship.speed, desiredSpeed, (desiredSpeed > ship.speed ? acceleration : deceleration) * SIM_DT);
+    }
+    else
+    {
+      ship.speed -= ship.speed * stopBlend; // half-life damping down to a standstill
+      if (std::fabs(ship.speed) < 0.01f)
+      {
+        ship.speed = 0.0f;
+      }
+    }
+
+    ship.posWorld.x += std::sin(ship.headingRad) * ship.speed * SIM_DT;
+    ship.posWorld.z += std::cos(ship.headingRad) * ship.speed * SIM_DT;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+
+void Scene::Render(Gfx& _gfx, float _alpha)
+{
   SceneFrame frame = {};
-  XMStoreFloat4x4(&frame.viewProj, view * proj);
+  frame.viewProj = m_viewProj;
   frame.lightDir = XMFLOAT3(g_tuning.lightDirX, g_tuning.lightDirY, g_tuning.lightDirZ);
   frame.ambient = g_tuning.ambientLevel;
   frame.gridColour = Rgba{g_tuning.gridColourR, g_tuning.gridColourG, g_tuning.gridColourB, g_tuning.gridStrength};
@@ -304,19 +1050,48 @@ void Scene::Render(Gfx& _gfx)
   frame.cameraPos = m_cameraEye;
   _gfx.BeginScene(frame);
 
-  // The ground follows the camera in XZ, so its edge never comes into view.
   XMFLOAT4X4 world;
   const float groundSize = std::max(1.0f, g_tuning.groundSize);
-  XMStoreFloat4x4(&world, XMMatrixScaling(groundSize, 1.0f, groundSize) *
-                              XMMatrixTranslation(m_cameraTarget.x, 0.0f, m_cameraTarget.z));
+  XMStoreFloat4x4(&world,
+                  XMMatrixScaling(groundSize, 1.0f, groundSize) * XMMatrixTranslation(m_cameraTarget.x, 0.0f, m_cameraTarget.z));
   _gfx.DrawMesh(m_groundMesh, world, Rgba{g_tuning.groundColourR, g_tuning.groundColourG, g_tuning.groundColourB, 1.0f}, 0.0f, true);
 
   const float scale = std::max(0.01f, g_tuning.shipScale);
+  const Rgba plain{g_tuning.shipColourR, g_tuning.shipColourG, g_tuning.shipColourB, 1.0f};
+  const Rgba picked{g_tuning.selectedColourR, g_tuning.selectedColourG, g_tuning.selectedColourB, 1.0f};
+
   for (const Ship& ship : m_ships)
   {
-    XMStoreFloat4x4(&world, XMMatrixScaling(scale, scale, scale) * XMMatrixRotationY(ship.headingRad) *
-                                XMMatrixTranslation(ship.posWorld.x, ship.posWorld.y + ship.restY * scale, ship.posWorld.z));
-    _gfx.DrawMesh(ship.mesh, world, Rgba{g_tuning.shipColourR, g_tuning.shipColourG, g_tuning.shipColourB, 1.0f}, g_tuning.shipMaterialMix,
-                  false);
+    // Between ticks, so motion is smooth however fast the swapchain runs.
+    const float x = ship.prevPos.x + (ship.posWorld.x - ship.prevPos.x) * _alpha;
+    const float y = ship.prevPos.y + (ship.posWorld.y - ship.prevPos.y) * _alpha;
+    const float z = ship.prevPos.z + (ship.posWorld.z - ship.prevPos.z) * _alpha;
+    const float heading = ship.prevHeading + XMScalarModAngle(ship.headingRad - ship.prevHeading) * _alpha;
+
+    XMStoreFloat4x4(&world, XMMatrixScaling(scale, scale, scale) * XMMatrixRotationY(heading) *
+                                XMMatrixTranslation(x, y + ship.restY * scale, z));
+    _gfx.DrawMesh(ship.mesh, world, ship.selected ? picked : plain, g_tuning.shipMaterialMix, false);
+  }
+
+  // Screen-space feedback for whatever the pointer is in the middle of. The proper rings and
+  // markers arrive at stage 4.
+  if (m_boxActive)
+  {
+    const Rgba edge{g_tuning.selRingColourR, g_tuning.selRingColourG, g_tuning.selRingColourB, g_tuning.selRingColourA};
+    const Rgba fill{edge.r, edge.g, edge.b, edge.a * 0.12f};
+    const float left = std::min(m_boxX0Px, m_boxX1Px);
+    const float right = std::max(m_boxX0Px, m_boxX1Px);
+    const float top = std::min(m_boxY0Px, m_boxY1Px);
+    const float bottom = std::max(m_boxY0Px, m_boxY1Px);
+    _gfx.DrawScreenRect(left, top, right, bottom, fill);
+    _gfx.DrawScreenRect(left, top, right, top + 1.0f, edge);
+    _gfx.DrawScreenRect(left, bottom - 1.0f, right, bottom, edge);
+    _gfx.DrawScreenRect(left, top, left + 1.0f, bottom, edge);
+    _gfx.DrawScreenRect(right - 1.0f, top, right, bottom, edge);
+  }
+  if (m_orderDragActive)
+  {
+    const Rgba line{g_tuning.markerColourR, g_tuning.markerColourG, g_tuning.markerColourB, g_tuning.markerColourA};
+    _gfx.DrawScreenLine(m_orderX0Px, m_orderY0Px, m_orderX1Px, m_orderY1Px, 2.0f, line);
   }
 }

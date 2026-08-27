@@ -586,6 +586,11 @@ void TuningPoll()
   }
 }
 
+void TuningRefreshWindow()
+{
+  RefreshControls();
+}
+
 void TuningToggleWindow()
 {
   if (!g_tuner.frame)

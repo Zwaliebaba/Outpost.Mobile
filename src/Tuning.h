@@ -76,6 +76,7 @@
   X("input",       "dragThresholdPx",         inputDragThresholdPx,       6.f,    1.f,    60.f)    \
   X("input",       "tapMaxDurationMs",        inputTapMaxDurationMs,      320.f,  50.f,   1200.f)  \
   X("input",       "doubleTapWindowMs",       inputDoubleTapWindowMs,     300.f,  80.f,   900.f)   \
+  X("input",       "pickPadding",             inputPickPadding,           1.15f,  1.f,    3.f)     \
                                                                                                    \
   X("scene",       "skyColourR",              skyColourR,                 0.043f, 0.f,    1.f)     \
   X("scene",       "skyColourG",              skyColourG,                 0.051f, 0.f,    1.f)     \
@@ -122,5 +123,8 @@ void TuningInit(HINSTANCE _instance, HWND _mainWindow);
 void TuningPoll();
 
 void TuningShutdown();
+
+// Pushes the live values back onto the sliders, after something other than the Tuner moved them.
+void TuningRefreshWindow();
 void TuningToggleWindow();
 void TuningSave();

@@ -3,6 +3,7 @@
 #include <d3dcompiler.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -524,6 +525,12 @@ void Gfx::BakeFontAtlas()
     const wchar_t ch = wchar_t(FIRST_GLYPH + i);
     TextOutW(dc, (i % GLYPH_COLS) * cellW, (i / GLYPH_COLS) * cellH, &ch, 1);
   }
+  // 95 printable glyphs sit in 96 cells. Fill the spare one solid so untextured screen quads --
+  // selection boxes, order lines -- can share the text pipeline instead of needing their own.
+  const int solidIndex = LAST_GLYPH - FIRST_GLYPH + 1;
+  const int solidCol = solidIndex % GLYPH_COLS;
+  const int solidRow = solidIndex / GLYPH_COLS;
+  PatBlt(dc, solidCol * cellW, solidRow * cellH, cellW, cellH, WHITENESS);
   GdiFlush();
 
   // GDI leaves alpha at zero, so take coverage from the white-on-black luminance.
@@ -545,6 +552,8 @@ void Gfx::BakeFontAtlas()
   m_advancePx = float(tm.tmAveCharWidth); // fixed pitch, so this is the true advance
   m_atlasWPx = float(atlasW);
   m_atlasHPx = float(atlasH);
+  m_solidU = (float(solidCol) + 0.5f) * float(cellW) / float(atlasW);
+  m_solidV = (float(solidRow) + 0.5f) * float(cellH) / float(atlasH);
   DebugPrintf("font atlas %dx%d, cell %dx%d, advance %d\n", atlasW, atlasH, cellW, cellH, tm.tmAveCharWidth);
 
   D3D12_RESOURCE_DESC td = {};
@@ -938,4 +947,41 @@ void Gfx::DrawMesh(UINT _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _baseColo
   m_cmd->SetGraphicsRoot32BitConstants(1, 1, &mode, 15); // gridParams.w
   m_cmd->IASetVertexBuffers(0, 1, &mesh.vbv);
   m_cmd->DrawInstanced(mesh.vertexCount, 1, 0, 0);
+}
+
+void Gfx::DrawScreenRect(float _x0Px, float _y0Px, float _x1Px, float _y1Px, Rgba _colour)
+{
+  if (m_textVerts.size() + 6 > MAX_TEXT_VERTS)
+  {
+    return;
+  }
+  const float u = m_solidU;
+  const float v = m_solidV;
+  m_textVerts.push_back({_x0Px, _y0Px, u, v, _colour});
+  m_textVerts.push_back({_x1Px, _y0Px, u, v, _colour});
+  m_textVerts.push_back({_x0Px, _y1Px, u, v, _colour});
+  m_textVerts.push_back({_x0Px, _y1Px, u, v, _colour});
+  m_textVerts.push_back({_x1Px, _y0Px, u, v, _colour});
+  m_textVerts.push_back({_x1Px, _y1Px, u, v, _colour});
+}
+
+void Gfx::DrawScreenLine(float _x0Px, float _y0Px, float _x1Px, float _y1Px, float _thicknessPx, Rgba _colour)
+{
+  const float dx = _x1Px - _x0Px;
+  const float dy = _y1Px - _y0Px;
+  const float length = std::sqrt(dx * dx + dy * dy);
+  if (length < 1e-4f || m_textVerts.size() + 6 > MAX_TEXT_VERTS)
+  {
+    return;
+  }
+  const float halfX = -dy / length * _thicknessPx * 0.5f;
+  const float halfY = dx / length * _thicknessPx * 0.5f;
+  const float u = m_solidU;
+  const float v = m_solidV;
+  m_textVerts.push_back({_x0Px + halfX, _y0Px + halfY, u, v, _colour});
+  m_textVerts.push_back({_x1Px + halfX, _y1Px + halfY, u, v, _colour});
+  m_textVerts.push_back({_x0Px - halfX, _y0Px - halfY, u, v, _colour});
+  m_textVerts.push_back({_x0Px - halfX, _y0Px - halfY, u, v, _colour});
+  m_textVerts.push_back({_x1Px + halfX, _y1Px + halfY, u, v, _colour});
+  m_textVerts.push_back({_x1Px - halfX, _y1Px - halfY, u, v, _colour});
 }

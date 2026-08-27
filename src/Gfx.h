@@ -90,6 +90,11 @@ struct Gfx
 
   // Queued during the frame, drawn on top of everything in EndFrame. '\n' starts a new line.
   void DrawTextLine(float _xPx, float _yPx, float _scale, Rgba _colour, std::string_view _text);
+
+  // Screen-space quads, drawn through the text pipeline against a solid texel baked into the spare
+  // atlas cell. Same queue as the text, so they land on top of the scene in EndFrame.
+  void DrawScreenRect(float _x0Px, float _y0Px, float _x1Px, float _y1Px, Rgba _colour);
+  void DrawScreenLine(float _x0Px, float _y0Px, float _x1Px, float _y1Px, float _thicknessPx, Rgba _colour);
   float TextAdvancePx(float _scale) const { return m_advancePx * _scale; }
   float TextLineHeightPx(float _scale) const { return m_cellHPx * _scale; }
 
@@ -129,6 +134,8 @@ struct Gfx
   float m_advancePx = 0.0f; // fixed pitch, i.e. the pen step
   float m_atlasWPx = 0.0f;
   float m_atlasHPx = 0.0f;
+  float m_solidU = 0.0f; // centre of the one atlas cell with no glyph in it
+  float m_solidV = 0.0f;
 
   void CreateSizedResources();
   void ReleaseSizedResources();
