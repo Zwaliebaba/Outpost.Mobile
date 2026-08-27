@@ -6,6 +6,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <utility>
 
 namespace
 {
@@ -44,6 +45,67 @@ float4 PsMain(VsOut i) : SV_Target
 {
   float coverage = Atlas.Sample(Samp, i.uv);
   return float4(i.col.rgb, i.col.a * coverage);
+}
+)HLSL";
+
+// Ships and ground share this. `row_major` matches XMFLOAT4X4's storage so mul(rowVector, matrix)
+// means what DirectXMath means by it.
+const char* const SCENE_SHADER = R"HLSL(
+cbuffer VsConstants : register(b0)
+{
+  row_major float4x4 world;
+  row_major float4x4 viewProj;
+};
+
+cbuffer PsConstants : register(b1)
+{
+  float4 baseColour;       // rgb base colour, w material mix
+  float4 lightDirAmbient;  // xyz towards the light, w ambient level
+  float4 gridColour;       // rgb line colour, a strength
+  float4 gridParams;       // x spacing, y line width px, z fade distance, w 1 for the ground
+  float4 cameraPos;        // xyz eye
+};
+
+struct VsIn  { float3 pos : POSITION; float3 col : COLOR0; };
+struct VsOut { float4 clip : SV_Position; float3 worldPos : TEXCOORD0; float3 col : COLOR0; };
+
+VsOut VsMain(VsIn i)
+{
+  VsOut o;
+  float4 wp = mul(float4(i.pos, 1.0), world);
+  o.worldPos = wp.xyz;
+  o.clip = mul(wp, viewProj);
+  o.col = i.col;
+  return o;
+}
+
+float4 PsMain(VsOut i) : SV_Target
+{
+  // Flat shading from screen-space derivatives, then faced towards the eye so triangle winding
+  // cannot matter.
+  float3 crossed = cross(ddx(i.worldPos), ddy(i.worldPos));
+  float3 faceNormal = (dot(crossed, crossed) > 1e-12) ? normalize(crossed) : float3(0.0, 1.0, 0.0);
+  if (dot(faceNormal, cameraPos.xyz - i.worldPos) < 0.0)
+  {
+    faceNormal = -faceNormal;
+  }
+
+  float3 albedo = lerp(baseColour.rgb, i.col, baseColour.w);
+  float3 normal = faceNormal;
+
+  if (gridParams.w > 0.5)
+  {
+    normal = float3(0.0, 1.0, 0.0);
+    float2 cell = i.worldPos.xz / max(gridParams.x, 0.001);
+    float2 toLine = abs(frac(cell - 0.5) - 0.5) / max(fwidth(cell), 1e-6);
+    float onLine = 1.0 - saturate(min(toLine.x, toLine.y) - gridParams.y * 0.5);
+    float fade = saturate(1.0 - length(i.worldPos.xz - cameraPos.xz) / max(gridParams.z, 0.001));
+    albedo = lerp(baseColour.rgb, gridColour.rgb, onLine * fade * gridColour.a);
+  }
+
+  float lambert = saturate(dot(normal, normalize(lightDirAmbient.xyz)));
+  float3 lit = albedo * (lightDirAmbient.w + (1.0 - lightDirAmbient.w) * lambert);
+  return float4(lit, 1.0);
 }
 )HLSL";
 
@@ -87,7 +149,7 @@ D3D12_RESOURCE_BARRIER Transition(ID3D12Resource* _res, D3D12_RESOURCE_STATES _b
   return b;
 }
 
-ComPtr<ID3DBlob> CompileShader(const char* _entry, const char* _target)
+ComPtr<ID3DBlob> CompileShader(const char* _source, const char* _entry, const char* _target)
 {
   UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
 #ifndef NDEBUG
@@ -96,7 +158,7 @@ ComPtr<ID3DBlob> CompileShader(const char* _entry, const char* _target)
   ComPtr<ID3DBlob> code;
   ComPtr<ID3DBlob> errors;
   const HRESULT hr =
-      D3DCompile(TEXT_SHADER, std::strlen(TEXT_SHADER), "TextShader", nullptr, nullptr, _entry, _target, flags, 0, &code, &errors);
+      D3DCompile(_source, std::strlen(_source), "ShipFeel", nullptr, nullptr, _entry, _target, flags, 0, &code, &errors);
   if (FAILED(hr))
   {
     DebugPrintf("shader %s failed: %s\n", _entry, errors ? static_cast<const char*>(errors->GetBufferPointer()) : "(no message)");
@@ -228,6 +290,7 @@ void Gfx::Init(HWND _hwnd)
 
   CreateSizedResources();
   CreateTextPipeline();
+  CreateScenePipeline();
 
   for (UINT i = 0; i < FRAME_COUNT; ++i)
   {
@@ -604,8 +667,8 @@ void Gfx::CreateTextPipeline()
   }
   CHECK_HR(m_device->CreateRootSignature(0, rsBlob->GetBufferPointer(), rsBlob->GetBufferSize(), IID_PPV_ARGS(&m_textRs)));
 
-  ComPtr<ID3DBlob> vs = CompileShader("VsMain", "vs_5_1");
-  ComPtr<ID3DBlob> ps = CompileShader("PsMain", "ps_5_1");
+  ComPtr<ID3DBlob> vs = CompileShader(TEXT_SHADER, "VsMain", "vs_5_1");
+  ComPtr<ID3DBlob> ps = CompileShader(TEXT_SHADER, "PsMain", "ps_5_1");
 
   const D3D12_INPUT_ELEMENT_DESC elements[] = {
       {"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
@@ -713,4 +776,166 @@ void Gfx::DrawTextLine(float _xPx, float _yPx, float _scale, Rgba _colour, std::
     m_textVerts.push_back({x1, y1, u1, v1, _colour});
     penX += advance;
   }
+}
+
+void Gfx::CreateScenePipeline()
+{
+  // Two blocks of root constants and nothing else: 32 DWORDs of matrices for the vertex stage and
+  // 20 of shading values for the pixel stage, well inside the 64-DWORD root signature budget.
+  D3D12_ROOT_PARAMETER params[2] = {};
+  params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+  params[0].Constants.ShaderRegister = 0;
+  params[0].Constants.RegisterSpace = 0;
+  params[0].Constants.Num32BitValues = 32;
+  params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+  params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+  params[1].Constants.ShaderRegister = 1;
+  params[1].Constants.RegisterSpace = 0;
+  params[1].Constants.Num32BitValues = 20;
+  params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+  D3D12_ROOT_SIGNATURE_DESC rsDesc = {};
+  rsDesc.NumParameters = 2;
+  rsDesc.pParameters = params;
+  rsDesc.NumStaticSamplers = 0;
+  rsDesc.pStaticSamplers = nullptr;
+  rsDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+  ComPtr<ID3DBlob> rsBlob;
+  ComPtr<ID3DBlob> rsError;
+  const HRESULT hr = D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1, &rsBlob, &rsError);
+  if (FAILED(hr))
+  {
+    DebugPrintf("scene root signature: %s\n", rsError ? static_cast<const char*>(rsError->GetBufferPointer()) : "(no message)");
+    FatalHr("D3D12SerializeRootSignature (scene)", hr);
+  }
+  CHECK_HR(m_device->CreateRootSignature(0, rsBlob->GetBufferPointer(), rsBlob->GetBufferSize(), IID_PPV_ARGS(&m_sceneRs)));
+
+  ComPtr<ID3DBlob> vs = CompileShader(SCENE_SHADER, "VsMain", "vs_5_1");
+  ComPtr<ID3DBlob> ps = CompileShader(SCENE_SHADER, "PsMain", "ps_5_1");
+
+  const D3D12_INPUT_ELEMENT_DESC elements[] = {
+      {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+      {"COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+  };
+
+  D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = {};
+  pso.pRootSignature = m_sceneRs.Get();
+  pso.VS.pShaderBytecode = vs->GetBufferPointer();
+  pso.VS.BytecodeLength = vs->GetBufferSize();
+  pso.PS.pShaderBytecode = ps->GetBufferPointer();
+  pso.PS.BytecodeLength = ps->GetBufferSize();
+  pso.BlendState.AlphaToCoverageEnable = FALSE;
+  pso.BlendState.IndependentBlendEnable = FALSE;
+  pso.BlendState.RenderTarget[0].BlendEnable = FALSE;
+  pso.BlendState.RenderTarget[0].LogicOpEnable = FALSE;
+  pso.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
+  pso.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_ZERO;
+  pso.BlendState.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+  pso.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+  pso.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+  pso.BlendState.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+  pso.BlendState.RenderTarget[0].LogicOp = D3D12_LOGIC_OP_NOOP;
+  pso.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+  pso.SampleMask = 0xFFFFFFFFu;
+  pso.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+  // Cull nothing: the import flips Z, which reverses winding, and several hulls carry single-sided
+  // panels that should be visible from both sides anyway.
+  pso.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+  pso.RasterizerState.FrontCounterClockwise = FALSE;
+  pso.RasterizerState.DepthBias = 0;
+  pso.RasterizerState.DepthBiasClamp = 0.0f;
+  pso.RasterizerState.SlopeScaledDepthBias = 0.0f;
+  pso.RasterizerState.DepthClipEnable = TRUE;
+  pso.RasterizerState.MultisampleEnable = FALSE;
+  pso.RasterizerState.AntialiasedLineEnable = FALSE;
+  pso.RasterizerState.ForcedSampleCount = 0;
+  pso.RasterizerState.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+  pso.DepthStencilState.DepthEnable = TRUE;
+  pso.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+  pso.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+  pso.DepthStencilState.StencilEnable = FALSE;
+  pso.DepthStencilState.StencilReadMask = D3D12_DEFAULT_STENCIL_READ_MASK;
+  pso.DepthStencilState.StencilWriteMask = D3D12_DEFAULT_STENCIL_WRITE_MASK;
+  pso.DepthStencilState.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+  pso.DepthStencilState.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+  pso.DepthStencilState.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+  pso.DepthStencilState.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+  pso.DepthStencilState.BackFace = pso.DepthStencilState.FrontFace;
+  pso.InputLayout.pInputElementDescs = elements;
+  pso.InputLayout.NumElements = UINT(std::size(elements));
+  pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+  pso.NumRenderTargets = 1;
+  pso.RTVFormats[0] = BACK_BUFFER_FORMAT;
+  pso.DSVFormat = DEPTH_FORMAT;
+  pso.SampleDesc.Count = 1;
+  pso.SampleDesc.Quality = 0;
+  pso.NodeMask = 0;
+  pso.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+  CHECK_HR(m_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_scenePso)));
+}
+
+UINT Gfx::UploadMesh(const std::vector<SceneVertex>& _verts)
+{
+  GpuMesh mesh = {};
+  const UINT64 bytes = UINT64(_verts.size()) * sizeof(SceneVertex);
+  if (bytes == 0)
+  {
+    m_meshes.push_back(std::move(mesh));
+    return UINT(m_meshes.size() - 1);
+  }
+
+  const D3D12_HEAP_PROPERTIES hp = HeapProps(D3D12_HEAP_TYPE_UPLOAD);
+  const D3D12_RESOURCE_DESC rd = BufferDesc(bytes);
+  CHECK_HR(m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                                             IID_PPV_ARGS(&mesh.vb)));
+
+  uint8_t* dst = nullptr;
+  D3D12_RANGE noRead = {0, 0};
+  CHECK_HR(mesh.vb->Map(0, &noRead, reinterpret_cast<void**>(&dst)));
+  std::memcpy(dst, _verts.data(), size_t(bytes));
+  mesh.vb->Unmap(0, nullptr);
+
+  mesh.vbv.BufferLocation = mesh.vb->GetGPUVirtualAddress();
+  mesh.vbv.SizeInBytes = UINT(bytes);
+  mesh.vbv.StrideInBytes = sizeof(SceneVertex);
+  mesh.vertexCount = UINT(_verts.size());
+  m_meshes.push_back(std::move(mesh));
+  return UINT(m_meshes.size() - 1);
+}
+
+void Gfx::BeginScene(const SceneFrame& _frame)
+{
+  m_cmd->SetPipelineState(m_scenePso.Get());
+  m_cmd->SetGraphicsRootSignature(m_sceneRs.Get());
+  m_cmd->IASetPrimitiveTopology(D3D12_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+  // The world matrix occupies DWORDs 0..15 and changes per draw; viewProj is set once here.
+  m_cmd->SetGraphicsRoot32BitConstants(0, 16, &_frame.viewProj, 16);
+
+  // Everything after baseColour, which is also per draw.
+  const float shading[16] = {
+      _frame.lightDir.x,      _frame.lightDir.y,       _frame.lightDir.z,      _frame.ambient,
+      _frame.gridColour.r,    _frame.gridColour.g,     _frame.gridColour.b,    _frame.gridColour.a,
+      _frame.gridSpacing,     _frame.gridLineWidthPx,  _frame.gridFadeDistance, 0.0f,
+      _frame.cameraPos.x,     _frame.cameraPos.y,      _frame.cameraPos.z,     0.0f,
+  };
+  m_cmd->SetGraphicsRoot32BitConstants(1, 16, shading, 4);
+}
+
+void Gfx::DrawMesh(UINT _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _baseColour, float _materialMix, bool _isGround)
+{
+  if (_mesh >= m_meshes.size() || m_meshes[_mesh].vertexCount == 0)
+  {
+    return;
+  }
+  const GpuMesh& mesh = m_meshes[_mesh];
+  const float base[4] = {_baseColour.r, _baseColour.g, _baseColour.b, _materialMix};
+  const float mode = _isGround ? 1.0f : 0.0f;
+
+  m_cmd->SetGraphicsRoot32BitConstants(0, 16, &_world, 0);
+  m_cmd->SetGraphicsRoot32BitConstants(1, 4, base, 0);
+  m_cmd->SetGraphicsRoot32BitConstants(1, 1, &mode, 15); // gridParams.w
+  m_cmd->IASetVertexBuffers(0, 1, &mesh.vbv);
+  m_cmd->DrawInstanced(mesh.vertexCount, 1, 0, 0);
 }

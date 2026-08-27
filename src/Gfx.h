@@ -5,6 +5,8 @@
 #include <dxgi1_6.h>
 #include <wrl/client.h>
 
+#include <DirectXMath.h>
+
 #include <cstdint>
 #include <string_view>
 #include <vector>
@@ -31,6 +33,34 @@ struct Rgba
   float r, g, b, a;
 };
 
+// One vertex format for ships and ground alike. No normal: the pixel shader takes the face normal
+// from screen-space derivatives, which is exactly the flat shading wanted here.
+struct SceneVertex
+{
+  float px, py, pz;
+  float r, g, b;
+};
+
+struct GpuMesh
+{
+  ComPtr<ID3D12Resource> vb;
+  D3D12_VERTEX_BUFFER_VIEW vbv = {};
+  UINT vertexCount = 0;
+};
+
+// Set once per frame, before any DrawMesh.
+struct SceneFrame
+{
+  DirectX::XMFLOAT4X4 viewProj;
+  DirectX::XMFLOAT3 lightDir;  // towards the light; normalised in the shader
+  float ambient;
+  Rgba gridColour;             // a = how far a grid line pulls away from the ground colour
+  float gridSpacing;
+  float gridLineWidthPx;
+  float gridFadeDistance;
+  DirectX::XMFLOAT3 cameraPos;
+};
+
 struct TextVertex
 {
   float xPx, yPx;
@@ -51,6 +81,12 @@ struct Gfx
   // frame slot to come free.
   void BeginFrame(Rgba _clear);
   void EndFrame();
+
+  // Static geometry, uploaded once at startup. The vertex buffer stays in an upload heap: a few
+  // thousand triangles do not justify a staging copy and its barrier.
+  UINT UploadMesh(const std::vector<SceneVertex>& _verts);
+  void BeginScene(const SceneFrame& _frame);
+  void DrawMesh(UINT _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _baseColour, float _materialMix, bool _isGround);
 
   // Queued during the frame, drawn on top of everything in EndFrame. '\n' starts a new line.
   void DrawTextLine(float _xPx, float _yPx, float _scale, Rgba _colour, std::string_view _text);
@@ -78,6 +114,10 @@ struct Gfx
   UINT m_frameIndex = 0;
   UINT m_rtvStride = 0;
 
+  ComPtr<ID3D12RootSignature> m_sceneRs;
+  ComPtr<ID3D12PipelineState> m_scenePso;
+  std::vector<GpuMesh> m_meshes;
+
   ComPtr<ID3D12RootSignature> m_textRs;
   ComPtr<ID3D12PipelineState> m_textPso;
   ComPtr<ID3D12Resource> m_fontTex;
@@ -95,4 +135,5 @@ struct Gfx
   void WaitForGpu();
   void BakeFontAtlas();
   void CreateTextPipeline();
+  void CreateScenePipeline();
 };

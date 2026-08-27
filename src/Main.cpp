@@ -1,4 +1,6 @@
 #include "Gfx.h"
+#include "Scene.h"
+#include "Tuning.h"
 
 #include <cmath>
 #include <cstdio>
@@ -7,6 +9,7 @@ namespace
 {
 
 Gfx g_gfx;
+Scene g_scene;
 bool g_running = true;
 
 // Framerate-independent easing, used for everything that eases, HUD readouts included.
@@ -90,6 +93,7 @@ int WINAPI wWinMain(HINSTANCE _instance, HINSTANCE, LPWSTR, int)
   EnableMouseInPointer(TRUE);
 
   g_gfx.Init(hwnd);
+  g_scene.Init(g_gfx);
   ShowWindow(hwnd, SW_SHOW);
 
   LARGE_INTEGER qpcFreq = {};
@@ -132,12 +136,14 @@ int WINAPI wWinMain(HINSTANCE _instance, HINSTANCE, LPWSTR, int)
       continue;
     }
 
-    g_gfx.BeginFrame(Rgba{0.043f, 0.051f, 0.063f, 1.0f});
+    g_gfx.BeginFrame(Rgba{g_tuning.skyColourR, g_tuning.skyColourG, g_tuning.skyColourB, 1.0f});
+    g_scene.Render(g_gfx);
 
     const float hudScale = float(GetDpiForWindow(hwnd)) / 96.0f;
     char hud[256] = {};
-    std::snprintf(hud, sizeof(hud), "fps      %6.1f\nframe    %6.2f ms\nviewport %u x %u\nframes   %llu", double(fpsSmoothed),
-                  double(frameMsSmoothed), g_gfx.m_widthPx, g_gfx.m_heightPx, static_cast<unsigned long long>(frameCount));
+    std::snprintf(hud, sizeof(hud), "fps      %6.1f\nframe    %6.2f ms\nviewport %u x %u\nships    %zu\nframes   %llu",
+                  double(fpsSmoothed), double(frameMsSmoothed), g_gfx.m_widthPx, g_gfx.m_heightPx, g_scene.m_ships.size(),
+                  static_cast<unsigned long long>(frameCount));
     g_gfx.DrawTextLine(12.0f * hudScale, 10.0f * hudScale, hudScale, Rgba{0.78f, 0.87f, 0.96f, 1.0f}, hud);
 
     g_gfx.EndFrame();

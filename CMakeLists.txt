@@ -14,6 +14,9 @@ add_executable(ShipFeel WIN32
   src/Main.cpp
   src/Gfx.cpp
   src/Gfx.h
+  src/Scene.cpp
+  src/Scene.h
+  src/Tuning.h
 )
 
 target_compile_definitions(ShipFeel PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
