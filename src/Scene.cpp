@@ -21,8 +21,7 @@ struct LoadedMesh
   std::vector<SceneVertex> verts;
   DirectX::XMFLOAT3 boundsMin{0.0f, 0.0f, 0.0f};
   DirectX::XMFLOAT3 boundsMax{0.0f, 0.0f, 0.0f};
-  DirectX::XMFLOAT3 thrusterLocal{0.0f, 0.0f, 0.0f}; // centroid of the thruster-material faces
-  bool hasThruster = false;
+  std::vector<DirectX::XMFLOAT3> thrusterLocals; // one centroid per exhaust nozzle
 };
 
 std::string ReadWholeFile(const std::wstring& _path)
@@ -134,6 +133,98 @@ std::unordered_map<std::string, XMFLOAT3> LoadMaterials(const std::wstring& _pat
   return materials;
 }
 
+// Every nozzle on a hull is written with the same "thruster" material, so the material alone
+// cannot say how many exhausts there are or where each one sits. Single-link clustering can: the
+// faces of one nozzle touch each other, and separate nozzles sit well apart. The link distance
+// comes from the median thruster edge rather than from the hull bounds, so it means the same thing
+// on a bomber as on a carrier.
+std::vector<XMFLOAT3> ClusterThrusters(const std::vector<XMFLOAT3>& _faceCentroids, std::vector<float> _edgeLengths)
+{
+  if (_faceCentroids.empty())
+  {
+    return {};
+  }
+
+  // Degenerate faces (the exporter writes a few) contribute zero-length edges and would drag the
+  // median to nothing, so they are dropped. Their centroids still sit on a nozzle, so the faces
+  // themselves stay in.
+  _edgeLengths.erase(std::remove_if(_edgeLengths.begin(), _edgeLengths.end(), [](float _e) { return _e <= 1e-6f; }),
+                     _edgeLengths.end());
+  if (_edgeLengths.empty())
+  {
+    return {_faceCentroids[0]}; // nothing to measure with: take the lot as one exhaust
+  }
+  const size_t middle = _edgeLengths.size() / 2;
+  std::nth_element(_edgeLengths.begin(), _edgeLengths.begin() + ptrdiff_t(middle), _edgeLengths.end());
+  const float linkDistance = _edgeLengths[middle] * 1.5f;
+  const float linkDistanceSq = linkDistance * linkDistance;
+
+  // Union-find over the face centroids. A few hundred thruster faces on the biggest hull, once at
+  // load, so the quadratic pass costs nothing worth avoiding.
+  const int count = int(_faceCentroids.size());
+  std::vector<int> parent(static_cast<size_t>(count));
+  for (int i = 0; i < count; ++i)
+  {
+    parent[size_t(i)] = i;
+  }
+  const auto find = [&parent](int _i) {
+    while (parent[size_t(_i)] != _i)
+    {
+      parent[size_t(_i)] = parent[size_t(parent[size_t(_i)])];
+      _i = parent[size_t(_i)];
+    }
+    return _i;
+  };
+  for (int i = 0; i < count; ++i)
+  {
+    for (int j = i + 1; j < count; ++j)
+    {
+      const XMFLOAT3& a = _faceCentroids[size_t(i)];
+      const XMFLOAT3& b = _faceCentroids[size_t(j)];
+      const float dx = a.x - b.x;
+      const float dy = a.y - b.y;
+      const float dz = a.z - b.z;
+      if (dx * dx + dy * dy + dz * dz <= linkDistanceSq)
+      {
+        const int rootI = find(i);
+        const int rootJ = find(j);
+        if (rootI != rootJ)
+        {
+          parent[size_t(rootI)] = rootJ;
+        }
+      }
+    }
+  }
+
+  // Averaged in first-seen order, so the nozzle list comes out the same on every load.
+  std::vector<int> slotOfRoot(static_cast<size_t>(count), -1);
+  std::vector<XMFLOAT3> sums;
+  std::vector<int> counts;
+  for (int i = 0; i < count; ++i)
+  {
+    int& slot = slotOfRoot[size_t(find(i))];
+    if (slot < 0)
+    {
+      slot = int(sums.size());
+      sums.push_back(XMFLOAT3(0.0f, 0.0f, 0.0f));
+      counts.push_back(0);
+    }
+    const XMFLOAT3& p = _faceCentroids[size_t(i)];
+    sums[size_t(slot)] = XMFLOAT3(sums[size_t(slot)].x + p.x, sums[size_t(slot)].y + p.y, sums[size_t(slot)].z + p.z);
+    ++counts[size_t(slot)];
+  }
+
+  std::vector<XMFLOAT3> centres;
+  centres.reserve(sums.size());
+  for (size_t slot = 0; slot < sums.size(); ++slot)
+  {
+    const float n = float(counts[slot]);
+    centres.push_back(XMFLOAT3(sums[slot].x / n, sums[slot].y / n, sums[slot].z / n));
+  }
+  return centres;
+}
+
+
 // OBJ is right-handed and these hulls point their bow at -Z. Negating Z converts to the
 // left-handed render basis (east, up, north) and lands the bow on +Z in one step.
 bool LoadObj(const std::wstring& _dir, const std::wstring& _name, LoadedMesh& _out)
@@ -150,8 +241,8 @@ bool LoadObj(const std::wstring& _dir, const std::wstring& _name, LoadedMesh& _o
   XMFLOAT3 boundsMin(1e30f, 1e30f, 1e30f);
   XMFLOAT3 boundsMax(-1e30f, -1e30f, -1e30f);
   bool onThruster = false;
-  XMFLOAT3 thrusterSum(0.0f, 0.0f, 0.0f);
-  int thrusterVerts = 0;
+  std::vector<XMFLOAT3> thrusterFaces; // one centroid per thruster-material triangle
+  std::vector<float> thrusterEdges;    // and their edge lengths, for the clustering distance
   int badFaces = 0;
 
   for (const std::string_view line : SplitLines(text))
@@ -206,10 +297,18 @@ bool LoadObj(const std::wstring& _dir, const std::wstring& _name, LoadedMesh& _o
         for (const XMFLOAT3& p : triangle)
         {
           _out.verts.push_back(SceneVertex{p.x, p.y, p.z, colour.x, colour.y, colour.z});
-          if (onThruster)
+        }
+        if (onThruster)
+        {
+          thrusterFaces.push_back(XMFLOAT3((triangle[0].x + triangle[1].x + triangle[2].x) / 3.0f,
+                                           (triangle[0].y + triangle[1].y + triangle[2].y) / 3.0f,
+                                           (triangle[0].z + triangle[1].z + triangle[2].z) / 3.0f));
+          for (int edge = 0; edge < 3; ++edge)
           {
-            thrusterSum = XMFLOAT3(thrusterSum.x + p.x, thrusterSum.y + p.y, thrusterSum.z + p.z);
-            ++thrusterVerts;
+            const XMFLOAT3& a = triangle[edge];
+            const XMFLOAT3& b = triangle[(edge + 1) % 3];
+            thrusterEdges.push_back(
+                std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z)));
           }
         }
       }
@@ -227,14 +326,11 @@ bool LoadObj(const std::wstring& _dir, const std::wstring& _name, LoadedMesh& _o
   }
   _out.boundsMin = boundsMin;
   _out.boundsMax = boundsMax;
-  _out.hasThruster = thrusterVerts > 0;
-  if (_out.hasThruster)
-  {
-    _out.thrusterLocal = XMFLOAT3(thrusterSum.x / float(thrusterVerts), thrusterSum.y / float(thrusterVerts),
-                                  thrusterSum.z / float(thrusterVerts));
-  }
-  DebugPrintf("%S: %zu tris, %.1f x %.1f x %.1f%s\n", _name.c_str(), _out.verts.size() / 3, boundsMax.x - boundsMin.x,
-              boundsMax.y - boundsMin.y, boundsMax.z - boundsMin.z, badFaces ? " (skipped malformed faces)" : "");
+  _out.thrusterLocals = ClusterThrusters(thrusterFaces, std::move(thrusterEdges));
+  DebugPrintf("%S: %zu tris, %.1f x %.1f x %.1f, %zu exhaust%s%s\n", _name.c_str(), _out.verts.size() / 3,
+              boundsMax.x - boundsMin.x, boundsMax.y - boundsMin.y, boundsMax.z - boundsMin.z,
+              _out.thrusterLocals.size(), _out.thrusterLocals.size() == 1 ? "" : "s",
+              badFaces ? " (skipped malformed faces)" : "");
   return !_out.verts.empty();
 }
 
@@ -443,8 +539,8 @@ void Scene::Init(Gfx& _gfx)
     ship.halfExtents = XMFLOAT3(std::max(0.5f, (loaded.boundsMax.x - loaded.boundsMin.x) * 0.5f),
                                 std::max(0.5f, (loaded.boundsMax.y - loaded.boundsMin.y) * 0.5f),
                                 std::max(0.5f, (loaded.boundsMax.z - loaded.boundsMin.z) * 0.5f));
-    ship.thrusterLocal = loaded.thrusterLocal;
-    ship.hasThruster = loaded.hasThruster;
+    ship.thrusterLocals = loaded.thrusterLocals;
+    ship.trail.assign(ship.thrusterLocals.size() * TRAIL_SAMPLES, XMFLOAT3(0.0f, 0.0f, 0.0f));
     ship.posWorld = XMFLOAT3((float(i) - float(shipCount - 1) * 0.5f) * g_tuning.startSpacing, 0.0f, 0.0f);
     ship.prevPos = ship.posWorld;
     m_ships.push_back(ship);
@@ -1110,14 +1206,18 @@ void Scene::Step()
     // What the thruster glow and trail are driven by.
     ship.accelSample = (ship.speed - speedBefore) / SIM_DT;
 
-    // One trail sample per tick, so trailLength means the same thing whatever the frame rate.
+    // One sample per nozzle per tick, so trailLength means the same thing whatever the frame rate.
     const float cosH = std::cos(ship.headingRad);
     const float sinH = std::sin(ship.headingRad);
     ship.trailHead = (ship.trailHead + 1) % TRAIL_SAMPLES;
-    ship.trail[ship.trailHead] =
-        XMFLOAT3(ship.posWorld.x + (ship.thrusterLocal.x * cosH + ship.thrusterLocal.z * sinH) * scale,
-                 ship.posWorld.y + g_tuning.shipHoverHeight + (ship.restY + ship.thrusterLocal.y) * scale,
-                 ship.posWorld.z + (-ship.thrusterLocal.x * sinH + ship.thrusterLocal.z * cosH) * scale);
+    for (size_t nozzle = 0; nozzle < ship.thrusterLocals.size(); ++nozzle)
+    {
+      const XMFLOAT3& local = ship.thrusterLocals[nozzle];
+      ship.trail[nozzle * TRAIL_SAMPLES + size_t(ship.trailHead)] =
+          XMFLOAT3(ship.posWorld.x + (local.x * cosH + local.z * sinH) * scale,
+                   ship.posWorld.y + g_tuning.shipHoverHeight + (ship.restY + local.y) * scale,
+                   ship.posWorld.z + (-local.x * sinH + local.z * cosH) * scale);
+    }
     ship.trailCount = std::min(ship.trailCount + 1, TRAIL_SAMPLES);
   }
 }
@@ -1426,61 +1526,68 @@ void Scene::DrawFeedback(Gfx& _gfx, float _alpha)
 
   for (const Ship& ship : m_ships)
   {
-    if (!ship.hasThruster || ship.thrusterIntensity <= 0.002f)
+    if (ship.thrusterLocals.empty() || ship.thrusterIntensity <= 0.002f)
     {
       continue;
     }
     const Rgba glowColour{g_tuning.selectedColourR, g_tuning.selectedColourG, g_tuning.selectedColourB, ship.thrusterIntensity};
 
-    // Newest sample first, walking back along the path until trailLength runs out. The trail
-    // follows the path the ship actually took, so it curves through a turn.
-    float travelled = 0.0f;
-    XMFLOAT3 previous = ship.trail[ship.trailHead];
-    for (int step = 0; step < ship.trailCount; ++step)
+    // Every exhaust gets its own glow and its own trail: a bomber flying with three nozzles lays
+    // down three ribbons, and they fan apart through a turn because the outboard ones sweep wider.
+    for (size_t nozzle = 0; nozzle < ship.thrusterLocals.size(); ++nozzle)
     {
-      const int index = ((ship.trailHead - step) % TRAIL_SAMPLES + TRAIL_SAMPLES) % TRAIL_SAMPLES;
-      const XMFLOAT3 point = ship.trail[index];
-      if (step > 0)
+      const XMFLOAT3* const samples = ship.trail.data() + nozzle * TRAIL_SAMPLES;
+
+      // Newest sample first, walking back along the path until trailLength runs out. The trail
+      // follows the path the nozzle actually took, so it curves through a turn.
+      float travelled = 0.0f;
+      XMFLOAT3 previous = samples[ship.trailHead];
+      for (int step = 0; step < ship.trailCount; ++step)
       {
-        travelled += Distance2D(previous.x, previous.z, point.x, point.z);
-        if (travelled >= trailLength)
+        const int index = ((ship.trailHead - step) % TRAIL_SAMPLES + TRAIL_SAMPLES) % TRAIL_SAMPLES;
+        const XMFLOAT3 point = samples[index];
+        if (step > 0)
+        {
+          travelled += Distance2D(previous.x, previous.z, point.x, point.z);
+          if (travelled >= trailLength)
+          {
+            break;
+          }
+        }
+        previous = point;
+
+        const float along = (trailLength > 0.0f) ? travelled / trailLength : 1.0f;
+        const float taper = std::pow(std::max(0.0f, 1.0f - along), trailFade);
+        const float radius = glowRadius * (step == 0 ? 1.0f : taper * 0.8f);
+        const float alpha = glowColour.a * (step == 0 ? 1.0f : taper * 0.55f);
+        if (alpha <= 0.002f || radius <= 0.001f)
+        {
+          continue;
+        }
+
+        XMFLOAT4X4 billboard;
+        billboard._11 = m_cameraRight.x * radius * 2.0f;
+        billboard._12 = m_cameraRight.y * radius * 2.0f;
+        billboard._13 = m_cameraRight.z * radius * 2.0f;
+        billboard._14 = 0.0f;
+        billboard._21 = 0.0f;
+        billboard._22 = 1.0f;
+        billboard._23 = 0.0f;
+        billboard._24 = 0.0f;
+        billboard._31 = m_cameraUp.x * radius * 2.0f;
+        billboard._32 = m_cameraUp.y * radius * 2.0f;
+        billboard._33 = m_cameraUp.z * radius * 2.0f;
+        billboard._34 = 0.0f;
+        billboard._41 = point.x;
+        billboard._42 = point.y;
+        billboard._43 = point.z;
+        billboard._44 = 1.0f;
+        _gfx.DrawGlow(m_groundMesh, billboard, Rgba{glowColour.r, glowColour.g, glowColour.b, alpha}, g_tuning.thrusterGlowFalloff);
+
+        if (trailLength <= 0.0f)
         {
           break;
         }
-      }
-      previous = point;
-
-      const float along = (trailLength > 0.0f) ? travelled / trailLength : 1.0f;
-      const float taper = std::pow(std::max(0.0f, 1.0f - along), trailFade);
-      const float radius = glowRadius * (step == 0 ? 1.0f : taper * 0.8f);
-      const float alpha = glowColour.a * (step == 0 ? 1.0f : taper * 0.55f);
-      if (alpha <= 0.002f || radius <= 0.001f)
-      {
-        continue;
-      }
-
-      XMFLOAT4X4 billboard;
-      billboard._11 = m_cameraRight.x * radius * 2.0f;
-      billboard._12 = m_cameraRight.y * radius * 2.0f;
-      billboard._13 = m_cameraRight.z * radius * 2.0f;
-      billboard._14 = 0.0f;
-      billboard._21 = 0.0f;
-      billboard._22 = 1.0f;
-      billboard._23 = 0.0f;
-      billboard._24 = 0.0f;
-      billboard._31 = m_cameraUp.x * radius * 2.0f;
-      billboard._32 = m_cameraUp.y * radius * 2.0f;
-      billboard._33 = m_cameraUp.z * radius * 2.0f;
-      billboard._34 = 0.0f;
-      billboard._41 = point.x;
-      billboard._42 = point.y;
-      billboard._43 = point.z;
-      billboard._44 = 1.0f;
-      _gfx.DrawGlow(m_groundMesh, billboard, Rgba{glowColour.r, glowColour.g, glowColour.b, alpha}, g_tuning.thrusterGlowFalloff);
-
-      if (trailLength <= 0.0f)
-      {
-        break;
       }
     }
   }

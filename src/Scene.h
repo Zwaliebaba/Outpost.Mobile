@@ -72,14 +72,18 @@ struct Ship
   float hoverAmount = 0.0f;
   float bankRad = 0.0f;
   float thrusterIntensity = 0.0f;
-  DirectX::XMFLOAT3 trail[TRAIL_SAMPLES] = {}; // thruster positions, newest at trailHead
+  // One ring buffer per exhaust, nozzle-major: nozzle n owns [n * TRAIL_SAMPLES, (n + 1) *
+  // TRAIL_SAMPLES), newest at trailHead. Every nozzle is sampled on the same tick, so the head and
+  // the count are shared rather than stored per nozzle.
+  std::vector<DirectX::XMFLOAT3> trail;
   int trailCount = 0;
   int trailHead = 0;
 
   UINT mesh = 0;
   float restY = 0.0f; // lifts the hull so its lowest vertex rests on the ground plane
-  DirectX::XMFLOAT3 thrusterLocal{0.0f, 0.0f, 0.0f}; // centroid of the faces using the thruster material
-  bool hasThruster = false;
+  // One centroid per exhaust nozzle. A hull carries anywhere from one to a dozen and they all use
+  // the same thruster material, so this is a list rather than the single point it started as.
+  std::vector<DirectX::XMFLOAT3> thrusterLocals;
   DirectX::XMFLOAT3 pickCentre{0.0f, 0.0f, 0.0f};  // mesh bounds centre, in local space
   DirectX::XMFLOAT3 halfExtents{1.0f, 1.0f, 1.0f}; // mesh half-size about that centre
   bool selected = false;
