@@ -16,6 +16,7 @@ add_executable(ShipFeel WIN32
   src/Gfx.h
   src/Scene.cpp
   src/Scene.h
+  src/Tuning.cpp
   src/Tuning.h
 )
 

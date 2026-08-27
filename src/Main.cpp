@@ -47,6 +47,10 @@ LRESULT CALLBACK WndProc(HWND _hwnd, UINT _msg, WPARAM _wparam, LPARAM _lparam)
     {
       PostMessageW(_hwnd, WM_CLOSE, 0, 0);
     }
+    else if (_wparam == VK_F2)
+    {
+      TuningToggleWindow();
+    }
     return 0;
 
   case WM_CLOSE:
@@ -93,6 +97,7 @@ int WINAPI wWinMain(HINSTANCE _instance, HINSTANCE, LPWSTR, int)
   EnableMouseInPointer(TRUE);
 
   g_gfx.Init(hwnd);
+  TuningInit(_instance, hwnd); // before the scene: ship placement reads the tuning values
   g_scene.Init(g_gfx);
   ShowWindow(hwnd, SW_SHOW);
 
@@ -122,6 +127,8 @@ int WINAPI wWinMain(HINSTANCE _instance, HINSTANCE, LPWSTR, int)
       break;
     }
 
+    TuningPoll(); // picks up an edited tuning.ini and refreshes the sliders
+
     LARGE_INTEGER qpcNow = {};
     QueryPerformanceCounter(&qpcNow);
     const float dtSec = float(double(qpcNow.QuadPart - qpcPrev.QuadPart) / double(qpcFreq.QuadPart));
@@ -149,6 +156,7 @@ int WINAPI wWinMain(HINSTANCE _instance, HINSTANCE, LPWSTR, int)
     g_gfx.EndFrame();
   }
 
+  TuningShutdown();
   g_gfx.Shutdown();
   return 0;
 }
