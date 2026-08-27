@@ -13,6 +13,7 @@ std::wstring FindDataRoot();
 
 constexpr float SIM_HZ = 60.0f;
 constexpr float SIM_DT = 1.0f / SIM_HZ;
+constexpr int TRAIL_SAMPLES = 32; // half a second of thruster history at the sim rate
 
 // Everything the toy knows about a pointer, decoded from WM_POINTER* in Main.cpp and queued rather
 // than acted on immediately: the frame loop drains it once the camera matrices are current, and
@@ -62,11 +63,35 @@ struct Ship
   float orderFacingRad = 0.0f;
   bool orderHasFacing = false;
 
+  // Feedback state. None of this feeds back into the simulation, so it is free to run per frame on
+  // real time while Step stays fixed and deterministic.
+  float accelSample = 0.0f;       // from the last tick; drives thruster glow and trail
+  float ringFade = 0.0f;          // 0..1 alpha ramp on select and deselect
+  float ringScale = 0.0f;         // chases ringFade through a spring, so it overshoots
+  float ringScaleVel = 0.0f;
+  float hoverAmount = 0.0f;
+  float bankRad = 0.0f;
+  float thrusterIntensity = 0.0f;
+  DirectX::XMFLOAT3 trail[TRAIL_SAMPLES] = {}; // thruster positions, newest at trailHead
+  int trailCount = 0;
+  int trailHead = 0;
+
   UINT mesh = 0;
   float restY = 0.0f; // lifts the hull so its lowest vertex rests on the ground plane
+  DirectX::XMFLOAT3 thrusterLocal{0.0f, 0.0f, 0.0f}; // centroid of the faces using the thruster material
+  bool hasThruster = false;
   DirectX::XMFLOAT3 pickCentre{0.0f, 0.0f, 0.0f};  // mesh bounds centre, in local space
   DirectX::XMFLOAT3 halfExtents{1.0f, 1.0f, 1.0f}; // mesh half-size about that centre
   bool selected = false;
+};
+
+// One per move order, at the point that was tapped rather than one per ship.
+struct OrderMarker
+{
+  DirectX::XMFLOAT3 posWorld{0.0f, 0.0f, 0.0f};
+  float facingRad = 0.0f;
+  bool hasFacing = false;
+  float ageSec = 0.0f;
 };
 
 struct Scene
@@ -81,6 +106,11 @@ struct Scene
 
   // One fixed 60 Hz tick.
   void Step();
+
+  // Rings, banking, thrusters, markers, camera lag and shake. Real time, not sim time.
+  void UpdateFeedback(float _dtSec);
+  void DrawFeedback(Gfx& _gfx, float _alpha);
+  void TriggerCameraShake();
 
   // _alpha is the fraction of a tick already accumulated, for interpolation.
   void Render(Gfx& _gfx, float _alpha);
@@ -99,8 +129,15 @@ struct Scene
   std::vector<Ship> m_ships;
   UINT m_groundMesh = 0;
 
-  DirectX::XMFLOAT3 m_cameraTarget{0.0f, 0.0f, 0.0f};
+  DirectX::XMFLOAT3 m_cameraGoal{0.0f, 0.0f, 0.0f};   // where panning and following put it
+  DirectX::XMFLOAT3 m_cameraTarget{0.0f, 0.0f, 0.0f}; // where the camera has actually eased to
   DirectX::XMFLOAT3 m_cameraEye{0.0f, 0.0f, 0.0f};
+  DirectX::XMFLOAT3 m_cameraRight{1.0f, 0.0f, 0.0f};
+  DirectX::XMFLOAT3 m_cameraUp{0.0f, 1.0f, 0.0f};
+  DirectX::XMFLOAT3 m_shakeOffset{0.0f, 0.0f, 0.0f};
+  float m_shakeAmount = 0.0f;
+  float m_shakeTimeSec = 0.0f;
+  std::vector<OrderMarker> m_markers;
   DirectX::XMFLOAT4X4 m_viewProj;
   DirectX::XMFLOAT4X4 m_invViewProj;
   uint32_t m_viewWidthPx = 1;

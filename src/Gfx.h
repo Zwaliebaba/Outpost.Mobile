@@ -88,6 +88,13 @@ struct Gfx
   void BeginScene(const SceneFrame& _frame);
   void DrawMesh(UINT _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _baseColour, float _materialMix, bool _isGround);
 
+  // Alpha-blended overlays drawn after the opaque pass: rings and order markers on the ground,
+  // additive glows in the air. Both take the unit quad and shape it in the pixel shader, so ring
+  // thickness and glow falloff stay live tuning values with no geometry to rebuild.
+  void BeginDecals(const DirectX::XMFLOAT4X4& _viewProj, const DirectX::XMFLOAT3& _cameraPos);
+  void DrawDecal(UINT _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _colour, float _thickness, float _fill);
+  void DrawGlow(UINT _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _colour, float _falloff);
+
   // Queued during the frame, drawn on top of everything in EndFrame. '\n' starts a new line.
   void DrawTextLine(float _xPx, float _yPx, float _scale, Rgba _colour, std::string_view _text);
 
@@ -121,6 +128,8 @@ struct Gfx
 
   ComPtr<ID3D12RootSignature> m_sceneRs;
   ComPtr<ID3D12PipelineState> m_scenePso;
+  ComPtr<ID3D12PipelineState> m_decalPso; // alpha blended
+  ComPtr<ID3D12PipelineState> m_glowPso;  // additive
   std::vector<GpuMesh> m_meshes;
 
   ComPtr<ID3D12RootSignature> m_textRs;
@@ -143,4 +152,5 @@ struct Gfx
   void BakeFontAtlas();
   void CreateTextPipeline();
   void CreateScenePipeline();
+  void CreateDecalPipelines();
 };

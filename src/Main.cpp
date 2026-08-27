@@ -164,6 +164,10 @@ LRESULT CALLBACK WndProc(HWND _hwnd, UINT _msg, WPARAM _wparam, LPARAM _lparam)
     {
       TuningToggleWindow();
     }
+    else if (_wparam == VK_F3)
+    {
+      g_scene.TriggerCameraShake(); // the debug hook, so the shake curve can be tuned on demand
+    }
     return 0;
 
   case WM_CLOSE:
@@ -271,6 +275,10 @@ int WINAPI wWinMain(HINSTANCE _instance, HINSTANCE, LPWSTR, int)
       ++g_simTick;
     }
     const float simAlpha = simAccumulator / SIM_DT;
+
+    // Rings, banking, thrusters, markers and the camera all ease on real time rather than sim
+    // time, so they stay smooth however far the swapchain runs ahead of 60 Hz.
+    g_scene.UpdateFeedback(dtSec);
 
     g_gfx.BeginFrame(Rgba{g_tuning.skyColourR, g_tuning.skyColourG, g_tuning.skyColourB, 1.0f});
     g_scene.Render(g_gfx, simAlpha);

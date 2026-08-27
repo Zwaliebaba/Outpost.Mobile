@@ -21,6 +21,8 @@ struct LoadedMesh
   std::vector<SceneVertex> verts;
   DirectX::XMFLOAT3 boundsMin{0.0f, 0.0f, 0.0f};
   DirectX::XMFLOAT3 boundsMax{0.0f, 0.0f, 0.0f};
+  DirectX::XMFLOAT3 thrusterLocal{0.0f, 0.0f, 0.0f}; // centroid of the thruster-material faces
+  bool hasThruster = false;
 };
 
 std::string ReadWholeFile(const std::wstring& _path)
@@ -147,6 +149,9 @@ bool LoadObj(const std::wstring& _dir, const std::wstring& _name, LoadedMesh& _o
   XMFLOAT3 colour(0.7f, 0.7f, 0.7f);
   XMFLOAT3 boundsMin(1e30f, 1e30f, 1e30f);
   XMFLOAT3 boundsMax(-1e30f, -1e30f, -1e30f);
+  bool onThruster = false;
+  XMFLOAT3 thrusterSum(0.0f, 0.0f, 0.0f);
+  int thrusterVerts = 0;
   int badFaces = 0;
 
   for (const std::string_view line : SplitLines(text))
@@ -166,8 +171,10 @@ bool LoadObj(const std::wstring& _dir, const std::wstring& _name, LoadedMesh& _o
     }
     else if (StartsWith(line, "usemtl "))
     {
-      const auto found = materials.find(std::string(line.substr(7)));
+      const std::string material(line.substr(7));
+      const auto found = materials.find(material);
       colour = (found != materials.end()) ? found->second : XMFLOAT3(0.7f, 0.7f, 0.7f);
+      onThruster = material == "thruster"; // every hull in GameData names its engines this way
     }
     else if (StartsWith(line, "f "))
     {
@@ -199,6 +206,11 @@ bool LoadObj(const std::wstring& _dir, const std::wstring& _name, LoadedMesh& _o
         for (const XMFLOAT3& p : triangle)
         {
           _out.verts.push_back(SceneVertex{p.x, p.y, p.z, colour.x, colour.y, colour.z});
+          if (onThruster)
+          {
+            thrusterSum = XMFLOAT3(thrusterSum.x + p.x, thrusterSum.y + p.y, thrusterSum.z + p.z);
+            ++thrusterVerts;
+          }
         }
       }
     }
@@ -215,6 +227,12 @@ bool LoadObj(const std::wstring& _dir, const std::wstring& _name, LoadedMesh& _o
   }
   _out.boundsMin = boundsMin;
   _out.boundsMax = boundsMax;
+  _out.hasThruster = thrusterVerts > 0;
+  if (_out.hasThruster)
+  {
+    _out.thrusterLocal = XMFLOAT3(thrusterSum.x / float(thrusterVerts), thrusterSum.y / float(thrusterVerts),
+                                  thrusterSum.z / float(thrusterVerts));
+  }
   DebugPrintf("%S: %zu tris, %.1f x %.1f x %.1f%s\n", _name.c_str(), _out.verts.size() / 3, boundsMax.x - boundsMin.x,
               boundsMax.y - boundsMin.y, boundsMax.z - boundsMin.z, badFaces ? " (skipped malformed faces)" : "");
   return !_out.verts.empty();
@@ -425,6 +443,8 @@ void Scene::Init(Gfx& _gfx)
     ship.halfExtents = XMFLOAT3(std::max(0.5f, (loaded.boundsMax.x - loaded.boundsMin.x) * 0.5f),
                                 std::max(0.5f, (loaded.boundsMax.y - loaded.boundsMin.y) * 0.5f),
                                 std::max(0.5f, (loaded.boundsMax.z - loaded.boundsMin.z) * 0.5f));
+    ship.thrusterLocal = loaded.thrusterLocal;
+    ship.hasThruster = loaded.hasThruster;
     ship.posWorld = XMFLOAT3((float(i) - float(shipCount - 1) * 0.5f) * g_tuning.startSpacing, 0.0f, 0.0f);
     ship.prevPos = ship.posWorld;
     m_ships.push_back(ship);
@@ -467,10 +487,16 @@ void Scene::UpdateCamera()
   m_cameraTarget.y = g_tuning.cameraTargetHeight;
 
   const float cosPitch = std::cos(pitch);
-  const XMVECTOR target = XMLoadFloat3(&m_cameraTarget);
+  const XMFLOAT3 shaken(m_cameraTarget.x + m_shakeOffset.x, m_cameraTarget.y + m_shakeOffset.y, m_cameraTarget.z + m_shakeOffset.z);
+  const XMVECTOR target = XMLoadFloat3(&shaken);
   const XMVECTOR offset = XMVectorSet(std::sin(yaw) * cosPitch, std::sin(pitch), -std::cos(yaw) * cosPitch, 0.0f);
   const XMVECTOR eye = XMVectorMultiplyAdd(offset, XMVectorReplicate(distance), target);
   XMStoreFloat3(&m_cameraEye, eye);
+
+  const XMVECTOR forward = XMVector3Normalize(XMVectorNegate(offset));
+  const XMVECTOR right = XMVector3Normalize(XMVector3Cross(XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f), forward));
+  XMStoreFloat3(&m_cameraRight, right);
+  XMStoreFloat3(&m_cameraUp, XMVector3Cross(forward, right));
 
   const float aspect = float(m_viewWidthPx) / float(std::max(1u, m_viewHeightPx));
   const XMMATRIX view = XMMatrixLookAtLH(eye, target, XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f));
@@ -625,6 +651,12 @@ void Scene::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float _facin
                      m_ships[size_t(_b)].posWorld.x * rightX + m_ships[size_t(_b)].posWorld.z * rightZ;
             });
 
+  OrderMarker marker;
+  marker.posWorld = XMFLOAT3(_point.x, 0.0f, _point.z);
+  marker.facingRad = heading;
+  marker.hasFacing = _hasFacing;
+  m_markers.push_back(marker);
+
   const int count = int(chosen.size());
   const int shape = std::clamp(int(g_tuning.motionFormationShape + 0.5f), 0, 3);
   const float spacing = std::max(0.0f, g_tuning.motionFormationSpacing);
@@ -753,8 +785,8 @@ void ApplyCameraDrag(Scene& _scene, const PointerTrack& _track)
   XMFLOAT3 after;
   if (_scene.RayToGround(_track.prevXPx, _track.prevYPx, before) && _scene.RayToGround(_track.xPx, _track.yPx, after))
   {
-    _scene.m_cameraTarget.x -= (after.x - before.x) * g_tuning.cameraPanSpeed;
-    _scene.m_cameraTarget.z -= (after.z - before.z) * g_tuning.cameraPanSpeed;
+    _scene.m_cameraGoal.x -= (after.x - before.x) * g_tuning.cameraPanSpeed;
+    _scene.m_cameraGoal.z -= (after.z - before.z) * g_tuning.cameraPanSpeed;
     _scene.UpdateCamera();
   }
 }
@@ -788,8 +820,8 @@ void ApplyTwoFingerGesture(Scene& _scene, const PointerTrack& _first, const Poin
   XMFLOAT3 after;
   if (_scene.RayToGround(g_gestureCentroidXPx, g_gestureCentroidYPx, before) && _scene.RayToGround(centroidX, centroidY, after))
   {
-    _scene.m_cameraTarget.x -= (after.x - before.x) * g_tuning.cameraPanSpeed;
-    _scene.m_cameraTarget.z -= (after.z - before.z) * g_tuning.cameraPanSpeed;
+    _scene.m_cameraGoal.x -= (after.x - before.x) * g_tuning.cameraPanSpeed;
+    _scene.m_cameraGoal.z -= (after.z - before.z) * g_tuning.cameraPanSpeed;
     _scene.UpdateCamera();
   }
 
@@ -971,10 +1003,12 @@ void Scene::Step()
   const float arrivalRadius = std::max(0.01f, g_tuning.motionArrivalRadius);
   const float stopBlend = HalfLifeBlend(SIM_DT, g_tuning.motionStopDampingHalfLife);
 
+  const float scale = std::max(0.01f, g_tuning.shipScale);
   for (Ship& ship : m_ships)
   {
     ship.prevPos = ship.posWorld;
     ship.prevHeading = ship.headingRad;
+    const float speedBefore = ship.speed;
 
     float desiredHeading = ship.headingRad;
     float desiredSpeed = 0.0f;
@@ -1032,7 +1066,152 @@ void Scene::Step()
 
     ship.posWorld.x += std::sin(ship.headingRad) * ship.speed * SIM_DT;
     ship.posWorld.z += std::cos(ship.headingRad) * ship.speed * SIM_DT;
+
+    // What the thruster glow and trail are driven by.
+    ship.accelSample = (ship.speed - speedBefore) / SIM_DT;
+
+    // One trail sample per tick, so trailLength means the same thing whatever the frame rate.
+    const float cosH = std::cos(ship.headingRad);
+    const float sinH = std::sin(ship.headingRad);
+    ship.trailHead = (ship.trailHead + 1) % TRAIL_SAMPLES;
+    ship.trail[ship.trailHead] =
+        XMFLOAT3(ship.posWorld.x + (ship.thrusterLocal.x * cosH + ship.thrusterLocal.z * sinH) * scale,
+                 ship.posWorld.y + g_tuning.shipHoverHeight + (ship.restY + ship.thrusterLocal.y) * scale,
+                 ship.posWorld.z + (-ship.thrusterLocal.x * sinH + ship.thrusterLocal.z * cosH) * scale);
+    ship.trailCount = std::min(ship.trailCount + 1, TRAIL_SAMPLES);
   }
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// Feedback. Real time rather than sim time: none of it feeds back into Step, so the simulation
+// stays fixed-step and deterministic while the look of it runs as fast as the swapchain does.
+
+// A ring that overshoots is a spring, so use one. The peak overshoot fixes the damping ratio and
+// the settle half-life then fixes the frequency, which makes both tuning values mean exactly what
+// they say rather than being two knobs on the same vague curve.
+void SpringTowards(float& _value, float& _velocity, float _target, float _overshoot, float _settleHalfLifeSec, float _dtSec)
+{
+  const float overshoot = std::clamp(_overshoot - 1.0f, 0.002f, 0.95f);
+  const float logOvershoot = std::log(overshoot);
+  const float damping = -logOvershoot / std::sqrt(XM_PI * XM_PI + logOvershoot * logOvershoot);
+  // The envelope decays as exp(-damping * omega * t), so this omega puts its half-life exactly on
+  // the tuned one. Capped against the step size so dragging the slider to nothing cannot blow up.
+  float omega = 0.6931472f / (std::max(0.001f, _settleHalfLifeSec) * std::max(0.05f, damping));
+  omega = std::min(omega, 0.8f / std::max(1e-5f, _dtSec));
+
+  _velocity += (omega * omega * (_target - _value) - 2.0f * damping * omega * _velocity) * _dtSec;
+  _value += _velocity * _dtSec;
+}
+
+void Scene::TriggerCameraShake()
+{
+  m_shakeAmount = 1.0f;
+}
+
+void Scene::UpdateFeedback(float _dtSec)
+{
+  const float dt = std::clamp(_dtSec, 0.0f, 0.1f);
+  const float shipScale = std::max(0.01f, g_tuning.shipScale);
+  const float maxTurnRate = XMConvertToRadians(std::max(1.0f, g_tuning.motionTurnRateDegPerSec));
+  const float maxBank = XMConvertToRadians(g_tuning.bankMaxAngleDeg);
+  const float accelReference = std::max(0.01f, g_tuning.motionAcceleration);
+
+  for (int i = 0; i < int(m_ships.size()); ++i)
+  {
+    Ship& ship = m_ships[size_t(i)];
+
+    // Selection ring: a straight ramp on the tuned duration for the fade, and a spring for the
+    // scale so it sails past and settles back.
+    const float rampSec = std::max(0.001f, (ship.selected ? g_tuning.selRingFadeInMs : g_tuning.selRingFadeOutMs) * 0.001f);
+    ship.ringFade = MoveTowards(ship.ringFade, ship.selected ? 1.0f : 0.0f, dt / rampSec);
+    // The spring chases the selected state directly rather than the fade ramp, so the peak really
+    // is ringScaleOvershoot and the two knobs stay independent: one shapes alpha, one shapes size.
+    SpringTowards(ship.ringScale, ship.ringScaleVel, ship.selected ? 1.0f : 0.0f, g_tuning.selRingScaleOvershoot,
+                  g_tuning.selOvershootSettleHalfLife, dt);
+    ship.ringScale = std::max(0.0f, ship.ringScale);
+
+    // Hover.
+    ship.hoverAmount += ((i == m_hoverShip ? 1.0f : 0.0f) - ship.hoverAmount) * HalfLifeBlend(dt, g_tuning.selHoverResponseHalfLife);
+
+    // Bank into the turn, proportional to angular velocity. Rolling starboard down in a starboard
+    // turn means a negative roll, since a positive rotation about +Z lifts the starboard side.
+    const float bankTarget = -std::clamp(ship.turnRateRadPerSec / maxTurnRate, -1.0f, 1.0f) * maxBank;
+    const bool goingIn = std::fabs(bankTarget) > std::fabs(ship.bankRad);
+    const float bankHalfLife = goingIn ? g_tuning.bankResponseHalfLife : g_tuning.bankReturnHalfLife;
+    ship.bankRad += (bankTarget - ship.bankRad) * HalfLifeBlend(dt, bankHalfLife);
+
+    // Thrusters follow acceleration, not speed: they flare on the way up to cruise and go quiet
+    // once the ship is coasting.
+    const float drive = std::clamp(ship.accelSample / accelReference, 0.0f, 1.0f);
+    const float idle = g_tuning.thrusterIdleIntensity;
+    const float thrusterTarget = idle + (g_tuning.thrusterMaxIntensity - idle) * drive;
+    ship.thrusterIntensity += (thrusterTarget - ship.thrusterIntensity) * HalfLifeBlend(dt, g_tuning.thrusterResponseHalfLife);
+  }
+
+  // Order markers age out on their own.
+  const float markerLifeSec = std::max(0.05f, g_tuning.markerLifetimeMs * 0.001f);
+  for (OrderMarker& marker : m_markers)
+  {
+    marker.ageSec += dt;
+  }
+  m_markers.erase(std::remove_if(m_markers.begin(), m_markers.end(),
+                                 [markerLifeSec](const OrderMarker& _marker) { return _marker.ageSec >= markerLifeSec; }),
+                  m_markers.end());
+
+  // Camera. While a selection is under way the goal rides with it; otherwise it stays where
+  // panning left it. The lead pushes ahead of where the group is going, and the target eases in
+  // behind, which is the lag.
+  float leadX = 0.0f;
+  float leadZ = 0.0f;
+  int movingCount = 0;
+  float centreX = 0.0f;
+  float centreZ = 0.0f;
+  for (const Ship& ship : m_ships)
+  {
+    if (!ship.selected || ship.order != OrderState::Moving)
+    {
+      continue;
+    }
+    ++movingCount;
+    centreX += ship.posWorld.x;
+    centreZ += ship.posWorld.z;
+    leadX += std::sin(ship.headingRad) * ship.speed;
+    leadZ += std::cos(ship.headingRad) * ship.speed;
+  }
+  if (movingCount > 0)
+  {
+    m_cameraGoal.x = centreX / float(movingCount);
+    m_cameraGoal.z = centreZ / float(movingCount);
+    leadX = leadX / float(movingCount) * g_tuning.cameraLeadFactor;
+    leadZ = leadZ / float(movingCount) * g_tuning.cameraLeadFactor;
+  }
+
+  const float follow = HalfLifeBlend(dt, g_tuning.cameraFollowHalfLife);
+  m_cameraTarget.x += (m_cameraGoal.x + leadX - m_cameraTarget.x) * follow;
+  m_cameraTarget.z += (m_cameraGoal.z + leadZ - m_cameraTarget.z) * follow;
+
+  // Shake: two detuned sines per axis so it never reads as a single wobble, decaying on its own
+  // half-life, thrown across the view rather than along the world axes.
+  m_shakeTimeSec += dt;
+  m_shakeAmount -= m_shakeAmount * HalfLifeBlend(dt, g_tuning.cameraShakeDecayHalfLife);
+  if (m_shakeAmount < 0.001f)
+  {
+    m_shakeAmount = 0.0f;
+    m_shakeOffset = XMFLOAT3(0.0f, 0.0f, 0.0f);
+  }
+  else
+  {
+    const float w = XM_2PI * std::max(0.1f, g_tuning.cameraShakeFrequencyHz);
+    const float t = m_shakeTimeSec;
+    const float swing = m_shakeAmount * g_tuning.cameraShakeAmplitude;
+    const float acrossView = (std::sin(t * w) * 0.62f + std::sin(t * w * 1.71f) * 0.38f) * swing;
+    const float upView = (std::sin(t * w * 1.31f) * 0.62f + std::sin(t * w * 2.13f) * 0.38f) * swing;
+    m_shakeOffset = XMFLOAT3(m_cameraRight.x * acrossView + m_cameraUp.x * upView, m_cameraRight.y * acrossView + m_cameraUp.y * upView,
+                             m_cameraRight.z * acrossView + m_cameraUp.z * upView);
+  }
+
+  UpdateCamera(); // everything above moved it
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1068,10 +1247,21 @@ void Scene::Render(Gfx& _gfx, float _alpha)
     const float z = ship.prevPos.z + (ship.posWorld.z - ship.prevPos.z) * _alpha;
     const float heading = ship.prevHeading + XMScalarModAngle(ship.headingRad - ship.prevHeading) * _alpha;
 
-    XMStoreFloat4x4(&world, XMMatrixScaling(scale, scale, scale) * XMMatrixRotationY(heading) *
-                                XMMatrixTranslation(x, y + ship.restY * scale, z));
-    _gfx.DrawMesh(ship.mesh, world, ship.selected ? picked : plain, g_tuning.shipMaterialMix, false);
+    // Roll about the hull's own mid-height axis, not its base, or a banked ship pivots on one
+    // wingtip. shipHoverHeight is what keeps the low wing out of the ground while it does.
+    const float rollAxisY = ship.pickCentre.y;
+    const XMMATRIX hull = XMMatrixTranslation(0.0f, -rollAxisY, 0.0f) * XMMatrixRotationZ(ship.bankRad) *
+                          XMMatrixTranslation(0.0f, rollAxisY + ship.restY, 0.0f) * XMMatrixScaling(scale, scale, scale) *
+                          XMMatrixRotationY(heading) * XMMatrixTranslation(x, y + g_tuning.shipHoverHeight, z);
+    XMStoreFloat4x4(&world, hull);
+
+    Rgba tint = ship.selected ? picked : plain;
+    const float lift = ship.hoverAmount * g_tuning.selHoverHighlightStrength;
+    tint = Rgba{tint.r + (1.0f - tint.r) * lift, tint.g + (1.0f - tint.g) * lift, tint.b + (1.0f - tint.b) * lift, 1.0f};
+    _gfx.DrawMesh(ship.mesh, world, tint, g_tuning.shipMaterialMix, false);
   }
+
+  DrawFeedback(_gfx, _alpha);
 
   // Screen-space feedback for whatever the pointer is in the middle of. The proper rings and
   // markers arrive at stage 4.
@@ -1093,5 +1283,165 @@ void Scene::Render(Gfx& _gfx, float _alpha)
   {
     const Rgba line{g_tuning.markerColourR, g_tuning.markerColourG, g_tuning.markerColourB, g_tuning.markerColourA};
     _gfx.DrawScreenLine(m_orderX0Px, m_orderY0Px, m_orderX1Px, m_orderY1Px, 2.0f, line);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The overlay pass: selection and hover rings on the ground, order markers, thruster glow and
+// trail in the air. All of it is the same unit quad shaped by the decal shader.
+
+void Scene::DrawFeedback(Gfx& _gfx, float _alpha)
+{
+  _gfx.BeginDecals(m_viewProj, m_cameraEye);
+
+  const float scale = std::max(0.01f, g_tuning.shipScale);
+  const float decalLiftY = 0.2f; // clear of the ground quad so the two cannot z-fight
+  XMFLOAT4X4 world;
+
+  // --- selection and hover rings --------------------------------------------------------------
+  const Rgba ringColour{g_tuning.selRingColourR, g_tuning.selRingColourG, g_tuning.selRingColourB, g_tuning.selRingColourA};
+  for (const Ship& ship : m_ships)
+  {
+    const float hullRadius = std::max(ship.halfExtents.x, ship.halfExtents.z) * scale;
+    const float x = ship.prevPos.x + (ship.posWorld.x - ship.prevPos.x) * _alpha;
+    const float z = ship.prevPos.z + (ship.posWorld.z - ship.prevPos.z) * _alpha;
+
+    if (ship.ringFade > 0.002f && ship.ringScale > 0.002f)
+    {
+      const float radius = hullRadius * g_tuning.selRingRadiusScale * ship.ringScale;
+      XMStoreFloat4x4(&world, XMMatrixScaling(radius * 2.0f, 1.0f, radius * 2.0f) * XMMatrixTranslation(x, decalLiftY, z));
+      _gfx.DrawDecal(m_groundMesh, world, Rgba{ringColour.r, ringColour.g, ringColour.b, ringColour.a * ship.ringFade},
+                     g_tuning.selRingThickness, 0.0f);
+    }
+
+    // The hover ring sits just outside the selection ring so both are readable at once.
+    if (ship.hoverAmount > 0.002f)
+    {
+      const float radius = hullRadius * g_tuning.selRingRadiusScale * 1.12f;
+      XMStoreFloat4x4(&world, XMMatrixScaling(radius * 2.0f, 1.0f, radius * 2.0f) * XMMatrixTranslation(x, decalLiftY, z));
+      _gfx.DrawDecal(m_groundMesh, world, Rgba{ringColour.r, ringColour.g, ringColour.b, g_tuning.selHoverRingAlpha * ship.hoverAmount},
+                     g_tuning.selRingThickness * 0.7f, 0.0f);
+    }
+  }
+
+  // --- order markers --------------------------------------------------------------------------
+  const Rgba markerColour{g_tuning.markerColourR, g_tuning.markerColourG, g_tuning.markerColourB, g_tuning.markerColourA};
+  const float expandSec = std::max(0.001f, g_tuning.markerExpandMs * 0.001f);
+  const float pulseSec = std::max(0.001f, g_tuning.markerPulsePeriodMs * 0.001f);
+  const float lifeSec = std::max(0.05f, g_tuning.markerLifetimeMs * 0.001f);
+  const float fadeSec = std::max(0.001f, g_tuning.markerFadeOutMs * 0.001f);
+  const int pulseCount = std::max(0, int(g_tuning.markerPulseCount + 0.5f));
+
+  for (const OrderMarker& marker : m_markers)
+  {
+    // Expands in, holds while it pulses, fades out at the end of its life.
+    const float grow = std::clamp(marker.ageSec / expandSec, 0.0f, 1.0f);
+    const float eased = 1.0f - (1.0f - grow) * (1.0f - grow); // ease out
+    const float fadeStart = std::max(0.0f, lifeSec - fadeSec);
+    const float fade = (marker.ageSec <= fadeStart) ? 1.0f : std::clamp(1.0f - (marker.ageSec - fadeStart) / fadeSec, 0.0f, 1.0f);
+
+    const float sincePulseStart = marker.ageSec - expandSec;
+    const float pulseIndex = sincePulseStart / pulseSec;
+    float beat = 0.0f;
+    if (sincePulseStart > 0.0f && pulseIndex < float(pulseCount))
+    {
+      const float withinPulse = pulseIndex - std::floor(pulseIndex);
+      beat = std::sin(withinPulse * XM_PI); // 0 at each pulse boundary, 1 in the middle
+    }
+
+    const float radius = std::max(0.1f, g_tuning.markerRadius) * eased * (1.0f + beat * g_tuning.markerPulseScale);
+    const float alpha = markerColour.a * fade * (0.72f + beat * 0.28f);
+    XMStoreFloat4x4(&world, XMMatrixScaling(radius * 2.0f, 1.0f, radius * 2.0f) *
+                                XMMatrixTranslation(marker.posWorld.x, decalLiftY, marker.posWorld.z));
+    _gfx.DrawDecal(m_groundMesh, world, Rgba{markerColour.r, markerColour.g, markerColour.b, alpha}, g_tuning.markerThickness, 0.10f);
+
+    // Each pulse also throws a ripple outwards, which is what makes the count readable.
+    if (beat > 0.0f)
+    {
+      const float withinPulse = pulseIndex - std::floor(pulseIndex);
+      const float rippleRadius = radius * (1.0f + withinPulse * 1.1f);
+      XMStoreFloat4x4(&world, XMMatrixScaling(rippleRadius * 2.0f, 1.0f, rippleRadius * 2.0f) *
+                                  XMMatrixTranslation(marker.posWorld.x, decalLiftY, marker.posWorld.z));
+      _gfx.DrawDecal(m_groundMesh, world, Rgba{markerColour.r, markerColour.g, markerColour.b, alpha * (1.0f - withinPulse) * 0.7f},
+                     g_tuning.markerThickness * 0.6f, 0.0f);
+    }
+
+    // A pip out along the ordered facing, so a drag order shows which way the ships will end up.
+    if (marker.hasFacing)
+    {
+      const float pip = radius * 0.28f;
+      const float outX = marker.posWorld.x + std::sin(marker.facingRad) * radius * 1.5f;
+      const float outZ = marker.posWorld.z + std::cos(marker.facingRad) * radius * 1.5f;
+      XMStoreFloat4x4(&world, XMMatrixScaling(pip * 2.0f, 1.0f, pip * 2.0f) * XMMatrixTranslation(outX, decalLiftY, outZ));
+      _gfx.DrawDecal(m_groundMesh, world, Rgba{markerColour.r, markerColour.g, markerColour.b, alpha}, 1.0f, 1.0f);
+    }
+  }
+
+  // --- thruster glow and trail ----------------------------------------------------------------
+  // Billboards: the unit quad lies in XZ, so putting the camera right vector in row 0 and the
+  // camera up vector in row 2 turns it to face the eye wherever it is.
+  const float glowRadius = std::max(0.1f, g_tuning.thrusterGlowRadius) * scale;
+  const float trailLength = std::max(0.0f, g_tuning.thrusterTrailLength);
+  const float trailFade = std::max(0.01f, g_tuning.thrusterTrailFade);
+
+  for (const Ship& ship : m_ships)
+  {
+    if (!ship.hasThruster || ship.thrusterIntensity <= 0.002f)
+    {
+      continue;
+    }
+    const Rgba glowColour{g_tuning.selectedColourR, g_tuning.selectedColourG, g_tuning.selectedColourB, ship.thrusterIntensity};
+
+    // Newest sample first, walking back along the path until trailLength runs out. The trail
+    // follows the path the ship actually took, so it curves through a turn.
+    float travelled = 0.0f;
+    XMFLOAT3 previous = ship.trail[ship.trailHead];
+    for (int step = 0; step < ship.trailCount; ++step)
+    {
+      const int index = ((ship.trailHead - step) % TRAIL_SAMPLES + TRAIL_SAMPLES) % TRAIL_SAMPLES;
+      const XMFLOAT3 point = ship.trail[index];
+      if (step > 0)
+      {
+        travelled += Distance2D(previous.x, previous.z, point.x, point.z);
+        if (travelled >= trailLength)
+        {
+          break;
+        }
+      }
+      previous = point;
+
+      const float along = (trailLength > 0.0f) ? travelled / trailLength : 1.0f;
+      const float taper = std::pow(std::max(0.0f, 1.0f - along), trailFade);
+      const float radius = glowRadius * (step == 0 ? 1.0f : taper * 0.8f);
+      const float alpha = glowColour.a * (step == 0 ? 1.0f : taper * 0.55f);
+      if (alpha <= 0.002f || radius <= 0.001f)
+      {
+        continue;
+      }
+
+      XMFLOAT4X4 billboard;
+      billboard._11 = m_cameraRight.x * radius * 2.0f;
+      billboard._12 = m_cameraRight.y * radius * 2.0f;
+      billboard._13 = m_cameraRight.z * radius * 2.0f;
+      billboard._14 = 0.0f;
+      billboard._21 = 0.0f;
+      billboard._22 = 1.0f;
+      billboard._23 = 0.0f;
+      billboard._24 = 0.0f;
+      billboard._31 = m_cameraUp.x * radius * 2.0f;
+      billboard._32 = m_cameraUp.y * radius * 2.0f;
+      billboard._33 = m_cameraUp.z * radius * 2.0f;
+      billboard._34 = 0.0f;
+      billboard._41 = point.x;
+      billboard._42 = point.y;
+      billboard._43 = point.z;
+      billboard._44 = 1.0f;
+      _gfx.DrawGlow(m_groundMesh, billboard, Rgba{glowColour.r, glowColour.g, glowColour.b, alpha}, g_tuning.thrusterGlowFalloff);
+
+      if (trailLength <= 0.0f)
+      {
+        break;
+      }
+    }
   }
 }

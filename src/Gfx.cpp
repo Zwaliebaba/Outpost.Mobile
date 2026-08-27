@@ -110,6 +110,61 @@ float4 PsMain(VsOut i) : SV_Target
 }
 )HLSL";
 
+// Rings, order markers and thruster glows. Shares the scene root signature -- 32 vertex DWORDs of
+// matrices, 20 pixel DWORDs -- and reads the same unit quad, shaping it entirely in the pixel
+// shader so radius, thickness and falloff are all just constants.
+const char* const DECAL_SHADER = R"HLSL(
+cbuffer VsConstants : register(b0)
+{
+  row_major float4x4 world;
+  row_major float4x4 viewProj;
+};
+
+cbuffer PsConstants : register(b1)
+{
+  float4 decalColour; // rgb, a
+  float4 decalParams; // x thickness as a fraction of the radius, y fill or glow falloff, z 1 for a glow
+  float4 unusedA;
+  float4 unusedB;
+  float4 cameraPos;
+};
+
+struct VsIn  { float3 pos : POSITION; float3 col : COLOR0; };
+struct VsOut { float4 clip : SV_Position; float2 local : TEXCOORD0; };
+
+VsOut VsMain(VsIn i)
+{
+  VsOut o;
+  float4 wp = mul(float4(i.pos, 1.0), world);
+  o.clip = mul(wp, viewProj);
+  o.local = i.pos.xz * 2.0; // the unit quad spans +-0.5, so this lands on +-1
+  return o;
+}
+
+float4 PsMain(VsOut i) : SV_Target
+{
+  float d = length(i.local);
+
+  if (decalParams.z > 0.5) // thruster glow: soft radial falloff, no edge
+  {
+    float glow = pow(saturate(1.0 - d), max(1.0, decalParams.y));
+    clip(glow - 0.002);
+    return float4(decalColour.rgb, glow * decalColour.a);
+  }
+
+  // Ring, antialiased against its own screen-space width so it stays crisp at any zoom and never
+  // thins away to nothing.
+  float aa = fwidth(d) + 1e-5;
+  float halfWidth = max(decalParams.x, aa) * 0.5;
+  float centre = 1.0 - halfWidth;
+  float ring = 1.0 - smoothstep(halfWidth - aa, halfWidth + aa, abs(d - centre));
+  float fill = decalParams.y * (1.0 - smoothstep(1.0 - aa, 1.0 + aa, d));
+  float alpha = saturate(ring + fill) * decalColour.a;
+  clip(alpha - 0.002);
+  return float4(decalColour.rgb, alpha);
+}
+)HLSL";
+
 D3D12_HEAP_PROPERTIES HeapProps(D3D12_HEAP_TYPE _type)
 {
   D3D12_HEAP_PROPERTIES hp = {};
@@ -292,6 +347,7 @@ void Gfx::Init(HWND _hwnd)
   CreateSizedResources();
   CreateTextPipeline();
   CreateScenePipeline();
+  CreateDecalPipelines();
 
   for (UINT i = 0; i < FRAME_COUNT; ++i)
   {
@@ -984,4 +1040,115 @@ void Gfx::DrawScreenLine(float _x0Px, float _y0Px, float _x1Px, float _y1Px, flo
   m_textVerts.push_back({_x0Px - halfX, _y0Px - halfY, u, v, _colour});
   m_textVerts.push_back({_x1Px + halfX, _y1Px + halfY, u, v, _colour});
   m_textVerts.push_back({_x1Px - halfX, _y1Px - halfY, u, v, _colour});
+}
+
+void Gfx::CreateDecalPipelines()
+{
+  ComPtr<ID3DBlob> vs = CompileShader(DECAL_SHADER, "VsMain", "vs_5_1");
+  ComPtr<ID3DBlob> ps = CompileShader(DECAL_SHADER, "PsMain", "ps_5_1");
+
+  const D3D12_INPUT_ELEMENT_DESC elements[] = {
+      {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+      {"COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+  };
+
+  D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = {};
+  pso.pRootSignature = m_sceneRs.Get(); // same 32 + 20 root constants as the scene pass
+  pso.VS.pShaderBytecode = vs->GetBufferPointer();
+  pso.VS.BytecodeLength = vs->GetBufferSize();
+  pso.PS.pShaderBytecode = ps->GetBufferPointer();
+  pso.PS.BytecodeLength = ps->GetBufferSize();
+  pso.BlendState.AlphaToCoverageEnable = FALSE;
+  pso.BlendState.IndependentBlendEnable = FALSE;
+  pso.BlendState.RenderTarget[0].BlendEnable = TRUE;
+  pso.BlendState.RenderTarget[0].LogicOpEnable = FALSE;
+  pso.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+  pso.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+  pso.BlendState.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+  pso.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+  pso.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+  pso.BlendState.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+  pso.BlendState.RenderTarget[0].LogicOp = D3D12_LOGIC_OP_NOOP;
+  pso.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+  pso.SampleMask = 0xFFFFFFFFu;
+  pso.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+  pso.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+  pso.RasterizerState.FrontCounterClockwise = FALSE;
+  pso.RasterizerState.DepthBias = 0;
+  pso.RasterizerState.DepthBiasClamp = 0.0f;
+  pso.RasterizerState.SlopeScaledDepthBias = 0.0f;
+  pso.RasterizerState.DepthClipEnable = TRUE;
+  pso.RasterizerState.MultisampleEnable = FALSE;
+  pso.RasterizerState.AntialiasedLineEnable = FALSE;
+  pso.RasterizerState.ForcedSampleCount = 0;
+  pso.RasterizerState.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+  // Tested against the scene so a ring is hidden by a hull in front of it, but never written, so
+  // overlapping decals blend instead of fighting.
+  pso.DepthStencilState.DepthEnable = TRUE;
+  pso.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+  pso.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+  pso.DepthStencilState.StencilEnable = FALSE;
+  pso.DepthStencilState.StencilReadMask = D3D12_DEFAULT_STENCIL_READ_MASK;
+  pso.DepthStencilState.StencilWriteMask = D3D12_DEFAULT_STENCIL_WRITE_MASK;
+  pso.DepthStencilState.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+  pso.DepthStencilState.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+  pso.DepthStencilState.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+  pso.DepthStencilState.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+  pso.DepthStencilState.BackFace = pso.DepthStencilState.FrontFace;
+  pso.InputLayout.pInputElementDescs = elements;
+  pso.InputLayout.NumElements = UINT(std::size(elements));
+  pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+  pso.NumRenderTargets = 1;
+  pso.RTVFormats[0] = BACK_BUFFER_FORMAT;
+  pso.DSVFormat = DEPTH_FORMAT;
+  pso.SampleDesc.Count = 1;
+  pso.SampleDesc.Quality = 0;
+  pso.NodeMask = 0;
+  pso.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+  CHECK_HR(m_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_decalPso)));
+
+  // Same shader, added rather than blended, for thruster glow and trail.
+  pso.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+  CHECK_HR(m_device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_glowPso)));
+}
+
+void Gfx::BeginDecals(const DirectX::XMFLOAT4X4& _viewProj, const DirectX::XMFLOAT3& _cameraPos)
+{
+  m_cmd->SetGraphicsRootSignature(m_sceneRs.Get());
+  m_cmd->IASetPrimitiveTopology(D3D12_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  m_cmd->SetGraphicsRoot32BitConstants(0, 16, &_viewProj, 16);
+  const float eye[4] = {_cameraPos.x, _cameraPos.y, _cameraPos.z, 0.0f};
+  m_cmd->SetGraphicsRoot32BitConstants(1, 4, eye, 16);
+}
+
+void Gfx::DrawDecal(UINT _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _colour, float _thickness, float _fill)
+{
+  if (_mesh >= m_meshes.size() || m_meshes[_mesh].vertexCount == 0 || _colour.a <= 0.001f)
+  {
+    return;
+  }
+  const float colour[4] = {_colour.r, _colour.g, _colour.b, _colour.a};
+  const float params[4] = {_thickness, _fill, 0.0f, 0.0f};
+  m_cmd->SetPipelineState(m_decalPso.Get());
+  m_cmd->SetGraphicsRoot32BitConstants(0, 16, &_world, 0);
+  m_cmd->SetGraphicsRoot32BitConstants(1, 4, colour, 0);
+  m_cmd->SetGraphicsRoot32BitConstants(1, 4, params, 4);
+  m_cmd->IASetVertexBuffers(0, 1, &m_meshes[_mesh].vbv);
+  m_cmd->DrawInstanced(m_meshes[_mesh].vertexCount, 1, 0, 0);
+}
+
+void Gfx::DrawGlow(UINT _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _colour, float _falloff)
+{
+  if (_mesh >= m_meshes.size() || m_meshes[_mesh].vertexCount == 0 || _colour.a <= 0.001f)
+  {
+    return;
+  }
+  const float colour[4] = {_colour.r, _colour.g, _colour.b, _colour.a};
+  const float params[4] = {0.0f, _falloff, 1.0f, 0.0f};
+  m_cmd->SetPipelineState(m_glowPso.Get());
+  m_cmd->SetGraphicsRoot32BitConstants(0, 16, &_world, 0);
+  m_cmd->SetGraphicsRoot32BitConstants(1, 4, colour, 0);
+  m_cmd->SetGraphicsRoot32BitConstants(1, 4, params, 4);
+  m_cmd->IASetVertexBuffers(0, 1, &m_meshes[_mesh].vbv);
+  m_cmd->DrawInstanced(m_meshes[_mesh].vertexCount, 1, 0, 0);
 }

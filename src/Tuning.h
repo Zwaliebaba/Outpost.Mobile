@@ -25,6 +25,7 @@
   X("camera",      "leadFactor",              cameraLeadFactor,           0.35f,  0.f,    3.f)     \
   X("camera",      "shakeAmplitude",          cameraShakeAmplitude,       2.5f,   0.f,    30.f)    \
   X("camera",      "shakeDecayHalfLife",      cameraShakeDecayHalfLife,   0.15f,  0.02f,  2.f)     \
+  X("camera",      "shakeFrequencyHz",        cameraShakeFrequencyHz,     22.f,   1.f,    60.f)     \
   X("camera",      "rotateSpeedDegPerPx",     cameraRotateSpeedDegPerPx,  0.35f,  0.02f,  2.f)     \
   X("camera",      "zoomStepFactor",          cameraZoomStepFactor,       1.12f,  1.01f,  2.f)     \
                                                                                                    \
@@ -34,6 +35,7 @@
   X("selection",   "overshootSettleHalfLife", selOvershootSettleHalfLife, 0.09f,  0.01f,  1.f)     \
   X("selection",   "hoverHighlightStrength",  selHoverHighlightStrength,  0.45f,  0.f,    2.f)     \
   X("selection",   "hoverRingAlpha",          selHoverRingAlpha,          0.35f,  0.f,    1.f)     \
+  X("selection",   "hoverResponseHalfLife",   selHoverResponseHalfLife,   0.06f,  0.01f,  1.f)       \
   X("selection",   "ringThickness",           selRingThickness,           0.16f,  0.01f,  0.6f)    \
   X("selection",   "ringRadiusScale",         selRingRadiusScale,         1.25f,  0.5f,   4.f)     \
   X("selection",   "ringColourR",             selRingColourR,             0.35f,  0.f,    1.f)     \
@@ -48,6 +50,7 @@
   X("orderMarker", "fadeOutMs",               markerFadeOutMs,            260.f,  10.f,   2000.f)  \
   X("orderMarker", "radius",                  markerRadius,               9.f,    1.f,    60.f)    \
   X("orderMarker", "thickness",               markerThickness,            0.18f,  0.01f,  0.6f)    \
+  X("orderMarker", "pulseScale",              markerPulseScale,           0.18f,  0.f,    1.f)       \
   X("orderMarker", "colourR",                 markerColourR,              0.95f,  0.f,    1.f)     \
   X("orderMarker", "colourG",                 markerColourG,              0.78f,  0.f,    1.f)     \
   X("orderMarker", "colourB",                 markerColourB,              0.28f,  0.f,    1.f)     \
@@ -72,6 +75,8 @@
   X("thrusters",   "responseHalfLife",        thrusterResponseHalfLife,   0.1f,   0.01f,  1.f)     \
   X("thrusters",   "trailLength",             thrusterTrailLength,        18.f,   0.f,    120.f)   \
   X("thrusters",   "trailFade",               thrusterTrailFade,          0.55f,  0.01f,  3.f)     \
+  X("thrusters",   "glowRadius",              thrusterGlowRadius,         6.f,    0.5f,   40.f)     \
+  X("thrusters",   "glowFalloff",             thrusterGlowFalloff,        2.2f,   0.5f,   8.f)       \
                                                                                                    \
   X("input",       "dragThresholdPx",         inputDragThresholdPx,       6.f,    1.f,    60.f)    \
   X("input",       "tapMaxDurationMs",        inputTapMaxDurationMs,      320.f,  50.f,   1200.f)  \
@@ -104,6 +109,7 @@
   X("scene",       "selectedColourB",         selectedColourB,            0.66f,  0.f,    1.f)     \
   X("scene",       "shipMaterialMix",         shipMaterialMix,            0.55f,  0.f,    1.f)     \
   X("scene",       "shipScale",               shipScale,                  1.f,    0.1f,   5.f)     \
+  X("scene",       "shipHoverHeight",         shipHoverHeight,            4.f,    0.f,    40.f)     \
   X("scene",       "startSpacing",            startSpacing,               55.f,   5.f,    400.f)
 
 struct Tuning
