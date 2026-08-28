@@ -39,6 +39,9 @@
     <ClInclude Include="Movement.h">
       <Filter>Motion</Filter>
     </ClInclude>
+    <ClInclude Include="SpatialIndex.h">
+      <Filter>World</Filter>
+    </ClInclude>
     <ClInclude Include="World.h">
       <Filter>World</Filter>
     </ClInclude>
@@ -52,6 +55,9 @@
     </ClCompile>
     <ClCompile Include="Movement.cpp">
       <Filter>Motion</Filter>
+    </ClCompile>
+    <ClCompile Include="SpatialIndex.cpp">
+      <Filter>World</Filter>
     </ClCompile>
     <ClCompile Include="World.cpp">
       <Filter>World</Filter>

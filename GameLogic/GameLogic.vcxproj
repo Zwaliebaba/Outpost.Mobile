@@ -178,6 +178,7 @@
     <ClInclude Include="HullSpec.h" />
     <ClInclude Include="Formation.h" />
     <ClInclude Include="Movement.h" />
+    <ClInclude Include="SpatialIndex.h" />
     <ClInclude Include="World.h" />
   </ItemGroup>
   <ItemGroup>
@@ -186,6 +187,7 @@
     </ClCompile>
     <ClCompile Include="Formation.cpp" />
     <ClCompile Include="Movement.cpp" />
+    <ClCompile Include="SpatialIndex.cpp" />
     <ClCompile Include="World.cpp" />
   </ItemGroup>
   <ItemGroup>

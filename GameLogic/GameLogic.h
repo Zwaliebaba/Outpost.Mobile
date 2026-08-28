@@ -21,6 +21,7 @@
 #include "WorldPos.h"
 #include "ShipState.h"
 #include "HullSpec.h"
+#include "SpatialIndex.h"
 #include "Formation.h"
 #include "Movement.h"
 #include "World.h"

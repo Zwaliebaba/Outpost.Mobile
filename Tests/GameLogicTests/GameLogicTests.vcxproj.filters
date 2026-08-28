@@ -26,6 +26,9 @@
     <ClCompile Include="MovementTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="SpatialIndexTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="WorldTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
