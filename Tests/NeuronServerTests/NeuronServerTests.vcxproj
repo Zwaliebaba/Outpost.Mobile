@@ -28,46 +28,36 @@
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <WindowsTargetPlatformMinVersion>10.0.17763.0</WindowsTargetPlatformMinVersion>
   </PropertyGroup>
-  <!-- Start of the shared toolset block. Every project in this solution carries it verbatim, and
-       Build/CheckProjectFiles.py fails the build before anything is compiled if a copy drifts.
-
-       It sits ahead of Microsoft.Cpp.Default.props because a toolset and a configuration flavour
-       have to be decided before the platform defaults fill them in.
-
-       PlatformToolset is pinned only when msbuild reports which Visual Studio is running, and an
-       empty PlatformToolset is not a safe default for the other case: Microsoft.Cpp.Default.props
-       then falls all the way back to v100, and the build stops with MSB8020 naming Visual Studio
-       2010 on a runner that has 2026 installed. Pinning a toolset that is not installed fails the
-       same way, which is why the version is read rather than assumed. -->
-  <PropertyGroup>
-    <!-- A numeric comparison against an empty $(VisualStudioVersion) is MSB4086, not a false
-         condition, so msbuild invoked outside a Visual Studio context would fail here rather than
-         fall through to the floor below. -->
-    <OutpostVsVersion Condition="'$(OutpostVsVersion)'=='' and '$(VisualStudioVersion)'!=''">$(VisualStudioVersion)</OutpostVsVersion>
-    <OutpostVsVersion Condition="'$(OutpostVsVersion)'==''">17.0</OutpostVsVersion>
-  </PropertyGroup>
-  <PropertyGroup Label="Globals">
-    <!-- v145 ships with Visual Studio 2026, v143 with 2022. -->
-    <PlatformToolset Condition="'$(VisualStudioVersion)'!='' and '$(OutpostVsVersion)' &gt;= '18.0'">v145</PlatformToolset>
-    <PlatformToolset Condition="'$(VisualStudioVersion)'!='' and '$(OutpostVsVersion)' &lt; '18.0'">v143</PlatformToolset>
-    <CharacterSet>Unicode</CharacterSet>
-  </PropertyGroup>
-  <PropertyGroup Label="Configuration" Condition="'$(Configuration)'=='Debug'">
-    <UseDebugLibraries>true</UseDebugLibraries>
-    <LinkIncremental>true</LinkIncremental>
-  </PropertyGroup>
-  <PropertyGroup Label="Configuration" Condition="'$(Configuration)'=='Release'">
-    <!-- Release links the release CRT and enables the optimiser. It did neither once, which made
-         every number measured in Release a measurement of a debug build. -->
-    <UseDebugLibraries>false</UseDebugLibraries>
-    <LinkIncremental>false</LinkIncremental>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
-  </PropertyGroup>
-  <!-- End of the shared toolset block. -->
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
-  <PropertyGroup Label="Configuration">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseOfMfc>false</UseOfMfc>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -78,23 +68,21 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <!-- Start of the shared compiler block. Carried verbatim by every project, like the toolset
-       block above. Two of these are load-bearing rather than a matter of taste:
-
-         * ConformanceMode. Turning it off to make something compile trades one afternoon for
-           every afternoon after it.
-         * /fp:precise and no /arch. GameLogic is deterministic, and determinism is a property of
-           the whole binary: a floating-point mode that differs between two projects makes the
-           same tick produce two answers, and the replay suite goes red months later for a reason
-           nobody can find. -->
-  <ItemDefinitionGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
-      <!-- stdcpp20 is the floor, and where the version is unknown it is what gets compiled.
-           Nothing in this tree may need C++23 to build; if something does, it goes behind a
-           feature test, because the two standards then disagree at your desk before they disagree
-           in CI. -->
-      <LanguageStandard Condition="'$(OutpostVsVersion)' &gt;= '18.0'">stdcpplatest</LanguageStandard>
-      <LanguageStandard Condition="'$(OutpostVsVersion)' &lt; '18.0'">stdcpp20</LanguageStandard>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
       <ConformanceMode>true</ConformanceMode>
       <WarningLevel>Level4</WarningLevel>
       <SDLCheck>true</SDLCheck>
@@ -104,30 +92,78 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderOutputFile>$(IntDir)pch.pch</PrecompiledHeaderOutputFile>
       <AdditionalOptions>%(AdditionalOptions) /bigobj</AdditionalOptions>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <Optimization>Disabled</Optimization>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <ConformanceMode>true</ConformanceMode>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <FloatingPointModel>Precise</FloatingPointModel>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>$(IntDir)pch.pch</PrecompiledHeaderOutputFile>
+      <AdditionalOptions>%(AdditionalOptions) /bigobj</AdditionalOptions>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <Optimization>Disabled</Optimization>
     </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
   </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <ConformanceMode>true</ConformanceMode>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <FloatingPointModel>Precise</FloatingPointModel>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>$(IntDir)pch.pch</PrecompiledHeaderOutputFile>
+      <AdditionalOptions>%(AdditionalOptions) /bigobj</AdditionalOptions>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
     </ClCompile>
     <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
   </ItemDefinitionGroup>
-  <!-- End of the shared compiler block. -->
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <ConformanceMode>true</ConformanceMode>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <FloatingPointModel>Precise</FloatingPointModel>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>$(IntDir)pch.pch</PrecompiledHeaderOutputFile>
+      <AdditionalOptions>%(AdditionalOptions) /bigobj</AdditionalOptions>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
   <ItemDefinitionGroup>
     <ClCompile>
       <AdditionalIncludeDirectories>$(VCInstallDir)UnitTest\include;$(MSBuildThisFileDirectory)..\..\NeuronCore;$(MSBuildThisFileDirectory)..\..\NeuronServer;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>

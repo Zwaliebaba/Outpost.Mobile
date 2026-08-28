@@ -15,10 +15,10 @@ Each of these replaces a defect that is expensive to find any other way:
   * A pch.cpp that does not include its own pch.h is C2857, reported at line 1 column 1 of a file
     whose entire contents are the thing that is missing. Every project has one and they are all
     identical, so this is exactly the file nobody reads.
-  * The compiler settings are copied into every .vcxproj rather than shared through a property
-    sheet, so nothing but this check keeps the copies the same. One project quietly drifting off
-    /fp:precise, or back onto the debug CRT in Release, is a defect that shows up months later as a
-    replay test that fails on one machine, or as a Release measurement of a debug binary.
+  * The compiler settings are spelled per project rather than shared through a property sheet,
+    so nothing but this check keeps them the same. One project quietly drifting off /fp:precise, or
+    back onto the debug CRT in Release, is a defect that shows up months later as a replay test
+    that fails on one machine, or as a Release measurement of a debug binary.
 
 Run from the repository root. Prints every problem it finds rather than stopping at the first,
 because a run that reports one of five is a run you have to do five times.
@@ -82,38 +82,66 @@ def check_registration(problems):
                 problems.append('%s/%s: listed in the .vcxproj but not on disk' % (directory, source))
 
 
-def check_shared_blocks(problems):
-    """The settings every project repeats verbatim, still repeated verbatim.
+def check_shared_settings(problems):
+    """The compiler settings every project spells for itself, still spelling the same thing.
 
-    A property sheet made this true by construction. Copies do not, so each block is delimited by a
-    fixed "Start of the shared ... block." / "End of the shared ... block." pair and this compares
-    what lies between. Change a setting in one project and this reports the other eight; the prose
-    inside the markers is free to change, which the anchors deliberately do not depend on.
+    A property sheet made this true by construction, and there is no sheet: each .vcxproj carries
+    these per Configuration|Platform, the way Visual Studio writes them, so that its property pages
+    can read and edit them. Nothing but this check keeps the copies in step. One project quietly
+    off /fp:precise, or back on the debug CRT in Release, is a defect that surfaces months later as
+    a replay test that fails on one machine, or as a Release measurement of a debug binary.
+
+    Read out of the XML rather than out of marked-off regions of text, so a project file that
+    Visual Studio has rewritten is still checked.
     """
-    blocks = {
-        'toolset': (r'  <!-- Start of the shared toolset block\..*?'
-                    r'  <!-- End of the shared toolset block\. -->\n'),
-        'compiler': (r'  <!-- Start of the shared compiler block\..*?'
-                     r'  <!-- End of the shared compiler block\. -->\n'),
+    shared = {
+        'UseDebugLibraries', 'PlatformToolset', 'CharacterSet', 'WholeProgramOptimization',
+        'LinkIncremental', 'LanguageStandard', 'ConformanceMode', 'WarningLevel', 'SDLCheck',
+        'MultiProcessorCompilation', 'FloatingPointModel', 'PrecompiledHeader',
+        'PrecompiledHeaderFile', 'PrecompiledHeaderOutputFile', 'AdditionalOptions',
+        'PreprocessorDefinitions', 'Optimization', 'FunctionLevelLinking', 'IntrinsicFunctions',
+        'GenerateDebugInformation', 'EnableCOMDATFolding', 'OptimizeReferences',
     }
-    for label, pattern in blocks.items():
-        found = {}
-        for name, directory in projects():
-            path = os.path.join(directory, '%s.vcxproj' % name)
-            if not os.path.exists(path):
-                continue
-            match = re.search(pattern, read(path), re.S)
+    # NeuronClient is the only project with shaders, so its FxCompile settings share with nothing.
+    ignored_items = {'FxCompile'}
+    per_configuration = re.compile(r"'\$\(Configuration\)\|\$\(Platform\)'=='([^']+)'")
+
+    def name_of(node):
+        return node.tag.split('}')[-1]
+
+    # (configuration, setting) -> value -> [project names]
+    seen = {}
+    for project, directory in projects():
+        path = os.path.join(directory, '%s.vcxproj' % project)
+        if not os.path.exists(path):
+            continue
+        for group in ElementTree.fromstring(read(path).encode('utf-8')):
+            match = per_configuration.fullmatch(group.get('Condition', ''))
             if not match:
-                problems.append('%s: has no shared %s block, and every project carries one' % (path, label))
                 continue
-            found.setdefault(match.group(0), []).append(path)
-        if len(found) > 1:
-            majority = max(found.values(), key=len)
-            for owners in found.values():
-                if owners is majority:
-                    continue
-                problems.append('%s: its shared %s block differs from the other %d project(s)'
-                                % (', '.join(owners), label, len(majority)))
+            settings = []
+            if name_of(group) == 'PropertyGroup':
+                settings = [(name_of(child), name_of(child), child.text) for child in group]
+            elif name_of(group) == 'ItemDefinitionGroup':
+                for item in group:
+                    if name_of(item) in ignored_items:
+                        continue
+                    settings += [('%s/%s' % (name_of(item), name_of(child)), name_of(child),
+                                  child.text) for child in item]
+            for label, setting, value in settings:
+                if setting in shared:
+                    seen.setdefault((match.group(1), label), {}).setdefault(value or '', []).append(project)
+
+    for (configuration, label), values in sorted(seen.items()):
+        if len(values) < 2:
+            continue
+        agreed = max(values, key=lambda value: len(values[value]))
+        for value, owners in sorted(values.items()):
+            if value == agreed:
+                continue
+            problems.append('%s: %s is "%s" in %s, and "%s" in the other %d project(s)'
+                            % (configuration, label, value, ', '.join(sorted(owners)), agreed,
+                               len(values[agreed])))
 
 
 def check_precompiled_headers(problems):
@@ -171,7 +199,7 @@ def main():
     problems = []
     check_xml(problems)
     check_registration(problems)
-    check_shared_blocks(problems)
+    check_shared_settings(problems)
     check_precompiled_headers(problems)
     check_unique_names(problems)
     check_dependency_rules(problems)
@@ -182,7 +210,7 @@ def main():
         print('\n%d problem(s). See AGENTS.md sections 2 and 3.' % len(problems))
         return 1
 
-    print('project files: XML well-formed, every source registered, shared blocks identical, '
+    print('project files: XML well-formed, every source registered, shared settings agree, '
           'names unique, layers intact.')
     return 0
 
