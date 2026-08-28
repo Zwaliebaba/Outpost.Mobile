@@ -39,6 +39,42 @@
     <WinUISDKReferences>false</WinUISDKReferences>
     <EnableMsixTooling>true</EnableMsixTooling>
   </PropertyGroup>
+  <!-- Start of the shared toolset block. Every project in this solution carries it verbatim, and
+       Build/CheckProjectFiles.py fails the build before anything is compiled if a copy drifts.
+
+       It sits ahead of Microsoft.Cpp.Default.props because a toolset and a configuration flavour
+       have to be decided before the platform defaults fill them in.
+
+       PlatformToolset is pinned only when msbuild reports which Visual Studio is running, and an
+       empty PlatformToolset is not a safe default for the other case: Microsoft.Cpp.Default.props
+       then falls all the way back to v100, and the build stops with MSB8020 naming Visual Studio
+       2010 on a runner that has 2026 installed. Pinning a toolset that is not installed fails the
+       same way, which is why the version is read rather than assumed. -->
+  <PropertyGroup>
+    <!-- A numeric comparison against an empty $(VisualStudioVersion) is MSB4086, not a false
+         condition, so msbuild invoked outside a Visual Studio context would fail here rather than
+         fall through to the floor below. -->
+    <OutpostVsVersion Condition="'$(OutpostVsVersion)'=='' and '$(VisualStudioVersion)'!=''">$(VisualStudioVersion)</OutpostVsVersion>
+    <OutpostVsVersion Condition="'$(OutpostVsVersion)'==''">17.0</OutpostVsVersion>
+  </PropertyGroup>
+  <PropertyGroup Label="Globals">
+    <!-- v145 ships with Visual Studio 2026, v143 with 2022. -->
+    <PlatformToolset Condition="'$(VisualStudioVersion)'!='' and '$(OutpostVsVersion)' &gt;= '18.0'">v145</PlatformToolset>
+    <PlatformToolset Condition="'$(VisualStudioVersion)'!='' and '$(OutpostVsVersion)' &lt; '18.0'">v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)'=='Debug'">
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)'=='Release'">
+    <!-- Release links the release CRT and enables the optimiser. It did neither once, which made
+         every number measured in Release a measurement of a debug build. -->
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <LinkIncremental>false</LinkIncremental>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+  <!-- End of the shared toolset block. -->
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -69,30 +105,7 @@
   <PropertyGroup Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <DesktopCompatible>true</DesktopCompatible>
-    <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
-  <!--
-    Configuration flavour, decided before Microsoft.Cpp.props reads it. PlatformToolset is
-    deliberately not spelled: Microsoft.Cpp.Default.props picks whatever the machine has, which is v145 on Visual
-    Studio 2026 and v143 on 2022, and pinning a toolset that is not installed fails harder than not
-    pinning one.
-
-    Every project in this solution repeats this block and the compiler block below verbatim. Keep
-    the copies identical: a setting that drifts is always the one that mattered, which is how
-    Release once came to be built with the debug CRT and _DEBUG defined in all seven projects.
-  -->
-  <PropertyGroup Label="Configuration" Condition="'$(Configuration)'=='Debug'">
-    <UseDebugLibraries>true</UseDebugLibraries>
-    <LinkIncremental>true</LinkIncremental>
-  </PropertyGroup>
-  <PropertyGroup Label="Configuration" Condition="'$(Configuration)'=='Release'">
-    <!-- Release links the release CRT and enables the optimiser. It did neither once, which made
-         every number measured in Release a measurement of a debug build. -->
-    <UseDebugLibraries>false</UseDebugLibraries>
-    <LinkIncremental>false</LinkIncremental>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
-  </PropertyGroup>
-  <!-- end of the shared toolset block -->
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
@@ -100,24 +113,15 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <!--
-    Compiler and linker settings, repeated verbatim in every project. Two of them are load-bearing
-    rather than a matter of taste:
+  <!-- Start of the shared compiler block. Carried verbatim by every project, like the toolset
+       block above. Two of these are load-bearing rather than a matter of taste:
 
-      * ConformanceMode. Turning it off to make something compile trades one afternoon for every
-        afternoon after it.
-      * /fp:precise and no /arch. GameLogic is deterministic, and determinism is a property of the
-        whole binary: a floating-point mode that differs between two projects makes the same tick
-        produce two answers, and the replay suite goes red months later for a reason nobody can
-        find.
-  -->
-  <PropertyGroup>
-    <!-- A numeric comparison against an empty $(VisualStudioVersion) is MSB4086, not a false
-         condition, so msbuild invoked outside a Visual Studio context would fail here rather than
-         fall through to the floor below. -->
-    <OutpostVsVersion Condition="'$(OutpostVsVersion)'=='' and '$(VisualStudioVersion)'!=''">$(VisualStudioVersion)</OutpostVsVersion>
-    <OutpostVsVersion Condition="'$(OutpostVsVersion)'==''">17.0</OutpostVsVersion>
-  </PropertyGroup>
+         * ConformanceMode. Turning it off to make something compile trades one afternoon for
+           every afternoon after it.
+         * /fp:precise and no /arch. GameLogic is deterministic, and determinism is a property of
+           the whole binary: a floating-point mode that differs between two projects makes the
+           same tick produce two answers, and the replay suite goes red months later for a reason
+           nobody can find. -->
   <ItemDefinitionGroup>
     <ClCompile>
       <!-- stdcpp20 is the floor, and where the version is unknown it is what gets compiled.
@@ -158,7 +162,7 @@
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
   </ItemDefinitionGroup>
-  <!-- end of the shared compiler block -->
+  <!-- End of the shared compiler block. -->
   <ItemDefinitionGroup>
     <ClCompile>
       <!-- The composition root is the one project entitled to every layer (AGENTS.md 3). -->

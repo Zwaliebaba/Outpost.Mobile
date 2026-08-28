@@ -85,15 +85,16 @@ def check_registration(problems):
 def check_shared_blocks(problems):
     """The settings every project repeats verbatim, still repeated verbatim.
 
-    A property sheet made this true by construction. Copies do not, so the copies are delimited by
-    the comment they open with and the "end of the shared ... block" marker they close with, and
-    this compares them. Change a setting in one project and this reports the other eight.
+    A property sheet made this true by construction. Copies do not, so each block is delimited by a
+    fixed "Start of the shared ... block." / "End of the shared ... block." pair and this compares
+    what lies between. Change a setting in one project and this reports the other eight; the prose
+    inside the markers is free to change, which the anchors deliberately do not depend on.
     """
     blocks = {
-        'toolset': (r'  <!--\n    Configuration flavour, decided before .*?'
-                    r'  <!-- end of the shared toolset block -->\n'),
-        'compiler': (r'  <!--\n    Compiler and linker settings, repeated verbatim .*?'
-                     r'  <!-- end of the shared compiler block -->\n'),
+        'toolset': (r'  <!-- Start of the shared toolset block\..*?'
+                    r'  <!-- End of the shared toolset block\. -->\n'),
+        'compiler': (r'  <!-- Start of the shared compiler block\..*?'
+                     r'  <!-- End of the shared compiler block\. -->\n'),
     }
     for label, pattern in blocks.items():
         found = {}

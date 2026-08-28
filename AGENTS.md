@@ -328,8 +328,8 @@ macro of that shape appears.
 ## 5. C++ rules for this codebase
 
 - **C++20 is the floor**, `ConformanceMode` on, `/fp:precise`, no `/arch`. Every project takes
-  `/std:c++latest` where msbuild reports Visual Studio 2026 and `stdcpp20` otherwise, on whatever
-  toolset the machine has. Nothing here may *need* C++23 to build; if something does, it goes
+  `/std:c++latest` and `v145` where msbuild reports Visual Studio 2026, and `stdcpp20` with `v143`
+  otherwise. Nothing here may *need* C++23 to build; if something does, it goes
   behind a feature test. Do not turn conformance off to make something compile. **These are spelled
   in every `.vcxproj`, identically** (§6): change one and you are changing nine, or you have
   introduced the drift the copies exist to make visible.
@@ -412,27 +412,35 @@ ARM64 executable. Treat anything other than x64 as unverified.
 
 ### The two shared blocks, copied into every project
 
-There are no property sheets. Every `.vcxproj` carries the same two blocks, each opening with the
-comment that says so and closing with an `end of the shared … block` marker, and **the copies are
+There are no property sheets. Every `.vcxproj` carries the same two blocks, each delimited by a
+`Start of the shared … block.` / `End of the shared … block.` comment pair, and **the copies are
 byte-identical**. [`Build/CheckProjectFiles.py`](Build/CheckProjectFiles.py) compares all nine and
 fails the build before anything is compiled if one has drifted, which is the only reason this
-arrangement is safe to live with.
+arrangement is safe to live with. The markers are what it matches on, so the prose inside them can
+be edited freely.
 
-- **The toolset block**, in the `Configuration` property groups after
-  `Microsoft.Cpp.Default.props`. Holds `CharacterSet` and, per configuration, `UseDebugLibraries`,
-  `LinkIncremental` and `WholeProgramOptimization`. `WindowsTargetPlatformVersion` and its minimum
-  sit earlier still, in `Globals`, because `Microsoft.Cpp.Default.props` reads them.
+- **The toolset block**, **ahead of `Microsoft.Cpp.Default.props`**, because a toolset and a
+  configuration flavour have to be decided before the platform defaults fill them in. Holds
+  `PlatformToolset`, `CharacterSet`, and per configuration `UseDebugLibraries`, `LinkIncremental`
+  and `WholeProgramOptimization`. `WindowsTargetPlatformVersion` and its minimum stay in each
+  project's own `Globals` group, which is also read before the defaults.
 - **The compiler block**, in `ItemDefinitionGroup`s after the `PropertySheets` group. Holds the
   language standard, `ConformanceMode`, warning level, `/fp:precise`, the precompiled-header
   settings, and the per-configuration optimisation and preprocessor settings.
+
+The two positions are not interchangeable.
 
 The shader settings (§3) sit just past the compiler block's end marker in `NeuronClient` and
 nowhere else, because that is the only project with shaders. They are outside the marker precisely
 because they are not shared, so the comparison above does not expect to find them elsewhere.
 
-**`PlatformToolset` is deliberately not spelled anywhere.** `Microsoft.Cpp.Default.props` picks
-whatever the machine has — v145 on Visual Studio 2026, v143 on 2022 — and pinning a toolset
-that is not installed fails harder than not pinning one.
+**`PlatformToolset` is pinned, and leaving it empty is not the safe alternative it looks like.**
+It takes v145 where msbuild reports Visual Studio 2026 and v143 where it reports 2022, and is left
+alone only when msbuild reports no version at all. An empty `PlatformToolset` does **not** fall
+back to whatever the machine has: `Microsoft.Cpp.Default.props` falls all the way back to `v100`,
+and the build stops with `MSB8020` naming Visual Studio 2010 on a runner that has 2026 installed.
+That is a measured result, not a reading of the docs — it is what a CI run did. Pinning a toolset
+that is not installed fails the same way, which is why the version is read rather than assumed.
 
 If you add a project, copy both blocks into it, markers and all. If you change a setting, change
 it in all nine in the same commit — the guard will tell you if you missed one, but it cannot tell
@@ -451,12 +459,11 @@ sheet now. A setting that drifts is always the one that mattered.
 test suites on every push and pull request, and **it gates** — a red job means the branch does not
 build or a test failed. Three things about it are worth knowing before you read a red run:
 
-- **The toolset is whatever the runner has**, because nothing pins it. The projects take
-  `stdcpplatest` only when msbuild reports `$(VisualStudioVersion) >= 18.0`, and otherwise
-  `stdcpp20`. The first run reported MSBuild 18.9, so today CI compiles the same standard a
-  developer on VS 2026 does — but a runner image change moves that without anything here changing,
-  so **nothing in this tree may need C++23 to build**. If something does, it goes behind a feature
-  test.
+- **The toolset follows the runner's msbuild.** The projects pin `v145`/`stdcpplatest` only when
+  msbuild reports `$(VisualStudioVersion) >= 18.0`, and otherwise `v143`/`stdcpp20`. The first run
+  reported MSBuild 18.9, so today CI compiles the same standard a developer on VS 2026 does — but a
+  runner image change moves that without anything here changing, so **nothing in this tree may need
+  C++23 to build**. If something does, it goes behind a feature test.
 - **It passes `/p:SolutionDir=` explicitly.** Without it every project writes its output beside
   itself instead of into `x64\Debug\`, and the test discovery below finds nothing.
 - **The test suites are discovered from `x64\Debug\*Tests.dll`**, and the packages to restore from
