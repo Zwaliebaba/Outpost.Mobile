@@ -466,12 +466,26 @@ there rather than in the step summary.
 SDK nor a Windows runner, and what costs twenty seconds on Linux would be billed several times over
 against Windows minutes. The version is pinned to 18.1.3; see §1.
 
-**`clang-tidy` runs but does not gate.** It is `continue-on-error`, scoped to GameLogic — the layer
-where its checks matter most and the only one that does not reach the D3D12 headers. It
-still reaches C++/WinRT through `NeuronCore.h`, and that projection is generated during the build,
-which is why the step runs after the build and discovers the generated directory rather than
-assuming where it is. Promote it by deleting `continue-on-error` once a run comes back clean. That
-is the bargain, and it is the one `clang-format` has already kept.
+**`clang-tidy` runs but does not gate — yet.** It is `continue-on-error`, scoped to GameLogic: the
+layer where its checks matter most and the only one that does not reach the D3D12 headers. It still
+reaches C++/WinRT through `NeuronCore.h`, and that projection is generated during the build, which
+is why the step runs after the build and discovers the generated directory rather than assuming
+where it is.
+
+**Note that a green tick does not mean this step passed.** `continue-on-error` reports a failed
+step as successful, so the log is the only place its result exists. That is the cost of landing a
+linter non-blocking, and it is why it should not stay non-blocking for long.
+
+The first sweep found 77 diagnostics and was worth every bit of the caution: 46 of them were in
+generated C++/WinRT headers, admitted by a `HeaderFilterRegex` whose `.*` also matched
+`<Project>/x64/Debug/Generated Files/`. The other 31 were real and all in the two files this
+repository started with — parameters missing their `_`, a static member spelled `m_` instead of
+`sm_`, and `bugprone-macro-parentheses` firing on `ENUM_HELPER`, where the macro argument is a
+*type* and `static_cast<(T)>` does not compile. The filter is tightened, the naming is fixed, and
+the false positive is silenced for that block with its reason rather than disabled for the tree.
+
+**Promote it by deleting `continue-on-error`** once a run comes back clean. That is the bargain,
+and it is the one `clang-format` already kept.
 
 **Release|x64 is still not in CI.** Release only recently became a real release build (see the
 sheets above) and has no history of being green. Worth adding on the same terms.

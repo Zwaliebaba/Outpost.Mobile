@@ -9,22 +9,23 @@ class FileSys
 public:
   static void SetHomeDirectory(const std::wstring& _path)
   {
-    m_homeDir = _path + L"\\Assets\\";
+    sm_homeDir = _path + L"\\Assets\\";
   }
   [[nodiscard]] static std::wstring GetHomeDirectory()
   {
-    return m_homeDir;
+    return sm_homeDir;
   }
 
   [[nodiscard]] static std::string GetHomeDirectoryA()
   {
-    if (m_homeDir.empty())
+    if (sm_homeDir.empty())
       return {};
 
-    const int size = ::WideCharToMultiByte(CP_UTF8, 0, m_homeDir.data(), static_cast<int>(m_homeDir.size()), nullptr, 0, nullptr, nullptr);
+    const int size =
+      ::WideCharToMultiByte(CP_UTF8, 0, sm_homeDir.data(), static_cast<int>(sm_homeDir.size()), nullptr, 0, nullptr, nullptr);
 
     std::string result(static_cast<size_t>(size), '\0');
-    ::WideCharToMultiByte(CP_UTF8, 0, m_homeDir.data(), static_cast<int>(m_homeDir.size()), result.data(), size, nullptr, nullptr);
+    ::WideCharToMultiByte(CP_UTF8, 0, sm_homeDir.data(), static_cast<int>(sm_homeDir.size()), result.data(), size, nullptr, nullptr);
 
     return result;
   }
@@ -34,7 +35,7 @@ public:
   [[nodiscard]] static std::wstring ResolvePath(const std::wstring& _fileName);
 
 protected:
-  inline static std::wstring m_homeDir;
+  inline static std::wstring sm_homeDir;
 };
 
 class BinaryFile : public FileSys

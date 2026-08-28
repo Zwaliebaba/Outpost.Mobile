@@ -93,7 +93,7 @@ std::wstring FileSys::ResolvePath(const std::wstring& _fileName)
   if (IsAbsolute(_fileName))
     return _fileName;
 
-  return m_homeDir + _fileName;
+  return sm_homeDir + _fileName;
 }
 
 ByteBuffer BinaryFile::ReadFile(const std::wstring& _fileName)

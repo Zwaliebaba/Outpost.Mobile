@@ -4,6 +4,12 @@
 
 namespace Neuron
 {
+// bugprone-macro-parentheses wants every macro argument wrapped, and T here is a TYPE: it appears
+// as static_cast<T>, T&, and in ## pastes, none of which can take parentheses -- static_cast<(T)>
+// does not compile. The check cannot tell a type parameter from a value one, so it is silenced for
+// this block only, with the reason, rather than disabled for the tree.
+// NOLINTBEGIN(bugprone-macro-parentheses)
+
 // Sequential enum helper: provides ++, --, dereference, SizeOf, Iterator, and Range.
 // Use for enums whose values are sequential indices (e.g., SpaceObjectCategory).
 // Does NOT provide bitwise operators — use ENUM_FLAGS_HELPER for flag enums.
@@ -112,6 +118,8 @@ namespace Neuron
     return !((_ENUM_FLAG_SIZED_INTEGER<T>::type)a);                                                 \
   }
 
+// NOLINTEND(bugprone-macro-parentheses)
+
 template <typename T> constexpr bool IsValidEnum(T _value) noexcept
 {
   return (_value >= begin(_value) && _value < end(_value));
@@ -125,8 +133,8 @@ template <typename T> constexpr size_t I(T _value) noexcept
 class BaseException : public std::exception
 {
 public:
-  BaseException(std::string s) noexcept
-    : m_s(std::move(s))
+  BaseException(std::string _s) noexcept
+    : m_s(std::move(_s))
   {
   }
   ~BaseException() noexcept override = default;
@@ -149,16 +157,16 @@ struct NonCopyable
 
 struct HandleCloser
 {
-  void operator()(HANDLE h) const noexcept
+  void operator()(HANDLE _handle) const noexcept
   {
-    if (h)
-      CloseHandle(h);
+    if (_handle)
+      CloseHandle(_handle);
   }
 };
 
 using ScopedHandle = std::unique_ptr<void, HandleCloser>;
-inline HANDLE SafeHandle(HANDLE h) noexcept
+inline HANDLE SafeHandle(HANDLE _handle) noexcept
 {
-  return (h == INVALID_HANDLE_VALUE) ? nullptr : h;
+  return (_handle == INVALID_HANDLE_VALUE) ? nullptr : _handle;
 }
 } // namespace Neuron

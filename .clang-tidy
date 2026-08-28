@@ -73,7 +73,11 @@ WarningsAsErrors: '*'
 
 # [/\\], not '/'. On a Windows Clang build the paths arrive with backslashes, so a filter anchored
 # on a forward slash matches no header at all and silently suppresses every in-build diagnostic.
-HeaderFilterRegex: '(NeuronCore|GameLogic|NeuronServer|NeuronClient|Outpost)[/\\].*\.h$'
+# Headers sitting DIRECTLY in a project folder, which is every hand-written one (AGENTS.md 3's
+# flat-directory rule). The `.*` this replaced also matched build output -- the C++/WinRT
+# projection under <Project>/x64/Debug/Generated Files/winrt/ -- and 46 of the 77 diagnostics in
+# the first sweep were from headers no one in this repository wrote.
+HeaderFilterRegex: '(NeuronCore|GameLogic|NeuronServer|NeuronClient|Outpost)[/\\][A-Za-z0-9]+\.h$'
 
 CheckOptions:
   # ── Types: PascalCase, no prefix of any kind (R2, R5) ──────────────────────────────
