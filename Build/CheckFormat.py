@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Check (or apply) clang-format over the tree.
 
-The file list is derived from the tree rather than spelled here, so a file added by a later slice
-is covered the day it lands. Only the flat project directories are considered: Shaders/ is HLSL,
-which clang-format does not understand, and CompiledShaders/ is generated.
+The file list is derived from the solution rather than spelled here, so a file added by a later
+slice is covered the day it lands, and a project that moves is either covered or reported rather
+than silently skipped. Only the flat project directories are considered: Shaders/ is HLSL, which
+clang-format does not understand, and CompiledShaders/ is generated.
 
   python Build/CheckFormat.py          report files that are not formatted, exit 1 if any
   python Build/CheckFormat.py --fix    format them in place
@@ -17,18 +18,17 @@ import os
 import subprocess
 import sys
 
-PROJECTS = ['NeuronCore', 'NeuronClient', 'NeuronServer', 'GameLogic', 'Outpost',
-            'NeuronCoreTests', 'NeuronClientTests', 'NeuronServerTests', 'GameLogicTests']
+from Projects import projects
 
 
 def sources():
     found = []
-    for project in PROJECTS:
-        if not os.path.isdir(project):
-            continue
-        for name in sorted(os.listdir(project)):
-            if name.endswith(('.h', '.cpp')):
-                found.append(os.path.join(project, name))
+    for name, directory in projects():
+        if not os.path.isdir(directory):
+            raise SystemExit('error: %s is missing, but %s lists it' % (directory, name))
+        for source in sorted(os.listdir(directory)):
+            if source.endswith(('.h', '.cpp')):
+                found.append(os.path.join(directory, source))
     return found
 
 

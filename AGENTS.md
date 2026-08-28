@@ -192,11 +192,10 @@ Two rules `.clang-tidy` structurally cannot state, so check them by eye:
 | `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `MeshLibrary`. |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
 | `Outpost/` | The executable: composition root, presentation state, HUD, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |
-| `*Tests/` | VS CppUnitTestFramework suites, one per library. |
+| `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
 | `NeuronClient/Shaders/` | HLSL (§3). FXC compiles it into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
-| `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py` (§6). |
+| `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). |
 | `.github/workflows/build.yml` | CI (§6). |
-| `Outpost.Toolset.props`, `Outpost.Compile.props` | Build settings shared by every project (§6). |
 
 The dependency rules are hard, and each of them is one thing this structure buys:
 
@@ -297,9 +296,9 @@ byte array on every shader edit, and would let the header and the `.hlsl` disagr
 headers are exempt from §1: `g_p<Name>` is FXC's convention, not this repository's, and R6 does
 not apply to a name a tool chose.
 
-Shader settings live in `Outpost.Compile.props` (§6) except the two that genuinely differ per
-file — whether it is a vertex or a pixel shader, and where its header goes — which are spelled on
-the `FxCompile` item.
+Shader settings live in the shared `FxCompile` block in `NeuronClient.vcxproj` (§6) except the two
+that genuinely differ per file — whether it is a vertex or a pixel shader, and where its header
+goes — which are spelled on the `FxCompile` item.
 
 ---
 
@@ -328,13 +327,12 @@ macro of that shape appears.
 
 ## 5. C++ rules for this codebase
 
-- **C++20 is the floor**, `ConformanceMode` on, `/fp:precise`, no `/arch`. The sheets take
-  `/std:c++latest` and `v145` where msbuild reports Visual Studio 2026, and `stdcpp20` with
-  whatever toolset the machine has otherwise. Nothing here may *need* C++23 to build; if something
-  does, it goes behind a feature test. Do not turn conformance off to make something compile.
-  **None of these are spelled in a `.vcxproj`** — they live in `Outpost.Compile.props`, which every
-  project imports (§6). If you add a project, import both sheets; their two positions are not
-  interchangeable.
+- **C++20 is the floor**, `ConformanceMode` on, `/fp:precise`, no `/arch`. Every project takes
+  `/std:c++latest` where msbuild reports Visual Studio 2026 and `stdcpp20` otherwise, on whatever
+  toolset the machine has. Nothing here may *need* C++23 to build; if something does, it goes
+  behind a feature test. Do not turn conformance off to make something compile. **These are spelled
+  in every `.vcxproj`, identically** (§6): change one and you are changing nine, or you have
+  introduced the drift the copies exist to make visible.
 - **Math is DirectXMath, used natively** — no wrapper types, functions, or aliases. Store
   `XMFLOAT2/3/4`, `XMFLOAT4X4`; compute in `XMVECTOR`/`XMMATRIX` as locals and parameters. Never a
   stored `XMVECTOR` or a `std::vector<XMVECTOR>`.
@@ -412,25 +410,40 @@ x64 is the configuration that is built and run. Win32 and ARM64 exist in the pro
 not exercised; the solution maps `*|ARM64` onto the x64 libraries, which will not link against an
 ARM64 executable. Treat anything other than x64 as unverified.
 
-### The two property sheets
+### The two shared blocks, copied into every project
 
-Every project imports both, and **no project spells a centralised setting itself**:
+There are no property sheets. Every `.vcxproj` carries the same two blocks, each opening with the
+comment that says so and closing with an `end of the shared … block` marker, and **the copies are
+byte-identical**. [`Build/CheckProjectFiles.py`](Build/CheckProjectFiles.py) compares all nine and
+fails the build before anything is compiled if one has drifted, which is the only reason this
+arrangement is safe to live with.
 
-- **`Outpost.Toolset.props`** — imported at the top of each `.vcxproj`, **ahead of
-  `Microsoft.Cpp.Default.props`**, because a toolset and a configuration flavour have to be decided
-  before the platform defaults fill them in. Holds `PlatformToolset`, the target platform version,
-  `CharacterSet`, and `UseDebugLibraries` per configuration.
-- **`Outpost.Compile.props`** — imported from each project's `PropertySheets` group, **after
-  `Microsoft.Cpp.props`**. Holds the language standard, `ConformanceMode`, warning level,
-  `/fp:precise`, the precompiled-header settings, the per-configuration optimisation and
-  preprocessor settings, and the shader settings shared by every `FxCompile` item (§3).
+- **The toolset block**, in the `Configuration` property groups after
+  `Microsoft.Cpp.Default.props`. Holds `CharacterSet` and, per configuration, `UseDebugLibraries`,
+  `LinkIncremental` and `WholeProgramOptimization`. `WindowsTargetPlatformVersion` and its minimum
+  sit earlier still, in `Globals`, because `Microsoft.Cpp.Default.props` reads them.
+- **The compiler block**, in `ItemDefinitionGroup`s after the `PropertySheets` group. Holds the
+  language standard, `ConformanceMode`, warning level, `/fp:precise`, the precompiled-header
+  settings, and the per-configuration optimisation and preprocessor settings.
 
-The two positions are not interchangeable. If you add a project, import both.
+The shader settings (§3) sit just past the compiler block's end marker in `NeuronClient` and
+nowhere else, because that is the only project with shaders. They are outside the marker precisely
+because they are not shared, so the comparison above does not expect to find them elsewhere.
 
-This is not tidiness. Before the sheets existed, all seven projects set `UseDebugLibraries=true`
-and defined `_DEBUG` in **Release** as well as Debug, so a Release build was a Debug build under
-another name and any number measured in it was measuring the wrong binary. A setting spelled per
-project drifts, and the one it drifts on is always the one that mattered.
+**`PlatformToolset` is deliberately not spelled anywhere.** `Microsoft.Cpp.Default.props` picks
+whatever the machine has — v145 on Visual Studio 2026, v143 on 2022 — and pinning a toolset
+that is not installed fails harder than not pinning one.
+
+If you add a project, copy both blocks into it, markers and all. If you change a setting, change
+it in all nine in the same commit — the guard will tell you if you missed one, but it cannot tell
+you which of the two spellings you meant.
+
+**This is the one place in this tree where duplication is the design**, and it is a worse design
+than a shared sheet; it is here because the sheets were removed on request, and the reason they
+existed has not gone away. Before them, all seven projects set `UseDebugLibraries=true` and defined
+`_DEBUG` in **Release** as well as Debug, so a Release build was a Debug build under another name
+and any number measured in it was measuring the wrong binary. The guard is what stands in for the
+sheet now. A setting that drifts is always the one that mattered.
 
 ### CI
 
@@ -438,11 +451,12 @@ project drifts, and the one it drifts on is always the one that mattered.
 test suites on every push and pull request, and **it gates** — a red job means the branch does not
 build or a test failed. Three things about it are worth knowing before you read a red run:
 
-- **The toolset is whatever the runner has.** The sheets pin `v145`/`stdcpplatest` only when
-  msbuild reports `$(VisualStudioVersion) >= 18.0`, and otherwise take `v143`/`stdcpp20`. The first
-  run reported MSBuild 18.9, so today CI compiles the same standard a developer on VS 2026 does —
-  but a runner image change moves that without anything here changing, so **nothing in this tree
-  may need C++23 to build**. If something does, it goes behind a feature test.
+- **The toolset is whatever the runner has**, because nothing pins it. The projects take
+  `stdcpplatest` only when msbuild reports `$(VisualStudioVersion) >= 18.0`, and otherwise
+  `stdcpp20`. The first run reported MSBuild 18.9, so today CI compiles the same standard a
+  developer on VS 2026 does — but a runner image change moves that without anything here changing,
+  so **nothing in this tree may need C++23 to build**. If something does, it goes behind a feature
+  test.
 - **It passes `/p:SolutionDir=` explicitly.** Without it every project writes its output beside
   itself instead of into `x64\Debug\`, and the test discovery below finds nothing.
 - **The test suites are discovered from `x64\Debug\*Tests.dll`**, and the packages to restore from
@@ -453,10 +467,16 @@ build or a test failed. Three things about it are worth knowing before you read 
 [`Build/CheckProjectFiles.py`](Build/CheckProjectFiles.py) checks that every project file is
 well-formed XML, that every source file is registered in both its `.vcxproj` and its `.filters`
 and that nothing listed is missing from disk, that file names are unique repo-wide, and that no
-engine project names the game. Each of those fails, unguarded, at a point that names something
-other than the mistake — the step exists because a `--` inside an XML comment cost a CI run and
-reported as nine identical `MSB4024` errors, none of which mentioned the comment. Run it yourself
-before you push; it takes no arguments and needs nothing but Python.
+engine project names the game, and that the shared blocks (above) are identical across all nine.
+Each of those fails, unguarded, at a point that names something other than the mistake — the step
+exists because a `--` inside an XML comment cost a CI run and reported as nine identical `MSB4024`
+errors, none of which mentioned the comment. Run it yourself before you push; it takes no arguments
+and needs nothing but Python.
+
+Both it and `CheckFormat.py` read the project list out of `Outpost.slnx` rather than spelling it,
+so moving a project cannot make either of them check the wrong tree. That is not hypothetical: when
+the test suites moved under `Tests/`, one of them failed naming the old location and the other
+quietly skipped four projects and still reported success.
 
 `build.log`, `test.log` and the TRX results are uploaded on every run, which is worth knowing
 before you conclude a red job is a build failure: a failing test prints its assertion message
@@ -488,8 +508,8 @@ repository started with — parameters missing their `_`, a static member spelle
 silenced for that block with its reason rather than disabled for the tree.
 
 **Release|x64 is the only thing still not in CI.** Release only recently became a real release
-build (see the sheets above) and has no history of being green. Worth adding on the same terms:
-non-blocking first, promoted on a clean run.
+build (see the shared blocks above) and has no history of being green. Worth adding on the same
+terms: non-blocking first, promoted on a clean run.
 
 **Report what you actually did.** "Builds clean, not run" and "builds and runs the fleet-move
 slice" are different claims. Never imply the second when you only did the first, and say which
@@ -525,7 +545,8 @@ configurations you built.
 - [ ] No `argv`, no environment reads, no `XMVECTOR` stored in a struct or container, no `RH` call.
 - [ ] GameLogic touched? The replay-equality test in `GameLogicTests` still passes, and nothing you
       added reads a clock, draws unseeded randomness, or keys on a pointer.
-- [ ] New engine setting? It went in a property sheet, not a `.vcxproj`.
+- [ ] New engine setting? It went into the shared block in all nine `.vcxproj` files identically,
+      and `python Build/CheckProjectFiles.py` agrees.
 - [ ] It builds — Debug at minimum — and you said which configurations you actually built.
 - [ ] Tests for the layer you touched were run, and you said which.
 - [ ] Your report states plainly what you verified, what you assumed, and any rule you bent.

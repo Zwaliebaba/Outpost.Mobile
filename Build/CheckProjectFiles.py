@@ -15,6 +15,10 @@ Each of these replaces a defect that is expensive to find any other way:
   * A pch.cpp that does not include its own pch.h is C2857, reported at line 1 column 1 of a file
     whose entire contents are the thing that is missing. Every project has one and they are all
     identical, so this is exactly the file nobody reads.
+  * The compiler settings are copied into every .vcxproj rather than shared through a property
+    sheet, so nothing but this check keeps the copies the same. One project quietly drifting off
+    /fp:precise, or back onto the debug CRT in Release, is a defect that shows up months later as a
+    replay test that fails on one machine, or as a Release measurement of a debug binary.
 
 Run from the repository root. Prints every problem it finds rather than stopping at the first,
 because a run that reports one of five is a run you have to do five times.
@@ -25,16 +29,10 @@ import re
 import sys
 import xml.etree.ElementTree as ElementTree
 
-PROJECTS = ['NeuronCore', 'NeuronClient', 'NeuronServer', 'GameLogic', 'Outpost',
-            'NeuronCoreTests', 'NeuronClientTests', 'NeuronServerTests', 'GameLogicTests']
+from Projects import projects, read
 
 # Generated or vendored; not hand-written source and not subject to these rules.
 IGNORED_DIRS = {'CompiledShaders', 'packages'}
-
-
-def read(path):
-    with open(path, encoding='utf-8-sig') as handle:
-        return handle.read()
 
 
 def check_xml(problems):
@@ -58,80 +56,121 @@ def check_xml(problems):
 
 def check_registration(problems):
     """Every source file listed in both the .vcxproj and the .filters, and nothing stale in either."""
-    for project in PROJECTS:
-        if not os.path.isdir(project):
-            problems.append('%s: project directory is missing' % project)
+    for name, directory in projects():
+        if not os.path.isdir(directory):
+            problems.append('%s: %s is missing' % (name, directory))
             continue
 
-        sources = sorted(f for f in os.listdir(project) if f.endswith(('.h', '.cpp')))
+        sources = sorted(f for f in os.listdir(directory) if f.endswith(('.h', '.cpp')))
         shaders = []
-        shader_dir = os.path.join(project, 'Shaders')
+        shader_dir = os.path.join(directory, 'Shaders')
         if os.path.isdir(shader_dir):
             shaders = sorted('Shaders\\' + f for f in os.listdir(shader_dir) if f.endswith(('.hlsl', '.hlsli')))
 
-        project_text = read(os.path.join(project, '%s.vcxproj' % project))
-        filter_text = read(os.path.join(project, '%s.vcxproj.filters' % project))
+        project_text = read(os.path.join(directory, '%s.vcxproj' % name))
+        filter_text = read(os.path.join(directory, '%s.vcxproj.filters' % name))
 
-        for name in sources + shaders:
-            if 'Include="%s"' % name not in project_text:
-                problems.append('%s/%s: not listed in %s.vcxproj' % (project, name, project))
-            if 'Include="%s"' % name not in filter_text:
-                problems.append('%s/%s: not listed in %s.vcxproj.filters' % (project, name, project))
+        for source in sources + shaders:
+            if 'Include="%s"' % source not in project_text:
+                problems.append('%s/%s: not listed in %s.vcxproj' % (directory, source, name))
+            if 'Include="%s"' % source not in filter_text:
+                problems.append('%s/%s: not listed in %s.vcxproj.filters' % (directory, source, name))
 
         listed = re.findall(r'(?:ClInclude|ClCompile|FxCompile) Include="([^"]+)"', project_text)
-        for name in listed:
-            if not os.path.exists(os.path.join(project, name.replace('\\', os.sep))):
-                problems.append('%s/%s: listed in the .vcxproj but not on disk' % (project, name))
+        for source in listed:
+            if not os.path.exists(os.path.join(directory, source.replace('\\', os.sep))):
+                problems.append('%s/%s: listed in the .vcxproj but not on disk' % (directory, source))
+
+
+def check_shared_blocks(problems):
+    """The settings every project repeats verbatim, still repeated verbatim.
+
+    A property sheet made this true by construction. Copies do not, so the copies are delimited by
+    the comment they open with and the "end of the shared ... block" marker they close with, and
+    this compares them. Change a setting in one project and this reports the other eight.
+    """
+    blocks = {
+        'toolset': (r'  <!--\n    Configuration flavour, decided before .*?'
+                    r'  <!-- end of the shared toolset block -->\n'),
+        'compiler': (r'  <!--\n    Compiler and linker settings, repeated verbatim .*?'
+                     r'  <!-- end of the shared compiler block -->\n'),
+    }
+    for label, pattern in blocks.items():
+        found = {}
+        for name, directory in projects():
+            path = os.path.join(directory, '%s.vcxproj' % name)
+            if not os.path.exists(path):
+                continue
+            match = re.search(pattern, read(path), re.S)
+            if not match:
+                problems.append('%s: has no shared %s block, and every project carries one' % (path, label))
+                continue
+            found.setdefault(match.group(0), []).append(path)
+        if len(found) > 1:
+            majority = max(found.values(), key=len)
+            for owners in found.values():
+                if owners is majority:
+                    continue
+                problems.append('%s: its shared %s block differs from the other %d project(s)'
+                                % (', '.join(owners), label, len(majority)))
 
 
 def check_precompiled_headers(problems):
     """/Yc requires the creating translation unit to include the header it is creating."""
-    for project in PROJECTS:
-        path = os.path.join(project, 'pch.cpp')
+    for _, directory in projects():
+        path = os.path.join(directory, 'pch.cpp')
         if not os.path.exists(path):
-            problems.append('%s: pch.cpp is missing' % project)
+            problems.append('%s/pch.cpp is missing' % directory)
             continue
         if '#include "pch.h"' not in read(path):
-            problems.append('%s/pch.cpp: does not include "pch.h", which /Yc requires (C2857)' % project)
+            problems.append('%s/pch.cpp: does not include "pch.h", which /Yc requires (C2857)' % directory)
 
 
 def check_unique_names(problems):
     """Unique repo-wide and case-insensitively, because several project roots share an include path."""
     seen = {}
-    for project in PROJECTS:
-        if not os.path.isdir(project):
+    for name, directory in projects():
+        if not os.path.isdir(directory):
             continue
-        for name in os.listdir(project):
-            if not name.endswith(('.h', '.cpp')) or name.lower().startswith('pch.'):
+        for source in os.listdir(directory):
+            if not source.endswith(('.h', '.cpp')) or source.lower().startswith('pch.'):
                 continue
-            seen.setdefault(name.lower(), []).append(project)
-    for name, owners in sorted(seen.items()):
+            seen.setdefault(source.lower(), []).append(name)
+    for source, owners in sorted(seen.items()):
         if len(owners) > 1:
-            problems.append('%s: declared in more than one project (%s)' % (name, ', '.join(owners)))
+            problems.append('%s: declared in more than one project (%s)' % (source, ', '.join(owners)))
 
 
 def check_dependency_rules(problems):
-    """The engine never names the game. An engine project that does has stopped being an engine."""
-    for project in ['NeuronCore', 'NeuronClient', 'NeuronServer',
-                    'NeuronCoreTests', 'NeuronClientTests', 'NeuronServerTests']:
-        if not os.path.isdir(project):
+    """The engine never names the game. An engine project that does has stopped being an engine.
+
+    Neuron* is the engine and its test suites; everything else in the solution is allowed to know
+    about the game.
+    """
+    for name, directory in projects():
+        if not name.startswith('Neuron') or not os.path.isdir(directory):
             continue
-        project_text = read(os.path.join(project, '%s.vcxproj' % project))
+        # Comments stripped first: the shared compiler block explains why /fp:precise is set by
+        # naming the layer that needs it, and a prose mention is not a reference.
+        project_text = read(os.path.join(directory, '%s.vcxproj' % name))
+        project_text = re.sub(r'<!--.*?-->', '', project_text, flags=re.S)
         if 'GameLogic' in project_text:
-            problems.append('%s/%s.vcxproj: an engine project references GameLogic' % (project, project))
-        for name in os.listdir(project):
-            if not name.endswith(('.h', '.cpp')):
+            problems.append('%s/%s.vcxproj: an engine project references GameLogic' % (directory, name))
+        for source in os.listdir(directory):
+            if not source.endswith(('.h', '.cpp')):
                 continue
-            body = read(os.path.join(project, name))
+            body = read(os.path.join(directory, source))
             for game_header in ('GameLogic.h', 'World.h', 'ShipState.h', 'Movement.h', 'Formation.h', 'SimTuning.h'):
                 if '#include "%s"' % game_header in body:
-                    problems.append('%s/%s: an engine file includes the game header %s' % (project, name, game_header))
+                    problems.append('%s/%s: an engine file includes the game header %s'
+                                    % (directory, source, game_header))
 
 
 def main():
     problems = []
     check_xml(problems)
     check_registration(problems)
+    check_shared_blocks(problems)
     check_precompiled_headers(problems)
     check_unique_names(problems)
     check_dependency_rules(problems)
@@ -142,7 +181,8 @@ def main():
         print('\n%d problem(s). See AGENTS.md sections 2 and 3.' % len(problems))
         return 1
 
-    print('project files: XML well-formed, every source registered, names unique, layers intact.')
+    print('project files: XML well-formed, every source registered, shared blocks identical, '
+          'names unique, layers intact.')
     return 0
 
 

@@ -25,14 +25,35 @@
     <ProjectGuid>{512284cd-a17a-4816-8e0a-9e9dadbfc464}</ProjectGuid>
     <RootNamespace>NeuronServer</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformMinVersion>10.0.17763.0</WindowsTargetPlatformMinVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
+    <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
-  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <PlatformToolset>v145</PlatformToolset>
+  <!--
+    Configuration flavour, decided before Microsoft.Cpp.props reads it. PlatformToolset is
+    deliberately not spelled: Microsoft.Cpp.Default.props picks whatever the machine has, which is v145 on Visual
+    Studio 2026 and v143 on 2022, and pinning a toolset that is not installed fails harder than not
+    pinning one.
+
+    Every project in this solution repeats this block and the compiler block below verbatim. Keep
+    the copies identical: a setting that drifts is always the one that mattered, which is how
+    Release once came to be built with the debug CRT and _DEBUG defined in all seven projects.
+  -->
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)'=='Debug'">
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <LinkIncremental>true</LinkIncremental>
   </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)'=='Release'">
+    <!-- Release links the release CRT and enables the optimiser. It did neither once, which made
+         every number measured in Release a measurement of a debug build. -->
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <LinkIncremental>false</LinkIncremental>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+  <!-- end of the shared toolset block -->
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
@@ -42,14 +63,70 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <!--
+    Compiler and linker settings, repeated verbatim in every project. Two of them are load-bearing
+    rather than a matter of taste:
+
+      * ConformanceMode. Turning it off to make something compile trades one afternoon for every
+        afternoon after it.
+      * /fp:precise and no /arch. GameLogic is deterministic, and determinism is a property of the
+        whole binary: a floating-point mode that differs between two projects makes the same tick
+        produce two answers, and the replay suite goes red months later for a reason nobody can
+        find.
+  -->
+  <PropertyGroup>
+    <!-- A numeric comparison against an empty $(VisualStudioVersion) is MSB4086, not a false
+         condition, so msbuild invoked outside a Visual Studio context would fail here rather than
+         fall through to the floor below. -->
+    <OutpostVsVersion Condition="'$(OutpostVsVersion)'=='' and '$(VisualStudioVersion)'!=''">$(VisualStudioVersion)</OutpostVsVersion>
+    <OutpostVsVersion Condition="'$(OutpostVsVersion)'==''">17.0</OutpostVsVersion>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <!-- stdcpp20 is the floor, and where the version is unknown it is what gets compiled.
+           Nothing in this tree may need C++23 to build; if something does, it goes behind a
+           feature test, because the two standards then disagree at your desk before they disagree
+           in CI. -->
+      <LanguageStandard Condition="'$(OutpostVsVersion)' &gt;= '18.0'">stdcpplatest</LanguageStandard>
+      <LanguageStandard Condition="'$(OutpostVsVersion)' &lt; '18.0'">stdcpp20</LanguageStandard>
+      <ConformanceMode>true</ConformanceMode>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <FloatingPointModel>Precise</FloatingPointModel>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>$(IntDir)pch.pch</PrecompiledHeaderOutputFile>
+      <AdditionalOptions>%(AdditionalOptions) /bigobj</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <Optimization>Disabled</Optimization>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <!-- end of the shared compiler block -->
   <ItemDefinitionGroup>
     <ClCompile>
       <PreprocessorDefinitions>_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <!-- The include path is not the dependency rule, but it is where breaking one starts. -->
       <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\NeuronCore;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">stdcpplatest</LanguageStandard>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Use</PrecompiledHeader>
-      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</PrecompiledHeaderFile>
     </ClCompile>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>

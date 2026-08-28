@@ -15,11 +15,12 @@
 #
 # Runner notes, because these are the parts most likely to need adjusting on the first red run:
 #
-#   * The toolset is whatever the runner has. The property sheets pin v145/stdcpplatest only when
-#     msbuild reports $(VisualStudioVersion) >= 18.0 and otherwise take v143/stdcpp20, so a runner
-#     image change moves what CI compiles against without anything here changing. The first run
-#     reported MSBuild 18.9, so today that is the same toolset a developer on VS 2026 uses -- but
-#     it is not guaranteed to stay that way, and nothing in this tree may require C++23 to build.
+#   * The toolset is whatever the runner has, because no project pins PlatformToolset. The
+#     projects take stdcpplatest only when msbuild reports $(VisualStudioVersion) >= 18.0 and
+#     otherwise stdcpp20, so a runner image change moves what CI compiles against without anything
+#     here changing. The first run reported MSBuild 18.9, so today that is the same toolset a
+#     developer on VS 2026 uses -- but it is not guaranteed to stay that way, and nothing in this
+#     tree may require C++23 to build.
 #   * The projects use packages.config, not PackageReference, so restore is `nuget restore` per
 #     config file rather than `msbuild -t:restore`. The list is walked from the tree so a project
 #     added later is restored the day it lands.
