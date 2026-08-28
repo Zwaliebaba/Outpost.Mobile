@@ -7,9 +7,11 @@
 #   * Release|x64. Release only started being a real release build recently -- it was linking the
 #     debug CRT and defining _DEBUG in all seven projects -- so there is no history of it being
 #     green. Add the leg once it has been built by hand a few times (AGENTS.md 6).
-#   * clang-tidy and clang-format. Both configs exist and neither has ever been run over this
-#     tree. A first sweep will find things; it should land non-blocking and be promoted when a run
-#     comes back clean, not turned on in the same change that writes it.
+#
+# clang-format gates, in its own Linux job: it only reads C++ text, so putting it on a Windows
+# runner would cost several times as much for the same answer. clang-tidy does not gate, because it
+# has to parse the code and has never been run over this tree; it is non-blocking until a run comes
+# back clean, which is how a linter should arrive.
 #
 # Runner notes, because these are the parts most likely to need adjusting on the first red run:
 #
@@ -49,6 +51,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # clang-format only reads C++ as text, so it needs no SDK, no toolset and no Windows. Twenty
+  # seconds on Linux for the same answer a Windows runner would bill several times over.
+  format:
+    name: clang-format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install clang-format
+        # Pinned exactly. clang-format's output changes between releases, so an unpinned version
+        # turns this job red on a day nobody touched the code.
+        run: pip install clang-format==18.1.3
+
+      - name: Check formatting
+        run: python Build/CheckFormat.py
+
   debug-x64:
     name: Debug|x64
     runs-on: windows-latest
@@ -125,6 +146,48 @@ jobs:
 
           & $vstest $suites /Platform:x64 /Logger:trx /ResultsDirectory:TestResults | Tee-Object -FilePath test.log
           if ($LASTEXITCODE -ne 0) { throw 'tests failed' }
+
+      - name: Run clang-tidy (non-blocking)
+        # NOT A GATE YET. .clang-tidy has never been run over this tree, so the first sweep will
+        # find things; it earns the right to gate by coming back clean, not by being switched on
+        # in the change that adds it. Promote it by deleting continue-on-error.
+        #
+        # Scoped to GameLogic: it is the layer where the checks matter most (determinism), and the
+        # only one that does not reach D3D12 or XAudio2 headers. It does still reach C++/WinRT
+        # through NeuronCore.h, and those headers are generated during the build -- which is why
+        # this runs after it, and why the generated directory is discovered rather than assumed.
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $install = & $vswhere -latest -products '*' -property installationPath
+          $tidy = Join-Path $install 'VC\Tools\Llvm\x64\bin\clang-tidy.exe'
+          if (-not (Test-Path $tidy)) { Write-Host "clang-tidy not found at $tidy"; exit 1 }
+          & $tidy --version
+
+          # The C++/WinRT projection is generated per project; take whichever copies the build made.
+          $generated = Get-ChildItem -Recurse -Directory -Filter 'winrt' -ErrorAction SilentlyContinue |
+                       Where-Object { $_.FullName -notlike '*\packages\*' } |
+                       ForEach-Object { $_.Parent.FullName } | Select-Object -Unique
+          Write-Host "generated projection directories: $($generated -join ', ')"
+          $includes = @('GameLogic', 'NeuronCore') + $generated | ForEach-Object { "/I$_" }
+
+          # Import the developer environment so INCLUDE names the Windows SDK and the STL; clang's
+          # cl driver reads it the same way cl.exe does.
+          Import-Module (Join-Path $install 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
+          Enter-VsDevShell -VsInstallPath $install -SkipAutomaticLocation `
+                           -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null
+
+          $failed = 0
+          foreach ($source in Get-ChildItem GameLogic -Filter *.cpp)
+          {
+            if ($source.Name -eq 'pch.cpp') { continue }
+            Write-Host "--- $($source.Name)"
+            & $tidy --quiet $source.FullName -- --driver-mode=cl /std:c++20 /EHsc /D_DEBUG @includes
+            if ($LASTEXITCODE -ne 0) { $failed++ }
+          }
+          Write-Host "clang-tidy reported findings in $failed file(s)"
+          exit $failed
 
       - name: Upload logs
         # Failures are the case these are wanted in, and a green run's logs cost storage for

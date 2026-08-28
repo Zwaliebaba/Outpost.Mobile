@@ -135,14 +135,26 @@ source of truth for the option values** — this document states the rules in pr
 repeat the settings, so there is nothing to drift. [`.clang-format`](.clang-format) owns
 whitespace; the two never overlap.
 
-**Neither runs in CI.** CI builds and tests (§6); it does not lint, because neither config has
-ever been swept over this tree and a first sweep will find things. When one is added it should
-land non-blocking and be promoted once a run comes back clean — not turned on in the same change
-that writes it. Until then, run clang-tidy yourself on the files you wrote, not on the tree:
+**Both run in CI now, on different footings** (§6). `clang-format` **gates**, in its own Linux job
+— it only reads C++ as text, so it needs no SDK and no Windows runner. `clang-tidy` does **not**
+gate yet: it has to parse the code, it has never swept this tree, and it earns the right to gate by
+coming back clean rather than by being switched on in the change that adds it.
+
+Run either yourself before you push — clang-tidy on the files you wrote, not on the tree:
 
 ```
+python Build/CheckFormat.py            report what is not formatted
+python Build/CheckFormat.py --fix      format it
+
 clang-tidy --quiet NeuronCore/YourNewFile.cpp -- -I . -D _WIN32 -D _DEBUG /std:c++latest
 ```
+
+**Pin your clang-format to the version CI uses** — 18.1.3, via `pip install clang-format==18.1.3`.
+Its output changes between releases, so a different local version reformats files CI then rejects,
+and the two of you take turns undoing each other.
+
+The tree is formatted and a whole-tree run is a no-op. Keep it that way: format the lines you
+write, and do not reformat files you are only passing through.
 
 Two rules `.clang-tidy` structurally cannot state, so check them by eye:
 
@@ -413,10 +425,19 @@ before you push; it takes no arguments and needs nothing but Python.
 before you conclude a red job is a build failure: a failing test prints its assertion message
 there rather than in the step summary.
 
-**Release|x64 and the linters are not in CI yet.** Release only recently became a real release
-build (see the sheets above), and neither `.clang-tidy` nor `.clang-format` has ever been run over
-this tree. Both are worth adding; both should land the same way, non-blocking until a run comes
-back clean.
+**`clang-format` gates, in its own Linux job.** It only reads C++ as text, so it needs neither the
+SDK nor a Windows runner, and what costs twenty seconds on Linux would be billed several times over
+against Windows minutes. The version is pinned to 18.1.3; see §1.
+
+**`clang-tidy` runs but does not gate.** It is `continue-on-error`, scoped to GameLogic — the layer
+where its checks matter most and the only one that does not reach D3D12 or XAudio2 headers. It
+still reaches C++/WinRT through `NeuronCore.h`, and that projection is generated during the build,
+which is why the step runs after the build and discovers the generated directory rather than
+assuming where it is. Promote it by deleting `continue-on-error` once a run comes back clean. That
+is the bargain, and it is the one `clang-format` has already kept.
+
+**Release|x64 is still not in CI.** Release only recently became a real release build (see the
+sheets above) and has no history of being green. Worth adding on the same terms.
 
 **Report what you actually did.** "Builds clean, not run" and "builds and runs the fleet-move
 slice" are different claims. Never imply the second when you only did the first, and say which
@@ -444,6 +465,7 @@ configurations you built.
 - [ ] Files are PascalCase, flat, and unique repo-wide — including against the CRT and the STL.
 - [ ] Every added, removed or moved file is in both the `.vcxproj` **and** the `.filters`, and
       `python Build/CheckProjectFiles.py` passes.
+- [ ] `python Build/CheckFormat.py` passes, on clang-format 18.1.3.
 - [ ] Shader touched? It is `<Name>VS.hlsl` or `<Name>PS.hlsl` under `Shaders/`, and nothing
       generated under `CompiledShaders/` was committed.
 - [ ] The dependency rules in §2 still hold: no engine project names a game type, the client and

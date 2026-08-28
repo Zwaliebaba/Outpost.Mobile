@@ -365,6 +365,10 @@ FodyWeavers.xsd
 # Game Data is never ignored
 !Outpost/Assets/**
 
+# Editor state. Nothing here is part of the build, and a launch configuration that names one
+# person's paths is worse than none.
+.vscode/
+
 # Compiled shaders. FXC generates these headers from Shaders/*.hlsl on every build, so they are
 # output, not source -- committing them would mean reviewing a byte array on every shader edit and
 # would let the header and the .hlsl disagree.
