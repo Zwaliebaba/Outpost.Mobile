@@ -173,6 +173,7 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="GameLogic.h" />
     <ClInclude Include="SimTuning.h" />
+    <ClInclude Include="WorldPos.h" />
     <ClInclude Include="ShipState.h" />
     <ClInclude Include="Formation.h" />
     <ClInclude Include="Movement.h" />

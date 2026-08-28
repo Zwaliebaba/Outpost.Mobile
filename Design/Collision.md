@@ -1184,8 +1184,7 @@ that a change making one of its sentences false updates the sentence.
 
 **6. File naming: `Collision.md`.** `AGENTS.md` is upper-case and every other authored file in the
 tree is `PascalCase`; a lower-case exception here becomes the habit that makes the next one
-arguable. The rename is trivial and has not been made yet — it is the one item on this list still
-outstanding.
+arguable. Done — the file was renamed when phase 0 landed.
 
 **7. The universe is sector + local float, committed now, built later.** The stated ambition is
 thousands of star systems with a small accessible area on day one. Raw `uint64` coordinates, a

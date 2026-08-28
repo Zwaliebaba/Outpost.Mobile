@@ -68,10 +68,9 @@ void WorldView::SampleTrails()
     for (size_t nozzle = 0; nozzle < view.thrusterLocals.size(); ++nozzle)
     {
       const XMFLOAT3& local = view.thrusterLocals[nozzle];
-      view.trail[nozzle * TRAIL_SAMPLES + static_cast<size_t>(view.trailHead)] =
-        XMFLOAT3(ship.posWorld.x + (local.x * cosH + local.z * sinH) * SHIP_SCALE,
-                 ship.posWorld.y + SHIP_HOVER_HEIGHT + (view.restY + local.y) * SHIP_SCALE,
-                 ship.posWorld.z + (-local.x * sinH + local.z * cosH) * SHIP_SCALE);
+      view.trail[nozzle * TRAIL_SAMPLES + static_cast<size_t>(view.trailHead)] = XMFLOAT3(
+        ship.posWorld.localX + (local.x * cosH + local.z * sinH) * SHIP_SCALE, SHIP_HOVER_HEIGHT + (view.restY + local.y) * SHIP_SCALE,
+        ship.posWorld.localZ + (-local.x * sinH + local.z * cosH) * SHIP_SCALE);
     }
     view.trailCount = std::min(view.trailCount + 1, TRAIL_SAMPLES);
   }
@@ -135,8 +134,8 @@ void WorldView::UpdateFeedback(float _dtSec)
     if (!m_ships[i].selected || state[i].order != Game::OrderState::Moving)
       continue;
     ++movingCount;
-    centreX += state[i].posWorld.x;
-    centreZ += state[i].posWorld.z;
+    centreX += state[i].posWorld.localX;
+    centreZ += state[i].posWorld.localZ;
     leadX += std::sin(state[i].headingRad) * state[i].speed;
     leadZ += std::cos(state[i].headingRad) * state[i].speed;
   }
@@ -175,9 +174,9 @@ int WorldView::PickShip(float _xPx, float _yPx) const
     const float cosH = std::cos(ship.headingRad);
     const float sinH = std::sin(ship.headingRad);
 
-    const XMFLOAT3 centre(ship.posWorld.x + (view.pickCentre.x * cosH + view.pickCentre.z * sinH) * SHIP_SCALE,
-                          ship.posWorld.y + (view.restY + view.pickCentre.y) * SHIP_SCALE,
-                          ship.posWorld.z + (-view.pickCentre.x * sinH + view.pickCentre.z * cosH) * SHIP_SCALE);
+    const XMFLOAT3 centre(ship.posWorld.localX + (view.pickCentre.x * cosH + view.pickCentre.z * sinH) * SHIP_SCALE,
+                          (view.restY + view.pickCentre.y) * SHIP_SCALE,
+                          ship.posWorld.localZ + (-view.pickCentre.x * sinH + view.pickCentre.z * cosH) * SHIP_SCALE);
 
     // Into hull space: to the centre, undo the heading, undo the scale.
     const float rx = origin.x - centre.x;
@@ -230,7 +229,7 @@ void WorldView::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float _f
 
   // The world solves the formation and reports the heading it settled on, so the marker and the
   // ships cannot disagree about which way the order points.
-  const float heading = m_world->IssueMoveOrder(chosen, _point, _hasFacing, _facingRad);
+  const float heading = m_world->IssueMoveOrder(chosen, Game::WorldPos{_point.x, _point.z}, _hasFacing, _facingRad);
 
   OrderMarker marker;
   marker.posWorld = XMFLOAT3(_point.x, 0.0f, _point.z);
@@ -280,7 +279,7 @@ void WorldView::OnBoxSelect(float _x0Px, float _y0Px, float _x1Px, float _y1Px, 
   const std::span<const Game::ShipState> state = m_world->Ships();
   for (size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
   {
-    const XMFLOAT3 centre(state[i].posWorld.x, state[i].posWorld.y + m_ships[i].halfExtents.y * SHIP_SCALE, state[i].posWorld.z);
+    const XMFLOAT3 centre(state[i].posWorld.localX, m_ships[i].halfExtents.y * SHIP_SCALE, state[i].posWorld.localZ);
     float xPx = 0.0f;
     float yPx = 0.0f;
     if (m_camera->WorldToScreen(centre, xPx, yPx) && xPx >= left && xPx <= right && yPx >= top && yPx <= bottom)
@@ -367,9 +366,9 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     const ShipView& view = m_ships[i];
     const Game::ShipState& ship = state[i];
 
-    const float x = ship.prevPos.x + (ship.posWorld.x - ship.prevPos.x) * _alpha;
-    const float y = ship.prevPos.y + (ship.posWorld.y - ship.prevPos.y) * _alpha;
-    const float z = ship.prevPos.z + (ship.posWorld.z - ship.prevPos.z) * _alpha;
+    const Game::WorldPos at = Game::Lerp(ship.prevPos, ship.posWorld, _alpha);
+    const float x = at.localX;
+    const float z = at.localZ;
     const float heading = ship.prevHeading + XMScalarModAngle(ship.headingRad - ship.prevHeading) * _alpha;
 
     // Roll about the hull's own mid-height axis, not its base, or a banked ship pivots on one
@@ -377,7 +376,7 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     const float rollAxisY = view.pickCentre.y;
     const XMMATRIX hull = XMMatrixTranslation(0.0f, -rollAxisY, 0.0f) * XMMatrixRotationZ(view.bankRad) *
                           XMMatrixTranslation(0.0f, rollAxisY + view.restY, 0.0f) * XMMatrixScaling(SHIP_SCALE, SHIP_SCALE, SHIP_SCALE) *
-                          XMMatrixRotationY(heading) * XMMatrixTranslation(x, y + SHIP_HOVER_HEIGHT, z);
+                          XMMatrixRotationY(heading) * XMMatrixTranslation(x, SHIP_HOVER_HEIGHT, z);
     XMStoreFloat4x4(&world, hull);
 
     Rgba tint = view.selected ? SELECTED_COLOUR : SHIP_COLOUR;
@@ -426,8 +425,9 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, float _a
     const Game::ShipState& ship = state[i];
 
     const float hullRadius = std::max(view.halfExtents.x, view.halfExtents.z) * SHIP_SCALE;
-    const float x = ship.prevPos.x + (ship.posWorld.x - ship.prevPos.x) * _alpha;
-    const float z = ship.prevPos.z + (ship.posWorld.z - ship.prevPos.z) * _alpha;
+    const Game::WorldPos at = Game::Lerp(ship.prevPos, ship.posWorld, _alpha);
+    const float x = at.localX;
+    const float z = at.localZ;
 
     if (view.ringFade > 0.002f && view.ringScale > 0.002f)
     {

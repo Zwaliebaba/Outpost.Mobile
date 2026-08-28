@@ -24,6 +24,9 @@
     <ClInclude Include="SimTuning.h">
       <Filter>Tuning</Filter>
     </ClInclude>
+    <ClInclude Include="WorldPos.h">
+      <Filter>World</Filter>
+    </ClInclude>
     <ClInclude Include="ShipState.h">
       <Filter>World</Filter>
     </ClInclude>

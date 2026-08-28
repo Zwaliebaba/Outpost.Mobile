@@ -22,8 +22,8 @@ void StepShip(ShipState& _ship) noexcept
 
   if (_ship.order == OrderState::Moving)
   {
-    const float dx = _ship.orderPos.x - _ship.posWorld.x;
-    const float dz = _ship.orderPos.z - _ship.posWorld.z;
+    const float dx = OffsetX(_ship.posWorld, _ship.orderPos);
+    const float dz = OffsetZ(_ship.posWorld, _ship.orderPos);
     const float distance = std::sqrt(dx * dx + dz * dz);
     if (distance <= ARRIVAL_RADIUS)
       _ship.order = _ship.orderHasFacing ? OrderState::Aligning : OrderState::Idle;
@@ -63,8 +63,7 @@ void StepShip(ShipState& _ship) noexcept
       _ship.speed = 0.0f;
   }
 
-  _ship.posWorld.x += std::sin(_ship.headingRad) * _ship.speed * TICK_DT;
-  _ship.posWorld.z += std::cos(_ship.headingRad) * _ship.speed * TICK_DT;
+  Translate(_ship.posWorld, std::sin(_ship.headingRad) * _ship.speed * TICK_DT, std::cos(_ship.headingRad) * _ship.speed * TICK_DT);
 
   // What the view's thruster glow and trail are driven by.
   _ship.accelSample = (_ship.speed - speedBefore) / TICK_DT;

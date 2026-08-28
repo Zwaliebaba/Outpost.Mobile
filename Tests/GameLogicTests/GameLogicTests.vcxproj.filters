@@ -23,6 +23,9 @@
     <ClCompile Include="MovementTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="WorldTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config">

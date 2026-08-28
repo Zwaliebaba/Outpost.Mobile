@@ -18,6 +18,7 @@
 #include "NeuronCore.h"
 
 #include "SimTuning.h"
+#include "WorldPos.h"
 #include "ShipState.h"
 #include "Formation.h"
 #include "Movement.h"

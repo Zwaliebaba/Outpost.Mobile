@@ -186,6 +186,7 @@
     </ClCompile>
     <ClCompile Include="FormationTests.cpp" />
     <ClCompile Include="MovementTests.cpp" />
+    <ClCompile Include="WorldTests.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

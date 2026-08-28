@@ -194,6 +194,7 @@ Two rules `.clang-tidy` structurally cannot state, so check them by eye:
 | `Outpost/` | The executable: composition root, presentation state, HUD, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
 | `NeuronClient/Shaders/` | HLSL (§3). FXC compiles it into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
+| `Design/` | Design documents: proposals worked out in prose before they are code, kept with the tree so the reasoning survives the pull request thread. `Collision.md` is the spatial index, collision, avoidance and pathfinding proposal. |
 | `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). |
 | `.github/workflows/build.yml` | CI (§6). |
 
