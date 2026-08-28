@@ -12,13 +12,13 @@ constexpr DXGI_FORMAT ATLAS_FORMAT = DXGI_FORMAT_R8_UNORM; // one channel, becau
 // Coverage comes from the alpha channel where the file has one and from the luminance where it does
 // not, so a font authored white-on-black reads the same as one authored white-on-transparent. The
 // alternative -- assuming one of the two -- turns the other into a solid block of ink.
-std::vector<std::uint8_t> CoverageOf(const DdsImage& _image)
+std::vector<std::uint8_t> CoverageOf(const ByteBuffer& _bgraPixels, bool _hasAlpha)
 {
-  std::vector<std::uint8_t> coverage(static_cast<size_t>(_image.widthPx) * _image.heightPx);
+  std::vector<std::uint8_t> coverage(_bgraPixels.size() / 4);
   for (size_t i = 0; i < coverage.size(); ++i)
   {
-    const std::uint8_t* texel = _image.pixels.data() + i * 4;
-    coverage[i] = _image.hasAlpha ? texel[3] : std::max({texel[0], texel[1], texel[2]});
+    const std::uint8_t* texel = _bgraPixels.data() + i * 4;
+    coverage[i] = _hasAlpha ? texel[3] : std::max({texel[0], texel[1], texel[2]});
   }
   return coverage;
 }
@@ -29,6 +29,15 @@ bool BitmapFont::Load(GpuDevice& _gpu, const std::wstring& _fileName, D3D12_CPU_
   DdsImage image;
   if (!DdsImage::Load(_fileName, image))
     return false;
+
+  // The atlas is read texel by texel on the CPU, so it has to be an uncompressed 8-bit surface: a
+  // block-compressed font would upload fine and then have no coverage to sample.
+  ByteBuffer pixels;
+  if (!image.TopMipAsBgra(pixels))
+  {
+    DebugTrace(L"font {} is not an uncompressed 8-bit surface\n", _fileName);
+    return false;
+  }
 
   const std::uint32_t cellPx = image.widthPx / GLYPH_COLS;
   if (cellPx == 0 || cellPx * GLYPH_COLS != image.widthPx || image.heightPx % cellPx != 0)
@@ -49,7 +58,7 @@ bool BitmapFont::Load(GpuDevice& _gpu, const std::wstring& _fileName, D3D12_CPU_
   }
   m_lastGlyph = static_cast<std::uint8_t>(std::min<std::uint32_t>(FIRST_GLYPH + cells - 1, 0xffu));
 
-  std::vector<std::uint8_t> coverage = CoverageOf(image);
+  std::vector<std::uint8_t> coverage = CoverageOf(pixels, image.HasAlpha());
 
   const std::uint32_t solidIndex = SOLID_GLYPH - FIRST_GLYPH;
   const std::uint32_t solidXPx = (solidIndex % GLYPH_COLS) * cellPx;
