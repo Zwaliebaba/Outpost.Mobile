@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "World.h"
 
+#include "HullSpec.h"
 #include "Movement.h"
 #include "SimTuning.h"
 
@@ -83,7 +84,7 @@ ShipId World::Resolve(ShipHandle _handle) const noexcept
 void World::Step()
 {
   for (ShipState& ship : m_ships)
-    StepShip(ship);
+    StepShip(ship, HullSpecOf(ship.hullId));
   ++m_tick;
 }
 

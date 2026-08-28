@@ -1,5 +1,6 @@
 #pragma once
 
+#include "HullSpec.h"
 #include "ShipState.h"
 
 namespace Game
@@ -9,5 +10,5 @@ namespace Game
 //
 // Separate from World because it is the piece worth testing in isolation -- given a ship and an
 // order, does it arrive, and does it arrive the same way every time.
-void StepShip(ShipState& _ship) noexcept;
+void StepShip(ShipState& _ship, const HullSpec& _hull) noexcept;
 } // namespace Game

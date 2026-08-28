@@ -175,6 +175,7 @@
     <ClInclude Include="SimTuning.h" />
     <ClInclude Include="WorldPos.h" />
     <ClInclude Include="ShipState.h" />
+    <ClInclude Include="HullSpec.h" />
     <ClInclude Include="Formation.h" />
     <ClInclude Include="Movement.h" />
     <ClInclude Include="World.h" />

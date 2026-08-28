@@ -7,10 +7,10 @@ using namespace DirectX;
 
 namespace Game
 {
-void StepShip(ShipState& _ship) noexcept
+void StepShip(ShipState& _ship, const HullSpec& _hull) noexcept
 {
-  const float maxTurnRate = XMConvertToRadians(TURN_RATE_DEG_PER_SEC);
-  const float turnAcceleration = XMConvertToRadians(TURN_ACCELERATION_DEG);
+  const float maxTurnRate = _hull.maxTurnRateRadPerSec;
+  const float turnAcceleration = _hull.turnAccelerationRadPerSec2;
   const float stopBlend = Neuron::HalfLifeBlend(TICK_DT, STOP_DAMPING_HALF_LIFE);
 
   _ship.prevPos = _ship.posWorld;
@@ -31,7 +31,7 @@ void StepShip(ShipState& _ship) noexcept
     {
       desiredHeading = std::atan2(dx, dz);
       // Never faster than can still be shed before the point.
-      desiredSpeed = std::min(MAX_SPEED, std::sqrt(2.0f * DECELERATION * (distance - ARRIVAL_RADIUS)));
+      desiredSpeed = std::min(_hull.maxSpeedMetresPerSec, std::sqrt(2.0f * _hull.decelerationMetresPerSec2 * (distance - ARRIVAL_RADIUS)));
     }
   }
   else if (_ship.order == OrderState::Aligning)
@@ -55,7 +55,9 @@ void StepShip(ShipState& _ship) noexcept
   desiredSpeed *= std::max(0.0f, std::cos(headingError));
 
   if (_ship.order == OrderState::Moving)
-    _ship.speed = Neuron::MoveTowards(_ship.speed, desiredSpeed, (desiredSpeed > _ship.speed ? ACCELERATION : DECELERATION) * TICK_DT);
+    _ship.speed =
+      Neuron::MoveTowards(_ship.speed, desiredSpeed,
+                          (desiredSpeed > _ship.speed ? _hull.accelerationMetresPerSec2 : _hull.decelerationMetresPerSec2) * TICK_DT);
   else
   {
     _ship.speed -= _ship.speed * stopBlend; // half-life damping down to a standstill

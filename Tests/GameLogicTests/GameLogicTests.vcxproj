@@ -185,6 +185,7 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="FormationTests.cpp" />
+    <ClCompile Include="HullSpecTests.cpp" />
     <ClCompile Include="MovementTests.cpp" />
     <ClCompile Include="WorldTests.cpp" />
   </ItemGroup>

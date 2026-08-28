@@ -20,6 +20,7 @@
 #include "SimTuning.h"
 #include "WorldPos.h"
 #include "ShipState.h"
+#include "HullSpec.h"
 #include "Formation.h"
 #include "Movement.h"
 #include "World.h"

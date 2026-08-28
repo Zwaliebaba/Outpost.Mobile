@@ -12,7 +12,16 @@ namespace
 {
 const std::wstring MESH_DIR = L"Meshes\\";
 const std::wstring FONT_DIR = L"Fonts\\";
-const std::wstring STARTING_HULLS[] = {L"Bomber", L"Corvette", L"Frigate"};
+// Mesh and hull are paired here rather than left to line up by index. The simulation's hull id is
+// a row in Game::HULL_SPECS and the view's mesh is a file; an index that happened to serve as both
+// gave the Bomber an Interceptor's turn rate the moment that table arrived.
+struct StartingHull
+{
+  std::wstring mesh;
+  Game::HullId hull;
+};
+const StartingHull STARTING_HULLS[] = {
+  {L"Bomber", Game::HullId::Bomber}, {L"Corvette", Game::HullId::Corvette}, {L"Frigate", Game::HullId::Frigate}};
 } // namespace
 
 void OutpostApp::Init(HINSTANCE _instance)
@@ -76,12 +85,12 @@ void OutpostApp::SpawnStartingFleet()
   constexpr int hullCount = static_cast<int>(std::size(STARTING_HULLS));
   for (int i = 0; i < hullCount; ++i)
   {
-    const MeshHandle mesh = m_meshes.Load(m_gpu, m_sceneRenderer, MESH_DIR, STARTING_HULLS[i]);
+    const MeshHandle mesh = m_meshes.Load(m_gpu, m_sceneRenderer, MESH_DIR, STARTING_HULLS[i].mesh);
     if (mesh == INVALID_MESH)
       continue; // a missing hull is a content diagnostic, not a reason to fail boot
 
     const float x = (static_cast<float>(i) - static_cast<float>(hullCount - 1) * 0.5f) * START_SPACING;
-    m_world.SpawnShip(Game::WorldPos{x, 0.0f}, 0.0f, static_cast<std::uint32_t>(i));
+    m_world.SpawnShip(Game::WorldPos{x, 0.0f}, 0.0f, static_cast<std::uint32_t>(STARTING_HULLS[i].hull));
     m_view.AddShip(mesh);
   }
 }
