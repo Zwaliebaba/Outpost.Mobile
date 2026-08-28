@@ -132,8 +132,10 @@ source of truth for the option values** — this document states the rules in pr
 repeat the settings, so there is nothing to drift. [`.clang-format`](.clang-format) owns
 whitespace; the two never overlap.
 
-**Neither runs in CI yet — there is no CI in this repository** (§6). Until there is, run
-clang-tidy yourself on the files you wrote, not on the tree:
+**Neither runs in CI.** CI builds and tests (§6); it does not lint, because neither config has
+ever been swept over this tree and a first sweep will find things. When one is added it should
+land non-blocking and be promoted once a run comes back clean — not turned on in the same change
+that writes it. Until then, run clang-tidy yourself on the files you wrote, not on the tree:
 
 ```
 clang-tidy --quiet NeuronCore/YourNewFile.cpp -- -I . -D _WIN32 -D _DEBUG /std:c++latest
@@ -306,11 +308,17 @@ Format the lines you write. Do not reformat files you are only passing through.
 ## 6. Build and verify
 
 ```
+nuget restore Outpost\packages.config -PackagesDirectory packages    (and one per project)
+
 msbuild Outpost.slnx /p:Configuration=Debug   /p:Platform=x64
 msbuild Outpost.slnx /p:Configuration=Release /p:Platform=x64
+
 vstest.console.exe x64\Debug\NeuronCoreTests.dll x64\Debug\GameLogicTests.dll ^
                    x64\Debug\NeuronClientTests.dll x64\Debug\NeuronServerTests.dll
 ```
+
+The projects use `packages.config`, not `PackageReference`, so `msbuild -t:restore` does nothing
+for them — restore is `nuget restore` per config file, which is what the CI step does.
 
 x64 is the configuration that is built and run. Win32 and ARM64 exist in the project files but are
 not exercised; the solution maps `*|ARM64` onto the x64 libraries, which will not link against an
@@ -336,12 +344,31 @@ and defined `_DEBUG` in **Release** as well as Debug, so a Release build was a D
 another name and any number measured in it was measuring the wrong binary. A setting spelled per
 project drifts, and the one it drifts on is always the one that mattered.
 
-### There is no CI
+### CI
 
-Nothing in this repository builds it but you. `.clang-format` and `.clang-tidy` are enforced by
-review, and the test suites run only when someone runs them. Until that changes, the checklist in
-§8 is the only gate there is — which is worth knowing before you rely on something catching a miss
-for you.
+[`.github/workflows/build.yml`](.github/workflows/build.yml) builds **Debug|x64** and runs all four
+test suites on every push and pull request, and **it gates** — a red job means the branch does not
+build or a test failed. Three things about it are worth knowing before you read a red run:
+
+- **It builds against C++20, not C++23.** A hosted runner carries Visual Studio 2022, and
+  `microsoft/setup-msbuild` does not set `$(VisualStudioVersion)`, so the property sheets leave the
+  toolset to the machine and select `stdcpp20`. A developer on VS 2026 compiles `stdcpplatest`.
+  Nothing in this tree may *need* C++23 to build; if something does, it goes behind a feature test,
+  because otherwise the two standards disagree at your desk long before they disagree here.
+- **It passes `/p:SolutionDir=` explicitly.** Without it every project writes its output beside
+  itself instead of into `x64\Debug\`, and the test discovery below finds nothing.
+- **The test suites are discovered from `x64\Debug\*Tests.dll`**, and the packages to restore from
+  the `packages.config` files in the tree — neither list is spelled in the workflow, so a suite or a
+  project added by a later slice is covered the day it lands.
+
+`build.log`, `test.log` and the TRX results are uploaded on every run, which is worth knowing
+before you conclude a red job is a build failure: a failing test prints its assertion message
+there rather than in the step summary.
+
+**Release|x64 and the linters are not in CI yet.** Release only recently became a real release
+build (see the sheets above), and neither `.clang-tidy` nor `.clang-format` has ever been run over
+this tree. Both are worth adding; both should land the same way, non-blocking until a run comes
+back clean.
 
 **Report what you actually did.** "Builds clean, not run" and "builds and runs the fleet-move
 slice" are different claims. Never imply the second when you only did the first, and say which

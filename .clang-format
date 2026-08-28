@@ -12,8 +12,8 @@
 #
 # ── Status: no CI step runs this yet ───────────────────────────────────────────────────────
 #
-# There is no CI in this repository at all (AGENTS.md §6), so this is enforced by review and by
-# editors that pick the file up. Keep
+# CI builds and tests but does not format-check (AGENTS.md §6), so this is enforced by review and
+# by editors that pick the file up. Keep
 # ColumnLimit and IndentWidth in step with /.editorconfig; if you change one, change the other in
 # the same commit or they start lying to each other.
 #

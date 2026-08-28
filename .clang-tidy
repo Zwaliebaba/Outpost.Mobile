@@ -10,10 +10,10 @@
 #
 # ── Status: nothing runs this for you ──────────────────────────────────────────────────────
 #
-# There is no CI in this repository (AGENTS.md §6) and the .vcxproj files do not enable MSBuild
-# code analysis, so this file is enforced by review and by whoever remembers to run it. Run it by
-# hand ON THE FILES YOU WROTE -- not on the tree, where the engine projects reach D3D12 and
-# C++/WinRT headers that have never been swept and will bury your own findings:
+# CI builds and tests but does not lint (AGENTS.md §6), and the .vcxproj files do not enable
+# MSBuild code analysis, so this file is enforced by review and by whoever remembers to run it.
+# Run it by hand ON THE FILES YOU WROTE -- not on the tree, where the engine projects reach D3D12
+# and C++/WinRT headers that have never been swept and will bury your own findings:
 #
 #   clang-tidy --quiet NeuronCore/YourNewFile.cpp -- -I . -D _WIN32 -D _DEBUG /std:c++latest
 #

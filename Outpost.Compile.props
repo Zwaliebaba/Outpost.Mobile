@@ -15,10 +15,25 @@
       reason nobody can find. They are set here, once, for everything.
 -->
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!--
+    A numeric comparison against an empty $(VisualStudioVersion) is MSB4086, not a false condition,
+    so msbuild invoked outside a Visual Studio context fails on the first project it evaluates.
+    Both sheets set this the same way and the second set is a no-op; neither may assume the other
+    ran first, because a project could one day import only one of them.
+  -->
+  <PropertyGroup>
+    <OutpostVsVersion Condition="'$(OutpostVsVersion)'=='' and '$(VisualStudioVersion)'!=''">$(VisualStudioVersion)</OutpostVsVersion>
+    <OutpostVsVersion Condition="'$(OutpostVsVersion)'==''">17.0</OutpostVsVersion>
+  </PropertyGroup>
+
   <ItemDefinitionGroup>
     <ClCompile>
-      <LanguageStandard Condition="'$(VisualStudioVersion)' &gt;= '18.0'">stdcpplatest</LanguageStandard>
-      <LanguageStandard Condition="'$(VisualStudioVersion)' &lt; '18.0'">stdcpp20</LanguageStandard>
+      <!-- stdcpp20 is the floor, and where the version is unknown it is what CI compiles against.
+           Nothing in this tree may need C++23 to build; if something does, it has to be behind a
+           feature test, because the two standards then disagree at your desk before they disagree
+           in CI. -->
+      <LanguageStandard Condition="'$(OutpostVsVersion)' &gt;= '18.0'">stdcpplatest</LanguageStandard>
+      <LanguageStandard Condition="'$(OutpostVsVersion)' &lt; '18.0'">stdcpp20</LanguageStandard>
       <ConformanceMode>true</ConformanceMode>
       <WarningLevel>Level4</WarningLevel>
       <SDLCheck>true</SDLCheck>

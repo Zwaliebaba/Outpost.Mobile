@@ -1,0 +1,125 @@
+# Debug|x64 build and the four test suites, on every push and pull request.
+#
+# This is the first CI this repository has had. It gates: a red job means the branch does not
+# build or a test failed, and nothing here is advisory. Two things it deliberately does not do
+# yet, so that adding them later is a decision rather than an accident:
+#
+#   * Release|x64. Release only started being a real release build recently -- it was linking the
+#     debug CRT and defining _DEBUG in all seven projects -- so there is no history of it being
+#     green. Add the leg once it has been built by hand a few times (AGENTS.md 6).
+#   * clang-tidy and clang-format. Both configs exist and neither has ever been run over this
+#     tree. A first sweep will find things; it should land non-blocking and be promoted when a run
+#     comes back clean, not turned on in the same change that writes it.
+#
+# Runner notes, because these are the parts most likely to need adjusting on the first red run:
+#
+#   * windows-latest carries Visual Studio 2022, so the property sheets resolve to v143 and
+#     stdcpp20 rather than v145 and stdcpplatest. That is the supported fallback, not a
+#     workaround, but it does mean CI compiles against an older standard library than a developer
+#     on VS 2026 does -- the two disagree at your desk before they disagree here.
+#   * The projects use packages.config, not PackageReference, so restore is `nuget restore` per
+#     config file rather than `msbuild -t:restore`. The list is walked from the tree so a project
+#     added later is restored the day it lands.
+#   * Outpost.slnx needs MSBuild 17.13 or newer; older msbuild does not read the .slnx format at
+#     all. If a runner image ever regresses below that, build the five .vcxproj files directly --
+#     the include paths are relative, so nothing but the output location depends on the solution.
+#   * SolutionDir is passed explicitly. Without it every project writes its output beside itself
+#     instead of into x64\Debug\, and the test paths below stop resolving.
+
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch makes the first one's result irrelevant, and these are Windows
+# runners.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  debug-x64:
+    name: Debug|x64
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Add NuGet to PATH
+        uses: NuGet/setup-nuget@v2
+
+      - name: Cache restored packages
+        uses: actions/cache@v4
+        with:
+          path: packages
+          key: packages-${{ hashFiles('**/packages.config') }}
+          restore-keys: packages-
+
+      - name: Restore packages
+        shell: pwsh
+        run: |
+          $configs = Get-ChildItem -Recurse -Filter packages.config |
+                     Where-Object { $_.FullName -notlike '*\packages\*' }
+          if (-not $configs) { throw 'no packages.config found -- has the tree moved?' }
+          foreach ($config in $configs)
+          {
+            Write-Host "restoring $($config.FullName)"
+            nuget restore $config.FullName -PackagesDirectory packages -NonInteractive
+            if ($LASTEXITCODE -ne 0) { throw "restore failed for $($config.FullName)" }
+          }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          # AppxPackageSigningEnabled is off because there is no certificate in this repository and
+          # CI is checking that the code compiles and links, not that a package can be signed.
+          msbuild Outpost.slnx `
+            /p:Configuration=Debug `
+            /p:Platform=x64 `
+            /p:SolutionDir="$($PWD.Path)\" `
+            /p:AppxPackageSigningEnabled=false `
+            /m `
+            /v:minimal `
+            /clp:Summary `
+            /fl "/flp:LogFile=build.log;Verbosity=normal"
+          if ($LASTEXITCODE -ne 0) { throw 'build failed' }
+
+      - name: Run tests
+        shell: pwsh
+        run: |
+          # vstest.console lives inside the VS install rather than on PATH, and vswhere is the only
+          # supported way to find that install.
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $install = & $vswhere -latest -products '*' -property installationPath
+          $vstest = Join-Path $install 'Common7\IDE\Extensions\TestPlatform\vstest.console.exe'
+          if (-not (Test-Path $vstest)) { throw "vstest.console.exe not found at $vstest" }
+
+          # Derived from the tree, not spelled here, so a suite added by a later slice runs the day
+          # it lands rather than the day someone remembers this file.
+          $suites = Get-ChildItem 'x64\Debug' -Filter '*Tests.dll' | ForEach-Object { $_.FullName }
+          if (-not $suites) { throw 'no test suites were built -- x64\Debug is empty of *Tests.dll' }
+          Write-Host "running: $($suites -join ', ')"
+
+          & $vstest $suites /Platform:x64 /Logger:trx /ResultsDirectory:TestResults | Tee-Object -FilePath test.log
+          if ($LASTEXITCODE -ne 0) { throw 'tests failed' }
+
+      - name: Upload logs
+        # Failures are the case these are wanted in, and a green run's logs cost storage for
+        # nothing -- but a red run whose log was not kept costs a second run to reproduce.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-x64-logs
+          path: |
+            build.log
+            test.log
+            TestResults/
+          if-no-files-found: ignore
+          retention-days: 14
