@@ -43,6 +43,66 @@ inline constexpr float STOPPED_SPEED = 0.01f;
 // kilometres. At 8 s the widest query in the table is the Carrier's 647 m (Collision.md 10).
 inline constexpr float AVOID_HORIZON_MAX_SEC = 8.0f;
 
+// How far outside the touching distance a closing neighbour still counts as a threat. Everything
+// converging inside this is steered around; everything else is ignored no matter how close it
+// currently is, which is what lets ships pass each other closely and calmly.
+inline constexpr float AVOID_MARGIN_METRES = 8.0f;
+
+// How many headings are scored, and how far ahead the fan reaches: the arc a hull can turn through
+// in this many seconds. Only reachable headings are sampled, which is what makes this fit a
+// turn-rate-limited motion model.
+inline constexpr int AVOID_CANDIDATE_COUNT = 11;
+inline constexpr float AVOID_STEER_REACH_SEC = 1.0f;
+
+// How heavily danger counts against interest, against an interest term that spans [-1, 1].
+//
+// Swept against a fighter crossing a Carrier's bow at point-blank range, which is the hardest case
+// the table can pose: at 2.5 the fighter buried itself 6.8 m into the capital, at 5 it grazes by
+// 8 cm, and at 8 the *Carrier* starts swerving more than the fighter does -- which reads as a bug
+// whatever the numbers say.
+inline constexpr float AVOID_DANGER_WEIGHT = 5.0f;
+
+// The bonus last tick's chosen heading carries. Without it a plain argmax flips left, right, left
+// between candidates that score within noise of each other, and the ship shivers down the middle
+// instead of committing to its turn. In the contract: it changes which heading wins a near-tie.
+inline constexpr float AVOID_CONTINUITY_BONUS = 0.30f;
+
+// The starboard rule. Two identical hulls meeting head-on have equal authority and mirror each
+// other exactly, so they deadlock; both biasing to their own right breaks the symmetry with no
+// shared state and reads as seamanship rather than as jitter.
+inline constexpr float AVOID_STARBOARD_BIAS = 0.35f;
+inline constexpr float AVOID_HEAD_ON_CONE_RAD = 0.6f; // about 34 degrees either side of the bow
+
+// How fast the starboard bias ramps in with the threat, and where it saturates -- here, once the
+// threat passes 1/16. Both ends of this were measured rather than guessed, and each is a real
+// failure:
+//
+//   Scaled linearly by the threat, the bias arrives too late to be a manoeuvre. A pair of
+//   Interceptors deviated 0.5 m each and squeaked past on the danger term alone -- which resolves
+//   a symmetric pair by luck of the tie-break, which is the deadlock the rule exists to prevent.
+//
+//   Applied at full strength as a predicate -- inside the cone and closing -- it is a step of a
+//   third of the interest range appearing and vanishing between ticks as the pair weaves, and a
+//   Frigate pair measured fourteen heading reversals per second on it.
+//
+// Saturating early and continuously gives both: an 8.5 m break for that Interceptor pair, and at
+// most four reversals per second across the whole table.
+inline constexpr float AVOID_HEAD_ON_GAIN = 16.0f;
+
+// What a hull turn-limited past the point where any reachable heading is safe sheds instead.
+inline constexpr float AVOID_SPEED_SHED = 0.6f;
+
+// How much earlier than the naive crossing time a hull has to begin its turn.
+//
+// A ship cannot translate sideways. Clearing a neighbour by its own radius plus the other's takes
+// the *turn* that generates the lateral component, and turning costs forward progress, so the time
+// needed is longer than the distance divided by the speed -- by roughly the reciprocal of the sine
+// of the deviation the ship is willing to make. At the naive time an Interceptor begins avoiding a
+// Carrier 119 m out and would need a 90-degree break to clear it, which the interest term rightly
+// refuses; measured, it flew into the capital's flank and buried itself 40 m deep. Doubling the
+// lead turns that into a 30-degree deviation begun 238 m out.
+inline constexpr float AVOID_CLEARANCE_LEAD = 2.0f;
+
 // Slack on the separation half of the query radius, so a contact is found on the tick before it
 // happens rather than on the tick it does.
 inline constexpr float SEPARATION_QUERY_MARGIN_METRES = 4.0f;

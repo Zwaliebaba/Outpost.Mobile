@@ -26,6 +26,9 @@
     <ClCompile Include="MovementTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="AvoidanceTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="CollisionTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

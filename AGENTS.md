@@ -20,12 +20,13 @@ changes in the same commit.
 
 **Built and tested.** Five projects and four test suites, Debug|x64, gating in CI (§6). The game
 is a fleet of three hulls on a ground plane: select them, order them somewhere in formation, watch
-them steer and arrive. D3D12 renderer, WM_POINTER input covering mouse and touch, DDS bitmap font
-atlases for the HUD and for in-world text, OBJ/MTL hulls, FXC-compiled shaders.
+them give way to each other and arrive without passing through each other or through architecture.
+D3D12 renderer, WM_POINTER input covering mouse and touch, DDS bitmap font atlases for the HUD and
+for in-world text, OBJ/MTL hulls, FXC-compiled shaders.
 
 **Deliberately not here yet**, so nobody goes looking for it: no audio, no networking, no
-pathfinding, no combat, no save format, no content pipeline beyond OBJ and DDS, and no configuration file
-— tuning is `constexpr` in three headers (§5). `Transport` is declared and unimplemented (§2).
+pathfinding, no interest management, no combat, no save format, no content pipeline beyond OBJ and
+DDS, and no configuration file — tuning is `constexpr` in three headers (§5). `Transport` is declared and unimplemented (§2).
 
 ---
 

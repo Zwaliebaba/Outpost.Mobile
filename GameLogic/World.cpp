@@ -102,9 +102,7 @@ std::span<const Neighbour> World::NeighboursOf(ShipId _id) const noexcept
 
 float World::AuthorityOf(ShipId _id) const noexcept
 {
-  const ShipState& ship = m_ships[_id];
-  const float authority = HullSpecOf(ship.hullId).avoidanceAuthority;
-  return (ship.order == OrderState::Idle) ? authority * IDLE_AVOIDANCE_AUTHORITY_SCALE : authority;
+  return AvoidanceAuthorityOf(HullSpecOf(m_ships[_id].hullId), m_ships[_id].order);
 }
 
 void World::SnapshotPreviousTick() noexcept
@@ -174,7 +172,10 @@ void World::GatherNeighbours()
       record.offsetZ = OffsetZ(ship.prevPos, neighbour.prevPos);
       record.velocityX = std::sin(neighbour.prevHeading) * neighbour.speed;
       record.velocityZ = std::cos(neighbour.prevHeading) * neighbour.speed;
-      record.boundingRadiusMetres = HullSpecOf(neighbour.hullId).BoundingRadiusMetres();
+      const HullSpec& neighbourHull = HullSpecOf(neighbour.hullId);
+      record.boundingRadiusMetres = neighbourHull.BoundingRadiusMetres();
+      record.avoidanceAuthority = AvoidanceAuthorityOf(neighbourHull, neighbour.order);
+      record.immovable = neighbourHull.immovable;
       record.distanceSquared = record.offsetX * record.offsetX + record.offsetZ * record.offsetZ;
       record.proximityMetres = std::sqrt(record.distanceSquared) - record.boundingRadiusMetres;
       m_candidateScratch.push_back(record);
@@ -300,11 +301,17 @@ void World::Step()
   RebuildIndex();
   GatherNeighbours();
 
-  for (ShipState& ship : m_ships)
+  for (ShipId id = 0; id < ShipCount(); ++id)
   {
+    ShipState& ship = m_ships[id];
     const HullSpec& hull = HullSpecOf(ship.hullId);
-    if (!hull.immovable)
-      StepShip(ship, hull);
+    if (hull.immovable)
+      continue;
+    // Pass 3 reads only this ship and the start-of-tick copies in its neighbour list; pass 4 writes
+    // only this ship. Neither can see another ship half-advanced, which is what keeps the whole
+    // tick free of array order.
+    const MotionIntent intent = AvoidNeighbours(ship, hull, SolveOrder(ship, hull), NeighboursOf(id));
+    IntegrateShip(ship, hull, intent);
   }
 
   ApplySeparation();

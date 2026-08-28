@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "Collision.h"
 
+#include "SimTuning.h"
+
 namespace Game
 {
 namespace
@@ -138,6 +140,11 @@ Contact CapsuleContact(const Capsule& _a, const Capsule& _b, ShipId _idA, ShipId
   contact.normalX = closestX / distance;
   contact.normalZ = closestZ / distance;
   return contact;
+}
+
+float AvoidanceAuthorityOf(const HullSpec& _hull, OrderState _order) noexcept
+{
+  return (_order == OrderState::Idle) ? _hull.avoidanceAuthority * IDLE_AVOIDANCE_AUTHORITY_SCALE : _hull.avoidanceAuthority;
 }
 
 SeparationShares SeparationSharesFor(float _authorityA, bool _immovableA, float _authorityB, bool _immovableB) noexcept

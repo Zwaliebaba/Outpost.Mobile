@@ -1,5 +1,6 @@
 #pragma once
 
+#include "HullSpec.h"
 #include "ShipState.h"
 
 namespace Game
@@ -56,4 +57,13 @@ struct SeparationShares
 // guard is here rather than at the call site because a NaN discovered after it has propagated
 // through a position and into a snapshot is not a debuggable failure.
 [[nodiscard]] SeparationShares SeparationSharesFor(float _authorityA, bool _immovableA, float _authorityB, bool _immovableB) noexcept;
+
+// A hull's authority as the passes actually use it. Spelled once here because both of them need the
+// same number from the same rule: if avoidance and separation disagreed about who yields, a ship
+// would steer aside and then be shoved back.
+//
+// A parked ship holds its station harder than one under way, which is what stops a fleet on station
+// being walked off it by passing traffic. Formation drift is not a separate problem; it is this one
+// with a different number (Design/Collision.md 9).
+[[nodiscard]] float AvoidanceAuthorityOf(const HullSpec& _hull, OrderState _order) noexcept;
 } // namespace Game

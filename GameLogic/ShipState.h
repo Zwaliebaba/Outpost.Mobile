@@ -66,6 +66,12 @@ struct ShipState
   float orderFacingRad = 0.0f;
   bool orderHasFacing = false;
 
+  // The heading the avoidance pass committed to last tick. It is the one piece of state the
+  // steering carries between ticks, and it is what stops a plain per-tick argmax chattering when
+  // two candidate headings score within noise of each other. Simulation state, so it goes over the
+  // wire like everything else here (Design/Collision.md 10).
+  float avoidHeadingRad = 0.0f;
+
   // Last tick's acceleration. Simulation output, read by the view to drive thruster response --
   // which is why it is here and not derived per frame: per frame it would be zero on every frame
   // that did not happen to land on a tick.

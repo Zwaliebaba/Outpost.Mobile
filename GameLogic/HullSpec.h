@@ -183,6 +183,25 @@ inline constexpr HullSpec HULL_SPECS[HULL_COUNT] = {
   return largest;
 }
 
+// The look-ahead one hull needs against one particular neighbour.
+//
+// The per-hull horizon above is about the ship's own agility -- time to reverse course plus time to
+// stop -- and that is the right quantity against something its own size. It is badly wrong against
+// something far larger. An Interceptor's 1.8 s look-ahead carries it 61 m, while clearing a
+// Carrier's 107 m hull needs 119 m of lateral room, so every reachable heading scores as equally
+// doomed, the danger term cancels out of the comparison entirely, and the fighter flies straight
+// into the capital. Measured before this term existed: 2.6 m of interpenetration and no starboard
+// break at all.
+//
+// So take the longer of the two, still under the cap that keeps region ghost zones sane.
+[[nodiscard]] constexpr float ThreatHorizonSec(const HullSpec& _hull, float _neighbourRadiusMetres, float _speedMetresPerSec) noexcept
+{
+  const float clearance = _hull.BoundingRadiusMetres() + _neighbourRadiusMetres + AVOID_MARGIN_METRES;
+  const float toClear = AVOID_CLEARANCE_LEAD * clearance / ((_speedMetresPerSec > 1.0f) ? _speedMetresPerSec : 1.0f);
+  const float wanted = (toClear > _hull.AvoidHorizonSec()) ? toClear : _hull.AvoidHorizonSec();
+  return (wanted < AVOID_HORIZON_MAX_SEC) ? wanted : AVOID_HORIZON_MAX_SEC;
+}
+
 // How wide a circle this hull has to ask the index for.
 //
 // The first term is avoidance: what can close on it inside its own look-ahead. The second is
@@ -193,7 +212,10 @@ inline constexpr HullSpec HULL_SPECS[HULL_COUNT] = {
 [[nodiscard]] constexpr float QueryRadiusMetres(const HullSpec& _hull) noexcept
 {
   const float ownRadius = _hull.BoundingRadiusMetres();
-  const float closing = (_hull.maxSpeedMetresPerSec + FastestHullSpeedMetresPerSec()) * _hull.AvoidHorizonSec();
+  // The same horizon the avoidance pass will use against the largest thing that can move, so a hull
+  // is never asked to steer around something the query never showed it.
+  const float horizon = ThreatHorizonSec(_hull, LargestMobileBoundingRadiusMetres(), _hull.maxSpeedMetresPerSec);
+  const float closing = (_hull.maxSpeedMetresPerSec + FastestHullSpeedMetresPerSec()) * horizon;
   const float avoid = closing + ownRadius + LargestMobileBoundingRadiusMetres();
   const float separate = ownRadius + LargestStaticBoundingRadiusMetres() + SEPARATION_QUERY_MARGIN_METRES;
   return (avoid > separate) ? avoid : separate;
