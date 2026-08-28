@@ -28,6 +28,9 @@
     <ClInclude Include="Hud.h">
       <Filter>View</Filter>
     </ClInclude>
+    <ClInclude Include="EventLog.h">
+      <Filter>View</Filter>
+    </ClInclude>
     <ClInclude Include="ViewTuning.h">
       <Filter>View</Filter>
     </ClInclude>

@@ -216,6 +216,7 @@
     <ClInclude Include="WorldSimulation.h" />
     <ClInclude Include="ViewTuning.h" />
     <ClInclude Include="Hud.h" />
+    <ClInclude Include="EventLog.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">

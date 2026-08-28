@@ -1,5 +1,7 @@
 #pragma once
 
+#include "EventLog.h"
+
 #include "World.h"
 
 #include "Camera.h"
@@ -83,6 +85,28 @@ public:
   }
   void TriggerCameraShake() noexcept;
   [[nodiscard]] int SelectedCount() const noexcept;
+  [[nodiscard]] bool IsSelected(size_t _index) const noexcept
+  {
+    return _index < m_ships.size() && m_ships[_index].selected;
+  }
+
+  // Control groups: a remembered selection under a number. Assigning with nothing selected clears
+  // the group. The active group is the one the current selection was last taken from, and it stops
+  // being active the moment the selection is changed by any other means.
+  static constexpr int CONTROL_GROUPS = 5;
+  void AssignGroup(int _group);
+  void SelectGroup(int _group);
+  [[nodiscard]] int GroupSize(int _group) const noexcept;
+  [[nodiscard]] int ActiveGroup() const noexcept
+  {
+    return m_activeGroup;
+  }
+
+  // Where the view reports what the player did. Optional: with no log nothing is reported.
+  void SetEventLog(EventLog& _log) noexcept
+  {
+    m_log = &_log;
+  }
 
   // PointerListener.
   [[nodiscard]] bool WantsBoxSelect(bool _shiftHeld) override;
@@ -103,6 +127,7 @@ private:
   void DrawFeedback(Neuron::SceneRenderer& _renderer, Neuron::GpuDevice& _gpu, float _alpha);
   [[nodiscard]] int PickShip(float _xPx, float _yPx) const;
   void IssueMoveOrder(const DirectX::XMFLOAT3& _point, bool _hasFacing, float _facingRad);
+  [[nodiscard]] float SimTimeSec() const noexcept;
 
   Game::World* m_world = nullptr;
   Neuron::Camera* m_camera = nullptr;
@@ -112,6 +137,9 @@ private:
 
   std::vector<ShipView> m_ships;
   std::vector<OrderMarker> m_markers;
+  std::vector<Game::ShipId> m_groups[CONTROL_GROUPS];
+  int m_activeGroup = -1;
+  EventLog* m_log = nullptr;
 
   int m_hoverShip = -1;
   bool m_boxActive = false;

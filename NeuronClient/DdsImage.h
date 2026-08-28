@@ -2,9 +2,9 @@
 
 #include "FileSys.h"
 
-// The DDS DX10 header stores its format as a DXGI_FORMAT number, so that enum is the file format's
-// own vocabulary and not a graphics dependency. <dxgiformat.h> is the enum alone -- no interfaces,
-// no library -- which is what keeps this reader inside NeuronCore's no-graphics-API rule.
+// The DDS DX10 header stores its format as a DXGI_FORMAT number, and every consumer of a texture is
+// a device, so the reader speaks DXGI_FORMAT and lives in NeuronClient: a graphics header, however
+// small, has no place in the libraries the headless server is built from (AGENTS.md 2).
 #include <dxgiformat.h>
 
 #include <cstdint>

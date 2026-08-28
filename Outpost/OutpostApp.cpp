@@ -12,7 +12,10 @@ namespace
 {
 const std::wstring MESH_DIR = L"Meshes\\";
 const std::wstring FONT_DIR = L"Fonts\\";
+const std::wstring TEXTURE_DIR = L"Textures\\";
 const std::wstring STARTING_HULLS[] = {L"Bomber", L"Corvette", L"Frigate"};
+// What the HUD calls each hull, by the hullId SpawnStartingFleet hands out: the index above.
+const char* const HULL_NAMES[] = {"BOMBER", "CORVETTE", "FRIGATE"};
 } // namespace
 
 void OutpostApp::Init(HINSTANCE _instance)
@@ -34,6 +37,9 @@ void OutpostApp::Init(HINSTANCE _instance)
   TextRenderer::Desc textDesc;
   textDesc.uiFont = FONT_DIR + L"EditorFont.dds";
   textDesc.sceneFont = FONT_DIR + L"SpeccyFont.dds";
+  // The rail's icons, in Hud::RailIcon order: that enum is the ImageId the HUD draws them by.
+  textDesc.images = {TEXTURE_DIR + L"IconResearch.dds", TEXTURE_DIR + L"IconWallet.dds", TEXTURE_DIR + L"IconStorage.dds",
+                     TEXTURE_DIR + L"IconUniverse.dds"};
   m_textRenderer.Init(m_gpu, textDesc); // records the atlas uploads into the command list, so it goes last
 
   Camera::Desc cameraDesc;
@@ -66,7 +72,9 @@ void OutpostApp::Init(HINSTANCE _instance)
 
   m_view.Init(m_world, m_camera, m_meshes, m_sceneRenderer.UnitQuad());
   m_view.SetTracker(m_pointers);
+  m_view.SetEventLog(m_log);
   SpawnStartingFleet();
+  m_log.PushFormat(EventLog::Severity::Friendly, 0.0f, "FLEET ONLINE | %u SHIPS", m_world.ShipCount());
 
   m_window.Show();
 }
@@ -102,6 +110,9 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
     else
       m_window.RequestClose();
     break;
+  case VK_F1:
+    m_showDebug = !m_showDebug;
+    break;
   case VK_F3:
     m_view.TriggerCameraShake(); // the debug hook, so the shake curve can be tuned on demand
     break;
@@ -124,7 +135,12 @@ void OutpostApp::Update()
   m_camera.SetViewport(m_gpu.WidthPx(), m_gpu.HeightPx());
   m_camera.Update(); // picking needs matrices that match what was on screen when the pointer moved
   for (const PointerEvent& event : m_pendingEvents)
+  {
+    // The HUD gets first refusal: a tap on the bottom bar must never reach the tracker as an order.
+    if (m_hud.HandlePointer(event, m_view, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx()))
+      continue;
     m_pointers.Apply(event, m_camera, m_view);
+  }
   m_pendingEvents.clear();
   m_camera.Update(); // input may have moved it again
 }
@@ -136,14 +152,16 @@ void OutpostApp::Render()
 
   m_view.Render(m_sceneRenderer, m_gpu, m_textRenderer, m_host.InterpolationAlpha());
 
-  Hud::Stats stats;
-  stats.fps = m_clock.Fps();
-  stats.frameMs = m_clock.FrameMs();
-  stats.tick = m_host.Tick();
-  stats.selectedCount = m_view.SelectedCount();
-  stats.shipCount = m_world.ShipCount();
-  stats.timeScale = m_timeScale;
-  m_hud.Draw(m_textRenderer, stats, m_window.DpiScale());
+  Hud::Frame frame;
+  frame.stats.fps = m_clock.Fps();
+  frame.stats.frameMs = m_clock.FrameMs();
+  frame.stats.tick = m_host.Tick();
+  frame.stats.selectedCount = m_view.SelectedCount();
+  frame.stats.shipCount = m_world.ShipCount();
+  frame.stats.timeScale = m_timeScale;
+  frame.showDebug = m_showDebug;
+  frame.hullNames = HULL_NAMES;
+  m_hud.Draw(m_textRenderer, m_world, m_view, m_camera, m_log, frame, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
 
   m_textRenderer.Flush(m_gpu); // the overlay goes on last, before the frame is presented
   m_gpu.EndFrame();

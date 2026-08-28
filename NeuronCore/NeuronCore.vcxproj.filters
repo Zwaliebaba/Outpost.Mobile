@@ -33,9 +33,6 @@
     <ClInclude Include="FileSys.h">
       <Filter>Content</Filter>
     </ClInclude>
-    <ClInclude Include="DdsImage.h">
-      <Filter>Content</Filter>
-    </ClInclude>
     <ClInclude Include="FrameClock.h">
       <Filter>Foundation</Filter>
     </ClInclude>
@@ -54,9 +51,6 @@
       <Filter>Build</Filter>
     </ClCompile>
     <ClCompile Include="FileSys.cpp">
-      <Filter>Content</Filter>
-    </ClCompile>
-    <ClCompile Include="DdsImage.cpp">
       <Filter>Content</Filter>
     </ClCompile>
     <ClCompile Include="FrameClock.cpp">

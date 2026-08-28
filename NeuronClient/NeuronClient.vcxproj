@@ -217,10 +217,12 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="NeuronClient.h" />
     <ClInclude Include="RenderTypes.h" />
+    <ClInclude Include="DdsImage.h" />
     <ClInclude Include="GpuHelpers.h" />
     <ClInclude Include="GpuDevice.h" />
     <ClInclude Include="SceneRenderer.h" />
     <ClInclude Include="BitmapFont.h" />
+    <ClInclude Include="ScreenImage.h" />
     <ClInclude Include="TextRenderer.h" />
     <ClInclude Include="MeshLibrary.h" />
     <ClInclude Include="Camera.h" />
@@ -232,10 +234,12 @@
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="DdsImage.cpp" />
     <ClCompile Include="GpuHelpers.cpp" />
     <ClCompile Include="GpuDevice.cpp" />
     <ClCompile Include="SceneRenderer.cpp" />
     <ClCompile Include="BitmapFont.cpp" />
+    <ClCompile Include="ScreenImage.cpp" />
     <ClCompile Include="TextRenderer.cpp" />
     <ClCompile Include="MeshLibrary.cpp" />
     <ClCompile Include="Camera.cpp" />

@@ -2,7 +2,7 @@
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 
-namespace NeuronCoreTests
+namespace NeuronClientTests
 {
 namespace
 {
@@ -411,4 +411,4 @@ public:
     Assert::AreEqual(1u, static_cast<unsigned>(image.subresources.size()), L"the failed parse disturbed the subresources");
   }
 };
-} // namespace NeuronCoreTests
+} // namespace NeuronClientTests

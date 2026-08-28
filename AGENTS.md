@@ -187,9 +187,9 @@ Two rules `.clang-tidy` structurally cannot state, so check them by eye:
 
 | Path | What it is |
 |---|---|
-| `NeuronCore/` | Engine primitives shared by every layer — zero game semantics, no graphics API. Diagnostics, file IO, framerate-independent easing, the frame clock, mesh data, the OBJ/MTL and DDS readers, and `Transport`. |
+| `NeuronCore/` | Engine primitives shared by every layer — zero game semantics, no graphics API, headless (below). Diagnostics, file IO, framerate-independent easing, the frame clock, mesh data, the OBJ/MTL reader, and `Transport`. |
 | `GameLogic/` | The deterministic simulation, namespace `Game`. `World`, `ShipState`, `Movement`, `Formation`, `SimTuning`. Depends on NeuronCore only. |
-| `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `MeshLibrary`. |
+| `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `DdsImage`, `MeshLibrary`. Everything that names a graphics type lives here and nowhere else. |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
 | `Outpost/` | The executable: composition root, presentation state, HUD, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
@@ -218,6 +218,13 @@ The dependency rules are hard, and each of them is one thing this structure buys
   `Simulation`; `Outpost/WorldSimulation.h` implements it over `Game::World`. The moment an engine
   project names a game type it stops being an engine.
 - **Nothing depends on the executable.**
+- **NeuronCore and NeuronServer are headless.** The server will one day run in a container with
+  no screen, so neither may include a graphics header — no `<d3d12.h>`, no `<dxgi*.h>`, not even
+  `<dxgiformat.h>` — and neither may hold a device, a swapchain, a window, a descriptor, or any
+  other data only a GPU can use. Everything client-specific lives in `NeuronClient`; that is why
+  the DDS reader is there and the OBJ reader is not — a texture is only ever handed to a device,
+  and a mesh is also collision geometry the server needs. DirectXMath is mathematics, not
+  graphics, and stays. `Build/CheckProjectFiles.py` checks the include rule.
 
 ### Where the client/server seam stands today
 
@@ -478,8 +485,8 @@ build or a test failed. Three things about it are worth knowing before you read 
 [`Build/CheckProjectFiles.py`](Build/CheckProjectFiles.py) checks that every project file is
 well-formed XML, that every source file is registered in both its `.vcxproj` and its `.filters`
 and that nothing listed is missing from disk, that file names are unique repo-wide, and that no
-engine project names the game, and that the settings which must agree across the nine projects
-(§6) do agree.
+engine project names the game, that no graphics header reaches the headless libraries, and that
+the settings which must agree across the nine projects (§6) do agree.
 Each of those fails, unguarded, at a point that names something other than the mistake — the step
 exists because a `--` inside an XML comment cost a CI run and reported as nine identical `MSB4024`
 errors, none of which mentioned the comment. Run it yourself before you push; it takes no arguments
@@ -553,7 +560,8 @@ configurations you built.
 - [ ] Shader touched? It is `<Name>VS.hlsl` or `<Name>PS.hlsl` under `Shaders/`, and nothing
       generated under `CompiledShaders/` was committed.
 - [ ] The dependency rules in §2 still hold: no engine project names a game type, the client and
-      server do not name each other, nothing names the executable.
+      server do not name each other, nothing names the executable, and no graphics header reaches
+      NeuronCore or NeuronServer.
 - [ ] No `argv`, no environment reads, no `XMVECTOR` stored in a struct or container, no `RH` call.
 - [ ] GameLogic touched? The replay-equality test in `GameLogicTests` still passes, and nothing you
       added reads a clock, draws unseeded randomness, or keys on a pointer.

@@ -34,6 +34,57 @@ void WorldView::ClearSelection() noexcept
 {
   for (ShipView& ship : m_ships)
     ship.selected = false;
+  m_activeGroup = -1;
+}
+
+float WorldView::SimTimeSec() const noexcept
+{
+  return static_cast<float>(m_world->Tick()) / Game::TICK_HZ;
+}
+
+void WorldView::AssignGroup(int _group)
+{
+  if (_group < 0 || _group >= CONTROL_GROUPS)
+    return;
+
+  std::vector<Game::ShipId>& group = m_groups[_group];
+  group.clear();
+  for (size_t i = 0; i < m_ships.size(); ++i)
+  {
+    if (m_ships[i].selected)
+      group.push_back(static_cast<Game::ShipId>(i));
+  }
+
+  if (m_log)
+  {
+    if (group.empty())
+      m_log->PushFormat(EventLog::Severity::Info, SimTimeSec(), "GROUP %d CLEARED", _group + 1);
+    else
+      m_log->PushFormat(EventLog::Severity::Friendly, SimTimeSec(), "GROUP %d | %d SHIPS ASSIGNED", _group + 1,
+                        static_cast<int>(group.size()));
+  }
+  m_activeGroup = group.empty() ? -1 : _group;
+}
+
+void WorldView::SelectGroup(int _group)
+{
+  if (_group < 0 || _group >= CONTROL_GROUPS)
+    return;
+
+  ClearSelection();
+  for (const Game::ShipId id : m_groups[_group])
+  {
+    if (id < m_ships.size())
+      m_ships[id].selected = true;
+  }
+  m_activeGroup = m_groups[_group].empty() ? -1 : _group;
+}
+
+int WorldView::GroupSize(int _group) const noexcept
+{
+  if (_group < 0 || _group >= CONTROL_GROUPS)
+    return 0;
+  return static_cast<int>(m_groups[_group].size());
 }
 
 void WorldView::TriggerCameraShake() noexcept
@@ -237,6 +288,9 @@ void WorldView::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float _f
   marker.facingRad = heading;
   marker.hasFacing = _hasFacing;
   m_markers.push_back(marker);
+
+  if (m_log)
+    m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "MOVE ORDER | %d SHIPS", static_cast<int>(chosen.size()));
 }
 
 // --- pointer intent -----------------------------------------------------------------------------
@@ -286,6 +340,7 @@ void WorldView::OnBoxSelect(float _x0Px, float _y0Px, float _x1Px, float _y1Px, 
     if (m_camera->WorldToScreen(centre, xPx, yPx) && xPx >= left && xPx <= right && yPx >= top && yPx <= bottom)
       m_ships[i].selected = true;
   }
+  m_activeGroup = -1;
 }
 
 void WorldView::OnOrderDrag(float _x0Px, float _y0Px, float _x1Px, float _y1Px)
@@ -317,6 +372,7 @@ void WorldView::OnTap(float _xPx, float _yPx, bool _shiftHeld, bool _doubleTap)
       ClearSelection();
       m_ships[static_cast<size_t>(hit)].selected = true;
     }
+    m_activeGroup = -1;
     if (m_tracker)
       m_tracker->ResetTapHistory(); // tapping a hull does not begin a double tap
     return;

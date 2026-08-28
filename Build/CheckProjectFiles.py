@@ -195,6 +195,27 @@ def check_dependency_rules(problems):
                                     % (directory, source, game_header))
 
 
+# The headers that mean "there is a screen". NeuronClient may include them; the libraries the
+# server is built from may not, because the server is meant to run in a container without one.
+GRAPHICS_INCLUDE = re.compile(r'#\s*include\s*<(d3d\w*|dxgi\w*|d2d\w*|dwrite\w*|dcomp\w*)\.h>', re.I)
+HEADLESS_PROJECTS = ('NeuronCore', 'NeuronServer')
+
+
+def check_headless(problems):
+    """NeuronCore and NeuronServer never include a graphics header (AGENTS.md 2)."""
+    for name, directory in projects():
+        if name not in HEADLESS_PROJECTS or not os.path.isdir(directory):
+            continue
+        for source in sorted(os.listdir(directory)):
+            if not source.endswith(('.h', '.cpp')):
+                continue
+            body = read(os.path.join(directory, source))
+            for match in GRAPHICS_INCLUDE.finditer(body):
+                line = body[:match.start()].count('\n') + 1
+                problems.append('%s/%s:%d: a headless library includes the graphics header <%s.h>'
+                                % (directory, source, line, match.group(1)))
+
+
 def main():
     problems = []
     check_xml(problems)
@@ -203,6 +224,7 @@ def main():
     check_precompiled_headers(problems)
     check_unique_names(problems)
     check_dependency_rules(problems)
+    check_headless(problems)
 
     if problems:
         for problem in problems:
@@ -211,7 +233,7 @@ def main():
         return 1
 
     print('project files: XML well-formed, every source registered, shared settings agree, '
-          'names unique, layers intact.')
+          'names unique, layers intact, headless libraries headless.')
     return 0
 
 

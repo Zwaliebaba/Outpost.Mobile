@@ -12,10 +12,12 @@
 #include <winrt/Windows.ApplicationModel.Activation.h>
 
 #include "RenderTypes.h"
+#include "DdsImage.h"
 #include "GpuHelpers.h"
 #include "GpuDevice.h"
 #include "SceneRenderer.h"
 #include "BitmapFont.h"
+#include "ScreenImage.h"
 #include "TextRenderer.h"
 #include "MeshLibrary.h"
 #include "Camera.h"
