@@ -59,6 +59,25 @@
     <Image Include="Assets\LockScreenLogo.scale-200.png">
       <Filter>Assets</Filter>
     </Image>
+    <Image Include="Assets\Terrain\LandscapeContainment.dds" />
+    <Image Include="Assets\Terrain\LandscapeDefault.dds" />
+    <Image Include="Assets\Terrain\LandscapeDesert.dds" />
+    <Image Include="Assets\Terrain\LandscapeEarth.dds" />
+    <Image Include="Assets\Terrain\LandscapeIcecaps.dds" />
+    <Image Include="Assets\Terrain\LandscapeLaunchpad.dds" />
+    <Image Include="Assets\Terrain\LandscapeMine.dds" />
+    <Image Include="Assets\Terrain\LandscapeMine2.dds" />
+    <Image Include="Assets\Textures\CloudyGlow.dds" />
+    <Image Include="Assets\Textures\Fuel.dds" />
+    <Image Include="Assets\Textures\Glow.dds" />
+    <Image Include="Assets\Textures\Laser.dds" />
+    <Image Include="Assets\Textures\Laserfence.dds" />
+    <Image Include="Assets\Textures\Laserfence2.dds" />
+    <Image Include="Assets\Textures\Particle.dds" />
+    <Image Include="Assets\Textures\RadarSignal.dds" />
+    <Image Include="Assets\Textures\ShapeWireframe.dds" />
+    <Image Include="Assets\Textures\Starburst.dds" />
+    <Image Include="Assets\Textures\TriangleOutline.dds" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Assets">
@@ -112,11 +131,7 @@
     </AppxManifest>
   </ItemGroup>
   <ItemGroup>
-    <Natvis Include="$(MSBuildThisFileDirectory)..\..\natvis\wil.natstepfilter">
-      <Filter>Project Files</Filter>
-    </Natvis>
-    <Natvis Include="$(MSBuildThisFileDirectory)..\..\natvis\wil.natvis">
-      <Filter>Project Files</Filter>
-    </Natvis>
+    <Natvis Include="$(MSBuildThisFileDirectory)..\..\natvis\wil.natvis" />
+    <Natvis Include="$(MSBuildThisFileDirectory)..\..\natvis\wil.natstepfilter" />
   </ItemGroup>
 </Project>

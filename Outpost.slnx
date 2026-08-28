@@ -2,37 +2,20 @@
   <Configurations>
     <Platform Name="ARM64" />
     <Platform Name="x64" />
-    <Platform Name="x86" />
   </Configurations>
   <Folder Name="/Build/">
     <File Path="AGENTS.md" />
   </Folder>
   <Folder Name="/Tests/">
-    <Project Path="Tests/GameLogicTests/GameLogicTests.vcxproj" Id="3e6c8a94-51d7-4b2a-8f60-c1ad9e27b5d3">
-      <Platform Solution="*|ARM64" Project="x64" />
-    </Project>
-    <Project Path="Tests/NeuronClientTests/NeuronClientTests.vcxproj" Id="82ff8212-c7c5-789c-299a-717affb644a4">
-      <Platform Solution="*|ARM64" Project="x64" />
-    </Project>
-    <Project Path="Tests/NeuronCoreTests/NeuronCoreTests.vcxproj" Id="8002b9e8-5815-0b65-38b0-53ea7706939c">
-      <Platform Solution="*|ARM64" Project="x64" />
-    </Project>
-    <Project Path="Tests/NeuronServerTests/NeuronServerTests.vcxproj" Id="96d8b9a7-2d2d-10ef-4802-cba34eb98cc8">
-      <Platform Solution="*|ARM64" Project="x64" />
-    </Project>
+    <Project Path="Tests/GameLogicTests/GameLogicTests.vcxproj" Id="3e6c8a94-51d7-4b2a-8f60-c1ad9e27b5d3" />
+    <Project Path="Tests/NeuronClientTests/NeuronClientTests.vcxproj" Id="82ff8212-c7c5-789c-299a-717affb644a4" />
+    <Project Path="Tests/NeuronCoreTests/NeuronCoreTests.vcxproj" Id="8002b9e8-5815-0b65-38b0-53ea7706939c" />
+    <Project Path="Tests/NeuronServerTests/NeuronServerTests.vcxproj" Id="96d8b9a7-2d2d-10ef-4802-cba34eb98cc8" />
   </Folder>
-  <Project Path="GameLogic/GameLogic.vcxproj" Id="7d4a1f36-2b58-4c0e-9a71-0f5d6c83be14">
-    <Platform Solution="*|ARM64" Project="x64" />
-  </Project>
-  <Project Path="NeuronClient/NeuronClient.vcxproj" Id="4cfb6201-cce9-4f52-ac14-22449b28e6f2">
-    <Platform Solution="*|ARM64" Project="x64" />
-  </Project>
-  <Project Path="NeuronCore/NeuronCore.vcxproj" Id="b10d634c-43a1-4101-b5e6-788825429aab">
-    <Platform Solution="*|ARM64" Project="x64" />
-  </Project>
-  <Project Path="NeuronServer/NeuronServer.vcxproj" Id="512284cd-a17a-4816-8e0a-9e9dadbfc464">
-    <Platform Solution="*|ARM64" Project="x64" />
-  </Project>
+  <Project Path="GameLogic/GameLogic.vcxproj" Id="7d4a1f36-2b58-4c0e-9a71-0f5d6c83be14" />
+  <Project Path="NeuronClient/NeuronClient.vcxproj" Id="4cfb6201-cce9-4f52-ac14-22449b28e6f2" />
+  <Project Path="NeuronCore/NeuronCore.vcxproj" Id="b10d634c-43a1-4101-b5e6-788825429aab" />
+  <Project Path="NeuronServer/NeuronServer.vcxproj" Id="512284cd-a17a-4816-8e0a-9e9dadbfc464" />
   <Project Path="Outpost/Outpost.vcxproj" Id="e901e26f-65e6-494a-aad7-e58e089a729c">
     <Deploy />
   </Project>
