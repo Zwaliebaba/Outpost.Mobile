@@ -11,6 +11,22 @@ able to is the day it stopped being an engine. Most of the rules below exist to 
 Read this file before you start. Where a rule blocks the task, say so in your report rather than
 quietly bending it.
 
+### What is actually here
+
+This document describes the tree as it stands, not as it is meant to end up, because the version
+of it that arrived here described a different repository entirely and every rule in it was
+therefore unverifiable. Keep it that way: if a change makes a sentence below false, the sentence
+changes in the same commit.
+
+**Built and tested.** Five projects and four test suites, Debug|x64, gating in CI (§6). The game
+is a fleet of three hulls on a ground plane: select them, order them somewhere in formation, watch
+them steer and arrive. D3D12 renderer, WM_POINTER input covering mouse and touch, a GDI-baked font
+atlas for the HUD, OBJ/MTL hulls, FXC-compiled shaders.
+
+**Deliberately not here yet**, so nobody goes looking for it: no audio, no networking, no
+pathfinding, no combat, no save format, no content pipeline beyond OBJ, and no configuration file
+— tuning is `constexpr` in two headers (§5). `Transport` is declared and unimplemented (§2).
+
 ---
 
 ## 1. Naming convention (normative — no exceptions)
@@ -92,41 +108,41 @@ field.
 
 ### Worked example — this is the target style
 
+[`NeuronServer/ServerHost.h`](NeuronServer/ServerHost.h), abridged. It is a real file rather than
+an invented one, so it can be read in full and cannot drift from the rules it illustrates:
+
 ```cpp
-// NeuronCore/UdpTransport.h
 #pragma once
+
+#include "Simulation.h"
+
 #include <cstdint>
 
-namespace Neuron
+namespace Neuron                                        // R9: flat, PascalCase
 {
-
-inline constexpr std::uint32_t MAX_DATAGRAM_BYTES = 1152; // R3: constant -> UPPER_CASE
-
-enum class ConnectionState : std::uint8_t { Connecting, Connected, Draining, Closed };
-
-/// Loopback/plaintext transport. R2: no prefix on the type; R8: private state carries m_.
-class UdpTransport
+class ServerHost                                        // R2: no prefix, no Base/Impl suffix
 {
 public:
-  struct Desc                                             // R8: aggregate -> plain fields
+  struct Desc                                           // R8: aggregate -> plain camelCase fields
   {
-    std::uint16_t port;
-    std::uint32_t receiveBufferBytes;                     // R6: unit in the name
+    float tickHz = 60.0f;
+    float maxCatchUpSec = 0.25f;                        // R6: unit in the name
   };
 
-  [[nodiscard]] static bool Create(const Desc& _desc,      // R1: _ on parameters
-                                   UdpTransport& _outTransport) noexcept;
-
-  void Poll() noexcept;                                   // delivery on the owning thread
-  [[nodiscard]] ConnectionState State() const noexcept { return m_state; }
+  void Init(const Desc& _desc, Simulation& _simulation) noexcept;   // R1: _ on parameters
+  int Advance(float _dtSec);
+  [[nodiscard]] float InterpolationAlpha() const noexcept;
 
 private:
-  ConnectionState m_state = ConnectionState::Closed;
-  std::uint64_t m_bytesSent = 0;
+  Simulation* m_simulation = nullptr;                   // R8: encapsulated state carries m_
+  float m_accumulatorSec = 0.0f;
 };
-
 } // namespace Neuron
 ```
+
+For a constant and an enum in the same style, see
+[`NeuronCore/Transport.h`](NeuronCore/Transport.h): `MAX_DATAGRAM_BYTES` (R3, UPPER_CASE) and
+`ConnectionState::Draining` (R3, enumerators stay PascalCase).
 
 ### Enforcement
 
@@ -177,6 +193,9 @@ Two rules `.clang-tidy` structurally cannot state, so check them by eye:
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
 | `Outpost/` | The executable: composition root, presentation state, HUD, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |
 | `*Tests/` | VS CppUnitTestFramework suites, one per library. |
+| `NeuronClient/Shaders/` | HLSL (§3). FXC compiles it into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
+| `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py` (§6). |
+| `.github/workflows/build.yml` | CI (§6). |
 | `Outpost.Toolset.props`, `Outpost.Compile.props` | Build settings shared by every project (§6). |
 
 The dependency rules are hard, and each of them is one thing this structure buys:
@@ -240,6 +259,10 @@ the seam telling you the change belongs somewhere else.
   composition root is the only thing entitled to see every layer.
 - **A header that declares a member of type `T` includes `T`'s header itself**, even though the
   umbrella would have supplied it. The umbrella is a convenience, not a contract.
+- **Every project's `pch.cpp` contains exactly `#include "pch.h"`** and nothing else. `/Yc`
+  requires the translation unit that *creates* the precompiled header to include it; an empty one
+  is `C2857`, reported at line 1 column 1 of a file whose entire contents are the thing that is
+  missing. Six of them were empty once, and it cost a CI run.
 - **Every added, removed or renamed file updates both** the `.vcxproj` and the `.vcxproj.filters`
   of its project, in the same commit. [`Build/CheckProjectFiles.py`](Build/CheckProjectFiles.py)
   checks this, and runs in CI before anything is compiled — run it yourself before you push.
@@ -290,18 +313,27 @@ _device`).
 Include order is **not** sorted automatically and is grouped by hand: `pch.h` first, then this
 project's headers, then the headers of libraries it depends on, then SDK headers, then the
 standard library. A formatter reordering these behind your back is a correctness risk, not a style
-preference.
+preference — `SortIncludes` is off for that reason.
 
-Format the lines you write. Do not reformat files you are only passing through.
+**The whole tree is formatted, and CI gates on it** (§6). `python Build/CheckFormat.py --fix`
+applies it. Format the lines you write; do not reformat files you are only passing through.
+
+`.clang-format` carries one entry worth knowing about. The Visual Studio test macros read as
+function calls, so without help clang-format collapses a whole `TEST_CLASS` into one line of
+nonsense and guesses the braces from there. The `Macros:` block tells it what `TEST_CLASS` and
+`TEST_METHOD` expand to, which is what makes a test file safe to format at all. Add to it if a new
+macro of that shape appears.
 
 ---
 
 ## 5. C++ rules for this codebase
 
-- **C++ latest** (`/std:c++latest` on VS 2026, `stdcpp20` on 2022), MSVC v145, `ConformanceMode`
-  on, `/fp:precise`, no `/arch`. Do not turn conformance off to make something compile. **None of
-  these are spelled in a `.vcxproj`** — they live in `Outpost.Compile.props`, which every project
-  imports (§6). If you add a project, import both sheets; their two positions are not
+- **C++20 is the floor**, `ConformanceMode` on, `/fp:precise`, no `/arch`. The sheets take
+  `/std:c++latest` and `v145` where msbuild reports Visual Studio 2026, and `stdcpp20` with
+  whatever toolset the machine has otherwise. Nothing here may *need* C++23 to build; if something
+  does, it goes behind a feature test. Do not turn conformance off to make something compile.
+  **None of these are spelled in a `.vcxproj`** — they live in `Outpost.Compile.props`, which every
+  project imports (§6). If you add a project, import both sheets; their two positions are not
   interchangeable.
 - **Math is DirectXMath, used natively** — no wrapper types, functions, or aliases. Store
   `XMFLOAT2/3/4`, `XMFLOAT4X4`; compute in `XMVECTOR`/`XMMATRIX` as locals and parameters. Never a
@@ -324,7 +356,8 @@ Format the lines you write. Do not reformat files you are only passing through.
   libraries receive plain config structs (`Camera::Desc`, `ServerHost::Desc`,
   `PointerTracker::Desc`) and never read files or the registry themselves.
 - **Single-writer state.** The authoritative world belongs to whichever thread ticks it, render
-  state to the main thread. Foreign threads (msquic workers, XAudio2 callbacks) enqueue to a ring
+  state to the main thread. Today both are the same thread, which is why this rule is easy to break
+  without noticing: when a transport's workers or an audio callback arrive, they enqueue to a ring
   and touch nothing else.
 - **COM lifetimes are RAII, through `winrt::com_ptr`** (aliased as `Neuron::GpuPtr`), not
   `Microsoft::WRL::ComPtr` and never raw `Release()` calls. Two idioms: create with
@@ -350,9 +383,13 @@ Format the lines you write. Do not reformat files you are only passing through.
   configuration reports what was wrong and fails closed; it never throws on malformed input and
   never asserts. A missing hull logs and is skipped — it does not fail boot.
 - **No external libraries without the owner's explicit approval.** Pre-approved: the Windows SDK
-  (Win32, Winsock2, D3D12/DXGI, DirectXMath, XAudio2/X3DAudio), the packages already in
-  `packages.config`, and C++/WinRT as above. If you believe a third-party library is justified,
-  present the case and **stop** — do not assume approval.
+  (Win32, Winsock2, D3D12/DXGI, DirectXMath, GDI for the font atlas), the packages already in the
+  `packages.config` files, and C++/WinRT as above. If you believe a third-party library is
+  justified, present the case and **stop** — do not assume approval.
+
+  What the tree does *not* use yet, whatever the package list suggests: there is no audio, no
+  networking, and no WinUI. Several Windows App SDK packages are restored because the executable
+  was generated from an MSIX template; none of them is referenced by code.
 
 ---
 
@@ -430,7 +467,7 @@ SDK nor a Windows runner, and what costs twenty seconds on Linux would be billed
 against Windows minutes. The version is pinned to 18.1.3; see §1.
 
 **`clang-tidy` runs but does not gate.** It is `continue-on-error`, scoped to GameLogic — the layer
-where its checks matter most and the only one that does not reach D3D12 or XAudio2 headers. It
+where its checks matter most and the only one that does not reach the D3D12 headers. It
 still reaches C++/WinRT through `NeuronCore.h`, and that projection is generated during the build,
 which is why the step runs after the build and discovers the generated directory rather than
 assuming where it is. Promote it by deleting `continue-on-error` once a run comes back clean. That

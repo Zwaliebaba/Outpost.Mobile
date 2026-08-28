@@ -153,7 +153,7 @@ jobs:
         # in the change that adds it. Promote it by deleting continue-on-error.
         #
         # Scoped to GameLogic: it is the layer where the checks matter most (determinism), and the
-        # only one that does not reach D3D12 or XAudio2 headers. It does still reach C++/WinRT
+        # only one that does not reach the D3D12 headers. It does still reach C++/WinRT
         # through NeuronCore.h, and those headers are generated during the build -- which is why
         # this runs after it, and why the generated directory is discovered rather than assumed.
         continue-on-error: true
