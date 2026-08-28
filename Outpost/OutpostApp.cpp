@@ -11,6 +11,7 @@ namespace Outpost
 namespace
 {
 const std::wstring MESH_DIR = L"Meshes\\";
+const std::wstring FONT_DIR = L"Fonts\\";
 const std::wstring STARTING_HULLS[] = {L"Bomber", L"Corvette", L"Frigate"};
 } // namespace
 
@@ -28,7 +29,12 @@ void OutpostApp::Init(HINSTANCE _instance)
 
   m_gpu.Init(m_window.Handle());
   m_sceneRenderer.Init(m_gpu);
-  m_textRenderer.Init(m_gpu); // records the atlas upload into the command list, so it goes last
+  // The engine names the two roles; which atlas fills each is content, and content is the
+  // composition root's to know.
+  TextRenderer::Desc textDesc;
+  textDesc.uiFont = FONT_DIR + L"EditorFont.dds";
+  textDesc.sceneFont = FONT_DIR + L"SpeccyFont.dds";
+  m_textRenderer.Init(m_gpu, textDesc); // records the atlas uploads into the command list, so it goes last
 
   Camera::Desc cameraDesc;
   cameraDesc.minZoom = CAMERA_MIN_ZOOM;

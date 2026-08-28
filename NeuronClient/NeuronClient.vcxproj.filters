@@ -36,6 +36,9 @@
     <ClInclude Include="SceneRenderer.h">
       <Filter>Render</Filter>
     </ClInclude>
+    <ClInclude Include="BitmapFont.h">
+      <Filter>Render</Filter>
+    </ClInclude>
     <ClInclude Include="TextRenderer.h">
       <Filter>Render</Filter>
     </ClInclude>
@@ -66,6 +69,9 @@
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="SceneRenderer.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="BitmapFont.cpp">
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="TextRenderer.cpp">
