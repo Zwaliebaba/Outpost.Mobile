@@ -46,6 +46,65 @@ public:
     Assert::AreEqual(reused, world.Resolve(world.HandleOf(reused)), L"the reusing ship's own handle does not resolve");
   }
 
+  TEST_METHOD(ArrayOrderCannotChangeTheAnswer)
+  {
+    // The test that protects the MMO property. Every pass reads a start-of-tick snapshot and writes
+    // its corrections to scratch, so the same fleet spawned in a different array order must produce
+    // the same run -- and the day someone writes a pass that mutates in place, this is what catches
+    // it rather than a replay failing months later (Design/Collision.md 16).
+    //
+    // Positions are jittered rather than laid out on a lattice, and deliberately so. ShipId is the
+    // documented tie-break on the neighbour sort, and a permutation renames every ship, so a fleet
+    // holding exact proximity ties legitimately resolves them the other way round. Identity is an
+    // input. What must not be an input is where in the array a ship happens to sit.
+    constexpr int SHIPS = 12;
+    const auto play = [](bool _reversed, std::vector<Game::WorldPos>& _outTrack)
+    {
+      std::uint32_t noise = 7u;
+      const auto jitter = [&noise]
+      {
+        noise ^= noise << 13;
+        noise ^= noise >> 17;
+        noise ^= noise << 5;
+        return static_cast<float>(noise >> 8) / static_cast<float>(1u << 24);
+      };
+      // Drawn before the spawn loop so both orders lay the fleet out identically.
+      std::vector<Game::WorldPos> layout;
+      for (int i = 0; i < SHIPS; ++i)
+        layout.push_back(Game::WorldPos{(jitter() - 0.5f) * 40.0f, (jitter() - 0.5f) * 40.0f});
+
+      Game::World world;
+      std::vector<Game::ShipId> byPosition(SHIPS, Game::INVALID_SHIP_ID);
+      for (int spawn = 0; spawn < SHIPS; ++spawn)
+      {
+        const int at = _reversed ? (SHIPS - 1 - spawn) : spawn;
+        // Tight enough that everything is in contact with everything: separation is the pass most
+        // likely to be order-dependent, so it has to be the one under load.
+        byPosition[static_cast<size_t>(at)] = world.SpawnShip(
+          layout[static_cast<size_t>(at)], 0.0f, static_cast<std::uint32_t>(at % 2 ? Game::HullId::Corvette : Game::HullId::Interceptor));
+      }
+      world.IssueMoveOrder(byPosition, Game::WorldPos{300.0f, 300.0f}, false, 0.0f);
+      for (int tick = 0; tick < 400; ++tick)
+      {
+        world.Step();
+        for (const Game::ShipId id : byPosition)
+          _outTrack.push_back(world.Ship(id).posWorld);
+      }
+    };
+
+    std::vector<Game::WorldPos> forward;
+    std::vector<Game::WorldPos> reversed;
+    play(false, forward);
+    play(true, reversed);
+
+    Assert::AreEqual(forward.size(), reversed.size(), L"the two orders produced different numbers of samples");
+    for (size_t i = 0; i < forward.size(); ++i)
+    {
+      Assert::AreEqual(forward[i].localX, reversed[i].localX, 0.0f, L"x depends on the order ships were spawned in");
+      Assert::AreEqual(forward[i].localZ, reversed[i].localZ, 0.0f, L"z depends on the order ships were spawned in");
+    }
+  }
+
   TEST_METHOD(ADefaultHandleIsNull)
   {
     Game::World world;

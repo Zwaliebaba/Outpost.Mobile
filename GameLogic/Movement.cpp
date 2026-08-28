@@ -13,8 +13,6 @@ void StepShip(ShipState& _ship, const HullSpec& _hull) noexcept
   const float turnAcceleration = _hull.turnAccelerationRadPerSec2;
   const float stopBlend = Neuron::HalfLifeBlend(TICK_DT, STOP_DAMPING_HALF_LIFE);
 
-  _ship.prevPos = _ship.posWorld;
-  _ship.prevHeading = _ship.headingRad;
   const float speedBefore = _ship.speed;
 
   float desiredHeading = _ship.headingRad;

@@ -187,6 +187,8 @@
     <ClCompile Include="FormationTests.cpp" />
     <ClCompile Include="HullSpecTests.cpp" />
     <ClCompile Include="MovementTests.cpp" />
+    <ClCompile Include="CollisionTests.cpp" />
+    <ClCompile Include="SeparationTests.cpp" />
     <ClCompile Include="SpatialIndexTests.cpp" />
     <ClCompile Include="WorldTests.cpp" />
   </ItemGroup>

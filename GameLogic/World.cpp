@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "World.h"
 
+#include "Collision.h"
 #include "HullSpec.h"
 #include "Movement.h"
 #include "SimTuning.h"
@@ -37,6 +38,10 @@ ShipId World::SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint3
   if (m_slots[slot].generation == 0)
     m_slots[slot].generation = 1;
   m_shipSlot.push_back(slot);
+  // Any spawn or despawn can move a Structure's id, not only one that adds or removes a Structure,
+  // because swap-and-pop renumbers whatever was last. Marking every one of them dirty costs a
+  // rebuild that only happens when the fleet changes, and gets the id-shift case right for free.
+  m_staticIndexDirty = true;
   return id;
 }
 
@@ -62,6 +67,7 @@ bool World::DespawnShip(ShipHandle _handle)
   if (freed.generation == 0)
     freed.generation = 1;
   m_freeSlots.push_back(_handle.slot);
+  m_staticIndexDirty = true;
   return true;
 }
 
@@ -81,10 +87,228 @@ ShipId World::Resolve(ShipHandle _handle) const noexcept
   return (slot.generation == _handle.generation) ? slot.ship : INVALID_SHIP_ID;
 }
 
+void World::ConfigureIndex(const SpatialIndex::Desc& _desc) noexcept
+{
+  m_index.Configure(_desc);
+  m_staticIndexDirty = true;
+}
+
+std::span<const Neighbour> World::NeighboursOf(ShipId _id) const noexcept
+{
+  if (_id >= m_neighbourCount.size())
+    return {};
+  return std::span<const Neighbour>(m_neighbours).subspan(m_neighbourStart[_id], m_neighbourCount[_id]);
+}
+
+float World::AuthorityOf(ShipId _id) const noexcept
+{
+  const ShipState& ship = m_ships[_id];
+  const float authority = HullSpecOf(ship.hullId).avoidanceAuthority;
+  return (ship.order == OrderState::Idle) ? authority * IDLE_AVOIDANCE_AUTHORITY_SCALE : authority;
+}
+
+void World::SnapshotPreviousTick() noexcept
+{
+  // Two lines, hoisted out of StepShip into a pass of their own, and that hoist is the whole of
+  // the order-independence property. prevPos was already written here for the view to interpolate
+  // between ticks; making it a whole pass turns it into the authoritative start-of-tick state that
+  // every neighbour read below sees, so ship 0 and ship 500 see the same world.
+  for (ShipState& ship : m_ships)
+  {
+    ship.prevPos = ship.posWorld;
+    ship.prevHeading = ship.headingRad;
+  }
+}
+
+void World::RebuildIndex()
+{
+  if (m_staticIndexDirty)
+  {
+    m_staticEntries.clear();
+    for (ShipId id = 0; id < m_ships.size(); ++id)
+    {
+      const HullSpec& hull = HullSpecOf(m_ships[id].hullId);
+      if (hull.immovable && hull.collidable)
+        m_staticEntries.push_back({id, m_ships[id].posWorld, hull.BoundingRadiusMetres()});
+    }
+    m_index.RebuildStatic(m_staticEntries);
+    m_staticIndexDirty = false;
+  }
+
+  m_dynamicEntries.clear();
+  for (ShipId id = 0; id < m_ships.size(); ++id)
+  {
+    const HullSpec& hull = HullSpecOf(m_ships[id].hullId);
+    if (!hull.immovable && hull.collidable)
+      m_dynamicEntries.push_back({id, m_ships[id].prevPos, hull.BoundingRadiusMetres()});
+  }
+  m_index.RebuildDynamic(m_dynamicEntries);
+}
+
+void World::GatherNeighbours()
+{
+  const std::uint32_t count = ShipCount();
+  m_neighbourStart.assign(static_cast<std::size_t>(count) + 1, 0);
+  for (ShipId id = 0; id < count; ++id)
+    m_neighbourStart[id + 1] = m_neighbourStart[id] + HullSpecOf(m_ships[id].hullId).neighbourCap;
+  m_neighbours.assign(m_neighbourStart[count], Neighbour{});
+  m_neighbourCount.assign(count, 0);
+
+  for (ShipId id = 0; id < count; ++id)
+  {
+    const ShipState& ship = m_ships[id];
+    const HullSpec& hull = HullSpecOf(ship.hullId);
+    if (!hull.collidable)
+      continue;
+
+    m_index.QueryCircle(ship.prevPos, QueryRadiusMetres(hull), m_queryScratch);
+    m_candidateScratch.clear();
+    for (const ShipId other : m_queryScratch)
+    {
+      if (other == id)
+        continue;
+      const ShipState& neighbour = m_ships[other];
+      Neighbour record;
+      record.id = other;
+      record.offsetX = OffsetX(ship.prevPos, neighbour.prevPos);
+      record.offsetZ = OffsetZ(ship.prevPos, neighbour.prevPos);
+      record.velocityX = std::sin(neighbour.prevHeading) * neighbour.speed;
+      record.velocityZ = std::cos(neighbour.prevHeading) * neighbour.speed;
+      record.boundingRadiusMetres = HullSpecOf(neighbour.hullId).BoundingRadiusMetres();
+      record.distanceSquared = record.offsetX * record.offsetX + record.offsetZ * record.offsetZ;
+      record.proximityMetres = std::sqrt(record.distanceSquared) - record.boundingRadiusMetres;
+      m_candidateScratch.push_back(record);
+    }
+
+    // Every candidate from the covering ring, then sorted, and only then truncated. Truncating
+    // cell by cell would make cell size part of the replay contract and it could never be retuned
+    // again -- not per region, not after profiling. ShipId is the tie-break and is what makes the
+    // order total, so std::sort's instability cannot show through (Design/Collision.md 7).
+    std::sort(m_candidateScratch.begin(), m_candidateScratch.end(), [](const Neighbour& _a, const Neighbour& _b)
+              { return (_a.proximityMetres != _b.proximityMetres) ? _a.proximityMetres < _b.proximityMetres : _a.id < _b.id; });
+
+    const std::uint32_t take = std::min<std::uint32_t>(hull.neighbourCap, static_cast<std::uint32_t>(m_candidateScratch.size()));
+    std::copy_n(m_candidateScratch.begin(), take, m_neighbours.begin() + m_neighbourStart[id]);
+    m_neighbourCount[id] = take;
+  }
+}
+
+namespace
+{
+[[nodiscard]] Capsule CapsuleAt(const ShipState& _ship, const HullSpec& _hull, float _centreX, float _centreZ) noexcept
+{
+  return Capsule{
+    _centreX, _centreZ, std::sin(_ship.headingRad), std::cos(_ship.headingRad), _hull.capsuleHalfLengthMetres, _hull.capsuleRadiusMetres};
+}
+} // namespace
+
+void World::ApplySeparation()
+{
+  const std::uint32_t count = ShipCount();
+  m_correctionX.assign(count, 0.0f);
+  m_correctionZ.assign(count, 0.0f);
+
+  for (ShipId id = 0; id < count; ++id)
+  {
+    const ShipState& ship = m_ships[id];
+    const HullSpec& hull = HullSpecOf(ship.hullId);
+    if (hull.immovable || !hull.collidable)
+      continue;
+
+    const Capsule self = CapsuleAt(ship, hull, 0.0f, 0.0f);
+    float correctionX = 0.0f;
+    float correctionZ = 0.0f;
+    for (const Neighbour& neighbour : NeighboursOf(id))
+    {
+      const ShipState& other = m_ships[neighbour.id];
+      const HullSpec& otherHull = HullSpecOf(other.hullId);
+      if (!otherHull.collidable || otherHull.immovable)
+        continue; // architecture is pass 5b's, after this one and without the clamp
+
+      const Capsule against = CapsuleAt(other, otherHull, OffsetX(ship.posWorld, other.posWorld), OffsetZ(ship.posWorld, other.posWorld));
+      const Contact contact = CapsuleContact(self, against, id, neighbour.id);
+      if (!contact.touching)
+        continue;
+
+      // Cap what the pair closes, then split it -- never the other way round. Both sides compute
+      // this same cap from the same two radii, so the authority ratio survives the clamp instead of
+      // being inverted by it.
+      const SeparationShares shares = SeparationSharesFor(AuthorityOf(id), false, AuthorityOf(neighbour.id), false);
+      const float pairCap = SEPARATION_PAIR_CLOSE_FRACTION * std::min(hull.capsuleRadiusMetres, otherHull.capsuleRadiusMetres);
+      const float closed = std::min(contact.overlapMetres * SEPARATION_STIFFNESS, pairCap);
+      correctionX += contact.normalX * closed * shares.a;
+      correctionZ += contact.normalZ * closed * shares.a;
+    }
+
+    const float limit = SEPARATION_CLAMP_FRACTION * hull.capsuleRadiusMetres;
+    const float magnitudeSquared = correctionX * correctionX + correctionZ * correctionZ;
+    if (magnitudeSquared > limit * limit)
+    {
+      const float scale = limit / std::sqrt(magnitudeSquared);
+      correctionX *= scale;
+      correctionZ *= scale;
+    }
+    m_correctionX[id] = correctionX;
+    m_correctionZ[id] = correctionZ;
+  }
+
+  for (ShipId id = 0; id < count; ++id)
+    Translate(m_ships[id].posWorld, m_correctionX[id], m_correctionZ[id]);
+}
+
+void World::ApplyBlocking()
+{
+  const std::uint32_t count = ShipCount();
+  m_correctionX.assign(count, 0.0f);
+  m_correctionZ.assign(count, 0.0f);
+
+  for (ShipId id = 0; id < count; ++id)
+  {
+    const ShipState& ship = m_ships[id];
+    const HullSpec& hull = HullSpecOf(ship.hullId);
+    if (hull.immovable || !hull.collidable)
+      continue;
+
+    const Capsule self = CapsuleAt(ship, hull, 0.0f, 0.0f);
+    for (const Neighbour& neighbour : NeighboursOf(id))
+    {
+      const ShipState& other = m_ships[neighbour.id];
+      const HullSpec& otherHull = HullSpecOf(other.hullId);
+      if (!otherHull.collidable || !otherHull.immovable)
+        continue;
+
+      const Capsule against = CapsuleAt(other, otherHull, OffsetX(ship.posWorld, other.posWorld), OffsetZ(ship.posWorld, other.posWorld));
+      const Contact contact = CapsuleContact(self, against, id, neighbour.id);
+      if (!contact.touching)
+        continue;
+
+      // The whole overlap, and no clamp. Hard blocking has to be hard or it is decoration: this
+      // runs after ship-to-ship separation precisely so that a column of traffic behind a ship
+      // cannot squeeze it through a Structure.
+      m_correctionX[id] += contact.normalX * contact.overlapMetres;
+      m_correctionZ[id] += contact.normalZ * contact.overlapMetres;
+    }
+  }
+
+  for (ShipId id = 0; id < count; ++id)
+    Translate(m_ships[id].posWorld, m_correctionX[id], m_correctionZ[id]);
+}
+
 void World::Step()
 {
+  SnapshotPreviousTick();
+  RebuildIndex();
+  GatherNeighbours();
+
   for (ShipState& ship : m_ships)
-    StepShip(ship, HullSpecOf(ship.hullId));
+  {
+    const HullSpec& hull = HullSpecOf(ship.hullId);
+    if (!hull.immovable)
+      StepShip(ship, hull);
+  }
+
+  ApplySeparation();
+  ApplyBlocking();
   ++m_tick;
 }
 

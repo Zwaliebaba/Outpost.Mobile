@@ -47,6 +47,46 @@ inline constexpr float AVOID_HORIZON_MAX_SEC = 8.0f;
 // happens rather than on the tick it does.
 inline constexpr float SEPARATION_QUERY_MARGIN_METRES = 4.0f;
 
+// --- separation --------------------------------------------------------------------------------
+// The fraction of a contact's overlap a pair resolves in one tick. A Jacobi solve applies every
+// correction at once, so anything approaching 1 overshoots and rings.
+//
+// Jacobi is the deliberate trade (Design/Collision.md 6): Gauss-Seidel converges faster and is
+// order-dependent, which is precisely the property this design spends effort to avoid. The cost is
+// visible in one configuration and worth knowing about -- a chain of identically oriented hulls,
+// each exactly balanced between the neighbour ahead and the neighbour behind, relaxes only from its
+// ends, so a pathological pack of a hundred parallel hulls on one point unwinds over thousands of
+// ticks rather than hundreds. It converges, it stays bounded, and it never explodes; it is simply
+// slow, and no amount of neighbour cap fixes it because the cancellation is exact.
+inline constexpr float SEPARATION_STIFFNESS = 0.5f;
+
+// How much of one contact's overlap the pair may close in a tick, as a fraction of the *smaller*
+// hull's capsule radius. Both sides derive it from the same two radii, so it is the same number on
+// each, and the authority split therefore survives it: cap what the pair closes and then divide,
+// and a Carrier still takes a fifteenth of what an Interceptor takes.
+//
+// This is a correction to the design, which clamps each ship's own displacement instead. That
+// inverts the authority split exactly when it binds: an Interceptor deep inside a Carrier wants a
+// 5 m correction and is cut to 0.28 m by its own small radius, while the Carrier's 0.34 m share
+// passes unclamped, and the capital visibly drifts. Capping the pair rather than the ship keeps
+// the ratio at 15:1 where clamping the ship gave 1.8:1.
+inline constexpr float SEPARATION_PAIR_CLOSE_FRACTION = 0.25f;
+
+// The backstop, for a ship in contact with many others at once: the ceiling on how far one tick
+// may move it for a reason the client cannot predict, as a fraction of its own capsule radius so it
+// scales with the hull. Without it, a hundred ships spawned on one point produce a correction as
+// large as the overlap and the fleet explodes rather than unpacking.
+//
+// It buys a second thing that matters more: it *is* the prediction error budget. Avoidance is
+// server-only and unpredicted, so the worst the client can be wrong by has to be a number rather
+// than an unbounded one. At 0.5 an Interceptor may be displaced 0.56 m per tick -- 33 m/s, about
+// its own top speed, which is the most that can be called a budget (Design/Collision.md 9, 10).
+inline constexpr float SEPARATION_CLAMP_FRACTION = 0.5f;
+
+// A parked ship holds its station harder than one under way. Formation drift under traffic is not
+// a separate problem; it is this one with a different number.
+inline constexpr float IDLE_AVOIDANCE_AUTHORITY_SCALE = 4.0f;
+
 // --- test thresholds ---------------------------------------------------------------------------
 // Not in the replay contract: nothing reads this at run time, and tightening it changes no
 // recorded game. A bare `<` on the tunnelling inequality passes at a margin of 1.001 and calls
