@@ -83,6 +83,26 @@
     <None Include="packages.config">
       <Filter>Project Files</Filter>
     </None>
+    <None Include="Assets\Meshes\Battleship.mtl" />
+    <None Include="Assets\Meshes\Bomber.mtl" />
+    <None Include="Assets\Meshes\Carrier.mtl" />
+    <None Include="Assets\Meshes\Corvette.mtl" />
+    <None Include="Assets\Meshes\Frigate.mtl" />
+    <None Include="Assets\Meshes\Hauler.mtl" />
+    <None Include="Assets\Meshes\Interceptor.mtl" />
+    <None Include="Assets\Meshes\Miner.mtl" />
+    <None Include="Assets\Meshes\Stargate.mtl" />
+    <None Include="Assets\Meshes\Structure.mtl" />
+    <None Include="Assets\Meshes\Battleship.obj" />
+    <None Include="Assets\Meshes\Bomber.obj" />
+    <None Include="Assets\Meshes\Carrier.obj" />
+    <None Include="Assets\Meshes\Corvette.obj" />
+    <None Include="Assets\Meshes\Frigate.obj" />
+    <None Include="Assets\Meshes\Hauler.obj" />
+    <None Include="Assets\Meshes\Interceptor.obj" />
+    <None Include="Assets\Meshes\Miner.obj" />
+    <None Include="Assets\Meshes\Stargate.obj" />
+    <None Include="Assets\Meshes\Structure.obj" />
   </ItemGroup>
   <ItemGroup>
     <AppxManifest Include="Package.appxmanifest">

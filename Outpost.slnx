@@ -6,20 +6,18 @@
   </Configurations>
   <Folder Name="/Build/">
     <File Path="AGENTS.md" />
-    <File Path="Outpost.Compile.props" />
-    <File Path="Outpost.Toolset.props" />
   </Folder>
   <Folder Name="/Tests/">
-    <Project Path="GameLogicTests/GameLogicTests.vcxproj">
+    <Project Path="Tests/GameLogicTests/GameLogicTests.vcxproj" Id="3e6c8a94-51d7-4b2a-8f60-c1ad9e27b5d3">
       <Platform Solution="*|ARM64" Project="x64" />
     </Project>
-    <Project Path="NeuronClientTests/NeuronClientTests.vcxproj">
+    <Project Path="Tests/NeuronClientTests/NeuronClientTests.vcxproj" Id="82ff8212-c7c5-789c-299a-717affb644a4">
       <Platform Solution="*|ARM64" Project="x64" />
     </Project>
-    <Project Path="NeuronCoreTests/NeuronCoreTests.vcxproj">
+    <Project Path="Tests/NeuronCoreTests/NeuronCoreTests.vcxproj" Id="8002b9e8-5815-0b65-38b0-53ea7706939c">
       <Platform Solution="*|ARM64" Project="x64" />
     </Project>
-    <Project Path="NeuronServerTests/NeuronServerTests.vcxproj">
+    <Project Path="Tests/NeuronServerTests/NeuronServerTests.vcxproj" Id="96d8b9a7-2d2d-10ef-4802-cba34eb98cc8">
       <Platform Solution="*|ARM64" Project="x64" />
     </Project>
   </Folder>
