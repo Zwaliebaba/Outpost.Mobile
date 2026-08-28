@@ -91,4 +91,60 @@ inline constexpr float DECAL_LIFT_Y = 0.2f; // clear of the ground quad so the t
 
 // --- starting scene ----------------------------------------------------------------------------
 inline constexpr float START_SPACING = 55.0f;
+
+// --- HUD ---------------------------------------------------------------------------------------
+// Flat and square-cornered: no blur, no glow, no gradients. Sizes are in px at 96 DPI and scale
+// with the window DPI; the layout is anchored to corners and edges, so no width is assumed.
+inline constexpr Neuron::Rgba HUD_COLOUR{0.78f, 0.87f, 0.96f, 1.0f}; // values and body text
+inline constexpr Neuron::Rgba HUD_PANEL_FILL{0.043f, 0.051f, 0.063f, 0.82f};
+inline constexpr Neuron::Rgba HUD_PANEL_OUTLINE{GRID_COLOUR.r, GRID_COLOUR.g, GRID_COLOUR.b, 0.45f}; // the grid, as a rule
+inline constexpr Neuron::Rgba HUD_LABEL_COLOUR{0.373f, 0.455f, 0.533f, 1.0f};
+inline constexpr Neuron::Rgba HUD_ACCENT_GREEN{SEL_RING_COLOUR.r, SEL_RING_COLOUR.g, SEL_RING_COLOUR.b, 1.0f}; // active, positive
+inline constexpr Neuron::Rgba HUD_ACCENT_AMBER{MARKER_COLOUR.r, MARKER_COLOUR.g, MARKER_COLOUR.b, 1.0f};       // alerts, orders
+inline constexpr Neuron::Rgba HUD_ALERT_RED{0.95f, 0.43f, 0.35f, 1.0f};                                        // hostile
+inline constexpr Neuron::Rgba HUD_INFO_GREY{0.45f, 0.50f, 0.56f, 1.0f};
+inline constexpr Neuron::Rgba HUD_BAR_TRACK{1.0f, 1.0f, 1.0f, 0.07f};
+inline constexpr float HUD_ACTIVE_OUTLINE_ALPHA = 0.7f; // a pressed or active button, in the accent
+inline constexpr float HUD_ACTIVE_FILL_ALPHA = 0.08f;
+inline constexpr float HUD_GROUP_ACTIVE_FILL_ALPHA = 0.12f;
+inline constexpr bool HUD_SCANLINES = true; // CRT lines over the panels only
+inline constexpr float HUD_SCANLINE_STEP_PX = 3.0f;
+inline constexpr float HUD_SCANLINE_ALPHA = 0.16f;
+
+inline constexpr float HUD_MARGIN_PX = 16.0f;
+inline constexpr float HUD_TOP_PX = 14.0f;
+inline constexpr float HUD_PANEL_GAP_PX = 10.0f;
+inline constexpr float HUD_PANEL_PAD_X_PX = 16.0f;
+inline constexpr float HUD_PANEL_PAD_Y_PX = 10.0f;
+inline constexpr float HUD_SMALL_SCALE = 0.5f;   // of the UI atlas cell; the minimap header
+inline constexpr float HUD_LABEL_SCALE = 0.625f; // small caps for labels
+inline constexpr float HUD_TEXT_SCALE = 0.75f;
+inline constexpr float HUD_VALUE_SCALE = 1.0f;
+
+inline constexpr float HUD_MINIMAP_WIDTH_PX = 212.0f;
+inline constexpr float HUD_MINIMAP_HEADER_PX = 30.0f;
+inline constexpr float HUD_MINIMAP_MAP_PX = 140.0f;
+inline constexpr float HUD_MINIMAP_GRID_PX = 28.0f;
+inline constexpr float HUD_MINIMAP_DOT_PX = 4.0f;
+inline constexpr float HUD_MINIMAP_HALF_RANGE = 420.0f; // metres from the camera target to the edge of the map
+
+inline constexpr float HUD_RAIL_BUTTON_PX = 60.0f; // a hit target, so never below 44
+inline constexpr float HUD_RAIL_GAP_PX = 10.0f;
+inline constexpr float HUD_RAIL_ICON_PX = 22.0f;
+
+inline constexpr int HUD_LOG_ROWS = 3;
+inline constexpr float HUD_LOG_ROW_PX = 18.0f;
+inline constexpr float HUD_LOG_RULE_PX = 2.0f;
+
+inline constexpr float HUD_BAR_HEIGHT_PX = 96.0f;
+inline constexpr float HUD_GROUP_BUTTON_W_PX = 48.0f;
+inline constexpr float HUD_GROUP_BUTTON_H_PX = 56.0f;
+inline constexpr float HUD_GROUP_GAP_PX = 6.0f;
+inline constexpr float HUD_SUMMARY_WIDTH_PX = 430.0f;
+inline constexpr float HUD_STAT_BAR_WIDTH_PX = 90.0f;
+inline constexpr float HUD_STAT_BAR_PX = 6.0f;
+inline constexpr float HUD_STAT_COLUMN_PX = 250.0f;
+inline constexpr float HUD_STATS_WIDTH_PX = 410.0f; // both columns, from HULL to the end of the order state
+
+inline constexpr float HUD_LONG_PRESS_MS = 450.0f; // holding a group tab this long assigns it
 } // namespace Outpost

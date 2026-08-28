@@ -98,6 +98,53 @@ public:
     }
   }
 
+  TEST_METHOD(NoPairingPassesThroughItself)
+  {
+    // Every pairing of small hull and large, not just the symmetric ones. The mixed cases are where
+    // the horizon and the authority split do the work, and they are the ones that were wrong.
+    constexpr Game::HullId FLEET[] = {Game::HullId::Interceptor, Game::HullId::Corvette, Game::HullId::Frigate, Game::HullId::Battleship,
+                                      Game::HullId::Carrier};
+    float worstFraction = 0.0f;
+    std::wstring worstPair;
+    for (const Game::HullId northHull : FLEET)
+    {
+      for (const Game::HullId southHull : FLEET)
+      {
+        Game::World world;
+        const Game::ShipId north = world.SpawnShip(Game::WorldPos{0.0f, -900.0f}, 0.0f, static_cast<std::uint32_t>(northHull));
+        const Game::ShipId south = world.SpawnShip(Game::WorldPos{0.0f, 900.0f}, XM_PI, static_cast<std::uint32_t>(southHull));
+
+        const Game::ShipId northOrder[] = {north};
+        const Game::ShipId southOrder[] = {south};
+        world.IssueMoveOrder(northOrder, Game::WorldPos{0.0f, 900.0f}, false, 0.0f);
+        world.IssueMoveOrder(southOrder, Game::WorldPos{0.0f, -900.0f}, false, 0.0f);
+
+        float worstOverlap = 0.0f;
+        for (int tick = 0; tick < 6000; ++tick)
+        {
+          world.Step();
+          worstOverlap = std::max(worstOverlap, HullOverlap(world, north, south));
+        }
+
+        // As a fraction of what the pair would have to interpenetrate to be concentric, so a
+        // Carrier pair and an Interceptor pair are held to the same standard rather than the same
+        // number of metres.
+        const float reach = Game::HullSpecOf(northHull).capsuleRadiusMetres + Game::HullSpecOf(southHull).capsuleRadiusMetres;
+        const float fraction = worstOverlap / reach;
+        if (fraction > worstFraction)
+        {
+          worstFraction = fraction;
+          worstPair = std::wstring(HullName(northHull)) + L"/" + HullName(southHull);
+        }
+        Assert::IsTrue(fraction < 0.02f, std::format(L"{} against {} interpenetrated by {:.1f}% of their combined radii",
+                                                     HullName(northHull), HullName(southHull), fraction * 100.0f)
+                                           .c_str());
+      }
+    }
+    Logger::WriteMessage(
+      std::format(L"head-on pairings: worst was {} at {:.2f}% of combined radii\n", worstPair, worstFraction * 100.0f).c_str());
+  }
+
   TEST_METHOD(AGiveWayTurnDoesNotChatter)
   {
     // Not merely "clears". Whenever two candidate headings score within noise of each other -- the

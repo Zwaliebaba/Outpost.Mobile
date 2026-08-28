@@ -216,6 +216,7 @@
     <ClInclude Include="WorldSimulation.h" />
     <ClInclude Include="ViewTuning.h" />
     <ClInclude Include="Hud.h" />
+    <ClInclude Include="EventLog.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -244,6 +245,10 @@
     <Image Include="Assets\Textures\CloudyGlow.dds" />
     <Image Include="Assets\Textures\Fuel.dds" />
     <Image Include="Assets\Textures\Glow.dds" />
+    <Image Include="Assets\Textures\IconResearch.dds" />
+    <Image Include="Assets\Textures\IconStorage.dds" />
+    <Image Include="Assets\Textures\IconUniverse.dds" />
+    <Image Include="Assets\Textures\IconWallet.dds" />
     <Image Include="Assets\Textures\Laser.dds" />
     <Image Include="Assets\Textures\Laserfence.dds" />
     <Image Include="Assets\Textures\Laserfence2.dds" />

@@ -5,8 +5,9 @@
 // configured in exactly one place and in the one order that works.
 //
 // NeuronCore holds engine primitives with no game semantics in them: diagnostics, file IO, easing,
-// timing, mesh data, format parsers, and the declared client/server transport seam. Nothing here
-// knows what a ship is, and nothing here touches a graphics API.
+// timing, mesh data, the OBJ parser, and the declared client/server transport seam. Nothing here
+// knows what a ship is, and nothing here touches a graphics API or names a graphics type: the
+// server is meant to run headless in a container, and this library goes with it (AGENTS.md 2).
 
 #include <algorithm>
 #include <cmath>
@@ -67,7 +68,6 @@ using namespace winrt;
 #include "NeuronHelper.h"
 #include "Ease.h"
 #include "FileSys.h"
-#include "DdsImage.h"
 #include "FrameClock.h"
 #include "MeshData.h"
 #include "ObjParser.h"

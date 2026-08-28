@@ -20,6 +20,9 @@
     <ClCompile Include="CameraTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="DdsImageTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config">

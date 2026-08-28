@@ -2,6 +2,9 @@
 
 #include "RenderTypes.h"
 
+#include "DdsImage.h"
+#include "FileSys.h"
+
 #include <d3d12.h>
 
 namespace Neuron
@@ -23,4 +26,18 @@ namespace Neuron
 // solid fill, no culling, one render target in the back-buffer format, no multisampling -- so each
 // pass only spells the handful of fields where it actually differs.
 [[nodiscard]] D3D12_GRAPHICS_PIPELINE_STATE_DESC DefaultPipelineDesc() noexcept;
+
+// The overlay pass draws coverage, not colour: a font atlas and a HUD icon are both one channel the
+// pixel shader multiplies by the vertex colour. Coverage comes from the alpha channel where the
+// file has one and from the luminance where it does not, so a mask authored white-on-black reads
+// the same as one authored white-on-transparent -- assuming either turns the other into a solid
+// block of ink. Reports false and traces on a surface that cannot be read on the CPU.
+[[nodiscard]] bool CoverageOf(const DdsImage& _image, ByteBuffer& _outCoverage);
+
+// Records the upload of one R8 texture into the device's command list and writes its view to _srv.
+// _outStaging has to outlive the copy, which has only been recorded: release it after the list has
+// run, never before.
+class GpuDevice;
+void UploadCoverageTexture(GpuDevice& _gpu, std::uint32_t _widthPx, std::uint32_t _heightPx, const ByteBuffer& _coverage,
+                           D3D12_CPU_DESCRIPTOR_HANDLE _srv, GpuPtr<ID3D12Resource>& _outTexture, GpuPtr<ID3D12Resource>& _outStaging);
 } // namespace Neuron

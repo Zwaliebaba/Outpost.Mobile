@@ -27,6 +27,9 @@
     <ClInclude Include="RenderTypes.h">
       <Filter>Render</Filter>
     </ClInclude>
+    <ClInclude Include="DdsImage.h">
+      <Filter>Render</Filter>
+    </ClInclude>
     <ClInclude Include="GpuHelpers.h">
       <Filter>Render</Filter>
     </ClInclude>
@@ -37,6 +40,9 @@
       <Filter>Render</Filter>
     </ClInclude>
     <ClInclude Include="BitmapFont.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="ScreenImage.h">
       <Filter>Render</Filter>
     </ClInclude>
     <ClInclude Include="TextRenderer.h">
@@ -62,6 +68,9 @@
     <ClCompile Include="pch.cpp">
       <Filter>Build</Filter>
     </ClCompile>
+    <ClCompile Include="DdsImage.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
     <ClCompile Include="GpuHelpers.cpp">
       <Filter>Render</Filter>
     </ClCompile>
@@ -72,6 +81,9 @@
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="BitmapFont.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="ScreenImage.cpp">
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="TextRenderer.cpp">

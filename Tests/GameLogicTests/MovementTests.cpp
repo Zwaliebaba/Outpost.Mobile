@@ -76,14 +76,22 @@ public:
     // The determinism gate in miniature. Two worlds given identical input must stay bit-identical
     // tick for tick; if this ever fails, something in the simulation has started reading state it
     // does not own -- a clock, an address, an iteration order.
+    // A fleet spanning the whole table with architecture in it, so the run exercises every pass:
+    // the index's static store, the neighbour sort, avoidance, separation, blocking and a planned
+    // route. A determinism gate over one hull in an empty world proves much less than it looks.
     const auto play = [](std::vector<Game::WorldPos>& _outTrack)
     {
       Game::World world;
-      std::vector<Game::ShipId> ships;
-      for (int i = 0; i < 5; ++i)
-        ships.push_back(world.SpawnShip(Game::WorldPos{static_cast<float>(i) * 40.0f, 0.0f}, 0.0f, 0));
+      world.SpawnShip(Game::WorldPos{-260.0f, 700.0f}, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure));
 
-      world.IssueMoveOrder(ships, Game::WorldPos{200.0f, 350.0f}, true, 1.2f);
+      std::vector<Game::ShipId> ships;
+      const Game::HullId fleet[] = {Game::HullId::Interceptor, Game::HullId::Corvette, Game::HullId::Frigate, Game::HullId::Battleship,
+                                    Game::HullId::Carrier};
+      for (int i = 0; i < 5; ++i)
+        ships.push_back(
+          world.SpawnShip(Game::WorldPos{static_cast<float>(i) * 240.0f - 480.0f, 0.0f}, 0.0f, static_cast<std::uint32_t>(fleet[i])));
+
+      world.IssueMoveOrder(ships, Game::WorldPos{200.0f, 1350.0f}, true, 1.2f);
       for (int tick = 0; tick < 600; ++tick)
       {
         world.Step();

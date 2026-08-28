@@ -1,5 +1,6 @@
 #pragma once
 
+#include "EventLog.h"
 #include "Hud.h"
 #include "WorldSimulation.h"
 #include "WorldView.h"
@@ -58,10 +59,13 @@ private:
 
   // Presentation.
   WorldView m_view;
+  EventLog m_log;
   Hud m_hud;
   Neuron::FrameClock m_clock;
 
-  // Debug: 1, 2 and 3 slow, restore and speed up the simulation without touching the frame rate.
+  // Debug: 1, 2 and 3 slow, restore and speed up the simulation without touching the frame rate;
+  // F1 shows the readout.
   float m_timeScale = 1.0f;
+  bool m_showDebug = false;
 };
 } // namespace Outpost

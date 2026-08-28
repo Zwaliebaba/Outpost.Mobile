@@ -13,9 +13,7 @@
     <ClCompile Include="Hud.cpp">
       <Filter>View</Filter>
     </ClCompile>
-    <ClCompile Include="pch.cpp">
-      <Filter>Project Files</Filter>
-    </ClCompile>
+    <ClCompile Include="pch.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="OutpostApp.h">
@@ -30,12 +28,13 @@
     <ClInclude Include="Hud.h">
       <Filter>View</Filter>
     </ClInclude>
+    <ClInclude Include="EventLog.h">
+      <Filter>View</Filter>
+    </ClInclude>
     <ClInclude Include="ViewTuning.h">
       <Filter>View</Filter>
     </ClInclude>
-    <ClInclude Include="pch.h">
-      <Filter>Project Files</Filter>
-    </ClInclude>
+    <ClInclude Include="pch.h" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="Assets\Wide310x150Logo.scale-200.png">
@@ -59,25 +58,75 @@
     <Image Include="Assets\LockScreenLogo.scale-200.png">
       <Filter>Assets</Filter>
     </Image>
-    <Image Include="Assets\Terrain\LandscapeContainment.dds" />
-    <Image Include="Assets\Terrain\LandscapeDefault.dds" />
-    <Image Include="Assets\Terrain\LandscapeDesert.dds" />
-    <Image Include="Assets\Terrain\LandscapeEarth.dds" />
-    <Image Include="Assets\Terrain\LandscapeIcecaps.dds" />
-    <Image Include="Assets\Terrain\LandscapeLaunchpad.dds" />
-    <Image Include="Assets\Terrain\LandscapeMine.dds" />
-    <Image Include="Assets\Terrain\LandscapeMine2.dds" />
-    <Image Include="Assets\Textures\CloudyGlow.dds" />
-    <Image Include="Assets\Textures\Fuel.dds" />
-    <Image Include="Assets\Textures\Glow.dds" />
-    <Image Include="Assets\Textures\Laser.dds" />
-    <Image Include="Assets\Textures\Laserfence.dds" />
-    <Image Include="Assets\Textures\Laserfence2.dds" />
-    <Image Include="Assets\Textures\Particle.dds" />
-    <Image Include="Assets\Textures\RadarSignal.dds" />
-    <Image Include="Assets\Textures\ShapeWireframe.dds" />
-    <Image Include="Assets\Textures\Starburst.dds" />
-    <Image Include="Assets\Textures\TriangleOutline.dds" />
+    <Image Include="Assets\Textures\CloudyGlow.dds">
+      <Filter>Assets\Textures</Filter>
+    </Image>
+    <Image Include="Assets\Terrain\LandscapeContainment.dds">
+      <Filter>Assets\Terrain</Filter>
+    </Image>
+    <Image Include="Assets\Terrain\LandscapeDefault.dds">
+      <Filter>Assets\Terrain</Filter>
+    </Image>
+    <Image Include="Assets\Terrain\LandscapeDesert.dds">
+      <Filter>Assets\Terrain</Filter>
+    </Image>
+    <Image Include="Assets\Terrain\LandscapeEarth.dds">
+      <Filter>Assets\Terrain</Filter>
+    </Image>
+    <Image Include="Assets\Terrain\LandscapeIcecaps.dds">
+      <Filter>Assets\Terrain</Filter>
+    </Image>
+    <Image Include="Assets\Terrain\LandscapeLaunchpad.dds">
+      <Filter>Assets\Terrain</Filter>
+    </Image>
+    <Image Include="Assets\Terrain\LandscapeMine.dds">
+      <Filter>Assets\Terrain</Filter>
+    </Image>
+    <Image Include="Assets\Terrain\LandscapeMine2.dds">
+      <Filter>Assets\Terrain</Filter>
+    </Image>
+    <Image Include="Assets\Textures\Fuel.dds">
+      <Filter>Assets\Textures</Filter>
+    </Image>
+    <Image Include="Assets\Textures\Glow.dds">
+      <Filter>Assets\Textures</Filter>
+    </Image>
+    <Image Include="Assets\Textures\Laser.dds">
+      <Filter>Assets\Textures</Filter>
+    </Image>
+    <Image Include="Assets\Textures\Laserfence.dds">
+      <Filter>Assets\Textures</Filter>
+    </Image>
+    <Image Include="Assets\Textures\Laserfence2.dds">
+      <Filter>Assets\Textures</Filter>
+    </Image>
+    <Image Include="Assets\Textures\Particle.dds">
+      <Filter>Assets\Textures</Filter>
+    </Image>
+    <Image Include="Assets\Textures\RadarSignal.dds">
+      <Filter>Assets\Textures</Filter>
+    </Image>
+    <Image Include="Assets\Textures\ShapeWireframe.dds">
+      <Filter>Assets\Textures</Filter>
+    </Image>
+    <Image Include="Assets\Textures\Starburst.dds">
+      <Filter>Assets\Textures</Filter>
+    </Image>
+    <Image Include="Assets\Textures\TriangleOutline.dds">
+      <Filter>Assets\Textures</Filter>
+    </Image>
+    <Image Include="Assets\Textures\IconResearch.dds">
+      <Filter>Assets\Textures</Filter>
+    </Image>
+    <Image Include="Assets\Textures\IconStorage.dds">
+      <Filter>Assets\Textures</Filter>
+    </Image>
+    <Image Include="Assets\Textures\IconUniverse.dds">
+      <Filter>Assets\Textures</Filter>
+    </Image>
+    <Image Include="Assets\Textures\IconWallet.dds">
+      <Filter>Assets\Textures</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Assets">
@@ -92,6 +141,18 @@
     <Filter Include="View">
       <UniqueIdentifier>{5a80e2f7-31c6-4d59-b418-96e0f2a7c53b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Assets\Fonts">
+      <UniqueIdentifier>{3bfdf6f4-69ec-4c8c-a609-d2927103d691}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Assets\Textures">
+      <UniqueIdentifier>{e45d72e2-abf1-46e3-b390-ba3791bcd8d4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Assets\Meshes">
+      <UniqueIdentifier>{c32d96e6-7415-4c5b-9d90-bd436fff4c58}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Assets\Terrain">
+      <UniqueIdentifier>{c1f69d9c-9bd5-4c2d-be50-504e10355cbd}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="app.manifest">
@@ -102,28 +163,72 @@
     <None Include="packages.config">
       <Filter>Project Files</Filter>
     </None>
-    <None Include="Assets\Fonts\EditorFont.dds" />
-    <None Include="Assets\Fonts\SpeccyFont.dds" />
-    <None Include="Assets\Meshes\Battleship.mtl" />
-    <None Include="Assets\Meshes\Bomber.mtl" />
-    <None Include="Assets\Meshes\Carrier.mtl" />
-    <None Include="Assets\Meshes\Corvette.mtl" />
-    <None Include="Assets\Meshes\Frigate.mtl" />
-    <None Include="Assets\Meshes\Hauler.mtl" />
-    <None Include="Assets\Meshes\Interceptor.mtl" />
-    <None Include="Assets\Meshes\Miner.mtl" />
-    <None Include="Assets\Meshes\Stargate.mtl" />
-    <None Include="Assets\Meshes\Structure.mtl" />
-    <None Include="Assets\Meshes\Battleship.obj" />
-    <None Include="Assets\Meshes\Bomber.obj" />
-    <None Include="Assets\Meshes\Carrier.obj" />
-    <None Include="Assets\Meshes\Corvette.obj" />
-    <None Include="Assets\Meshes\Frigate.obj" />
-    <None Include="Assets\Meshes\Hauler.obj" />
-    <None Include="Assets\Meshes\Interceptor.obj" />
-    <None Include="Assets\Meshes\Miner.obj" />
-    <None Include="Assets\Meshes\Stargate.obj" />
-    <None Include="Assets\Meshes\Structure.obj" />
+    <None Include="Assets\Meshes\Battleship.mtl">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Battleship.obj">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Bomber.mtl">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Bomber.obj">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Carrier.mtl">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Carrier.obj">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Corvette.obj">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Frigate.obj">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Hauler.obj">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Interceptor.obj">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Miner.obj">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Stargate.obj">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Structure.obj">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Corvette.mtl">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Frigate.mtl">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Hauler.mtl">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Interceptor.mtl">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Miner.mtl">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Stargate.mtl">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Structure.mtl">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Fonts\EditorFont.dds">
+      <Filter>Assets\Fonts</Filter>
+    </None>
+    <None Include="Assets\Fonts\SpeccyFont.dds">
+      <Filter>Assets\Fonts</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <AppxManifest Include="Package.appxmanifest">
@@ -131,7 +236,11 @@
     </AppxManifest>
   </ItemGroup>
   <ItemGroup>
-    <Natvis Include="$(MSBuildThisFileDirectory)..\..\natvis\wil.natvis" />
-    <Natvis Include="$(MSBuildThisFileDirectory)..\..\natvis\wil.natstepfilter" />
+    <Natvis Include="$(MSBuildThisFileDirectory)..\..\natvis\wil.natstepfilter">
+      <Filter>Project Files</Filter>
+    </Natvis>
+    <Natvis Include="$(MSBuildThisFileDirectory)..\..\natvis\wil.natvis">
+      <Filter>Project Files</Filter>
+    </Natvis>
   </ItemGroup>
 </Project>

@@ -174,7 +174,6 @@
     <ClInclude Include="NeuronHelper.h" />
     <ClInclude Include="Ease.h" />
     <ClInclude Include="FileSys.h" />
-    <ClInclude Include="DdsImage.h" />
     <ClInclude Include="FrameClock.h" />
     <ClInclude Include="MeshData.h" />
     <ClInclude Include="ObjParser.h" />
@@ -185,7 +184,6 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="FileSys.cpp" />
-    <ClCompile Include="DdsImage.cpp" />
     <ClCompile Include="FrameClock.cpp" />
     <ClCompile Include="ObjParser.cpp" />
   </ItemGroup>

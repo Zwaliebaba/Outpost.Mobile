@@ -29,28 +29,44 @@ void TextRenderer::Init(GpuDevice& _gpu, const Desc& _desc)
   // closes the list, so there is one flush here and not one per font.
   LoadFont(_gpu, FontId::Ui, _desc.uiFont);
   LoadFont(_gpu, FontId::Scene, _desc.sceneFont);
+  if (_desc.images.size() > MAX_IMAGES)
+    DebugTrace("text: {} images listed and only {} slots; the rest are dropped\n", _desc.images.size(), MAX_IMAGES);
+  for (std::uint32_t i = 0; i < _desc.images.size() && i < MAX_IMAGES; ++i)
+    LoadImage(_gpu, i, _desc.images[i]);
   _gpu.ExecuteAndWait();
   for (BitmapFont& font : m_fonts)
     font.DiscardStaging(); // the staging buffers stayed alive until the copies had run
+  for (ScreenImage& image : m_images)
+    image.DiscardStaging();
 
   m_verts.reserve(MAX_VERTS);
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE TextRenderer::SrvHandle(std::uint32_t _slot) const noexcept
+{
+  D3D12_CPU_DESCRIPTOR_HANDLE srv = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
+  srv.ptr += static_cast<SIZE_T>(_slot) * m_srvStride;
+  return srv;
 }
 
 void TextRenderer::LoadFont(GpuDevice& _gpu, FontId _font, const std::wstring& _fileName)
 {
   const std::uint32_t index = static_cast<std::uint32_t>(_font);
-  D3D12_CPU_DESCRIPTOR_HANDLE srv = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
-  srv.ptr += static_cast<SIZE_T>(index) * m_srvStride;
-
-  if (!m_fonts[index].Load(_gpu, _fileName, srv))
+  if (!m_fonts[index].Load(_gpu, _fileName, SrvHandle(index)))
     DebugTrace(L"font {} did not load; text queued on it will not draw\n", _fileName);
+}
+
+void TextRenderer::LoadImage(GpuDevice& _gpu, ImageId _image, const std::wstring& _fileName)
+{
+  if (!m_images[_image].Load(_gpu, _fileName, SrvHandle(FONT_COUNT + _image)))
+    DebugTrace(L"image {} did not load; quads queued on it will not draw\n", _fileName);
 }
 
 void TextRenderer::CreatePipeline(GpuDevice& _gpu)
 {
   D3D12_DESCRIPTOR_HEAP_DESC hd = {};
   hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-  hd.NumDescriptors = FONT_COUNT; // one atlas per font, in FontId order
+  hd.NumDescriptors = FONT_COUNT + MAX_IMAGES; // one atlas per font, in FontId order, then the images
   hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
   hd.NodeMask = 0;
   check_hresult(_gpu.Device()->CreateDescriptorHeap(&hd, IID_PPV_ARGS(m_srvHeap.put())));
@@ -120,13 +136,13 @@ void TextRenderer::CreatePipeline(GpuDevice& _gpu)
   check_hresult(_gpu.Device()->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(m_pso.put())));
 }
 
-void TextRenderer::PushQuad(FontId _font, const TextVertex& _a, const TextVertex& _b, const TextVertex& _c, const TextVertex& _d)
+void TextRenderer::PushQuad(std::uint32_t _srvSlot, const TextVertex& _a, const TextVertex& _b, const TextVertex& _c, const TextVertex& _d)
 {
   if (m_verts.size() + 6 > MAX_VERTS)
     return;
 
-  if (m_batches.empty() || m_batches.back().font != _font)
-    m_batches.push_back({_font, static_cast<std::uint32_t>(m_verts.size()), 0});
+  if (m_batches.empty() || m_batches.back().srvSlot != _srvSlot)
+    m_batches.push_back({_srvSlot, static_cast<std::uint32_t>(m_verts.size()), 0});
 
   m_verts.push_back(_a);
   m_verts.push_back(_b);
@@ -169,8 +185,8 @@ void TextRenderer::DrawTextLine(FontId _font, float _xPx, float _yPx, float _sca
     const BitmapFont::Cell cell = font.GlyphCell(glyph);
     const float x1 = penX + cellPx;
     const float y1 = penY + cellPx;
-    PushQuad(_font, {penX, penY, cell.u0, cell.v0, _colour}, {x1, penY, cell.u1, cell.v0, _colour}, {penX, y1, cell.u0, cell.v1, _colour},
-             {x1, y1, cell.u1, cell.v1, _colour});
+    PushQuad(static_cast<std::uint32_t>(_font), {penX, penY, cell.u0, cell.v0, _colour}, {x1, penY, cell.u1, cell.v0, _colour},
+             {penX, y1, cell.u0, cell.v1, _colour}, {x1, y1, cell.u1, cell.v1, _colour});
     penX += cellPx;
   }
 }
@@ -184,8 +200,8 @@ void TextRenderer::DrawScreenRect(float _x0Px, float _y0Px, float _x1Px, float _
 
   const float u = font.SolidU();
   const float v = font.SolidV();
-  PushQuad(FontId::Ui, {_x0Px, _y0Px, u, v, _colour}, {_x1Px, _y0Px, u, v, _colour}, {_x0Px, _y1Px, u, v, _colour},
-           {_x1Px, _y1Px, u, v, _colour});
+  PushQuad(static_cast<std::uint32_t>(FontId::Ui), {_x0Px, _y0Px, u, v, _colour}, {_x1Px, _y0Px, u, v, _colour},
+           {_x0Px, _y1Px, u, v, _colour}, {_x1Px, _y1Px, u, v, _colour});
 }
 
 void TextRenderer::DrawScreenLine(float _x0Px, float _y0Px, float _x1Px, float _y1Px, float _thicknessPx, Rgba _colour)
@@ -204,8 +220,18 @@ void TextRenderer::DrawScreenLine(float _x0Px, float _y0Px, float _x1Px, float _
   const float halfY = dx / length * _thicknessPx * 0.5f;
   const float u = font.SolidU();
   const float v = font.SolidV();
-  PushQuad(FontId::Ui, {_x0Px + halfX, _y0Px + halfY, u, v, _colour}, {_x1Px + halfX, _y1Px + halfY, u, v, _colour},
-           {_x0Px - halfX, _y0Px - halfY, u, v, _colour}, {_x1Px - halfX, _y1Px - halfY, u, v, _colour});
+  PushQuad(static_cast<std::uint32_t>(FontId::Ui), {_x0Px + halfX, _y0Px + halfY, u, v, _colour},
+           {_x1Px + halfX, _y1Px + halfY, u, v, _colour}, {_x0Px - halfX, _y0Px - halfY, u, v, _colour},
+           {_x1Px - halfX, _y1Px - halfY, u, v, _colour});
+}
+
+void TextRenderer::DrawScreenImage(ImageId _image, float _x0Px, float _y0Px, float _x1Px, float _y1Px, Rgba _colour)
+{
+  if (!ImageReady(_image))
+    return;
+
+  PushQuad(FONT_COUNT + _image, {_x0Px, _y0Px, 0.0f, 0.0f, _colour}, {_x1Px, _y0Px, 1.0f, 0.0f, _colour},
+           {_x0Px, _y1Px, 0.0f, 1.0f, _colour}, {_x1Px, _y1Px, 1.0f, 1.0f, _colour});
 }
 
 void TextRenderer::Flush(GpuDevice& _gpu)
@@ -235,13 +261,13 @@ void TextRenderer::Flush(GpuDevice& _gpu)
   cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
   cmd->IASetVertexBuffers(0, 1, &vbv);
 
-  // One draw per run, in the order the runs were queued. Only the atlas changes between them, so
-  // switching font costs a descriptor table and nothing else.
+  // One draw per run, in the order the runs were queued. Only the texture changes between them, so
+  // switching font or image costs a descriptor table and nothing else.
   const D3D12_GPU_DESCRIPTOR_HANDLE srvStart = m_srvHeap->GetGPUDescriptorHandleForHeapStart();
   for (const Batch& batch : m_batches)
   {
     D3D12_GPU_DESCRIPTOR_HANDLE srv = srvStart;
-    srv.ptr += static_cast<UINT64>(batch.font) * m_srvStride;
+    srv.ptr += static_cast<UINT64>(batch.srvSlot) * m_srvStride;
     cmd->SetGraphicsRootDescriptorTable(1, srv);
     cmd->DrawInstanced(batch.vertCount, 1, batch.firstVert, 0);
   }
