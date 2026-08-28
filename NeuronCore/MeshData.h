@@ -31,8 +31,7 @@ struct MeshData
 
   [[nodiscard]] DirectX::XMFLOAT3 BoundsCentre() const noexcept
   {
-    return DirectX::XMFLOAT3((boundsMin.x + boundsMax.x) * 0.5f, (boundsMin.y + boundsMax.y) * 0.5f,
-                             (boundsMin.z + boundsMax.z) * 0.5f);
+    return DirectX::XMFLOAT3((boundsMin.x + boundsMax.x) * 0.5f, (boundsMin.y + boundsMax.y) * 0.5f, (boundsMin.z + boundsMax.z) * 0.5f);
   }
 
   // Never zero on any axis: a flat mesh would otherwise pick as an infinitely thin slab.
@@ -45,8 +44,14 @@ struct MeshData
   }
 
   // How far the mesh has to be lifted for its lowest vertex to rest on y = 0.
-  [[nodiscard]] float RestY() const noexcept { return -boundsMin.y; }
+  [[nodiscard]] float RestY() const noexcept
+  {
+    return -boundsMin.y;
+  }
 
-  [[nodiscard]] bool Empty() const noexcept { return verts.empty(); }
+  [[nodiscard]] bool Empty() const noexcept
+  {
+    return verts.empty();
+  }
 };
 } // namespace Neuron

@@ -43,8 +43,7 @@ namespace Neuron
 // A value that overshoots is a spring, so use one. The peak overshoot fixes the damping ratio and
 // the settle half-life then fixes the frequency, which makes both values mean exactly what they
 // say rather than being two knobs on the same vague curve.
-inline void SpringTowards(float& _value, float& _velocity, float _target, float _overshoot, float _settleHalfLifeSec,
-                          float _dtSec) noexcept
+inline void SpringTowards(float& _value, float& _velocity, float _target, float _overshoot, float _settleHalfLifeSec, float _dtSec) noexcept
 {
   constexpr float PI = 3.14159265358979323846f;
   constexpr float LN2 = 0.6931472f;

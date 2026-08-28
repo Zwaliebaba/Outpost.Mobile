@@ -20,8 +20,14 @@ public:
   [[nodiscard]] float ElapsedMs(std::int64_t _fromQpc, std::int64_t _toQpc) const noexcept;
 
   // Eased readouts, for a HUD that should not flicker at the refresh rate.
-  [[nodiscard]] float Fps() const noexcept { return m_fpsSmoothed; }
-  [[nodiscard]] float FrameMs() const noexcept { return m_frameMsSmoothed; }
+  [[nodiscard]] float Fps() const noexcept
+  {
+    return m_fpsSmoothed;
+  }
+  [[nodiscard]] float FrameMs() const noexcept
+  {
+    return m_frameMsSmoothed;
+  }
 
   static constexpr float MAX_FRAME_SEC = 0.25f;
   static constexpr float READOUT_HALF_LIFE_SEC = 0.25f;

@@ -95,8 +95,8 @@ void WorldView::UpdateFeedback(float _dtSec)
     view.ringFade = MoveTowards(view.ringFade, view.selected ? 1.0f : 0.0f, dt / rampSec);
     // The spring chases the selected state directly rather than the fade ramp, so the peak really
     // is the tuned overshoot and the two knobs stay independent: one shapes alpha, one shapes size.
-    SpringTowards(view.ringScale, view.ringScaleVel, view.selected ? 1.0f : 0.0f, SEL_RING_SCALE_OVERSHOOT,
-                  SEL_OVERSHOOT_SETTLE_HALF_LIFE, dt);
+    SpringTowards(view.ringScale, view.ringScaleVel, view.selected ? 1.0f : 0.0f, SEL_RING_SCALE_OVERSHOOT, SEL_OVERSHOOT_SETTLE_HALF_LIFE,
+                  dt);
     view.ringScale = std::max(0.0f, view.ringScale);
 
     // Hover.
@@ -120,10 +120,7 @@ void WorldView::UpdateFeedback(float _dtSec)
   const float markerLifeSec = std::max(0.05f, MARKER_LIFETIME_MS * 0.001f);
   for (OrderMarker& marker : m_markers)
     marker.ageSec += dt;
-  std::erase_if(m_markers, [markerLifeSec](const OrderMarker& _marker)
-  {
-    return _marker.ageSec >= markerLifeSec;
-  });
+  std::erase_if(m_markers, [markerLifeSec](const OrderMarker& _marker) { return _marker.ageSec >= markerLifeSec; });
 
   // Camera. While a selection is under way the goal rides with it; otherwise it stays where panning
   // left it. The lead pushes ahead of where the group is going, and the target eases in behind,
@@ -479,8 +476,7 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, float _a
     const float alpha = MARKER_COLOUR.a * fade * (0.72f + beat * 0.28f);
     XMStoreFloat4x4(&world, XMMatrixScaling(radius * 2.0f, 1.0f, radius * 2.0f) *
                               XMMatrixTranslation(marker.posWorld.x, DECAL_LIFT_Y, marker.posWorld.z));
-    _renderer.DrawDecal(_gpu, m_quadMesh, world, Rgba{MARKER_COLOUR.r, MARKER_COLOUR.g, MARKER_COLOUR.b, alpha}, MARKER_THICKNESS,
-                        0.10f);
+    _renderer.DrawDecal(_gpu, m_quadMesh, world, Rgba{MARKER_COLOUR.r, MARKER_COLOUR.g, MARKER_COLOUR.b, alpha}, MARKER_THICKNESS, 0.10f);
 
     // Each pulse also throws a ripple outwards, which is what makes the count readable.
     if (beat > 0.0f)

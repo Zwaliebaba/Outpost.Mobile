@@ -17,15 +17,17 @@ namespace
 {
 constexpr D3D12_INPUT_ELEMENT_DESC SCENE_ELEMENTS[] = {
   {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-  {"COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},};
+  {"COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+};
 
 // A unit quad in the XZ plane, centred on the origin.
 std::vector<MeshVertex> BuildUnitQuad()
 {
   constexpr float h = 0.5f;
-  return {MeshVertex{-h, 0.0f, -h, 1.0f, 1.0f, 1.0f}, MeshVertex{-h, 0.0f, h, 1.0f, 1.0f, 1.0f},
-          MeshVertex{h, 0.0f, h, 1.0f, 1.0f, 1.0f},   MeshVertex{-h, 0.0f, -h, 1.0f, 1.0f, 1.0f},
-          MeshVertex{h, 0.0f, h, 1.0f, 1.0f, 1.0f},   MeshVertex{h, 0.0f, -h, 1.0f, 1.0f, 1.0f},};
+  return {
+    MeshVertex{-h, 0.0f, -h, 1.0f, 1.0f, 1.0f}, MeshVertex{-h, 0.0f, h, 1.0f, 1.0f, 1.0f}, MeshVertex{h, 0.0f, h, 1.0f, 1.0f, 1.0f},
+    MeshVertex{-h, 0.0f, -h, 1.0f, 1.0f, 1.0f}, MeshVertex{h, 0.0f, h, 1.0f, 1.0f, 1.0f},  MeshVertex{h, 0.0f, -h, 1.0f, 1.0f, 1.0f},
+  };
 }
 } // namespace
 
@@ -143,10 +145,12 @@ void SceneRenderer::BeginScene(GpuDevice& _gpu, const SceneFrame& _frame)
   cmd->SetGraphicsRoot32BitConstants(0, 16, &_frame.viewProj, 16);
 
   // Everything after baseColour, which is also per draw.
-  const float shading[16] = {_frame.lightDir.x,      _frame.lightDir.y,   _frame.lightDir.z,        _frame.ambient,
-                             _frame.gridColour.r,    _frame.gridColour.g, _frame.gridColour.b,      _frame.gridColour.a,
-                             _frame.gridSpacing,     _frame.gridLineWidthPx, _frame.gridFadeDistance, 0.0f,
-                             _frame.cameraPos.x,     _frame.cameraPos.y,  _frame.cameraPos.z,       0.0f,};
+  const float shading[16] = {
+    _frame.lightDir.x,   _frame.lightDir.y,      _frame.lightDir.z,       _frame.ambient,
+    _frame.gridColour.r, _frame.gridColour.g,    _frame.gridColour.b,     _frame.gridColour.a,
+    _frame.gridSpacing,  _frame.gridLineWidthPx, _frame.gridFadeDistance, 0.0f,
+    _frame.cameraPos.x,  _frame.cameraPos.y,     _frame.cameraPos.z,      0.0f,
+  };
   cmd->SetGraphicsRoot32BitConstants(1, 16, shading, 4);
 }
 

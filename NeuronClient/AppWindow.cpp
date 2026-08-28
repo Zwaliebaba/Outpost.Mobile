@@ -174,8 +174,8 @@ LRESULT AppWindow::WndProc(UINT _msg, WPARAM _wparam, LPARAM _lparam)
   case WM_DPICHANGED:
   {
     auto suggested = reinterpret_cast<const RECT*>(_lparam);
-    SetWindowPos(m_hwnd, nullptr, suggested->left, suggested->top, suggested->right - suggested->left,
-                 suggested->bottom - suggested->top, SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(m_hwnd, nullptr, suggested->left, suggested->top, suggested->right - suggested->left, suggested->bottom - suggested->top,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
     return 0;
   }
 

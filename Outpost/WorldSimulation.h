@@ -15,10 +15,19 @@ namespace Outpost
 class WorldSimulation final : public Neuron::Simulation
 {
 public:
-  explicit WorldSimulation(Game::World& _world) noexcept : m_world(_world) {}
+  explicit WorldSimulation(Game::World& _world) noexcept
+    : m_world(_world)
+  {
+  }
 
-  void Step() override { m_world.Step(); }
-  [[nodiscard]] std::uint64_t Tick() const override { return m_world.Tick(); }
+  void Step() override
+  {
+    m_world.Step();
+  }
+  [[nodiscard]] std::uint64_t Tick() const override
+  {
+    return m_world.Tick();
+  }
 
 private:
   Game::World& m_world;

@@ -25,7 +25,10 @@ public:
   void Init(GpuDevice& _gpu);
 
   // Drops last frame's queue. Called once per frame, after GpuDevice::BeginFrame.
-  void BeginFrame() noexcept { m_verts.clear(); }
+  void BeginFrame() noexcept
+  {
+    m_verts.clear();
+  }
 
   // Queued during the frame, drawn in Flush. '\n' starts a new line.
   void DrawTextLine(float _xPx, float _yPx, float _scale, Rgba _colour, std::string_view _text);
@@ -35,8 +38,14 @@ public:
   // Draws everything queued this frame. Must run before GpuDevice::EndFrame.
   void Flush(GpuDevice& _gpu);
 
-  [[nodiscard]] float AdvancePx(float _scale) const noexcept { return m_advancePx * _scale; }
-  [[nodiscard]] float LineHeightPx(float _scale) const noexcept { return m_cellHPx * _scale; }
+  [[nodiscard]] float AdvancePx(float _scale) const noexcept
+  {
+    return m_advancePx * _scale;
+  }
+  [[nodiscard]] float LineHeightPx(float _scale) const noexcept
+  {
+    return m_cellHPx * _scale;
+  }
 
 private:
   void CreatePipeline(GpuDevice& _gpu);

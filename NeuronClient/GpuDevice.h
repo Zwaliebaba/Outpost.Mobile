@@ -35,12 +35,30 @@ public:
   // how a resource upload that needs the copy engine finishes before the first frame.
   void ExecuteAndWait();
 
-  [[nodiscard]] ID3D12Device* Device() const noexcept { return m_device.get(); }
-  [[nodiscard]] ID3D12GraphicsCommandList* CommandList() const noexcept { return m_cmd.get(); }
-  [[nodiscard]] std::uint32_t FrameIndex() const noexcept { return m_frameIndex; }
-  [[nodiscard]] std::uint32_t WidthPx() const noexcept { return m_widthPx; }
-  [[nodiscard]] std::uint32_t HeightPx() const noexcept { return m_heightPx; }
-  [[nodiscard]] bool Ready() const noexcept { return m_device && m_widthPx > 0 && m_heightPx > 0; }
+  [[nodiscard]] ID3D12Device* Device() const noexcept
+  {
+    return m_device.get();
+  }
+  [[nodiscard]] ID3D12GraphicsCommandList* CommandList() const noexcept
+  {
+    return m_cmd.get();
+  }
+  [[nodiscard]] std::uint32_t FrameIndex() const noexcept
+  {
+    return m_frameIndex;
+  }
+  [[nodiscard]] std::uint32_t WidthPx() const noexcept
+  {
+    return m_widthPx;
+  }
+  [[nodiscard]] std::uint32_t HeightPx() const noexcept
+  {
+    return m_heightPx;
+  }
+  [[nodiscard]] bool Ready() const noexcept
+  {
+    return m_device && m_widthPx > 0 && m_heightPx > 0;
+  }
 
   // The current back buffer's view, for a pass that needs to rebind the target without depth.
   [[nodiscard]] D3D12_CPU_DESCRIPTOR_HANDLE BackBufferView() const noexcept;

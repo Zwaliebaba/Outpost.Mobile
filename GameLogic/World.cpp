@@ -61,14 +61,8 @@ float World::IssueMoveOrder(std::span<const ShipId> _ships, const XMFLOAT3& _poi
   // cross each other on the way in.
   const float rightX = std::cos(heading);
   const float rightZ = -std::sin(heading);
-  const auto acrossFormation = [&](ShipId _id)
-  {
-    return m_ships[_id].posWorld.x * rightX + m_ships[_id].posWorld.z * rightZ;
-  };
-  std::sort(chosen.begin(), chosen.end(), [&](ShipId _a, ShipId _b)
-  {
-    return acrossFormation(_a) < acrossFormation(_b);
-  });
+  const auto acrossFormation = [&](ShipId _id) { return m_ships[_id].posWorld.x * rightX + m_ships[_id].posWorld.z * rightZ; };
+  std::sort(chosen.begin(), chosen.end(), [&](ShipId _a, ShipId _b) { return acrossFormation(_a) < acrossFormation(_b); });
 
   const int count = static_cast<int>(chosen.size());
   const FormationShape shape = static_cast<FormationShape>(std::clamp(FORMATION_SHAPE, 0, 3));

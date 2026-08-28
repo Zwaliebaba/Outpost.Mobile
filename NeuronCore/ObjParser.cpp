@@ -128,10 +128,7 @@ std::vector<XMFLOAT3> ClusterAttachPoints(const std::vector<XMFLOAT3>& _faceCent
   // Degenerate faces (the exporter writes a few) contribute zero-length edges and would drag the
   // median to nothing, so they are dropped. Their centroids still sit on a nozzle, so the faces
   // themselves stay in.
-  std::erase_if(_edgeLengths, [](float _e)
-  {
-    return _e <= DEGENERATE_EDGE;
-  });
+  std::erase_if(_edgeLengths, [](float _e) { return _e <= DEGENERATE_EDGE; });
   if (_edgeLengths.empty())
     return {_faceCentroids[0]}; // nothing to measure with: take the lot as one cluster
   const size_t middle = _edgeLengths.size() / 2;
@@ -187,8 +184,8 @@ std::vector<XMFLOAT3> ClusterAttachPoints(const std::vector<XMFLOAT3>& _faceCent
       counts.push_back(0);
     }
     const XMFLOAT3& p = _faceCentroids[static_cast<size_t>(i)];
-    sums[static_cast<size_t>(slot)] = XMFLOAT3(sums[static_cast<size_t>(slot)].x + p.x, sums[static_cast<size_t>(slot)].y + p.y,
-                                               sums[static_cast<size_t>(slot)].z + p.z);
+    sums[static_cast<size_t>(slot)] =
+      XMFLOAT3(sums[static_cast<size_t>(slot)].x + p.x, sums[static_cast<size_t>(slot)].y + p.y, sums[static_cast<size_t>(slot)].z + p.z);
     ++counts[static_cast<size_t>(slot)];
   }
 
@@ -294,8 +291,8 @@ bool ObjParser::Load(const std::wstring& _dir, const std::wstring& _name, MeshDa
   _outMesh.boundsMin = boundsMin;
   _outMesh.boundsMax = boundsMax;
   _outMesh.attachPoints = ClusterAttachPoints(attachFaces, std::move(attachEdges));
-  DebugTrace(L"{}: {} tris, {:.1f} x {:.1f} x {:.1f}, {} attach point{}{}\n", _name, _outMesh.verts.size() / 3,
-             boundsMax.x - boundsMin.x, boundsMax.y - boundsMin.y, boundsMax.z - boundsMin.z, _outMesh.attachPoints.size(),
+  DebugTrace(L"{}: {} tris, {:.1f} x {:.1f} x {:.1f}, {} attach point{}{}\n", _name, _outMesh.verts.size() / 3, boundsMax.x - boundsMin.x,
+             boundsMax.y - boundsMin.y, boundsMax.z - boundsMin.z, _outMesh.attachPoints.size(),
              _outMesh.attachPoints.size() == 1 ? L"" : L"s", badFaces ? L" (skipped malformed faces)" : L"");
   return !_outMesh.verts.empty();
 }

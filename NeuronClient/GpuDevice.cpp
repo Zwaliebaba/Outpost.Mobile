@@ -26,8 +26,7 @@ void GpuDevice::Init(HWND _hwnd)
   for (UINT i = 0;; ++i)
   {
     GpuPtr<IDXGIAdapter1> adapter;
-    if (m_factory->EnumAdapterByGpuPreference(i, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(adapter.put())) ==
-        DXGI_ERROR_NOT_FOUND)
+    if (m_factory->EnumAdapterByGpuPreference(i, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(adapter.put())) == DXGI_ERROR_NOT_FOUND)
       break;
     DXGI_ADAPTER_DESC1 ad = {};
     adapter->GetDesc1(&ad);
@@ -213,8 +212,8 @@ void GpuDevice::BeginFrame(Rgba _clear)
   check_hresult(m_allocators[m_frameIndex]->Reset());
   check_hresult(m_cmd->Reset(m_allocators[m_frameIndex].get(), nullptr));
 
-  const D3D12_RESOURCE_BARRIER toTarget = Transition(m_backBuffers[m_frameIndex].get(), D3D12_RESOURCE_STATE_PRESENT,
-                                                     D3D12_RESOURCE_STATE_RENDER_TARGET);
+  const D3D12_RESOURCE_BARRIER toTarget =
+    Transition(m_backBuffers[m_frameIndex].get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
   m_cmd->ResourceBarrier(1, &toTarget);
 
   D3D12_VIEWPORT vp = {};

@@ -20,8 +20,7 @@ inline constexpr DXGI_FORMAT DEPTH_FORMAT = DXGI_FORMAT_D32_FLOAT;
 // Create with Thing(IID_PPV_ARGS(thing.put())); query with thing.try_as<IOther>(), which returns
 // null on failure. put() asserts the pointer is empty rather than silently releasing what was
 // there, so release before refilling.
-template <typename T>
-using GpuPtr = winrt::com_ptr<T>;
+template <typename T> using GpuPtr = winrt::com_ptr<T>;
 
 struct Rgba
 {

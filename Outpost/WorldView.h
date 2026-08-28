@@ -29,10 +29,10 @@ public:
   struct ShipView
   {
     Neuron::MeshHandle mesh = Neuron::INVALID_MESH;
-    float restY = 0.0f;                                // lifts the hull so its lowest vertex rests on the ground
-    DirectX::XMFLOAT3 pickCentre{0.0f, 0.0f, 0.0f};    // mesh bounds centre, in local space
-    DirectX::XMFLOAT3 halfExtents{1.0f, 1.0f, 1.0f};   // mesh half-size about that centre
-    std::vector<DirectX::XMFLOAT3> thrusterLocals;     // one point per exhaust nozzle
+    float restY = 0.0f;                              // lifts the hull so its lowest vertex rests on the ground
+    DirectX::XMFLOAT3 pickCentre{0.0f, 0.0f, 0.0f};  // mesh bounds centre, in local space
+    DirectX::XMFLOAT3 halfExtents{1.0f, 1.0f, 1.0f}; // mesh half-size about that centre
+    std::vector<DirectX::XMFLOAT3> thrusterLocals;   // one point per exhaust nozzle
 
     // One ring buffer per exhaust, nozzle-major: nozzle n owns [n * TRAIL_SAMPLES, (n + 1) *
     // TRAIL_SAMPLES), newest at trailHead. Every nozzle is sampled on the same tick, so the head
@@ -77,7 +77,10 @@ public:
   void Render(Neuron::SceneRenderer& _renderer, Neuron::GpuDevice& _gpu, Neuron::TextRenderer& _text, float _alpha);
 
   void ClearSelection() noexcept;
-  void ClearHover() noexcept { m_hoverShip = -1; }
+  void ClearHover() noexcept
+  {
+    m_hoverShip = -1;
+  }
   void TriggerCameraShake() noexcept;
   [[nodiscard]] int SelectedCount() const noexcept;
 
@@ -91,7 +94,10 @@ public:
   void OnTap(float _xPx, float _yPx, bool _shiftHeld, bool _doubleTap) override;
 
   // The tracker needs telling when a tap hit a hull, so the next ground tap does not pair with it.
-  void SetTracker(Neuron::PointerTracker& _tracker) noexcept { m_tracker = &_tracker; }
+  void SetTracker(Neuron::PointerTracker& _tracker) noexcept
+  {
+    m_tracker = &_tracker;
+  }
 
 private:
   void DrawFeedback(Neuron::SceneRenderer& _renderer, Neuron::GpuDevice& _gpu, float _alpha);

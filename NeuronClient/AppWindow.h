@@ -30,11 +30,17 @@ public:
   // Drains the queue. Returns false once the application should stop running.
   [[nodiscard]] bool PumpMessages();
 
-  [[nodiscard]] HWND Handle() const noexcept { return m_hwnd; }
+  [[nodiscard]] HWND Handle() const noexcept
+  {
+    return m_hwnd;
+  }
   // 1.0 at 96 DPI. What HUD text and hit targets scale by.
   [[nodiscard]] float DpiScale() const noexcept;
 
-  void RequestClose() noexcept { m_running = false; }
+  void RequestClose() noexcept
+  {
+    m_running = false;
+  }
 
   std::function<void(std::uint32_t _widthPx, std::uint32_t _heightPx)> onResize;
   std::function<void(const PointerEvent& _event)> onPointer;

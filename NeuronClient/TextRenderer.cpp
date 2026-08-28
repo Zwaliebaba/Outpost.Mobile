@@ -90,7 +90,8 @@ void TextRenderer::CreatePipeline(GpuDevice& _gpu)
   constexpr D3D12_INPUT_ELEMENT_DESC elements[] = {
     {"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
     {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 16, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},};
+    {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 16, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+  };
 
   D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = DefaultPipelineDesc();
   pso.pRootSignature = m_rootSignature.get();
@@ -224,8 +225,8 @@ void TextRenderer::BakeFontAtlas(GpuDevice& _gpu)
   copySrc.PlacedFootprint = footprint;
   cmd->CopyTextureRegion(&copyDst, 0, 0, 0, &copySrc, nullptr);
 
-  const D3D12_RESOURCE_BARRIER toShader = Transition(m_fontTex.get(), D3D12_RESOURCE_STATE_COPY_DEST,
-                                                     D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+  const D3D12_RESOURCE_BARRIER toShader =
+    Transition(m_fontTex.get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
   cmd->ResourceBarrier(1, &toShader);
 
   D3D12_SHADER_RESOURCE_VIEW_DESC srv = {};

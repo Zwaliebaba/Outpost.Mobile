@@ -110,8 +110,8 @@ void Camera::UpdateShake(float _dtSec) noexcept
   const float swing = m_shakeAmount * m_desc.shakeAmplitude;
   const float acrossView = (std::sin(t * w) * 0.62f + std::sin(t * w * 1.71f) * 0.38f) * swing;
   const float upView = (std::sin(t * w * 1.31f) * 0.62f + std::sin(t * w * 2.13f) * 0.38f) * swing;
-  m_shakeOffset = XMFLOAT3(m_right.x * acrossView + m_up.x * upView, m_right.y * acrossView + m_up.y * upView,
-                           m_right.z * acrossView + m_up.z * upView);
+  m_shakeOffset =
+    XMFLOAT3(m_right.x * acrossView + m_up.x * upView, m_right.y * acrossView + m_up.y * upView, m_right.z * acrossView + m_up.z * upView);
 }
 
 void Camera::ScreenRay(float _xPx, float _yPx, XMFLOAT3& _outOrigin, XMFLOAT3& _outDirection) const noexcept

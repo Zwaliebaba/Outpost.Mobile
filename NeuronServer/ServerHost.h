@@ -35,7 +35,10 @@ public:
   [[nodiscard]] float InterpolationAlpha() const noexcept;
 
   [[nodiscard]] std::uint64_t Tick() const noexcept;
-  [[nodiscard]] float TickDt() const noexcept { return m_tickDt; }
+  [[nodiscard]] float TickDt() const noexcept
+  {
+    return m_tickDt;
+  }
 
 private:
   Simulation* m_simulation = nullptr;

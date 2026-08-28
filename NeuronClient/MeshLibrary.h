@@ -30,8 +30,14 @@ public:
 
   [[nodiscard]] const MeshData& Data(MeshHandle _mesh) const;
   [[nodiscard]] bool Has(MeshHandle _mesh) const noexcept;
-  [[nodiscard]] std::uint32_t Count() const noexcept { return static_cast<std::uint32_t>(m_entries.size()); }
-  [[nodiscard]] const Entry& At(std::uint32_t _index) const { return m_entries[_index]; }
+  [[nodiscard]] std::uint32_t Count() const noexcept
+  {
+    return static_cast<std::uint32_t>(m_entries.size());
+  }
+  [[nodiscard]] const Entry& At(std::uint32_t _index) const
+  {
+    return m_entries[_index];
+  }
 
 private:
   std::vector<Entry> m_entries;

@@ -10,8 +10,14 @@ namespace
 class CountingSimulation final : public Neuron::Simulation
 {
 public:
-  void Step() override { ++m_steps; }
-  [[nodiscard]] std::uint64_t Tick() const override { return m_steps; }
+  void Step() override
+  {
+    ++m_steps;
+  }
+  [[nodiscard]] std::uint64_t Tick() const override
+  {
+    return m_steps;
+  }
 
 private:
   std::uint64_t m_steps = 0;

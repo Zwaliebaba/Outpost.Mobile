@@ -102,3 +102,14 @@ KeepEmptyLinesAtTheStartOfBlocks: false
 MaxEmptyLinesToKeep: 1
 SpacesBeforeTrailingComments: 1
 ReflowComments: false
+
+# The Visual Studio unit-test macros read as calls, so clang-format collapses a whole TEST_CLASS
+# into one line of nonsense. Describing what they expand to lets it format a test file like the
+# class and methods it actually is.
+Macros:
+  - 'TEST_CLASS(x)=class x'
+  - 'TEST_METHOD(x)=void x()'
+  - 'TEST_CLASS_INITIALIZE(x)=void x()'
+  - 'TEST_CLASS_CLEANUP(x)=void x()'
+  - 'TEST_METHOD_INITIALIZE(x)=void x()'
+  - 'TEST_METHOD_CLEANUP(x)=void x()'

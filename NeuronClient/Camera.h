@@ -67,12 +67,30 @@ public:
   [[nodiscard]] bool RayToGround(float _xPx, float _yPx, DirectX::XMFLOAT3& _outPoint) const noexcept;
   [[nodiscard]] bool WorldToScreen(const DirectX::XMFLOAT3& _world, float& _outXPx, float& _outYPx) const noexcept;
 
-  [[nodiscard]] const DirectX::XMFLOAT4X4& ViewProj() const noexcept { return m_viewProj; }
-  [[nodiscard]] const DirectX::XMFLOAT3& Eye() const noexcept { return m_eye; }
-  [[nodiscard]] const DirectX::XMFLOAT3& Right() const noexcept { return m_right; }
-  [[nodiscard]] const DirectX::XMFLOAT3& Up() const noexcept { return m_up; }
-  [[nodiscard]] const DirectX::XMFLOAT3& Target() const noexcept { return m_target; }
-  [[nodiscard]] float Distance() const noexcept { return m_distance; }
+  [[nodiscard]] const DirectX::XMFLOAT4X4& ViewProj() const noexcept
+  {
+    return m_viewProj;
+  }
+  [[nodiscard]] const DirectX::XMFLOAT3& Eye() const noexcept
+  {
+    return m_eye;
+  }
+  [[nodiscard]] const DirectX::XMFLOAT3& Right() const noexcept
+  {
+    return m_right;
+  }
+  [[nodiscard]] const DirectX::XMFLOAT3& Up() const noexcept
+  {
+    return m_up;
+  }
+  [[nodiscard]] const DirectX::XMFLOAT3& Target() const noexcept
+  {
+    return m_target;
+  }
+  [[nodiscard]] float Distance() const noexcept
+  {
+    return m_distance;
+  }
 
 private:
   Desc m_desc;

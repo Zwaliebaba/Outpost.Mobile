@@ -32,10 +32,22 @@ public:
   // With no ordered facing the formation points along the way the group is about to travel.
   float IssueMoveOrder(std::span<const ShipId> _ships, const DirectX::XMFLOAT3& _point, bool _hasFacing, float _facingRad);
 
-  [[nodiscard]] std::span<const ShipState> Ships() const noexcept { return m_ships; }
-  [[nodiscard]] const ShipState& Ship(ShipId _id) const noexcept { return m_ships[_id]; }
-  [[nodiscard]] std::uint32_t ShipCount() const noexcept { return static_cast<std::uint32_t>(m_ships.size()); }
-  [[nodiscard]] std::uint64_t Tick() const noexcept { return m_tick; }
+  [[nodiscard]] std::span<const ShipState> Ships() const noexcept
+  {
+    return m_ships;
+  }
+  [[nodiscard]] const ShipState& Ship(ShipId _id) const noexcept
+  {
+    return m_ships[_id];
+  }
+  [[nodiscard]] std::uint32_t ShipCount() const noexcept
+  {
+    return static_cast<std::uint32_t>(m_ships.size());
+  }
+  [[nodiscard]] std::uint64_t Tick() const noexcept
+  {
+    return m_tick;
+  }
 
 private:
   std::vector<ShipState> m_ships;

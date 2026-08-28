@@ -17,9 +17,9 @@ inline constexpr float TICK_HZ = 60.0f;
 inline constexpr float TICK_DT = 1.0f / TICK_HZ;
 
 // --- motion ----------------------------------------------------------------------------------
-inline constexpr float MAX_SPEED = 34.0f;              // metres per second
-inline constexpr float ACCELERATION = 26.0f;           // metres per second squared
-inline constexpr float DECELERATION = 34.0f;           // metres per second squared
+inline constexpr float MAX_SPEED = 34.0f;    // metres per second
+inline constexpr float ACCELERATION = 26.0f; // metres per second squared
+inline constexpr float DECELERATION = 34.0f; // metres per second squared
 inline constexpr float TURN_RATE_DEG_PER_SEC = 70.0f;
 inline constexpr float TURN_ACCELERATION_DEG = 240.0f; // degrees per second squared
 inline constexpr float ARRIVAL_RADIUS = 3.5f;          // metres; inside this the order is done
