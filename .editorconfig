@@ -46,6 +46,6 @@ end_of_line = lf
 trim_trailing_whitespace = false
 
 # Meshes are exported by tools outside this repo; leave them exactly as-is.
-[GameData/Meshes/**]
+[Outpost/Assets/Meshes/**]
 trim_trailing_whitespace = false
 insert_final_newline = false

@@ -15,6 +15,8 @@
   <Import Project="..\packages\Microsoft.WindowsAppSDK.InteractiveExperiences.2.1.6\build\native\Microsoft.WindowsAppSDK.InteractiveExperiences.props" Condition="Exists('..\packages\Microsoft.WindowsAppSDK.InteractiveExperiences.2.1.6\build\native\Microsoft.WindowsAppSDK.InteractiveExperiences.props')" />
   <Import Project="..\packages\Microsoft.WindowsAppSDK.DWrite.2.1.0\build\Microsoft.WindowsAppSDK.DWrite.props" Condition="Exists('..\packages\Microsoft.WindowsAppSDK.DWrite.2.1.0\build\Microsoft.WindowsAppSDK.DWrite.props')" />
   <Import Project="..\packages\Microsoft.WindowsAppSDK.Base.2.0.4\build\native\Microsoft.WindowsAppSDK.Base.props" Condition="Exists('..\packages\Microsoft.WindowsAppSDK.Base.2.0.4\build\native\Microsoft.WindowsAppSDK.Base.props')" />
+  <!-- Toolset and configuration flavour, ahead of the platform defaults (AGENTS.md 6). -->
+  <Import Project="$(MSBuildThisFileDirectory)..\Outpost.Toolset.props" />
   <PropertyGroup Label="Globals">
     <CppWinRTOptimized>true</CppWinRTOptimized>
     <CppWinRTRootNamespaceAutoMerge>true</CppWinRTRootNamespaceAutoMerge>
@@ -68,47 +70,21 @@
   </ItemGroup>
   <PropertyGroup Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
-    <PlatformToolset Condition="'$(VisualStudioVersion)' &gt;= '18.0'">v145</PlatformToolset>
-    <PlatformToolset Condition="'$(VisualStudioVersion)' &lt; '18.0'">v143</PlatformToolset>
-    <CharacterSet>Unicode</CharacterSet>
     <DesktopCompatible>true</DesktopCompatible>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration">
-    <UseDebugLibraries>true</UseDebugLibraries>
-    <LinkIncremental>true</LinkIncremental>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
-    <UseDebugLibraries>true</UseDebugLibraries>
-    <LinkIncremental>true</LinkIncremental>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
   <ImportGroup Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <!-- Compiler and linker settings, shared by every project (AGENTS.md 6). -->
+    <Import Project="$(MSBuildThisFileDirectory)..\Outpost.Compile.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <ItemDefinitionGroup>
     <ClCompile>
-      <PrecompiledHeader>Use</PrecompiledHeader>
-      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFile>$(IntDir)pch.pch</PrecompiledHeaderOutputFile>
-      <WarningLevel>Level4</WarningLevel>
-      <LanguageStandard Condition="'$(VisualStudioVersion)' &gt;= '18.0'">stdcpplatest</LanguageStandard>
-      <LanguageStandard Condition="'$(VisualStudioVersion)' &lt; '18.0'">stdcpp17</LanguageStandard>
-      <AdditionalOptions>%(AdditionalOptions) /bigobj</AdditionalOptions>
-    </ClCompile>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
-    <ClCompile>
-      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(SolutionDir)NeuronCore;$(SolutionDir)NeuronClient;$(SolutionDir)NeuronServer;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-    </ClCompile>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
-    <ClCompile>
-      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(SolutionDir)NeuronCore;$(SolutionDir)NeuronClient;$(SolutionDir)NeuronServer;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- The composition root is the one project entitled to every layer (AGENTS.md 3). -->
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\NeuronCore;$(MSBuildThisFileDirectory)..\NeuronClient;$(MSBuildThisFileDirectory)..\NeuronServer;$(MSBuildThisFileDirectory)..\GameLogic;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup Condition="'$(WindowsPackageType)'!='None' and Exists('Package.appxmanifest')">
@@ -120,17 +96,21 @@
     <Manifest Include="app.manifest" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Gfx.h" />
     <ClInclude Include="pch.h" />
-    <ClInclude Include="Scene.h" />
+    <ClInclude Include="OutpostApp.h" />
+    <ClInclude Include="WorldView.h" />
+    <ClInclude Include="WorldSimulation.h" />
+    <ClInclude Include="ViewTuning.h" />
+    <ClInclude Include="Hud.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Gfx.cpp" />
-    <ClCompile Include="Main.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="Scene.cpp" />
+    <ClCompile Include="Main.cpp" />
+    <ClCompile Include="OutpostApp.cpp" />
+    <ClCompile Include="WorldView.cpp" />
+    <ClCompile Include="Hud.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="Assets\LockScreenLogo.scale-200.png" />
@@ -196,6 +176,9 @@
     </ProjectReference>
     <ProjectReference Include="..\NeuronServer\NeuronServer.vcxproj">
       <Project>{512284cd-a17a-4816-8e0a-9e9dadbfc464}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\GameLogic\GameLogic.vcxproj">
+      <Project>{7d4a1f36-2b58-4c0e-9a71-0f5d6c83be14}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>

@@ -1,24 +1,68 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClInclude Include="pch.h" />
-    <ClInclude Include="NeuronCore.h" />
-    <ClInclude Include="Debug.h" />
-    <ClInclude Include="FileSys.h" />
-    <ClInclude Include="NeuronHelper.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="pch.cpp" />
-    <ClCompile Include="FileSys.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <Filter Include="Project Files">
+    <Filter Include="Foundation">
       <UniqueIdentifier>{46a1c5a8-4d1c-41d8-9223-f430edc38e0a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Content">
+      <UniqueIdentifier>{0d9d4a5b-9c1b-4f0a-8d2e-6b1c7a4f2e31}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Net">
+      <UniqueIdentifier>{2f6b8c11-7a4d-4e93-9c05-8d3e1b6a5c72}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Build">
+      <UniqueIdentifier>{5c3e9d27-1f84-4a6b-b0d9-3e7a2c481f60}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="pch.h">
+      <Filter>Build</Filter>
+    </ClInclude>
+    <ClInclude Include="NeuronCore.h">
+      <Filter>Build</Filter>
+    </ClInclude>
+    <ClInclude Include="Debug.h">
+      <Filter>Foundation</Filter>
+    </ClInclude>
+    <ClInclude Include="NeuronHelper.h">
+      <Filter>Foundation</Filter>
+    </ClInclude>
+    <ClInclude Include="Ease.h">
+      <Filter>Foundation</Filter>
+    </ClInclude>
+    <ClInclude Include="FileSys.h">
+      <Filter>Content</Filter>
+    </ClInclude>
+    <ClInclude Include="FrameClock.h">
+      <Filter>Foundation</Filter>
+    </ClInclude>
+    <ClInclude Include="MeshData.h">
+      <Filter>Content</Filter>
+    </ClInclude>
+    <ClInclude Include="ObjParser.h">
+      <Filter>Content</Filter>
+    </ClInclude>
+    <ClInclude Include="Transport.h">
+      <Filter>Net</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="pch.cpp">
+      <Filter>Build</Filter>
+    </ClCompile>
+    <ClCompile Include="FileSys.cpp">
+      <Filter>Content</Filter>
+    </ClCompile>
+    <ClCompile Include="FrameClock.cpp">
+      <Filter>Foundation</Filter>
+    </ClCompile>
+    <ClCompile Include="ObjParser.cpp">
+      <Filter>Content</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
     <None Include="packages.config">
-      <Filter>Project Files</Filter>
+      <Filter>Build</Filter>
     </None>
   </ItemGroup>
 </Project>

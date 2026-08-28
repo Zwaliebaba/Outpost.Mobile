@@ -1,4 +1,4 @@
-# Outpost: Frontier — C++ layout (AGENTS.md §4).
+# Outpost — C++ layout (AGENTS.md §4).
 #
 # Conformance authority: AGENTS.md. clang-format owns WHITESPACE; /.clang-tidy owns NAMING and
 # semantics. The two never overlap: clang-tidy has no check that reports a wrong brace position
@@ -12,7 +12,8 @@
 #
 # ── Status: no CI step runs this yet ───────────────────────────────────────────────────────
 #
-# Until one exists, it is enforced by review and by editors that pick the file up. Keep
+# CI builds and tests but does not format-check (AGENTS.md §6), so this is enforced by review and
+# by editors that pick the file up. Keep
 # ColumnLimit and IndentWidth in step with /.editorconfig; if you change one, change the other in
 # the same commit or they start lying to each other.
 #
@@ -101,3 +102,14 @@ KeepEmptyLinesAtTheStartOfBlocks: false
 MaxEmptyLinesToKeep: 1
 SpacesBeforeTrailingComments: 1
 ReflowComments: false
+
+# The Visual Studio unit-test macros read as calls, so clang-format collapses a whole TEST_CLASS
+# into one line of nonsense. Describing what they expand to lets it format a test file like the
+# class and methods it actually is.
+Macros:
+  - 'TEST_CLASS(x)=class x'
+  - 'TEST_METHOD(x)=void x()'
+  - 'TEST_CLASS_INITIALIZE(x)=void x()'
+  - 'TEST_CLASS_CLEANUP(x)=void x()'
+  - 'TEST_METHOD_INITIALIZE(x)=void x()'
+  - 'TEST_METHOD_CLEANUP(x)=void x()'
