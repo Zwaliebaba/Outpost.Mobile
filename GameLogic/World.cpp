@@ -357,6 +357,13 @@ float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _poi
   { return OffsetX(_point, m_ships[_id].posWorld) * rightX + OffsetZ(_point, m_ships[_id].posWorld) * rightZ; };
   std::sort(chosen.begin(), chosen.end(), [&](ShipId _a, ShipId _b) { return acrossFormation(_a) < acrossFormation(_b); });
 
+  // Sized by the largest hull in the group, so a mixed order spaces itself for the Carrier in it
+  // rather than for the fighters. A formation plans once and travels as one thing.
+  float largestRadius = 0.0f;
+  for (const ShipId id : chosen)
+    largestRadius = std::max(largestRadius, HullSpecOf(m_ships[id].hullId).BoundingRadiusMetres());
+  const float spacing = SlotSpacingMetres(largestRadius);
+
   const int count = static_cast<int>(chosen.size());
   const FormationShape shape = static_cast<FormationShape>(std::clamp(FORMATION_SHAPE, 0, 3));
   const float cosH = std::cos(heading);
@@ -364,7 +371,7 @@ float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _poi
 
   for (int slot = 0; slot < count; ++slot)
   {
-    const XMFLOAT2 local = FormationOffset(slot, count, shape, FORMATION_SPACING);
+    const XMFLOAT2 local = FormationOffset(slot, count, shape, spacing);
     ShipState& ship = m_ships[chosen[static_cast<size_t>(slot)]];
     ship.orderPos = _point;
     Translate(ship.orderPos, local.x * cosH + local.y * sinH, -local.x * sinH + local.y * cosH);

@@ -27,7 +27,12 @@ inline constexpr float TICK_HZ = 60.0f;
 inline constexpr float TICK_DT = 1.0f / TICK_HZ;
 
 // --- motion ----------------------------------------------------------------------------------
-inline constexpr float ARRIVAL_RADIUS = 3.5f;          // metres; inside this the order is done
+// Arrival tolerance as a fraction of the hull's own bounding radius, with a floor for the smallest
+// hulls. It cannot be one constant: 3.5 m is a sensible tolerance for a 3.5 m Interceptor and an
+// unreachable one for a 107 m Carrier, which would be asked to stop within a thirtieth of its own
+// length (Design/Collision.md 13).
+inline constexpr float ARRIVAL_RADIUS_FRACTION = 0.35f;
+inline constexpr float ARRIVAL_RADIUS_MIN_METRES = 1.5f;
 inline constexpr float STOP_DAMPING_HALF_LIFE = 0.16f; // seconds
 
 // Below this a residual heading error or speed counts as zero, so a ship settles instead of
@@ -155,6 +160,16 @@ inline constexpr float IDLE_AVOIDANCE_AUTHORITY_SCALE = 4.0f;
 inline constexpr float TUNNEL_HEADROOM = 0.6f;
 
 // --- formation -------------------------------------------------------------------------------
-inline constexpr float FORMATION_SPACING = 34.0f; // metres between slots
-inline constexpr int FORMATION_SHAPE = 1;         // FormationShape::Wedge
+// Slot spacing is derived from the largest hull in the ordered group, not fixed. At the old 34 m a
+// formation of Carriers was born with every hull deeply inside its neighbours, and separation would
+// have spent the rest of the match pushing them apart while the order pushed them back together.
+// That makes spacing a property of the order rather than of the game.
+//
+// The margin has to hold the two scalings apart. Arrival radius and slot spacing both grow with the
+// hull, so if the margin were too tight a Carrier's arrival radius could reach past its own slot
+// and into the next one, and ships would "arrive" in each other's positions -- a formation that
+// assembles into the wrong shape and never corrects, because every ship believes it is done. At
+// 1.15 the worst case in the table is 0.30 of the half-spacing, and the suite asserts it.
+inline constexpr float FORMATION_SPACING_MARGIN = 1.15f;
+inline constexpr int FORMATION_SHAPE = 1; // FormationShape::Wedge
 } // namespace Game

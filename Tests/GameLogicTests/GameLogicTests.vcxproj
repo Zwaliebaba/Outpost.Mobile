@@ -189,6 +189,7 @@
     <ClCompile Include="MovementTests.cpp" />
     <ClCompile Include="AvoidanceTests.cpp" />
     <ClCompile Include="CollisionTests.cpp" />
+    <ClCompile Include="OrderTests.cpp" />
     <ClCompile Include="SeparationTests.cpp" />
     <ClCompile Include="SpatialIndexTests.cpp" />
     <ClCompile Include="WorldTests.cpp" />

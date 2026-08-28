@@ -69,7 +69,7 @@ MotionIntent SolveOrder(const ShipState& _ship, const HullSpec& _hull) noexcept
     const float dx = OffsetX(_ship.posWorld, _ship.orderPos);
     const float dz = OffsetZ(_ship.posWorld, _ship.orderPos);
     const float distance = std::sqrt(dx * dx + dz * dz);
-    const float arrival = ARRIVAL_RADIUS;
+    const float arrival = ArrivalRadiusMetres(_hull);
     if (distance <= arrival)
       intent.nextOrder = _ship.orderHasFacing ? OrderState::Aligning : OrderState::Idle;
     else

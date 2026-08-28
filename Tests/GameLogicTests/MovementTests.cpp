@@ -39,7 +39,8 @@ public:
 
     const Game::ShipState& state = world.Ship(ship);
     const float dz = 300.0f - state.posWorld.localZ;
-    Assert::IsTrue(std::fabs(dz) <= Game::ARRIVAL_RADIUS * 2.0f, L"the ship stopped short of, or past, its order");
+    const float arrival = Game::ArrivalRadiusMetres(Game::HullSpecOf(state.hullId));
+    Assert::IsTrue(std::fabs(dz) <= arrival * 2.0f, L"the ship stopped short of, or past, its order");
   }
 
   TEST_METHOD(AShipComesToRestOnceIdle)

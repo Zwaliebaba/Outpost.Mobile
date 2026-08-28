@@ -183,6 +183,21 @@ inline constexpr HullSpec HULL_SPECS[HULL_COUNT] = {
   return largest;
 }
 
+// How close a hull has to get before its order is done, and how far apart the slots of a formation
+// containing it must sit. Both scale with the hull, and the constraint between them -- an arrival
+// radius must fit well inside half a slot spacing, or ships arrive in each other's positions -- is
+// what the margin in SimTuning.h exists to guarantee (Design/Collision.md 13).
+[[nodiscard]] constexpr float ArrivalRadiusMetres(const HullSpec& _hull) noexcept
+{
+  const float scaled = ARRIVAL_RADIUS_FRACTION * _hull.BoundingRadiusMetres();
+  return (scaled > ARRIVAL_RADIUS_MIN_METRES) ? scaled : ARRIVAL_RADIUS_MIN_METRES;
+}
+
+[[nodiscard]] constexpr float SlotSpacingMetres(float _largestBoundingRadiusMetres) noexcept
+{
+  return 2.0f * _largestBoundingRadiusMetres * FORMATION_SPACING_MARGIN;
+}
+
 // The look-ahead one hull needs against one particular neighbour.
 //
 // The per-hull horizon above is about the ship's own agility -- time to reverse course plus time to
