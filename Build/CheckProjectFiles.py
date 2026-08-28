@@ -12,6 +12,9 @@ Each of these replaces a defect that is expensive to find any other way:
     edited by one person and never seen by the next.
   * Two files with the same name in different projects resolve to whichever project root comes
     first on the include path -- silently, and differently per consumer.
+  * A pch.cpp that does not include its own pch.h is C2857, reported at line 1 column 1 of a file
+    whose entire contents are the thing that is missing. Every project has one and they are all
+    identical, so this is exactly the file nobody reads.
 
 Run from the repository root. Prints every problem it finds rather than stopping at the first,
 because a run that reports one of five is a run you have to do five times.
@@ -81,6 +84,17 @@ def check_registration(problems):
                 problems.append('%s/%s: listed in the .vcxproj but not on disk' % (project, name))
 
 
+def check_precompiled_headers(problems):
+    """/Yc requires the creating translation unit to include the header it is creating."""
+    for project in PROJECTS:
+        path = os.path.join(project, 'pch.cpp')
+        if not os.path.exists(path):
+            problems.append('%s: pch.cpp is missing' % project)
+            continue
+        if '#include "pch.h"' not in read(path):
+            problems.append('%s/pch.cpp: does not include "pch.h", which /Yc requires (C2857)' % project)
+
+
 def check_unique_names(problems):
     """Unique repo-wide and case-insensitively, because several project roots share an include path."""
     seen = {}
@@ -118,6 +132,7 @@ def main():
     problems = []
     check_xml(problems)
     check_registration(problems)
+    check_precompiled_headers(problems)
     check_unique_names(problems)
     check_dependency_rules(problems)
 
