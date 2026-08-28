@@ -49,11 +49,25 @@ public:
 
   TEST_METHOD(TheSkyDoesNotHitTheGround)
   {
-    // A ray at or above the horizon has no ground intersection, and saying it does would put an
+    // A ray at or above the horizon has no ground intersection, and saying it had one would put an
     // order marker at infinity.
+    //
+    // The default framing cannot show this, which is what the first version of this test got
+    // wrong: at 52 degrees of pitch with a 45 degree vertical field of view, the top of the screen
+    // is still 29.5 degrees below horizontal, so every pixel is ground and reporting a hit there is
+    // correct. Drop the camera to its shallowest pitch, where the top of the screen clears the
+    // horizon by 17.5 degrees, and the case actually exists.
     Neuron::Camera camera = MakeCamera();
+    camera.Orbit(0.0f, 10000.0f); // drag down hard; the pitch clamps at its minimum
+    camera.Update();
+
     XMFLOAT3 ground;
     Assert::IsFalse(camera.RayToGround(800.0f, 0.0f, ground), L"a ray into the sky reported a ground hit");
+
+    // The same camera, below the horizon, still finds the ground -- or the test above would pass
+    // just as well against a RayToGround that never succeeded.
+    Assert::IsTrue(camera.RayToGround(800.0f, 890.0f, ground), L"a ray into the ground missed it");
+    Assert::AreEqual(0.0f, ground.y, 1e-3f, L"the ground hit is not on the ground plane");
   }
 
   TEST_METHOD(ZoomIsClampedAtBothEnds)
