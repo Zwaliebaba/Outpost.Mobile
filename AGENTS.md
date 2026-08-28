@@ -151,10 +151,10 @@ source of truth for the option values** — this document states the rules in pr
 repeat the settings, so there is nothing to drift. [`.clang-format`](.clang-format) owns
 whitespace; the two never overlap.
 
-**Both run in CI now, on different footings** (§6). `clang-format` **gates**, in its own Linux job
-— it only reads C++ as text, so it needs no SDK and no Windows runner. `clang-tidy` does **not**
-gate yet: it has to parse the code, it has never swept this tree, and it earns the right to gate by
-coming back clean rather than by being switched on in the change that adds it.
+**Both gate in CI** (§6). `clang-format` runs in its own Linux job — it only reads C++ as text, so
+it needs no SDK and no Windows runner. `clang-tidy` runs on Windows after the build, over GameLogic.
+Both arrived non-blocking and were promoted once a run came back clean, which is the only way a
+linter should ever start gating.
 
 Run either yourself before you push — clang-tidy on the files you wrote, not on the tree:
 
@@ -466,29 +466,30 @@ there rather than in the step summary.
 SDK nor a Windows runner, and what costs twenty seconds on Linux would be billed several times over
 against Windows minutes. The version is pinned to 18.1.3; see §1.
 
-**`clang-tidy` runs but does not gate — yet.** It is `continue-on-error`, scoped to GameLogic: the
-layer where its checks matter most and the only one that does not reach the D3D12 headers. It still
-reaches C++/WinRT through `NeuronCore.h`, and that projection is generated during the build, which
-is why the step runs after the build and discovers the generated directory rather than assuming
-where it is.
+**`clang-tidy` gates too**, scoped to GameLogic: the layer where its checks matter most and the
+only one that does not reach the D3D12 headers. It still reaches C++/WinRT through `NeuronCore.h`,
+and that projection is generated during the build, which is why the step runs after the build and
+discovers the generated directory rather than assuming where it is.
 
-**Note that a green tick does not mean this step passed.** `continue-on-error` reports a failed
-step as successful, so the log is the only place its result exists. That is the cost of landing a
-linter non-blocking, and it is why it should not stay non-blocking for long.
+It landed non-blocking and was promoted two runs later, which is the process working. **A finding
+is therefore yours**: GameLogic came back clean, so anything the step reports arrived with your
+change. One exception is worth knowing — the clang-tidy is whichever one Visual Studio ships on the
+runner (LLVM 22 at the time of writing) and is **not** version-pinned, unlike clang-format. If a
+run goes red on a day nobody touched GameLogic, compare the LLVM version line against the last
+green run before assuming the code moved.
 
-The first sweep found 77 diagnostics and was worth every bit of the caution: 46 of them were in
-generated C++/WinRT headers, admitted by a `HeaderFilterRegex` whose `.*` also matched
+What the first sweep found is worth recording, because it is the argument for landing a linter
+non-blocking rather than switching it on: 77 diagnostics, of which 46 were in generated C++/WinRT
+headers admitted by a `HeaderFilterRegex` whose `.*` also matched
 `<Project>/x64/Debug/Generated Files/`. The other 31 were real and all in the two files this
 repository started with — parameters missing their `_`, a static member spelled `m_` instead of
 `sm_`, and `bugprone-macro-parentheses` firing on `ENUM_HELPER`, where the macro argument is a
-*type* and `static_cast<(T)>` does not compile. The filter is tightened, the naming is fixed, and
-the false positive is silenced for that block with its reason rather than disabled for the tree.
+*type* and `static_cast<(T)>` does not compile. Filter tightened, naming fixed, false positive
+silenced for that block with its reason rather than disabled for the tree.
 
-**Promote it by deleting `continue-on-error`** once a run comes back clean. That is the bargain,
-and it is the one `clang-format` already kept.
-
-**Release|x64 is still not in CI.** Release only recently became a real release build (see the
-sheets above) and has no history of being green. Worth adding on the same terms.
+**Release|x64 is the only thing still not in CI.** Release only recently became a real release
+build (see the sheets above) and has no history of being green. Worth adding on the same terms:
+non-blocking first, promoted on a clean run.
 
 **Report what you actually did.** "Builds clean, not run" and "builds and runs the fleet-move
 slice" are different claims. Never imply the second when you only did the first, and say which

@@ -8,10 +8,10 @@
 #     debug CRT and defining _DEBUG in all seven projects -- so there is no history of it being
 #     green. Add the leg once it has been built by hand a few times (AGENTS.md 6).
 #
-# clang-format gates, in its own Linux job: it only reads C++ text, so putting it on a Windows
-# runner would cost several times as much for the same answer. clang-tidy does not gate, because it
-# has to parse the code and has never been run over this tree; it is non-blocking until a run comes
-# back clean, which is how a linter should arrive.
+# Both linters gate. clang-format runs in its own Linux job: it only reads C++ text, so putting it
+# on a Windows runner would cost several times as much for the same answer. clang-tidy has to parse
+# the code, so it runs on Windows after the build; it arrived non-blocking and was promoted on a
+# clean run, which is how a linter should arrive.
 #
 # Runner notes, because these are the parts most likely to need adjusting on the first red run:
 #
@@ -147,16 +147,22 @@ jobs:
           & $vstest $suites /Platform:x64 /Logger:trx /ResultsDirectory:TestResults | Tee-Object -FilePath test.log
           if ($LASTEXITCODE -ne 0) { throw 'tests failed' }
 
-      - name: Run clang-tidy (non-blocking)
-        # NOT A GATE YET. .clang-tidy has never been run over this tree, so the first sweep will
-        # find things; it earns the right to gate by coming back clean, not by being switched on
-        # in the change that adds it. Promote it by deleting continue-on-error.
+      - name: Run clang-tidy
+        # This gates. It arrived non-blocking, came back clean on its second run once the header
+        # filter stopped admitting generated C++/WinRT and two pre-existing files were fixed, and
+        # was promoted -- which was the promise it made.
+        #
+        # A finding here is therefore yours: GameLogic was clean under LLVM 22 on this runner, so
+        # anything new the step reports arrived with your change. The exception is a runner image
+        # that brings a newer clang-tidy with checks that did not exist before; that is a real
+        # possibility because the version is the VS-bundled one and not pinned. If a run goes red
+        # on a day nobody touched GameLogic, compare the LLVM version line against the last green
+        # run before assuming the code moved.
         #
         # Scoped to GameLogic: it is the layer where the checks matter most (determinism), and the
         # only one that does not reach the D3D12 headers. It does still reach C++/WinRT
         # through NeuronCore.h, and those headers are generated during the build -- which is why
         # this runs after it, and why the generated directory is discovered rather than assumed.
-        continue-on-error: true
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
