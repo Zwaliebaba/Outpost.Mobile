@@ -135,11 +135,6 @@
     <None Include="Shaders\Decal.hlsli" />
     <None Include="Shaders\Text.hlsli" />
   </ItemGroup>
-  <!-- FXC writes into this folder but does not create it, and it is not in source
-       control because its contents are build output. -->
-  <Target Name="EnsureCompiledShadersDir" BeforeTargets="FxCompile">
-    <MakeDir Directories="$(MSBuildThisFileDirectory)CompiledShaders" />
-  </Target>
   <ItemGroup>
     <ProjectReference Include="..\NeuronCore\NeuronCore.vcxproj">
       <Project>{b10d634c-43a1-4101-b5e6-788825429aab}</Project>
