@@ -15,6 +15,7 @@
 #include "GpuHelpers.h"
 #include "GpuDevice.h"
 #include "SceneRenderer.h"
+#include "BitmapFont.h"
 #include "TextRenderer.h"
 #include "MeshLibrary.h"
 #include "Camera.h"
@@ -24,6 +25,5 @@
 
 // Shaders are compiled at build time (Shaders/, AGENTS.md 3), so d3dcompiler is not linked and
 // d3dcompiler_47.dll is not a runtime dependency.
-#pragma comment(lib, "Gdi32.lib") // the font atlas is baked with GDI
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")

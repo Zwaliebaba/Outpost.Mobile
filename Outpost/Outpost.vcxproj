@@ -316,6 +316,12 @@
     the Windows App SDK Nuget package has not yet been restored.
   -->
   <ItemGroup>
+    <None Include="Assets\Fonts\EditorFont.dds">
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
+    </None>
+    <None Include="Assets\Fonts\SpeccyFont.dds">
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
+    </None>
     <None Include="Assets\Meshes\Battleship.mtl">
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
     </None>

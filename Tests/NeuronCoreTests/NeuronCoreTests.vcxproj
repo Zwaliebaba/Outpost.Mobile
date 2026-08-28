@@ -185,6 +185,7 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="EaseTests.cpp" />
+    <ClCompile Include="DdsImageTests.cpp" />
     <ClCompile Include="ObjParserTests.cpp" />
   </ItemGroup>
   <ItemGroup>

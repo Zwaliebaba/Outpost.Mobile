@@ -67,6 +67,7 @@ using namespace winrt;
 #include "NeuronHelper.h"
 #include "Ease.h"
 #include "FileSys.h"
+#include "DdsImage.h"
 #include "FrameClock.h"
 #include "MeshData.h"
 #include "ObjParser.h"

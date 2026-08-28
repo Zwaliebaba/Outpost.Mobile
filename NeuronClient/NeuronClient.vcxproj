@@ -218,6 +218,7 @@
     <ClInclude Include="GpuHelpers.h" />
     <ClInclude Include="GpuDevice.h" />
     <ClInclude Include="SceneRenderer.h" />
+    <ClInclude Include="BitmapFont.h" />
     <ClInclude Include="TextRenderer.h" />
     <ClInclude Include="MeshLibrary.h" />
     <ClInclude Include="Camera.h" />
@@ -232,6 +233,7 @@
     <ClCompile Include="GpuHelpers.cpp" />
     <ClCompile Include="GpuDevice.cpp" />
     <ClCompile Include="SceneRenderer.cpp" />
+    <ClCompile Include="BitmapFont.cpp" />
     <ClCompile Include="TextRenderer.cpp" />
     <ClCompile Include="MeshLibrary.cpp" />
     <ClCompile Include="Camera.cpp" />
