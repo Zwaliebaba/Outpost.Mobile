@@ -1,8 +1,20 @@
 # Collision and avoidance
 
-**Status: proposal, revised after review 2026-08-28. Nothing here is implemented.**
+**Status: phases 0, 1a, 1b, 2, 3, 4, 5 and 7 of §15 are implemented and under test.**
+Phases 2b (loopback transport), 6 (interest management) and 8 (sectors) are not.
 Decisions taken at review are recorded in §18. A second round the same day settled the process
 model (§2), universe coordinates (§3), and brought pathfinding into scope (§12, phase 7).
+
+Where building it proved a proposal here wrong, the code carries the correction and says so at the
+site, and the commit that made it records the measurement. The substantive ones: the neighbour list
+sorts by surface proximity rather than centre distance (§7), because a 72:1 size ratio makes those
+different questions; the per-tick separation clamp caps what a *pair* closes before splitting it
+rather than capping each ship afterwards (§9), because the latter inverts the authority split
+whenever it binds; the avoidance horizon takes the longer of the hull's own agility and the time to
+clear that particular neighbour (§10), because 1.8 s of look-ahead cannot clear a 107 m hull;
+avoidance yields on the same authority split as separation (§9, §10); and `ShipHandle` carries a
+stable slot rather than the ship's own index (§6), because the shorter form leaves a live handle
+dangling whenever an unrelated ship despawns.
 
 This document proposes how ships stop passing through each other and each other's structures, and
 how they give way while under way. It is written against the MMO target — many players connected in

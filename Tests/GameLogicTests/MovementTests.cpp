@@ -119,7 +119,7 @@ public:
     {
       for (size_t b = a + 1; b < ships.size(); ++b)
       {
-        const float distance = Game::Distance(world.Ship(ships[a]).orderPos, world.Ship(ships[b]).orderPos);
+        const float distance = Game::Distance(world.Ship(ships[a]).steerTargetPos, world.Ship(ships[b]).steerTargetPos);
         Assert::IsTrue(distance > 1.0f, L"two ships were given the same formation slot");
       }
     }

@@ -35,6 +35,9 @@
     <ClCompile Include="OrderTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="PathfindingTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="SeparationTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

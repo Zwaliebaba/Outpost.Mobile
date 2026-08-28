@@ -22,6 +22,7 @@
 #include "ShipState.h"
 #include "HullSpec.h"
 #include "Collision.h"
+#include "PathGrid.h"
 #include "SpatialIndex.h"
 #include "Formation.h"
 #include "Movement.h"

@@ -49,7 +49,7 @@ public:
         {
           for (size_t b = a + 1; b < ships.size(); ++b)
           {
-            const float apart = Game::Distance(world.Ship(ships[a]).orderPos, world.Ship(ships[b]).orderPos);
+            const float apart = Game::Distance(world.Ship(ships[a]).steerTargetPos, world.Ship(ships[b]).steerTargetPos);
             Assert::IsTrue(
               apart >= radius * 2.0f,
               std::format(L"two slots in a {}-ship formation are {:.1f} m apart for a hull {:.1f} m across", count, apart, radius * 2.0f)
@@ -76,7 +76,7 @@ public:
     {
       for (size_t b = a + 1; b < group.size(); ++b)
       {
-        const float apart = Game::Distance(world.Ship(group[a]).orderPos, world.Ship(group[b]).orderPos);
+        const float apart = Game::Distance(world.Ship(group[a]).steerTargetPos, world.Ship(group[b]).steerTargetPos);
         Assert::IsTrue(apart >= carrierRadius * 2.0f,
                        std::format(L"a mixed formation spaced its slots {:.1f} m apart, inside the Carrier's own {:.1f} m width", apart,
                                    carrierRadius * 2.0f)

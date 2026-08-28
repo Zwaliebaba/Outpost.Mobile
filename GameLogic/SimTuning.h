@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace Game
 {
 // Simulation tuning. Everything that changes what the world *does* lives here; everything that
@@ -151,6 +153,31 @@ inline constexpr float SEPARATION_CLAMP_FRACTION = 0.5f;
 // A parked ship holds its station harder than one under way. Formation drift under traffic is not
 // a separate problem; it is this one with a different number.
 inline constexpr float IDLE_AVOIDANCE_AUTHORITY_SCALE = 4.0f;
+
+// --- pathfinding -------------------------------------------------------------------------------
+// All three of these change which path is found, which changes recorded outcomes, so all three are
+// in the contract. With the smallest obstacle in the table 250 m across, 32 m cells lose nothing
+// that matters.
+inline constexpr float PATH_CELL_SIZE_METRES = 32.0f;
+inline constexpr float PATH_CLEARANCE_MARGIN_METRES = 8.0f;
+
+// How far off its planned leg a follower may drift before the route is re-planned. Never per tick:
+// a plan is a pure function of the static set and the two endpoints, and re-running it every tick
+// would cost everything and change nothing.
+inline constexpr float PATH_REPLAN_DEVIATION_METRES = 64.0f;
+
+// How much open ground the grid keeps around the architecture in it, so a route always has room to
+// go round the outside, and the ceiling on how many cells that may come to. Past the ceiling the
+// grid declines to build and steering falls back to what it did before pathfinding existed --
+// coarsening the cells instead would change recorded outcomes as a side effect of where someone
+// put a building.
+inline constexpr float PATH_GRID_MARGIN_METRES = 512.0f;
+inline constexpr int PATH_GRID_MAX_CELLS_PER_AXIS = 512;
+
+// The most waypoints one route may carry. A string-pulled route through sparse convex architecture
+// is two or three; a route that needs more is re-planned from its last waypoint rather than
+// truncated into a shortcut through a wall.
+inline constexpr std::uint32_t MAX_PATH_WAYPOINTS = 16;
 
 // --- test thresholds ---------------------------------------------------------------------------
 // Not in the replay contract: nothing reads this at run time, and tightening it changes no

@@ -20,12 +20,12 @@ changes in the same commit.
 
 **Built and tested.** Five projects and four test suites, Debug|x64, gating in CI (§6). The game
 is a fleet of three hulls on a ground plane: select them, order them somewhere in formation, watch
-them give way to each other and arrive without passing through each other or through architecture.
+them route around architecture, give way to each other, and arrive without passing through anything.
 D3D12 renderer, WM_POINTER input covering mouse and touch, DDS bitmap font atlases for the HUD and
 for in-world text, OBJ/MTL hulls, FXC-compiled shaders.
 
 **Deliberately not here yet**, so nobody goes looking for it: no audio, no networking, no
-pathfinding, no interest management, no combat, no save format, no content pipeline beyond OBJ and
+interest management, no combat, no save format, no content pipeline beyond OBJ and
 DDS, and no configuration file — tuning is `constexpr` in three headers (§5). `Transport` is declared and unimplemented (§2).
 
 ---
@@ -189,7 +189,7 @@ Two rules `.clang-tidy` structurally cannot state, so check them by eye:
 | Path | What it is |
 |---|---|
 | `NeuronCore/` | Engine primitives shared by every layer — zero game semantics, no graphics API. Diagnostics, file IO, framerate-independent easing, the frame clock, mesh data, the OBJ/MTL and DDS readers, and `Transport`. |
-| `GameLogic/` | The deterministic simulation, namespace `Game`. `World`, `ShipState`, `WorldPos`, `HullSpec`, `Movement`, `Formation`, `SimTuning`. Depends on NeuronCore only. |
+| `GameLogic/` | The deterministic simulation, namespace `Game`. `World`, `ShipState`, `WorldPos`, `HullSpec`, `Movement`, `Collision`, `SpatialIndex`, `PathGrid`, `Formation`, `SimTuning`. Depends on NeuronCore only. |
 | `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `MeshLibrary`. |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
 | `Outpost/` | The executable: composition root, presentation state, HUD, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |

@@ -288,7 +288,7 @@ public:
     Game::ShipState ship;
     ship.hullId = static_cast<std::uint32_t>(Game::HullId::Corvette);
     ship.order = Game::OrderState::Moving;
-    ship.orderPos = Game::WorldPos{0.0f, 500.0f};
+    ship.steerTargetPos = Game::WorldPos{0.0f, 500.0f};
 
     const Game::MotionIntent ordered = Game::SolveOrder(ship, hull);
 

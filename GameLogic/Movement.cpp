@@ -66,8 +66,8 @@ MotionIntent SolveOrder(const ShipState& _ship, const HullSpec& _hull) noexcept
 
   if (_ship.order == OrderState::Moving)
   {
-    const float dx = OffsetX(_ship.posWorld, _ship.orderPos);
-    const float dz = OffsetZ(_ship.posWorld, _ship.orderPos);
+    const float dx = OffsetX(_ship.posWorld, _ship.steerTargetPos);
+    const float dz = OffsetZ(_ship.posWorld, _ship.steerTargetPos);
     const float distance = std::sqrt(dx * dx + dz * dz);
     const float arrival = ArrivalRadiusMetres(_hull);
     if (distance <= arrival)

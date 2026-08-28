@@ -2,6 +2,7 @@
 
 #include "Formation.h"
 #include "Movement.h"
+#include "PathGrid.h"
 #include "ShipState.h"
 #include "SpatialIndex.h"
 #include "WorldPos.h"
@@ -67,6 +68,11 @@ public:
   // What a ship sensed this tick. Empty before the first Step.
   [[nodiscard]] std::span<const Neighbour> NeighboursOf(ShipId _id) const noexcept;
 
+  // The remaining waypoints of a ship's planned route, current one first. Server-side only: a path
+  // is never wire data, and a client sees the resulting motion through snapshots like any other
+  // (Design/Collision.md 12). Exposed for tests and for a debug overlay.
+  [[nodiscard]] std::span<const WorldPos> RouteOf(ShipId _id) const noexcept;
+
   // Sends the given ships to _point in formation. Returns the heading the formation was solved
   // onto, which is what the view needs to draw the order marker -- so the rule that decides it
   // lives here, with the order, rather than being guessed at again on the other side.
@@ -93,6 +99,7 @@ public:
 
 private:
   void SnapshotPreviousTick() noexcept;
+  void RebuildStaticIfDirty();
   void RebuildIndex();
   void GatherNeighbours();
 
@@ -111,6 +118,12 @@ private:
 
   [[nodiscard]] float AuthorityOf(ShipId _id) const noexcept;
 
+  // Planning is server-side and at order time -- a pure function of the static set and the two
+  // endpoints, so it is deterministic with nothing added -- and re-planning happens only when the
+  // static set changes or the follower has drifted off its leg. Never per tick.
+  void PlanRoute(ShipId _id, const WorldPos& _destination, float _requiredClearanceMetres);
+  void AdvanceRoute(ShipId _id);
+
   // The indirection that makes a handle survive swap-and-pop: the slot is stable for a ship's
   // life, and the ship index inside it is what despawn repairs.
   struct Slot
@@ -126,7 +139,26 @@ private:
   std::uint64_t m_tick = 0;
 
   SpatialIndex m_index;
+  PathGrid m_pathGrid;
   bool m_staticIndexDirty = true;
+
+  // A ship's route, parallel to m_ships and swap-and-popped with them. Fixed capacity rather than a
+  // vector per ship: routes through sparse convex architecture are two or three waypoints, and a
+  // dense array is what keeps despawn cheap and iteration order the array's.
+  struct Route
+  {
+    WorldPos waypoint[MAX_PATH_WAYPOINTS];
+    WorldPos destination;
+    WorldPos legStart; // where the current leg began, for the deviation test
+    float requiredClearanceMetres = 0.0f;
+    std::uint32_t count = 0;
+    std::uint32_t cursor = 0;
+    std::uint32_t gridVersion = 0;
+    bool reachesDestination = true; // false means the list ran out and the rest is still to plan
+  };
+  std::vector<Route> m_routes;
+  std::vector<WorldPos> m_routeScratch;
+  std::vector<PathGrid::Obstacle> m_obstacleScratch;
 
   // Scratch, all of it sized by ship count and reused, so a tick allocates nothing once the fleet
   // has stopped growing.

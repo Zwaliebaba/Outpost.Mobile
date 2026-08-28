@@ -38,6 +38,7 @@ ShipId World::SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint3
   if (m_slots[slot].generation == 0)
     m_slots[slot].generation = 1;
   m_shipSlot.push_back(slot);
+  m_routes.emplace_back();
   // Any spawn or despawn can move a Structure's id, not only one that adds or removes a Structure,
   // because swap-and-pop renumbers whatever was last. Marking every one of them dirty costs a
   // rebuild that only happens when the fleet changes, and gets the id-shift case right for free.
@@ -55,10 +56,12 @@ bool World::DespawnShip(ShipHandle _handle)
   if (id != last)
   {
     m_ships[id] = m_ships[last];
+    m_routes[id] = m_routes[last];
     m_shipSlot[id] = m_shipSlot[last];
     m_slots[m_shipSlot[id]].ship = id; // the moved ship keeps its slot, and its handles keep working
   }
   m_ships.pop_back();
+  m_routes.pop_back();
   m_shipSlot.pop_back();
 
   Slot& freed = m_slots[_handle.slot];
@@ -100,6 +103,84 @@ std::span<const Neighbour> World::NeighboursOf(ShipId _id) const noexcept
   return std::span<const Neighbour>(m_neighbours).subspan(m_neighbourStart[_id], m_neighbourCount[_id]);
 }
 
+std::span<const WorldPos> World::RouteOf(ShipId _id) const noexcept
+{
+  if (_id >= m_routes.size())
+    return {};
+  const Route& route = m_routes[_id];
+  return std::span<const WorldPos>(route.waypoint, route.count).subspan(route.cursor);
+}
+
+void World::PlanRoute(ShipId _id, const WorldPos& _destination, float _requiredClearanceMetres)
+{
+  ShipState& ship = m_ships[_id];
+  Route& route = m_routes[_id];
+
+  const bool complete = m_pathGrid.FindPath(ship.posWorld, _destination, _requiredClearanceMetres, m_routeScratch);
+  route.destination = _destination;
+  route.requiredClearanceMetres = _requiredClearanceMetres;
+  route.count = std::min<std::uint32_t>(MAX_PATH_WAYPOINTS, static_cast<std::uint32_t>(m_routeScratch.size()));
+  for (std::uint32_t at = 0; at < route.count; ++at)
+    route.waypoint[at] = m_routeScratch[at];
+  route.cursor = 0;
+  route.legStart = ship.posWorld;
+  route.gridVersion = m_pathGrid.Version();
+  route.reachesDestination = complete;
+
+  // A grid that declined to build, or a start with nowhere to go, leaves the destination itself as
+  // the only waypoint -- which is exactly the behaviour before this phase existed.
+  ship.steerTargetPos = (route.count > 0) ? route.waypoint[0] : _destination;
+}
+
+void World::AdvanceRoute(ShipId _id)
+{
+  ShipState& ship = m_ships[_id];
+  Route& route = m_routes[_id];
+  if (ship.order != OrderState::Moving || route.count == 0)
+    return;
+
+  const HullSpec& hull = HullSpecOf(ship.hullId);
+  const bool arrived = Distance(ship.posWorld, ship.steerTargetPos) <= ArrivalRadiusMetres(hull);
+  if (arrived && route.cursor + 1 < route.count)
+  {
+    ++route.cursor;
+    route.legStart = ship.posWorld;
+    ship.steerTargetPos = route.waypoint[route.cursor];
+    return;
+  }
+  if (arrived && !route.reachesDestination)
+  {
+    PlanRoute(_id, route.destination, route.requiredClearanceMetres); // the rest of a route too long for one list
+    return;
+  }
+
+  // A route that was planned against architecture that has since changed is not a route any more.
+  if (route.gridVersion != m_pathGrid.Version())
+  {
+    PlanRoute(_id, route.destination, route.requiredClearanceMetres);
+    return;
+  }
+
+  // And one the ship has been pushed well off. Only where there is a route to be off: with a single
+  // waypoint the ship is steering at the destination and there is no leg to deviate from.
+  if (route.count > 1)
+  {
+    const float legX = OffsetX(route.legStart, ship.steerTargetPos);
+    const float legZ = OffsetZ(route.legStart, ship.steerTargetPos);
+    const float legLengthSquared = legX * legX + legZ * legZ;
+    if (legLengthSquared > 1e-4f)
+    {
+      const float alongX = OffsetX(route.legStart, ship.posWorld);
+      const float alongZ = OffsetZ(route.legStart, ship.posWorld);
+      const float along = std::clamp((alongX * legX + alongZ * legZ) / legLengthSquared, 0.0f, 1.0f);
+      const float offX = alongX - legX * along;
+      const float offZ = alongZ - legZ * along;
+      if (offX * offX + offZ * offZ > PATH_REPLAN_DEVIATION_METRES * PATH_REPLAN_DEVIATION_METRES)
+        PlanRoute(_id, route.destination, route.requiredClearanceMetres);
+    }
+  }
+}
+
 float World::AuthorityOf(ShipId _id) const noexcept
 {
   return AvoidanceAuthorityOf(HullSpecOf(m_ships[_id].hullId), m_ships[_id].order);
@@ -118,9 +199,10 @@ void World::SnapshotPreviousTick() noexcept
   }
 }
 
-void World::RebuildIndex()
+void World::RebuildStaticIfDirty()
 {
-  if (m_staticIndexDirty)
+  if (!m_staticIndexDirty)
+    return;
   {
     m_staticEntries.clear();
     for (ShipId id = 0; id < m_ships.size(); ++id)
@@ -130,8 +212,20 @@ void World::RebuildIndex()
         m_staticEntries.push_back({id, m_ships[id].posWorld, hull.BoundingRadiusMetres()});
     }
     m_index.RebuildStatic(m_staticEntries);
+
+    // The obstacle set is the static store: nothing mobile is ever an obstacle. Ships route around
+    // architecture and avoid each other, and keeping the two apart is what keeps both small.
+    m_obstacleScratch.clear();
+    for (const SpatialIndex::Entry& entry : m_staticEntries)
+      m_obstacleScratch.push_back({entry.pos, entry.boundingRadiusMetres});
+    m_pathGrid.Rebuild(m_obstacleScratch);
     m_staticIndexDirty = false;
   }
+}
+
+void World::RebuildIndex()
+{
+  RebuildStaticIfDirty();
 
   m_dynamicEntries.clear();
   for (ShipId id = 0; id < m_ships.size(); ++id)
@@ -307,6 +401,9 @@ void World::Step()
     const HullSpec& hull = HullSpecOf(ship.hullId);
     if (hull.immovable)
       continue;
+    // The path follower runs first and reads only this ship: it changes which point is steered at,
+    // and SolveOrder, AvoidNeighbours and IntegrateShip are all unchanged by its existence.
+    AdvanceRoute(id);
     // Pass 3 reads only this ship and the start-of-tick copies in its neighbour list; pass 4 writes
     // only this ship. Neither can see another ship half-advanced, which is what keeps the whole
     // tick free of array order.
@@ -321,6 +418,10 @@ void World::Step()
 
 float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _point, bool _hasFacing, float _facingRad)
 {
+  // An order can arrive before the first tick, so the grid a route is planned against has to be
+  // current here rather than only at the top of Step.
+  RebuildStaticIfDirty();
+
   std::vector<ShipId> chosen;
   chosen.reserve(_ships.size());
   for (const ShipId id : _ships)
@@ -369,15 +470,22 @@ float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _poi
   const float cosH = std::cos(heading);
   const float sinH = std::sin(heading);
 
+  // One clearance for the whole group, the largest hull's, so a mixed order takes one route rather
+  // than the fighters threading a gap the Carrier then has to go round.
+  const float groupClearance = largestRadius + PATH_CLEARANCE_MARGIN_METRES;
+
   for (int slot = 0; slot < count; ++slot)
   {
+    const ShipId id = chosen[static_cast<size_t>(slot)];
     const XMFLOAT2 local = FormationOffset(slot, count, shape, spacing);
-    ShipState& ship = m_ships[chosen[static_cast<size_t>(slot)]];
-    ship.orderPos = _point;
-    Translate(ship.orderPos, local.x * cosH + local.y * sinH, -local.x * sinH + local.y * cosH);
+    ShipState& ship = m_ships[id];
     ship.orderFacingRad = heading;
     ship.orderHasFacing = _hasFacing;
     ship.order = OrderState::Moving;
+
+    WorldPos destination = _point;
+    Translate(destination, local.x * cosH + local.y * sinH, -local.x * sinH + local.y * cosH);
+    PlanRoute(id, destination, groupClearance);
   }
   return heading;
 }

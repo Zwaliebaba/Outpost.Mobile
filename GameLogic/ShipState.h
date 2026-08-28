@@ -40,7 +40,7 @@ struct ShipHandle
 enum class OrderState : std::uint8_t
 {
   Idle,
-  Moving,  // steering towards orderPos
+  Moving,  // steering towards steerTargetPos
   Aligning // arrived; turning onto the ordered facing
 };
 
@@ -62,7 +62,11 @@ struct ShipState
   float prevHeading = 0.0f;
 
   OrderState order = OrderState::Idle;
-  WorldPos orderPos;
+
+  // The single point the intent layer steers at. Before pathfinding this was always the ordered
+  // destination; with a planner in front of it, it is the current waypoint of a route and the
+  // planner changes *which point* is steered at, never *how* (Design/Collision.md 12).
+  WorldPos steerTargetPos;
   float orderFacingRad = 0.0f;
   bool orderHasFacing = false;
 
