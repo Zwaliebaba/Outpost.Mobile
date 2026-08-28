@@ -10,6 +10,9 @@
     <Filter Include="View">
       <UniqueIdentifier>{1a8c3e57-4d90-4b26-8e15-7f2a6b09d3c4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{3d81f2a6-47bc-4e09-95d1-8f620ab74e35}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Build">
       <UniqueIdentifier>{6f0b7d92-8e34-4a51-b7c8-0d4e9a35f218}</UniqueIdentifier>
     </Filter>
@@ -84,6 +87,37 @@
   <ItemGroup>
     <None Include="packages.config">
       <Filter>Build</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="Shaders\SceneVS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\ScenePS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\DecalVS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\DecalPS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\TextVS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\TextPS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\Scene.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\Decal.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\Text.hlsli">
+      <Filter>Shaders</Filter>
     </None>
   </ItemGroup>
 </Project>

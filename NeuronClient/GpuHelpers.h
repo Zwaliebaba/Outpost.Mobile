@@ -15,10 +15,6 @@ namespace Neuron
 [[nodiscard]] D3D12_RESOURCE_BARRIER Transition(ID3D12Resource* _resource, D3D12_RESOURCE_STATES _before,
                                                 D3D12_RESOURCE_STATES _after) noexcept;
 
-// Shaders are compiled from source at startup. A failure here is a defect in a shader that ships
-// inside the binary, not a content error, so it is fatal rather than a diagnostic.
-[[nodiscard]] GpuPtr<ID3DBlob> CompileShader(const char* _source, const char* _entry, const char* _target);
-
 // Serialises and creates a root signature, reporting the validation message on failure.
 [[nodiscard]] GpuPtr<ID3D12RootSignature> CreateRootSignature(ID3D12Device* _device, const D3D12_ROOT_SIGNATURE_DESC& _desc,
                                                               const char* _what);

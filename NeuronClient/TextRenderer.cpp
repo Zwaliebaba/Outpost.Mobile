@@ -3,6 +3,10 @@
 
 #include "GpuHelpers.h"
 
+// Shader bytecode, compiled by FXC at build time (AGENTS.md 3).
+#include "CompiledShaders/TextVS.h"
+#include "CompiledShaders/TextPS.h"
+
 namespace Neuron
 {
 namespace
@@ -13,33 +17,6 @@ constexpr int GLYPH_COLS = 16;
 constexpr int GLYPH_ROWS = 6; // 96 cells for the 95 printable ASCII glyphs
 constexpr int FONT_HEIGHT_PX = 16;
 
-const auto TEXT_SHADER = R"HLSL(
-cbuffer Root : register(b0)
-{
-  float2 invViewportPx;
-};
-
-Texture2D<float> Atlas : register(t0);
-SamplerState Samp : register(s0);
-
-struct VsIn  { float2 posPx : POSITION; float2 uv : TEXCOORD0; float4 col : COLOR0; };
-struct VsOut { float4 pos : SV_Position; float2 uv : TEXCOORD0; float4 col : COLOR0; };
-
-VsOut VsMain(VsIn i)
-{
-  VsOut o;
-  o.pos = float4(i.posPx.x * invViewportPx.x * 2.0 - 1.0, 1.0 - i.posPx.y * invViewportPx.y * 2.0, 0.0, 1.0);
-  o.uv = i.uv;
-  o.col = i.col;
-  return o;
-}
-
-float4 PsMain(VsOut i) : SV_Target
-{
-  float coverage = Atlas.Sample(Samp, i.uv);
-  return float4(i.col.rgb, i.col.a * coverage);
-}
-)HLSL";
 } // namespace
 
 void TextRenderer::Init(GpuDevice& _gpu)
@@ -110,9 +87,6 @@ void TextRenderer::CreatePipeline(GpuDevice& _gpu)
   rsDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
   m_rootSignature = CreateRootSignature(_gpu.Device(), rsDesc, "text root signature");
 
-  const GpuPtr<ID3DBlob> vs = CompileShader(TEXT_SHADER, "VsMain", "vs_5_1");
-  const GpuPtr<ID3DBlob> ps = CompileShader(TEXT_SHADER, "PsMain", "ps_5_1");
-
   constexpr D3D12_INPUT_ELEMENT_DESC elements[] = {
     {"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
     {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
@@ -120,10 +94,10 @@ void TextRenderer::CreatePipeline(GpuDevice& _gpu)
 
   D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = DefaultPipelineDesc();
   pso.pRootSignature = m_rootSignature.get();
-  pso.VS.pShaderBytecode = vs->GetBufferPointer();
-  pso.VS.BytecodeLength = vs->GetBufferSize();
-  pso.PS.pShaderBytecode = ps->GetBufferPointer();
-  pso.PS.BytecodeLength = ps->GetBufferSize();
+  pso.VS.pShaderBytecode = g_pTextVS;
+  pso.VS.BytecodeLength = sizeof(g_pTextVS);
+  pso.PS.pShaderBytecode = g_pTextPS;
+  pso.PS.BytecodeLength = sizeof(g_pTextPS);
   pso.BlendState.RenderTarget[0].BlendEnable = TRUE;
   pso.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
   pso.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;

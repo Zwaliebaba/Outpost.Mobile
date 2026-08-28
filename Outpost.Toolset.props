@@ -8,7 +8,7 @@
   PropertySheets group instead; the two positions are not interchangeable.
 
   Nothing here belongs in a project file. A setting spelled per project drifts, and the one it
-  drifts on is always the one that mattered -- which is how Release came to be built with debug
+  drifts on is always the one that mattered – which is how Release came to be built with debug
   libraries and _DEBUG defined, and stayed that way.
 -->
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">

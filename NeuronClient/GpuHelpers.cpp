@@ -1,8 +1,6 @@
 #include "pch.h"
 #include "GpuHelpers.h"
 
-#include <d3dcompiler.h>
-
 namespace Neuron
 {
 D3D12_HEAP_PROPERTIES HeapProps(D3D12_HEAP_TYPE _type) noexcept
@@ -43,26 +41,6 @@ D3D12_RESOURCE_BARRIER Transition(ID3D12Resource* _resource, D3D12_RESOURCE_STAT
   b.Transition.StateAfter = _after;
   b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
   return b;
-}
-
-GpuPtr<ID3DBlob> CompileShader(const char* _source, const char* _entry, const char* _target)
-{
-  UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
-#ifndef NDEBUG
-  flags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-#endif
-  GpuPtr<ID3DBlob> code;
-  GpuPtr<ID3DBlob> errors;
-  const HRESULT hr = D3DCompile(_source, std::strlen(_source), _entry, nullptr, nullptr, _entry, _target, flags, 0, code.put(),
-                                errors.put());
-  if (FAILED(hr))
-  {
-    // The compiler's own message is the only useful part; check_hresult then carries the failure
-    // to the composition root, which is where it becomes something a person reads.
-    DebugTrace("shader {} failed: {}\n", _entry, errors ? static_cast<const char*>(errors->GetBufferPointer()) : "(no message)");
-    check_hresult(hr);
-  }
-  return code;
 }
 
 GpuPtr<ID3D12RootSignature> CreateRootSignature(ID3D12Device* _device, const D3D12_ROOT_SIGNATURE_DESC& _desc, const char* _what)

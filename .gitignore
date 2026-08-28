@@ -365,7 +365,12 @@ FodyWeavers.xsd
 # Game Data is never ignored
 !Outpost/Assets/**
 
-# Ship feel-tuning toy (throwaway)
+# Compiled shaders. FXC generates these headers from Shaders/*.hlsl on every build, so they are
+# output, not source -- committing them would mean reviewing a byte array on every shader edit and
+# would let the header and the .hlsl disagree.
+CompiledShaders/
+
+# Record/replay output from a debug session.
 build/
 captures/
 *.replay

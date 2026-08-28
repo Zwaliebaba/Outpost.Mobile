@@ -63,8 +63,11 @@ no `iCount`, `pShip`, `strName`, `dwFlags`.
 **R7 — A file is named for its primary type**, PascalCase, `.h` / `.cpp` only. `.hpp`, `.cc` and
 `.inl` are not used; template implementations live in the header. Two exceptions: the per-project
 `pch.h`/`pch.cpp` keep the name MSBuild expects, and a file holding one *family* takes the
-family's name (`RenderTypes.h`, `GpuHelpers.h`, `SimTuning.h`). Formats get hand-written parsers
-— there is no generated code in this tree and none is to be introduced.
+family's name (`RenderTypes.h`, `GpuHelpers.h`, `SimTuning.h`).
+
+Shaders are the one thing in this tree that generates code, and they are named differently on
+purpose — see §3. Formats get hand-written parsers; no other generator is to be introduced, and
+nothing generated is committed.
 
 **R8 — `m_` marks encapsulated state, not every field.** A `class` with invariants prefixes
 private members `m_`. A public aggregate — a config struct, a wire record, a POD handed to the
@@ -204,7 +207,8 @@ the seam telling you the change belongs somewhere else.
 ## 3. Files, layout and includes
 
 - **Flat project directories.** All of a project's `.h`/`.cpp` sit directly in its folder. No code
-  subdirectories — grouping lives in `.vcxproj.filters` only.
+  subdirectories — grouping lives in `.vcxproj.filters` only. Two folders are exempt because
+  neither holds hand-written C++: `Shaders/` and `CompiledShaders/` (below).
 - **File names are unique repo-wide**, and also unique against the CRT, the STL and the Windows
   SDK — **case-insensitively**. A header named `Time.h` or `Assert.h` shadows `<time.h>` or
   `<assert.h>` for every translation unit that can see this folder, and the errors land inside the
@@ -225,7 +229,42 @@ the seam telling you the change belongs somewhere else.
 - **A header that declares a member of type `T` includes `T`'s header itself**, even though the
   umbrella would have supplied it. The umbrella is a convenience, not a contract.
 - **Every added, removed or renamed file updates both** the `.vcxproj` and the `.vcxproj.filters`
-  of its project, in the same commit.
+  of its project, in the same commit. [`Build/CheckProjectFiles.py`](Build/CheckProjectFiles.py)
+  checks this, and runs in CI before anything is compiled — run it yourself before you push.
+
+### Shaders
+
+HLSL lives in `<Project>/Shaders/`, one entry point per file, named for the stage it is:
+
+| | |
+|---|---|
+| `<Name>VS.hlsl` | vertex shader |
+| `<Name>PS.hlsl` | pixel shader |
+| `<Name>.hlsli` | declarations both stages of `<Name>` share — cbuffers, and the `VsOut` struct that is the contract between them |
+
+**FXC compiles them at build time** into `<Project>/CompiledShaders/<Name>.h`, as a byte array
+called `g_p<Name>` — so `Shaders/SceneVS.hlsl` becomes `CompiledShaders/SceneVS.h` holding
+`g_pSceneVS`, and the renderer says:
+
+```cpp
+#include "CompiledShaders/SceneVS.h"
+…
+pso.VS.pShaderBytecode = g_pSceneVS;
+pso.VS.BytecodeLength = sizeof(g_pSceneVS);
+```
+
+Nothing compiles HLSL at runtime. That is the point of the arrangement: a shader mistake is a
+build error rather than a message box on a player's machine, startup does no compilation, and the
+binary carries no dependency on `d3dcompiler_47.dll`.
+
+`CompiledShaders/` is build output and is **not** committed — committing it would mean reviewing a
+byte array on every shader edit, and would let the header and the `.hlsl` disagree. The generated
+headers are exempt from §1: `g_p<Name>` is FXC's convention, not this repository's, and R6 does
+not apply to a name a tool chose.
+
+Shader settings live in `Outpost.Compile.props` (§6) except the two that genuinely differ per
+file — whether it is a vertex or a pixel shader, and where its header goes — which are spelled on
+the `FxCompile` item.
 
 ---
 
@@ -334,8 +373,8 @@ Every project imports both, and **no project spells a centralised setting itself
   `CharacterSet`, and `UseDebugLibraries` per configuration.
 - **`Outpost.Compile.props`** — imported from each project's `PropertySheets` group, **after
   `Microsoft.Cpp.props`**. Holds the language standard, `ConformanceMode`, warning level,
-  `/fp:precise`, the precompiled-header settings, and the per-configuration optimisation and
-  preprocessor settings.
+  `/fp:precise`, the precompiled-header settings, the per-configuration optimisation and
+  preprocessor settings, and the shader settings shared by every `FxCompile` item (§3).
 
 The two positions are not interchangeable. If you add a project, import both.
 
@@ -350,16 +389,25 @@ project drifts, and the one it drifts on is always the one that mattered.
 test suites on every push and pull request, and **it gates** — a red job means the branch does not
 build or a test failed. Three things about it are worth knowing before you read a red run:
 
-- **It builds against C++20, not C++23.** A hosted runner carries Visual Studio 2022, and
-  `microsoft/setup-msbuild` does not set `$(VisualStudioVersion)`, so the property sheets leave the
-  toolset to the machine and select `stdcpp20`. A developer on VS 2026 compiles `stdcpplatest`.
-  Nothing in this tree may *need* C++23 to build; if something does, it goes behind a feature test,
-  because otherwise the two standards disagree at your desk long before they disagree here.
+- **The toolset is whatever the runner has.** The sheets pin `v145`/`stdcpplatest` only when
+  msbuild reports `$(VisualStudioVersion) >= 18.0`, and otherwise take `v143`/`stdcpp20`. The first
+  run reported MSBuild 18.9, so today CI compiles the same standard a developer on VS 2026 does —
+  but a runner image change moves that without anything here changing, so **nothing in this tree
+  may need C++23 to build**. If something does, it goes behind a feature test.
 - **It passes `/p:SolutionDir=` explicitly.** Without it every project writes its output beside
   itself instead of into `x64\Debug\`, and the test discovery below finds nothing.
 - **The test suites are discovered from `x64\Debug\*Tests.dll`**, and the packages to restore from
   the `packages.config` files in the tree — neither list is spelled in the workflow, so a suite or a
   project added by a later slice is covered the day it lands.
+
+**A guard runs before anything is compiled.**
+[`Build/CheckProjectFiles.py`](Build/CheckProjectFiles.py) checks that every project file is
+well-formed XML, that every source file is registered in both its `.vcxproj` and its `.filters`
+and that nothing listed is missing from disk, that file names are unique repo-wide, and that no
+engine project names the game. Each of those fails, unguarded, at a point that names something
+other than the mistake — the step exists because a `--` inside an XML comment cost a CI run and
+reported as nine identical `MSB4024` errors, none of which mentioned the comment. Run it yourself
+before you push; it takes no arguments and needs nothing but Python.
 
 `build.log`, `test.log` and the TRX results are uploaded on every run, which is worth knowing
 before you conclude a red job is a build failure: a failing test prints its assertion message
@@ -394,7 +442,10 @@ configurations you built.
 - [ ] Naming conforms to §1 — `_` on parameters, `m_` on class state, no `I`/`C`/`Base`/`Impl`
       prefixes or suffixes, units in names, `UPPER_CASE` on `constexpr`.
 - [ ] Files are PascalCase, flat, and unique repo-wide — including against the CRT and the STL.
-- [ ] Every added, removed or moved file is in both the `.vcxproj` **and** the `.filters`.
+- [ ] Every added, removed or moved file is in both the `.vcxproj` **and** the `.filters`, and
+      `python Build/CheckProjectFiles.py` passes.
+- [ ] Shader touched? It is `<Name>VS.hlsl` or `<Name>PS.hlsl` under `Shaders/`, and nothing
+      generated under `CompiledShaders/` was committed.
 - [ ] The dependency rules in §2 still hold: no engine project names a game type, the client and
       server do not name each other, nothing names the executable.
 - [ ] No `argv`, no environment reads, no `XMVECTOR` stored in a struct or container, no `RH` call.

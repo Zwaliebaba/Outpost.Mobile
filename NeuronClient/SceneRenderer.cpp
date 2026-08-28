@@ -3,126 +3,18 @@
 
 #include "GpuHelpers.h"
 
+// Shader bytecode, compiled by FXC at build time (AGENTS.md 3). Nothing here compiles HLSL at
+// runtime: a shader mistake is a build error rather than a message box on somebody's machine, and
+// the binary carries no dependency on d3dcompiler_47.dll.
+#include "CompiledShaders/SceneVS.h"
+#include "CompiledShaders/ScenePS.h"
+#include "CompiledShaders/DecalVS.h"
+#include "CompiledShaders/DecalPS.h"
+
 namespace Neuron
 {
 namespace
 {
-// Ships and ground share this. `row_major` matches XMFLOAT4X4's storage so mul(rowVector, matrix)
-// means what DirectXMath means by it.
-const auto SCENE_SHADER = R"HLSL(
-cbuffer VsConstants : register(b0)
-{
-  row_major float4x4 world;
-  row_major float4x4 viewProj;
-};
-
-cbuffer PsConstants : register(b1)
-{
-  float4 baseColour;       // rgb base colour, w material mix
-  float4 lightDirAmbient;  // xyz towards the light, w ambient level
-  float4 gridColour;       // rgb line colour, a strength
-  float4 gridParams;       // x spacing, y line width px, z fade distance, w 1 for the ground
-  float4 cameraPos;        // xyz eye
-};
-
-struct VsIn  { float3 pos : POSITION; float3 col : COLOR0; };
-struct VsOut { float4 clip : SV_Position; float3 worldPos : TEXCOORD0; float3 col : COLOR0; };
-
-VsOut VsMain(VsIn i)
-{
-  VsOut o;
-  float4 wp = mul(float4(i.pos, 1.0), world);
-  o.worldPos = wp.xyz;
-  o.clip = mul(wp, viewProj);
-  o.col = i.col;
-  return o;
-}
-
-float4 PsMain(VsOut i) : SV_Target
-{
-  // Flat shading from screen-space derivatives, then faced towards the eye so triangle winding
-  // cannot matter.
-  float3 crossed = cross(ddx(i.worldPos), ddy(i.worldPos));
-  float3 faceNormal = (dot(crossed, crossed) > 1e-12) ? normalize(crossed) : float3(0.0, 1.0, 0.0);
-  if (dot(faceNormal, cameraPos.xyz - i.worldPos) < 0.0)
-  {
-    faceNormal = -faceNormal;
-  }
-
-  float3 albedo = lerp(baseColour.rgb, i.col, baseColour.w);
-  float3 normal = faceNormal;
-
-  if (gridParams.w > 0.5)
-  {
-    normal = float3(0.0, 1.0, 0.0);
-    float2 cell = i.worldPos.xz / max(gridParams.x, 0.001);
-    float2 toLine = abs(frac(cell - 0.5) - 0.5) / max(fwidth(cell), 1e-6);
-    float onLine = 1.0 - saturate(min(toLine.x, toLine.y) - gridParams.y * 0.5);
-    float fade = saturate(1.0 - length(i.worldPos.xz - cameraPos.xz) / max(gridParams.z, 0.001));
-    albedo = lerp(baseColour.rgb, gridColour.rgb, onLine * fade * gridColour.a);
-  }
-
-  float lambert = saturate(dot(normal, normalize(lightDirAmbient.xyz)));
-  float3 lit = albedo * (lightDirAmbient.w + (1.0 - lightDirAmbient.w) * lambert);
-  return float4(lit, 1.0);
-}
-)HLSL";
-
-// Rings, order markers and thruster glows. Shares the scene root signature -- 32 vertex DWORDs of
-// matrices, 20 pixel DWORDs -- and reads the same unit quad, shaping it entirely in the pixel
-// shader so radius, thickness and falloff are all just constants.
-const auto DECAL_SHADER = R"HLSL(
-cbuffer VsConstants : register(b0)
-{
-  row_major float4x4 world;
-  row_major float4x4 viewProj;
-};
-
-cbuffer PsConstants : register(b1)
-{
-  float4 decalColour; // rgb, a
-  float4 decalParams; // x thickness as a fraction of the radius, y fill or glow falloff, z 1 for a glow
-  float4 unusedA;
-  float4 unusedB;
-  float4 cameraPos;
-};
-
-struct VsIn  { float3 pos : POSITION; float3 col : COLOR0; };
-struct VsOut { float4 clip : SV_Position; float2 local : TEXCOORD0; };
-
-VsOut VsMain(VsIn i)
-{
-  VsOut o;
-  float4 wp = mul(float4(i.pos, 1.0), world);
-  o.clip = mul(wp, viewProj);
-  o.local = i.pos.xz * 2.0; // the unit quad spans +-0.5, so this lands on +-1
-  return o;
-}
-
-float4 PsMain(VsOut i) : SV_Target
-{
-  float d = length(i.local);
-
-  if (decalParams.z > 0.5) // thruster glow: soft radial falloff, no edge
-  {
-    float glow = pow(saturate(1.0 - d), max(1.0, decalParams.y));
-    clip(glow - 0.002);
-    return float4(decalColour.rgb, glow * decalColour.a);
-  }
-
-  // Ring, antialiased against its own screen-space width so it stays crisp at any zoom and never
-  // thins away to nothing.
-  float aa = fwidth(d) + 1e-5;
-  float halfWidth = max(decalParams.x, aa) * 0.5;
-  float centre = 1.0 - halfWidth;
-  float ring = 1.0 - smoothstep(halfWidth - aa, halfWidth + aa, abs(d - centre));
-  float fill = decalParams.y * (1.0 - smoothstep(1.0 - aa, 1.0 + aa, d));
-  float alpha = saturate(ring + fill) * decalColour.a;
-  clip(alpha - 0.002);
-  return float4(decalColour.rgb, alpha);
-}
-)HLSL";
-
 constexpr D3D12_INPUT_ELEMENT_DESC SCENE_ELEMENTS[] = {
   {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
   {"COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},};
@@ -168,15 +60,12 @@ void SceneRenderer::CreateScenePipeline(GpuDevice& _gpu)
   rsDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
   m_sceneRs = CreateRootSignature(_gpu.Device(), rsDesc, "scene root signature");
 
-  const GpuPtr<ID3DBlob> vs = CompileShader(SCENE_SHADER, "VsMain", "vs_5_1");
-  const GpuPtr<ID3DBlob> ps = CompileShader(SCENE_SHADER, "PsMain", "ps_5_1");
-
   D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = DefaultPipelineDesc();
   pso.pRootSignature = m_sceneRs.get();
-  pso.VS.pShaderBytecode = vs->GetBufferPointer();
-  pso.VS.BytecodeLength = vs->GetBufferSize();
-  pso.PS.pShaderBytecode = ps->GetBufferPointer();
-  pso.PS.BytecodeLength = ps->GetBufferSize();
+  pso.VS.pShaderBytecode = g_pSceneVS;
+  pso.VS.BytecodeLength = sizeof(g_pSceneVS);
+  pso.PS.pShaderBytecode = g_pScenePS;
+  pso.PS.BytecodeLength = sizeof(g_pScenePS);
   pso.DepthStencilState.DepthEnable = TRUE;
   pso.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
   pso.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
@@ -188,15 +77,12 @@ void SceneRenderer::CreateScenePipeline(GpuDevice& _gpu)
 
 void SceneRenderer::CreateDecalPipelines(GpuDevice& _gpu)
 {
-  const GpuPtr<ID3DBlob> vs = CompileShader(DECAL_SHADER, "VsMain", "vs_5_1");
-  const GpuPtr<ID3DBlob> ps = CompileShader(DECAL_SHADER, "PsMain", "ps_5_1");
-
   D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = DefaultPipelineDesc();
   pso.pRootSignature = m_sceneRs.get(); // same 32 + 20 root constants as the scene pass
-  pso.VS.pShaderBytecode = vs->GetBufferPointer();
-  pso.VS.BytecodeLength = vs->GetBufferSize();
-  pso.PS.pShaderBytecode = ps->GetBufferPointer();
-  pso.PS.BytecodeLength = ps->GetBufferSize();
+  pso.VS.pShaderBytecode = g_pDecalVS;
+  pso.VS.BytecodeLength = sizeof(g_pDecalVS);
+  pso.PS.pShaderBytecode = g_pDecalPS;
+  pso.PS.BytecodeLength = sizeof(g_pDecalPS);
   pso.BlendState.RenderTarget[0].BlendEnable = TRUE;
   pso.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
   pso.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;

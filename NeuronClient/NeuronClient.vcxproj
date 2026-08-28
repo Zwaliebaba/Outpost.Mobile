@@ -97,6 +97,50 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <FxCompile Include="Shaders\SceneVS.hlsl">
+      <ShaderType>Vertex</ShaderType>
+      <HeaderFileOutput>CompiledShaders\SceneVS.h</HeaderFileOutput>
+      <VariableName>g_pSceneVS</VariableName>
+    </FxCompile>
+    <FxCompile Include="Shaders\ScenePS.hlsl">
+      <ShaderType>Pixel</ShaderType>
+      <HeaderFileOutput>CompiledShaders\ScenePS.h</HeaderFileOutput>
+      <VariableName>g_pScenePS</VariableName>
+    </FxCompile>
+    <FxCompile Include="Shaders\DecalVS.hlsl">
+      <ShaderType>Vertex</ShaderType>
+      <HeaderFileOutput>CompiledShaders\DecalVS.h</HeaderFileOutput>
+      <VariableName>g_pDecalVS</VariableName>
+    </FxCompile>
+    <FxCompile Include="Shaders\DecalPS.hlsl">
+      <ShaderType>Pixel</ShaderType>
+      <HeaderFileOutput>CompiledShaders\DecalPS.h</HeaderFileOutput>
+      <VariableName>g_pDecalPS</VariableName>
+    </FxCompile>
+    <FxCompile Include="Shaders\TextVS.hlsl">
+      <ShaderType>Vertex</ShaderType>
+      <HeaderFileOutput>CompiledShaders\TextVS.h</HeaderFileOutput>
+      <VariableName>g_pTextVS</VariableName>
+    </FxCompile>
+    <FxCompile Include="Shaders\TextPS.hlsl">
+      <ShaderType>Pixel</ShaderType>
+      <HeaderFileOutput>CompiledShaders\TextPS.h</HeaderFileOutput>
+      <VariableName>g_pTextPS</VariableName>
+    </FxCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Included by the .hlsl files above rather than compiled on their own. FXC tracks
+         them as dependencies, so editing one rebuilds both stages that read it. -->
+    <None Include="Shaders\Scene.hlsli" />
+    <None Include="Shaders\Decal.hlsli" />
+    <None Include="Shaders\Text.hlsli" />
+  </ItemGroup>
+  <!-- FXC writes into this folder but does not create it, and it is not in source
+       control because its contents are build output. -->
+  <Target Name="EnsureCompiledShadersDir" BeforeTargets="FxCompile">
+    <MakeDir Directories="$(MSBuildThisFileDirectory)CompiledShaders" />
+  </Target>
+  <ItemGroup>
     <ProjectReference Include="..\NeuronCore\NeuronCore.vcxproj">
       <Project>{b10d634c-43a1-4101-b5e6-788825429aab}</Project>
     </ProjectReference>

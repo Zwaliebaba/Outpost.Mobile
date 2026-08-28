@@ -13,23 +13,32 @@
 #
 # Runner notes, because these are the parts most likely to need adjusting on the first red run:
 #
-#   * windows-latest carries Visual Studio 2022, so the property sheets resolve to v143 and
-#     stdcpp20 rather than v145 and stdcpplatest. That is the supported fallback, not a
-#     workaround, but it does mean CI compiles against an older standard library than a developer
-#     on VS 2026 does -- the two disagree at your desk before they disagree here.
+#   * The toolset is whatever the runner has. The property sheets pin v145/stdcpplatest only when
+#     msbuild reports $(VisualStudioVersion) >= 18.0 and otherwise take v143/stdcpp20, so a runner
+#     image change moves what CI compiles against without anything here changing. The first run
+#     reported MSBuild 18.9, so today that is the same toolset a developer on VS 2026 uses -- but
+#     it is not guaranteed to stay that way, and nothing in this tree may require C++23 to build.
 #   * The projects use packages.config, not PackageReference, so restore is `nuget restore` per
 #     config file rather than `msbuild -t:restore`. The list is walked from the tree so a project
 #     added later is restored the day it lands.
 #   * Outpost.slnx needs MSBuild 17.13 or newer; older msbuild does not read the .slnx format at
-#     all. If a runner image ever regresses below that, build the five .vcxproj files directly --
-#     the include paths are relative, so nothing but the output location depends on the solution.
+#     all. If a runner image ever regresses below that, build the .vcxproj files directly -- the
+#     include paths are relative, so nothing but the output location depends on the solution.
+#   * Shaders are compiled by FXC into headers under NeuronClient/CompiledShaders, which is build
+#     output and not in source control. Nothing extra is needed for that here; it falls out of the
+#     project build.
 #   * SolutionDir is passed explicitly. Without it every project writes its output beside itself
 #     instead of into x64\Debug\, and the test paths below stop resolving.
 
 name: Build
 
+# push is limited to main because a branch with an open pull request would otherwise be built
+# twice for the same commit -- once for the push and once for the merge ref -- and the two land in
+# different concurrency groups, so neither cancels the other. Windows runners bill at several times
+# the Linux rate, which makes a duplicate run worth one line of configuration.
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -61,6 +70,13 @@ jobs:
           path: packages
           key: packages-${{ hashFiles('**/packages.config') }}
           restore-keys: packages-
+
+      - name: Check project files
+        shell: pwsh
+        # Before anything is compiled, because each of these fails at a point that names the
+        # importer rather than the mistake. This step exists because a '--' in an XML comment cost
+        # a CI run and reported as nine identical MSB4024 errors.
+        run: python Build/CheckProjectFiles.py
 
       - name: Restore packages
         shell: pwsh

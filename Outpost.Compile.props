@@ -49,11 +49,39 @@
     </Link>
   </ItemDefinitionGroup>
 
+  <!--
+    Shaders. Compiled by FXC at build time into headers under each project's CompiledShaders
+    folder, so a shader mistake is a build error rather than a message box on somebody's machine
+    and the binary carries no dependency on d3dcompiler_47.dll.
+
+    Everything that is the same for every shader lives here. What differs per file – whether it is
+    a vertex or a pixel shader, where its header goes and what the array is called – is spelled on
+    the item, because that mapping is the thing a reviewer needs to see.
+
+    Inert in a project with no FxCompile items, which is all of them but NeuronClient today.
+  -->
+  <ItemDefinitionGroup>
+    <FxCompile>
+      <ShaderModel>5.1</ShaderModel>
+      <!-- One entry point per file, so it does not need a name of its own. -->
+      <EntryPointName>main</EntryPointName>
+      <!-- Header output only; the default writes a .cso beside the binary that nothing loads. -->
+      <ObjectFileOutput />
+      <!-- /Ges: strict mode. The old runtime path passed D3DCOMPILE_ENABLE_STRICTNESS and this is
+           the same switch, so a shader that compiled before still compiles now. -->
+      <AdditionalOptions>%(AdditionalOptions) /Ges</AdditionalOptions>
+    </FxCompile>
+  </ItemDefinitionGroup>
+
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
     <ClCompile>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <Optimization>Disabled</Optimization>
     </ClCompile>
+    <FxCompile>
+      <EnableDebuggingInformation>true</EnableDebuggingInformation>
+      <DisableOptimizations>true</DisableOptimizations>
+    </FxCompile>
   </ItemDefinitionGroup>
 
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
