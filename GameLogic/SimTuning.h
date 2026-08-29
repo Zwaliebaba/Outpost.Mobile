@@ -275,4 +275,21 @@ inline constexpr float TUNNEL_HEADROOM = 0.6f;
 // 1.15 the worst case in the table is 0.30 of the half-spacing, and the suite asserts it.
 inline constexpr float FORMATION_SPACING_MARGIN = 1.15f;
 inline constexpr int FORMATION_SHAPE = 1; // FormationShape::Wedge
+
+// --- interest management -----------------------------------------------------------------------
+// Not in the replay contract, and that is worth saying because everything around it is: these change
+// what is *sent*, never what is *simulated*. A recording made at one radius replays identically at
+// another, and a server may tune them per region while a match is running.
+//
+// The update rate is counted in ticks rather than hertz for the reason latency is: a wall clock
+// makes the result depend on how fast the machine ran, and 10 Hz is then a thing a test can assert
+// rather than approximate. Six ticks against a 60 Hz tick is the middle of the 5-20 Hz band
+// Design/Collision.md 1 asks for.
+inline constexpr std::uint32_t INTEREST_UPDATE_EVERY_TICKS = 6;
+inline constexpr float INTEREST_RADIUS_METRES = 2000.0f;
+
+// How much less often the furthest subscribed entity refreshes than the nearest. At 0.125 a ship at
+// the edge of the radius is sent once for every eight updates a ship at the centre gets, which is
+// the whole of what "priority" buys: the near world stays smooth while the far world stays cheap.
+inline constexpr float INTEREST_MIN_WEIGHT = 0.125f;
 } // namespace Game

@@ -80,6 +80,12 @@ Both sets are `std::vector<ShipHandle>` kept sorted by `(slot, generation)` — 
 result does not depend on the order `QueryCircle` returned. `std::set_difference` both ways gives
 entered and left in one pass each.
 
+> **What happened.** One merge walk instead of two differences. The differences give entered and
+> left but not the *carried priority* of everything that stayed, which then needs a third pass over
+> the intersection to recover it; walking the two sorted sets together gives all three and touches
+> each element once. Same order, same result, one pass
+> ([ADR 0010](decisions/0010-interest-sets-are-sorted-vectors.md)).
+
 **No `unordered_map` and no map keyed on anything.** `AGENTS.md` §5 bans iteration order that is not
 dense-array order, and this is precisely the code where a hash map would be the obvious choice and
 would put hashing into the replay contract. The sort is O(k log k) on a set capped by the radius,

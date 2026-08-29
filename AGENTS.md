@@ -25,10 +25,11 @@ anything. D3D12 renderer, WM_POINTER input covering mouse and touch, a main-scre
 through one overlay pipeline (bitmap font atlases, coverage-mask icons, untextured quads), OBJ/MTL
 hulls, FXC-compiled shaders.
 
-**Deliberately not here yet**, so nobody goes looking for it: no audio, no networking, no interest
-management, no combat, no economy, no damage model, no save format, no content pipeline beyond OBJ
-and DDS, and no configuration file — tuning is `constexpr` in `SimTuning.h`, `HullSpec.h` and
-`ViewTuning.h` (§5). `Transport` has a loopback implementation and no socket (§2). Where the HUD shows a number
+**Deliberately not here yet**, so nobody goes looking for it: no audio, no networking, no combat, no
+economy, no damage model, no save format, no content pipeline beyond OBJ and DDS, and no
+configuration file — tuning is `constexpr` in `SimTuning.h`, `HullSpec.h` and `ViewTuning.h` (§5).
+`Transport` has a loopback implementation and no socket, and the client sees the world through it,
+filtered to what one subscriber can see (§2). Where the HUD shows a number
 the simulation does not yet have, it is a placeholder supplied by the composition root, and it says
 so at the definition.
 
