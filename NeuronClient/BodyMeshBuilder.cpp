@@ -27,6 +27,15 @@ struct Sample
   float heightMetres = 0.0f;
 };
 
+// The one transcendental in the build, taken in double and narrowed once -- the rule BodyField.cpp
+// states at more length. Two vendors' float pow differ in the last bit, and a last bit here is a
+// triangle that reads one texel further along the ramp on one machine than on another. Measured:
+// with the float overload the whole-mesh hash of BodyMeshTests disagreed between MSVC and gcc.
+[[nodiscard]] float Pow(float _base, float _exponent) noexcept
+{
+  return static_cast<float>(std::pow(static_cast<double>(_base), static_cast<double>(_exponent)));
+}
+
 [[nodiscard]] float Dot(const XMFLOAT3& _a, const XMFLOAT3& _b) noexcept
 {
   return _a.x * _b.x + _a.y * _b.y + _a.z * _b.z;
@@ -170,7 +179,7 @@ void BodyMeshBuilder::Build(const BodyField& _field, const ColourRamp* _ramp, st
           // Slope on the ramp's x axis, climate height on its y: GetLandscapeColour, with the radial
           // direction standing in for the flat map's up.
           const float gradient = std::clamp(Dot(normal, centroid), 0.0f, 1.0f);
-          const float u = std::pow(1.0f - gradient, SLOPE_EXPONENT);
+          const float u = Pow(1.0f - gradient, SLOPE_EXPONENT);
           float v = 1.0f - climate * climateScale;
 
           // The source's expression is 0.45 / (h + 2) on a map whose heights were never negative. A

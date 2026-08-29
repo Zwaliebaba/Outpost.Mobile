@@ -67,13 +67,19 @@ XMFLOAT3 ColourRamp::Sample(float _u, float _v) const noexcept
   const float alongX = x - static_cast<float>(left);
   const float alongY = y - static_cast<float>(top);
 
+  // Written out rather than through std::lerp. The standard specifies what lerp *computes*, not the
+  // expression it computes it with, and two libraries that choose differently disagree in the last
+  // bit -- which is a different byte in a baked vertex colour and a different mesh hash
+  // (BodyMeshTests). One expression, spelled here, is the same on every machine.
+  const auto blend = [](float _from, float _to, float _t) noexcept { return _from + (_to - _from) * _t; };
+
   XMFLOAT3 colour(0.0f, 0.0f, 0.0f);
   float* const channels = &colour.x;
   for (std::uint32_t channel = 0; channel < 3; ++channel)
   {
-    const float topRow = std::lerp(m_rgb[(top * SIDE + left) * 3 + channel], m_rgb[(top * SIDE + right) * 3 + channel], alongX);
-    const float bottomRow = std::lerp(m_rgb[(bottom * SIDE + left) * 3 + channel], m_rgb[(bottom * SIDE + right) * 3 + channel], alongX);
-    channels[channel] = std::lerp(topRow, bottomRow, alongY);
+    const float topRow = blend(m_rgb[(top * SIDE + left) * 3 + channel], m_rgb[(top * SIDE + right) * 3 + channel], alongX);
+    const float bottomRow = blend(m_rgb[(bottom * SIDE + left) * 3 + channel], m_rgb[(bottom * SIDE + right) * 3 + channel], alongX);
+    channels[channel] = blend(topRow, bottomRow, alongY);
   }
 
   return colour;
