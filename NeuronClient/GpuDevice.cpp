@@ -44,6 +44,19 @@ void GpuDevice::Init(HWND _hwnd)
     check_hresult(DXGI_ERROR_NOT_FOUND);
   }
 
+  // Every shader in the tree is DXIL for shader model 6.7 (AGENTS.md section 3, Decisions/0017), so
+  // a device that stops short of it would fail later, in CreateGraphicsPipelineState, with an
+  // E_INVALIDARG that names nothing. Asked here, the answer names the model the adapter reached.
+  {
+    D3D12_FEATURE_DATA_SHADER_MODEL sm = {D3D_SHADER_MODEL_6_7};
+    const HRESULT hr = m_device->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &sm, sizeof(sm));
+    if (FAILED(hr) || sm.HighestShaderModel < D3D_SHADER_MODEL_6_7)
+    {
+      DebugTrace("adapter reaches shader model 0x{:x}; the shaders need 6.7\n", static_cast<unsigned>(sm.HighestShaderModel));
+      check_hresult(DXGI_ERROR_UNSUPPORTED);
+    }
+  }
+
   D3D12_COMMAND_QUEUE_DESC qd = {};
   qd.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
   qd.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;

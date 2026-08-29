@@ -32,8 +32,8 @@ colour ramp, a wire-frame outline over the top, spinning or tumbling — and F5 
 are presentation only and a ship flies straight through a rock (`Design/Decisions/0016`). D3D12
 renderer, WM_POINTER input covering mouse and touch, a main-screen HUD drawn through one overlay
 pipeline (bitmap font atlases, coverage-mask icons, untextured quads), textured FX pipelines for
-the explosion's fragments and sprites, a two-pass body pipeline, OBJ/MTL hulls, FXC-compiled
-shaders.
+the explosion's fragments and sprites, a two-pass body pipeline, OBJ/MTL hulls, DXC-compiled
+shader model 6.7 shaders.
 
 **Deliberately not here yet**, so nobody goes looking for it: no audio, no networking, no combat, no
 economy, no damage model, no save format, no content pipeline beyond OBJ and DDS, and no
@@ -230,7 +230,7 @@ Three rules `.clang-tidy` structurally cannot state, so check them by eye:
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
 | `Outpost/` | The executable: composition root, presentation state, the HUD and its event log, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
-| `NeuronClient/Shaders/` | HLSL (§3). FXC compiles it into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
+| `NeuronClient/Shaders/` | HLSL (§3). DXC compiles it, as shader model 6.7 DXIL, into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
 | `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). |
 | `Tools/` | Content tools, stdlib Python only: the NMO ship-mesh codec and Blender add-on (`BlenderNmo/`), the OBJ→NMO converter (`ObjToNmo.py`), and their tests (`Nmo*Test.py` — the codec test needs bare python3, the Blender one the `bpy` wheel). [`Design/NmoFormat.md`](Design/NmoFormat.md) is the format; nothing here is engine code, and no `.vcxproj` names it. |
 | `Design/` | Designs, work orders, `Screenprints/`, `Archive/` for landed work orders, and `Design/Decisions/` — the architecture decision records (§9). Its `README.md` says which document is which and how a slice moves from a design into the tree (§7). |
@@ -329,7 +329,7 @@ HLSL lives in `<Project>/Shaders/`, one entry point per file, named for the stag
 | `<Name>PS.hlsl` | pixel shader |
 | `<Name>.hlsli` | declarations both stages of `<Name>` share — cbuffers, and the `VsOut` struct that is the contract between them |
 
-**FXC compiles them at build time** into `<Project>/CompiledShaders/<Name>.h`, as a byte array
+**DXC compiles them at build time**, as shader model 6.7 DXIL, into `<Project>/CompiledShaders/<Name>.h`, as a byte array
 called `g_p<Name>` — so `Shaders/SceneVS.hlsl` becomes `CompiledShaders/SceneVS.h` holding
 `g_pSceneVS`, and the renderer says:
 
@@ -342,15 +342,21 @@ pso.VS.BytecodeLength = sizeof(g_pSceneVS);
 
 Nothing compiles HLSL at runtime. That is the point of the arrangement: a shader mistake is a
 build error rather than a message box on a player's machine, startup does no compilation, and the
-binary carries no dependency on `d3dcompiler_47.dll`.
+binary carries no dependency on `d3dcompiler_47.dll` or `dxcompiler.dll`. The one thing it does depend on
+is the player's driver reaching shader model 6.7, which `GpuDevice::Init` checks up front so the
+failure names the adapter rather than surfacing as an `E_INVALIDARG` from a pipeline state
+(`Design/Decisions/0018`).
 
 `CompiledShaders/` is build output and is **not** committed — committing it would mean reviewing a
 byte array on every shader edit, and would let the header and the `.hlsl` disagree. The generated
-headers are exempt from §1: `g_p<Name>` is FXC's convention, not this repository's, and R6 does
+headers are exempt from §1: `g_p<Name>` is the HLSL compiler's convention, not this repository's, and R6 does
 not apply to a name a tool chose.
 
 Shader settings live in `NeuronClient.vcxproj`, in the same per-configuration
-`ItemDefinitionGroup`s as the compiler settings (§6), except the two that genuinely differ per
+`ItemDefinitionGroup`s as the compiler settings (§6) — `ShaderModel` 6.7, which is what makes
+Visual Studio's `FxCompile` task run the Windows SDK's `dxc.exe` rather than `fxc.exe`, and
+`AllResourcesBound`, which is true because every resource a shader here reads sits in a
+root-signature slot that is always filled — except the two that genuinely differ per
 file — whether it is a vertex or a pixel shader, and where its header goes — which are spelled on
 the `FxCompile` item.
 

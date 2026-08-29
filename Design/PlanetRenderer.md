@@ -754,7 +754,11 @@ finds `FxVertex.h` or `UploadColourTexture` already there.
 
 Written after the design was settled, as a Direct3D 12 review of §5–§8: what of the CPU
 pipeline could run in a shader, what it would buy, and what it would cost under this tree's
-toolchain — FXC, shader model 5.1, no DXC, no mesh shaders, and no compute pipeline yet.
+toolchain as it then stood — FXC, shader model 5.1, no DXC, no mesh shaders, and no compute
+pipeline. Slice 6 landed the compute pipeline on that toolchain (`Decisions/0017`), and the tree
+has since moved to DXC and shader model 6.7 (`Decisions/0018`), which lifts the compiler objection
+to every row below — including the emulated 64-bit multiply and the renamed identifiers the
+kernels carry to satisfy FXC.
 
 ### 17.1 Stage by stage
 
@@ -781,7 +785,7 @@ every random number once into `BodyParams` (§8.1), the split is clean: **the CP
 | Shape | What it is | Wins | Why it is not the one |
 |---|---|---|---|
 | A — vertex-shader displacement | one shared grid per `gridPower`; `BodyVS` evaluates `h(d)` for its vertex and its two mates every frame | no generation, no per-body memory, LOD is a bind | ~450 k height evaluations per body per pass, per frame, for a shape that never changes; the ramp sample and dither repeat every frame too |
-| **B — compute bake at load** | `BodyBakeCS` (`cs_5_1`, compiled by FXC through an `FxCompile` item of type `Compute`) writes the identical `FxVertex` stream into the default-heap buffer of §7.1 through a UAV; one barrier to `VERTEX_AND_CONSTANT_BUFFER`; two small reduction dispatches first | same look, boot generation ≈ 0, **a body generated mid-session no longer stalls a frame** — this tree's route to many systems without introducing a thread, since a GPU timeline is not a second CPU writer; LOD is three dispatches; F5 is instant | the first compute pipeline in the tree (a root signature with a CBV, an SRV table for the ramp and a UAV — about 150 lines); the field stops being decidable by a `CppUnitTest` on its own |
+| **B — compute bake at load** | `BodyBakeCS` (`cs_6_7` since `Decisions/0018`, compiled by DXC through an `FxCompile` item of type `Compute`, so wave intrinsics are available for the reductions) writes the identical `FxVertex` stream into the default-heap buffer of §7.1 through a UAV; one barrier to `VERTEX_AND_CONSTANT_BUFFER`; two small reduction dispatches first | same look, boot generation ≈ 0, **a body generated mid-session no longer stalls a frame** — this tree's route to many systems without introducing a thread, since a GPU timeline is not a second CPU writer; LOD is three dispatches; F5 is instant | the first compute pipeline in the tree (a root signature with a CBV, an SRV table for the ramp and a UAV — about 150 lines); the field stops being decidable by a `CppUnitTest` on its own |
 | C — tessellation / mesh shaders | hull/domain shaders for continuous LOD | continuous LOD | redoes the height per frame like A and fights the per-triangle colour; mesh shaders need SM 6.5 and DXC, which the tree does not have |
 
 **B is the shape**, and **not yet**. Tens of milliseconds at boot is invisible, the tests in §11
