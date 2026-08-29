@@ -35,6 +35,9 @@ authoritative server.
   `HUD_ALERT_RED` — with a larger blip for structures; the minimap's `CONTACTS` placeholder becomes
   the real count of hostile records in the snapshot; hostiles cannot be selected, hovered or
   ordered (§7).
+- **A stated death**: the interest update learns to say *destroyed* as distinct from *left*, so
+  the client stops inferring explosions from absence — required the moment ships live at the edge
+  of the interest radius (§4.4).
 
 The Hud already planned for this. `Outpost/Hud.cpp`'s blip loop says *"Every ship in the world is
 friendly today; hostiles arrive with combat, and they draw in HUD_ALERT_RED when they do"* — this
@@ -168,6 +171,26 @@ rather than with the second player (§10).
 
 On the client, the same rule shapes the UI (§7): what you cannot command, you cannot select.
 
+### 4.4 A death is stated, never inferred
+
+The explosion feature that landed while this design was in flight detonates any ship that leaves
+the snapshot: `WorldView::ExplodeTheLost` consumes a leave, and the wire deliberately cannot
+distinguish a death from a departure (Design/Archive/Collision-slice-6.md 6.2). With every ship
+the subscriber's own, a leave today happens only when F4 despawns one, so the inference holds. The
+first hostile breaks it: the patrol lives 1.2–1.6 km from the fleet centroid, the interest center
+follows the fleet, and the first player who flies away watches phantom explosions, a camera shake
+and a "SHIP LOST" alert for enemies that are alive and patrolling.
+
+So the interest update gains a third list beside the records and the leaves: **destroyed** — the
+handles of ships that despawned this interval, as distinct from ships that merely left this
+subscriber's view. `World` keeps a per-interval despawn log (`DespawnShip` appends, the publisher
+drains), `WriteInterest` sends a destroyed handle to the subscribers that held the ship, and
+`ExplodeTheLost` consumes *destroyed* — a plain leave removes the ship silently, which is what a
+departure always deserved. F4's debug despawn flows through the same log, so the effect it exists
+to demonstrate keeps firing. This is the "cause of death" door the explosion design left open (its
+§12 names the absent destroy event), opened the width of one list and no wider: no cause, no
+killer, no damage model — just the server stating a fact the client was previously left to guess.
+
 ---
 
 ## 5. The patrol — NPC intent inside the tick
@@ -271,8 +294,9 @@ toward a fight in some later design.
 
 ### 5.5 What the pass must not do
 
-No randomness — the ring walk is a pure function of state, so the seeded-PCG32 rule stays a rule
-for the future. No reactions: the pass never reads the player's ships, never changes speed or
+No randomness — the ring walk is a pure function of state; ADR 0012's `Pcg32` stays where it
+landed, outside `GameLogic`, and the patrol draws nothing. No reactions: the pass never reads the
+player's ships, never changes speed or
 target because of anything it sees. The first behavior that *responds* (aggro, pursuit, flight)
 is a different design with senses and thresholds; this pass is deliberately a metronome.
 
@@ -358,9 +382,10 @@ tell the truth, once in the simulation because clients are not trusted (§4.3):
   banking. Silhouette and the overview carry the IFF for now; in-scene hostile treatment (tint,
   target rings, health bars) belongs to combat and is deliberately absent (§11).
 
-Snapshots, interpolation, trails and the explosion design's despawn detection are untouched: a
-hostile leaving the interest set is an ordinary leave, indistinguishable from any other by design
-(Design/Archive/Collision-slice-6.md 6.2), and today nothing on the client despawns ships anyway.
+Snapshots, interpolation and trails are untouched. The explosion is not: `ExplodeTheLost`
+detonates whatever leaves the snapshot, a hostile at the interest edge is exactly what leaves, and
+§4.4 is the fix — the client explodes what the server says was destroyed and silently drops what
+merely departed.
 
 ---
 
@@ -394,6 +419,7 @@ assumed:
 | Test | Decides |
 |---|---|
 | `FactionSurvivesTheWire` (SnapshotTests) | a spawned faction id arrives in the decoded record, through `Write` and `WriteInterest` both |
+| `ADeathAndADepartureDifferOnTheWire` (SnapshotTests) | a despawned ship arrives in the destroyed list of a subscriber that held it; a ship that only left the radius arrives as a bare leave |
 | `AnOrderFromTheWrongFactionSteersNothing` (OrderTests) | `IssueMoveOrder` with a mismatched issuer leaves every ship's order state untouched, and a mixed list steers only the matching ships |
 | `TheSamePatrolProducesTheSameRun` (new PatrolTests) | two runs of the §6 scene, compared field-for-field every tick — the replay gate extended over the new pass |
 | `APatrolWalksItsRingInOrder` (PatrolTests) | waypoints are visited in index order, clockwise, each within the arrival radius |
@@ -420,6 +446,7 @@ What this design commits to, kept deliberately in the shape the target needs:
 | Command authority | a faction filter in `IssueMoveOrder`, issuer supplied by the host | the comparison widens to per-player ownership; the gate itself is already load-bearing |
 | Hostile display | client-side mapping of server-stated identity | unchanged; that is how it should work over a real wire |
 | Hostile visibility | the interest set, unchanged | unchanged — you already only see what the server sends |
+| Death vs departure | a destroyed list in the interest update, fed by `World`'s despawn log | unchanged — the client never infers a kill; a cause or killer extends the same list |
 | "Who am I" on the client | one value injected by the composition root | supplied by login/session instead; only the root changes |
 
 And the traps this design is specifically stepping around, named so review can check them: no
@@ -463,6 +490,12 @@ it cost.
   as content grows.
 - **Structures blip at a fixed 8 px, not to scale.** To scale, a 500 m station is 25 px — a
   quarter of the map for one base; iconography beats cartography at 0.05 px per meter.
+- **A destroyed list, not a smarter client.** The §4.4 alternatives lose on principle: inferring
+  death from "left while well inside the radius" is the client guessing server state, and it
+  guesses wrong at the interest edge, exactly where hostiles live; pinning hostiles inside the
+  radius is a guarantee nobody can make once the fleet moves; suppressing the effect for hostiles
+  keeps the phantom for any distant friendly. Stating the fact costs one list and is the only
+  shape that survives a real wire.
 - **New identifiers keep the tree's unit spellings.** `orderSpeedCapMetresPerSec` and
   `HOSTILE_PATROL_RING_METRES` extend the `MetresPerSec` and `_METRES` families as those families
   are spelled, per AGENTS.md R11: prose is US English, but a name extending a standing family
@@ -516,9 +549,9 @@ one pull request, in the shape Design/README.md gives.
 
 | # | Slice | Layer | Depends on | Work order |
 |---|---|---|---|---|
-| 1 | Allegiance: `FactionId` on ship and record, `SpawnShip` and `IssueMoveOrder` parameters, the authority gate, the subscriber faction in `WorldSimulation`, SnapshotTests + OrderTests | `GameLogic` (+ two lines in `Outpost`) | — | to write |
+| 1 | Allegiance and the wire: `FactionId` on ship and record, `SpawnShip` and `IssueMoveOrder` parameters, the authority gate, the despawn log and the destroyed list (§4.4), the subscriber faction in `WorldSimulation`, SnapshotTests + OrderTests | `GameLogic` (+ two lines in `Outpost`) | — | to write |
 | 2 | Patrol: `m_patrols` + despawn repair, `AssignPatrol`, the pass in `Step`, `orderSpeedCapMetresPerSec` + the `SolveOrder` clamp, `PATROL_RING_WAYPOINTS`, PatrolTests (new file, both project files) | `GameLogic` | 1 | to write |
-| 3 | The scene and the overview: mesh table split, `SpawnHostileBase`, `SubscriberCentre` faction filter, `SetOwnFaction` + selection filters, blip colors + structure dot, real `CONTACTS`, boot-log count, `ViewTuning` content constants, comment and AGENTS.md sentence updates, screenshots at two sizes | `Outpost` | 1, 2 | to write |
+| 3 | The scene and the overview: mesh table split, `SpawnHostileBase`, `SubscriberCentre` faction filter, `SetOwnFaction` + selection filters, blip colors + structure dot, real `CONTACTS`, `ExplodeTheLost` consuming *destroyed* rather than every leave (§4.4), boot-log count, `ViewTuning` content constants, comment and AGENTS.md sentence updates, screenshots at two sizes | `Outpost` | 1, 2 | to write |
 
 Slices 1 and 2 are decided by tests (§9) and by the existing suites staying green — slice 2's
 claim that an unassigned world is bit-identical is exactly `GameLogicTests` passing unchanged.
