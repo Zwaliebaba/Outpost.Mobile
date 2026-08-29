@@ -13,6 +13,11 @@
 
 #include "RenderTypes.h"
 #include "MeshData.h"
+#include "Noise3.h"
+#include "CubeSphere.h"
+#include "BodyDesc.h"
+#include "BodyParams.h"
+#include "BodyField.h"
 #include "FxVertex.h"
 #include "MeshShatter.h"
 #include "SpriteParticles.h"

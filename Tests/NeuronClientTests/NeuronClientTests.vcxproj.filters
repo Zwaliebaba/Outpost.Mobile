@@ -32,6 +32,15 @@
     <ClCompile Include="SpriteParticlesTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="Noise3Tests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="CubeSphereTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="BodyFieldTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config">

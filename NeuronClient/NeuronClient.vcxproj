@@ -219,6 +219,11 @@
     <ClInclude Include="RenderTypes.h" />
     <ClInclude Include="DdsImage.h" />
     <ClInclude Include="MeshData.h" />
+    <ClInclude Include="Noise3.h" />
+    <ClInclude Include="CubeSphere.h" />
+    <ClInclude Include="BodyDesc.h" />
+    <ClInclude Include="BodyParams.h" />
+    <ClInclude Include="BodyField.h" />
     <ClInclude Include="FxVertex.h" />
     <ClInclude Include="MeshShatter.h" />
     <ClInclude Include="SpriteParticles.h" />
@@ -242,6 +247,7 @@
     </ClCompile>
     <ClCompile Include="DdsImage.cpp" />
     <ClCompile Include="ObjParser.cpp" />
+    <ClCompile Include="BodyField.cpp" />
     <ClCompile Include="MeshShatter.cpp" />
     <ClCompile Include="SpriteParticles.cpp" />
     <ClCompile Include="GpuHelpers.cpp" />

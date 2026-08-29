@@ -189,6 +189,9 @@
     <ClCompile Include="ObjParserTests.cpp" />
     <ClCompile Include="MeshShatterTests.cpp" />
     <ClCompile Include="SpriteParticlesTests.cpp" />
+    <ClCompile Include="Noise3Tests.cpp" />
+    <ClCompile Include="CubeSphereTests.cpp" />
+    <ClCompile Include="BodyFieldTests.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
