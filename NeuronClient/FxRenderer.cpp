@@ -41,8 +41,10 @@ void FxRenderer::Init(GpuDevice& _gpu, const Desc& _desc)
 
   m_srvStride = _gpu.Device()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-  // All three record into the device's command list and are submitted together: ExecuteAndWait
-  // closes the list, so there is one flush here and not one per texture.
+  // All three record into the device's command list and are submitted together: one flush here and
+  // not one per texture. BeginUploads is what opens it -- without the bracket this records into a
+  // list the text renderer's own ExecuteAndWait already closed, and every call is rejected.
+  _gpu.BeginUploads();
   LoadTexture(_gpu, FRAGMENT_SLOT, _desc.fragmentTexture);
   LoadTexture(_gpu, SPRITE_SLOT, _desc.spriteTexture);
   LoadTexture(_gpu, FLASH_SLOT, _desc.flashTexture);

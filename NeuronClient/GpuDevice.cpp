@@ -85,6 +85,9 @@ void GpuDevice::Init(HWND _hwnd)
   for (std::uint32_t i = 0; i < FRAME_COUNT; ++i)
     check_hresult(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_allocators[i].put())));
   check_hresult(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_allocators[0].get(), nullptr, IID_PPV_ARGS(m_cmd.put())));
+  // A new list is already recording. Close it so that "the list is closed unless a caller opened
+  // it" holds from the start, and every uploader brackets itself with BeginUploads.
+  check_hresult(m_cmd->Close());
 
   check_hresult(m_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(m_fence.put())));
   m_fenceEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
@@ -183,6 +186,14 @@ void GpuDevice::WaitForGpu()
   }
   for (std::uint32_t i = 0; i < FRAME_COUNT; ++i)
     m_fenceValues[i] = target;
+}
+
+void GpuDevice::BeginUploads()
+{
+  // Allocator 0 is the boot allocator. Resetting it is safe here: nothing has been submitted on it
+  // yet on the first call, and every later call follows an ExecuteAndWait that drained the GPU.
+  check_hresult(m_allocators[0]->Reset());
+  check_hresult(m_cmd->Reset(m_allocators[0].get(), nullptr));
 }
 
 void GpuDevice::ExecuteAndWait()

@@ -31,8 +31,15 @@ public:
   // that record into the command list during initialisation.
   void WaitForGpu();
 
-  // Closes, submits and waits for whatever has been recorded so far. Initialisation-only: it is
-  // how a resource upload that needs the copy engine finishes before the first frame.
+  // Opens the command list for a batch of initialisation uploads. Every batch is bracketed by this
+  // and ExecuteAndWait, and outside those brackets the list is closed -- which is what lets a
+  // second thing upload at boot. It used to be left open by Init instead, and that quietly made
+  // exactly one uploader possible: the next one recorded into a closed list and D3D12 rejected
+  // every call.
+  void BeginUploads();
+
+  // Closes, submits and waits for whatever BeginUploads opened. Initialisation-only: it is how a
+  // resource upload that needs the copy engine finishes before the first frame.
   void ExecuteAndWait();
 
   [[nodiscard]] ID3D12Device* Device() const noexcept
