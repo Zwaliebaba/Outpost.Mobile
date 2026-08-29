@@ -175,8 +175,6 @@
     <ClInclude Include="Ease.h" />
     <ClInclude Include="FileSys.h" />
     <ClInclude Include="FrameClock.h" />
-    <ClInclude Include="MeshData.h" />
-    <ClInclude Include="ObjParser.h" />
     <ClInclude Include="Transport.h" />
   </ItemGroup>
   <ItemGroup>
@@ -185,7 +183,6 @@
     </ClCompile>
     <ClCompile Include="FileSys.cpp" />
     <ClCompile Include="FrameClock.cpp" />
-    <ClCompile Include="ObjParser.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

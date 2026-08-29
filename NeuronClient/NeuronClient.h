@@ -12,6 +12,8 @@
 #include <winrt/Windows.ApplicationModel.Activation.h>
 
 #include "RenderTypes.h"
+#include "MeshData.h"
+#include "ObjParser.h"
 #include "DdsImage.h"
 #include "GpuHelpers.h"
 #include "GpuDevice.h"

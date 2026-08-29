@@ -218,6 +218,8 @@
     <ClInclude Include="NeuronClient.h" />
     <ClInclude Include="RenderTypes.h" />
     <ClInclude Include="DdsImage.h" />
+    <ClInclude Include="MeshData.h" />
+    <ClInclude Include="ObjParser.h" />
     <ClInclude Include="GpuHelpers.h" />
     <ClInclude Include="GpuDevice.h" />
     <ClInclude Include="SceneRenderer.h" />
@@ -235,6 +237,7 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="DdsImage.cpp" />
+    <ClCompile Include="ObjParser.cpp" />
     <ClCompile Include="GpuHelpers.cpp" />
     <ClCompile Include="GpuDevice.cpp" />
     <ClCompile Include="SceneRenderer.cpp" />

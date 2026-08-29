@@ -36,12 +36,6 @@
     <ClInclude Include="FrameClock.h">
       <Filter>Foundation</Filter>
     </ClInclude>
-    <ClInclude Include="MeshData.h">
-      <Filter>Content</Filter>
-    </ClInclude>
-    <ClInclude Include="ObjParser.h">
-      <Filter>Content</Filter>
-    </ClInclude>
     <ClInclude Include="Transport.h">
       <Filter>Net</Filter>
     </ClInclude>
@@ -55,9 +49,6 @@
     </ClCompile>
     <ClCompile Include="FrameClock.cpp">
       <Filter>Foundation</Filter>
-    </ClCompile>
-    <ClCompile Include="ObjParser.cpp">
-      <Filter>Content</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

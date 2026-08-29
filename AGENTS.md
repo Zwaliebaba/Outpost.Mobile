@@ -187,14 +187,15 @@ Two rules `.clang-tidy` structurally cannot state, so check them by eye:
 
 | Path | What it is |
 |---|---|
-| `NeuronCore/` | Engine primitives shared by every layer — zero game semantics, no graphics API, headless (below). Diagnostics, file IO, framerate-independent easing, the frame clock, mesh data, the OBJ/MTL reader, and `Transport`. |
+| `NeuronCore/` | Engine primitives shared by every layer — zero game semantics, no graphics API, headless (below). Diagnostics, file IO, framerate-independent easing, the frame clock, and `Transport`. No content readers: those live with their consumer (ADR 0002). |
 | `GameLogic/` | The deterministic simulation, namespace `Game`. `World`, `ShipState`, `Movement`, `Formation`, `SimTuning`. Depends on NeuronCore only. |
-| `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `DdsImage`, `MeshLibrary`. Everything that names a graphics type lives here and nowhere else. |
+| `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, and the content readers `DdsImage`, `ObjParser`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
 | `Outpost/` | The executable: composition root, presentation state, HUD, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
 | `NeuronClient/Shaders/` | HLSL (§3). FXC compiles it into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
 | `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). |
+| `Design/` | Design documents, the HUD screenprints, and `Design/decisions/` — the architecture decision records (§9). |
 | `.github/workflows/build.yml` | CI (§6). |
 
 The dependency rules are hard, and each of them is one thing this structure buys:
@@ -221,10 +222,14 @@ The dependency rules are hard, and each of them is one thing this structure buys
 - **NeuronCore and NeuronServer are headless.** The server will one day run in a container with
   no screen, so neither may include a graphics header — no `<d3d12.h>`, no `<dxgi*.h>`, not even
   `<dxgiformat.h>` — and neither may hold a device, a swapchain, a window, a descriptor, or any
-  other data only a GPU can use. Everything client-specific lives in `NeuronClient`; that is why
-  the DDS reader is there and the OBJ reader is not — a texture is only ever handed to a device,
-  and a mesh is also collision geometry the server needs. DirectXMath is mathematics, not
-  graphics, and stays. `Build/CheckProjectFiles.py` checks the include rule.
+  other data only a GPU can use. Everything client-specific lives in `NeuronClient`. DirectXMath
+  is mathematics, not graphics, and stays. `Build/CheckProjectFiles.py` checks the include rule
+  (ADR 0001).
+- **A content reader lives with what consumes it**, not in NeuronCore by default. The test is
+  "who calls it", not "does it include a graphics header": the DDS and OBJ readers are both client
+  code because only the renderer reads a texture or a mesh, and collision shapes are authored
+  numbers in GameLogic rather than anything derived from a mesh (ADR 0002,
+  [`Design/collision.md`](Design/collision.md) §5).
 
 ### Where the client/server seam stands today
 
@@ -546,6 +551,8 @@ configurations you built.
   recording the reason a decision went the way it did, the defect it prevents, or the constraint
   that is not visible from the call site.
 - If a rule here blocks the task, say so in your report rather than quietly bending it.
+- **A decision that shapes the tree gets a record** in `Design/decisions/` (§9), in the same
+  commit as the change it explains.
 
 ---
 
@@ -571,3 +578,36 @@ configurations you built.
 - [ ] It builds — Debug at minimum — and you said which configurations you actually built.
 - [ ] Tests for the layer you touched were run, and you said which.
 - [ ] Your report states plainly what you verified, what you assumed, and any rule you bent.
+- [ ] Moved a type between libraries, changed a dependency rule, added a project, or turned an
+      alternative down that someone will propose again? There is an ADR for it (§9), the index in
+      `Design/decisions/README.md` lists it, and any sentence here it made false has changed.
+
+---
+
+## 9. Architecture decision records
+
+This file states the rules as they stand. It does not say what was tried first, what was turned
+down, or under which assumption a rule was made — and a rule whose premise has quietly expired is
+the most expensive kind, because it goes on being obeyed. That history lives in
+[`Design/decisions/`](Design/decisions/), one short file per decision, in the format its
+[`README.md`](Design/decisions/README.md) gives: context, decision, alternatives considered,
+consequences.
+
+When to write one — any of these, and in the same commit as the change:
+
+- a type or file moves between libraries, or a library gains or loses a responsibility;
+- a dependency rule in §2 changes, or a guard in `Build/` starts enforcing something new;
+- a project, a third-party dependency, a toolset pin or a build setting is added or removed;
+- an approach is rejected that a reasonable person will propose again.
+
+Rules for the records themselves: numbered in order of writing and never renumbered; never
+edited into a different decision — a change of mind is a new record that supersedes the old one,
+and the old one stays with its status changed; and the index in the README lists every one. A
+record is a page, not a paper: if it needs more than that, the design document it came from is
+where the rest goes, and the record links to it.
+
+The first two records are the worked examples: [0001](Design/decisions/0001-headless-core-and-server.md)
+is the reason §2's headless rule exists and names the alternative it beat, and
+[0002](Design/decisions/0002-content-readers-live-with-their-consumer.md) is the reason the
+readers live in `NeuronClient` — and it reverses an argument this file made the day before, which
+is exactly the kind of thing the folder is for.
