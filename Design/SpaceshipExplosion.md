@@ -483,10 +483,10 @@ order.
 
 | # | Slice | Layer | Depends on | Status | Work order |
 |---|---|---|---|---|---|
-| 1 | `Pcg32`, tests, ADR 0012 | `NeuronCore` | — | landed | [slice 1](SpaceshipExplosion-slice-1.md) |
-| 2 | `FxVertex`, `MeshShatter`, `SpriteParticles`, tests | `NeuronClient` | 1 | landed | [slice 2](SpaceshipExplosion-slice-2.md) |
-| 3 | `FxRenderer`, `UploadColourTexture`, two shader pairs | `NeuronClient` | 2 | landed | [slice 3](SpaceshipExplosion-slice-3.md) |
-| 4 | `ShipExplosion`, the trigger, F4, `EXPLOSION_*` tuning | `Outpost` | 3 | landed | [slice 4](SpaceshipExplosion-slice-4.md) |
+| 1 | `Pcg32`, tests, ADR 0012 | `NeuronCore` | — | landed | [slice 1](Archive/SpaceshipExplosion-slice-1.md) |
+| 2 | `FxVertex`, `MeshShatter`, `SpriteParticles`, tests | `NeuronClient` | 1 | landed | [slice 2](Archive/SpaceshipExplosion-slice-2.md) |
+| 3 | `FxRenderer`, `UploadColourTexture`, two shader pairs | `NeuronClient` | 2 | landed | [slice 3](Archive/SpaceshipExplosion-slice-3.md) |
+| 4 | `ShipExplosion`, the trigger, F4, `EXPLOSION_*` tuning | `Outpost` | 3 | landed | [slice 4](Archive/SpaceshipExplosion-slice-4.md) |
 
 The record slice 1 wrote is **0012**, not the 0011 this table asked for: 0011 was taken by the NMO
 record between this document being written and slice 1 landing, and records are never renumbered.

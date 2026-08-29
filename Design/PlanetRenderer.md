@@ -676,7 +676,7 @@ height of a fixed `BodyDesc` to six decimals, which is the replay-key guarantee 
 
 | Step | File | What |
 |---|---|---|
-| 2.1 | `FxVertex.h` | Landed exactly as `SpaceshipExplosion-slice-2.md` §2.1 specifies it, if not already there. |
+| 2.1 | `FxVertex.h` | Landed exactly as `Archive/SpaceshipExplosion-slice-2.md` §2.1 specifies it, if not already there. |
 | 2.2 | `ColourRamp.h/.cpp` | `class ColourRamp { static bool Load(const std::wstring&, ColourRamp&); bool FromImage(const DdsImage&); XMFLOAT3 Sample(float u, float v) const noexcept; bool Loaded() const; }`. Holds 64×64×3 floats; `FromImage` accepts any `TopMipAsBgra`-readable 64×64 and reports on anything else. |
 | 2.3 | `BodyMeshBuilder.h/.cpp` | §8.2. A `nullptr` ramp bakes `BODY_FALLBACK_GREY` and traces once. |
 | 2.4 | tests | `ColourRampTests`, `BodyMeshTests` (§11). |
@@ -689,7 +689,7 @@ desc hashes to a pinned value.
 
 | Step | File | What |
 |---|---|---|
-| 3.1 | `GpuHelpers.h/.cpp` | `UploadColourTexture`, as `SpaceshipExplosion-slice-3.md` specifies, if not landed. |
+| 3.1 | `GpuHelpers.h/.cpp` | `UploadColourTexture`, as `Archive/SpaceshipExplosion-slice-3.md` specifies, if not landed. |
 | 3.2 | `Shaders/Body.hlsli`, `BodyVS.hlsl`, `BodyPS.hlsl`, `BodyOverlayPS.hlsl` | §7.2. Three `FxCompile` items in `NeuronClient.vcxproj` with `HeaderFileOutput` and `VariableName` in the house pattern; the `.hlsli` as `<None>`. |
 | 3.3 | `BodyRenderer.h/.cpp` | §7.1, §7.3. Descriptor heap of one, one static sampler, two PSOs, `std::vector<GpuMesh>` of bodies. |
 | 3.4 | `OutpostApp` (temporary) | A debug body from a hard-coded `BodyDesc`, drawn in `WorldView::Render`, so the slice has a screen to be accepted on. Removed by slice 4, which replaces it with the catalogue. Stated in the work order as the placeholder it is. |

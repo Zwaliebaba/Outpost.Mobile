@@ -21,9 +21,10 @@ changes in the same commit.
 **Built and tested.** Five projects and four test suites, Debug|x64, gating in CI (§6). The game
 is a fleet of three hulls on a ground plane: select them, order them somewhere in formation, watch
 them route around architecture, give way to each other, and arrive without passing through
-anything. D3D12 renderer, WM_POINTER input covering mouse and touch, a main-screen HUD drawn
-through one overlay pipeline (bitmap font atlases, coverage-mask icons, untextured quads), OBJ/MTL
-hulls, FXC-compiled shaders.
+anything — and F4 shatters a selected hull into tumbling debris, a fireball and smoke. D3D12
+renderer, WM_POINTER input covering mouse and touch, a main-screen HUD drawn through one overlay
+pipeline (bitmap font atlases, coverage-mask icons, untextured quads), textured FX pipelines for
+the explosion's fragments and sprites, OBJ/MTL hulls, FXC-compiled shaders.
 
 **Deliberately not here yet**, so nobody goes looking for it: no audio, no networking, no combat, no
 economy, no damage model, no save format, no content pipeline beyond OBJ and DDS, and no
@@ -213,9 +214,9 @@ Three rules `.clang-tidy` structurally cannot state, so check them by eye:
 
 | Path | What it is |
 |---|---|
-| `NeuronCore/` | Engine primitives shared by every layer — zero game semantics, no graphics API, headless (below). Diagnostics, file IO, framerate-independent easing, the frame clock, and `Transport`. No content readers: those live with their consumer (below). |
+| `NeuronCore/` | Engine primitives shared by every layer — zero game semantics, no graphics API, headless (below). Diagnostics, file IO, framerate-independent easing, the frame clock, the seeded `Pcg32` (ADR 0012), and `Transport`. No content readers: those live with their consumer (below). |
 | `GameLogic/` | The deterministic simulation, namespace `Game`. `World`, `ShipState`, `WorldPos`, `HullSpec`, `Movement`, `Collision`, `SpatialIndex`, `PathGrid`, `Formation`, `SimTuning`. Depends on NeuronCore only. |
-| `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, and the content readers `DdsImage`, `ObjParser`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
+| `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, the explosion's `FxRenderer`/`MeshShatter`/`SpriteParticles`, and the content readers `DdsImage`, `ObjParser`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
 | `Outpost/` | The executable: composition root, presentation state, the HUD and its event log, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
@@ -431,7 +432,9 @@ macro of that shape appears.
 
   What the tree does *not* use yet, whatever the package list suggests: there is no audio, no
   networking, and no WinUI. Several Windows App SDK packages are restored because the executable
-  was generated from an MSIX template; none of them is referenced by code.
+  was generated from an MSIX template; none of them is referenced by code. MsQuic
+  (`Microsoft.Native.Quic.MsQuic.Schannel`) is restored and its build targets imported ahead of
+  the socket transport; no code references it yet either.
 
 ---
 

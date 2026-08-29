@@ -304,7 +304,7 @@ The tree:
 
 ## 6. Assumptions the implementer may make
 
-- **`Pcg32` exists** with the interface `SpaceshipExplosion-slice-1.md` §2.1 gives. If that
+- **`Pcg32` exists** with the interface `Archive/SpaceshipExplosion-slice-1.md` §2.1 gives. If that
   slice has not merged, this one waits; it does not land a second generator.
 - **The pinned height literal is whatever the first correct build produces**, written into the
   test by the implementer and explained in the pull request. It pins *stability*, not a value
