@@ -30,6 +30,9 @@
     <ClInclude Include="WorldSnapshot.h">
       <Filter>World</Filter>
     </ClInclude>
+    <ClInclude Include="InterestSet.h">
+      <Filter>World</Filter>
+    </ClInclude>
     <ClInclude Include="ShipState.h">
       <Filter>World</Filter>
     </ClInclude>
@@ -75,6 +78,9 @@
       <Filter>World</Filter>
     </ClCompile>
     <ClCompile Include="WorldSnapshot.cpp">
+      <Filter>World</Filter>
+    </ClCompile>
+    <ClCompile Include="InterestSet.cpp">
       <Filter>World</Filter>
     </ClCompile>
     <ClCompile Include="World.cpp">

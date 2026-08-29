@@ -1,7 +1,6 @@
 # Collision and avoidance
 
-**Status: phases 0, 1a, 1b, 2, 2b, 3, 4, 5, 7 and 8 of §15 are implemented and under test.**
-Phase 6 (interest management) is not.
+**Status: every phase of §15 is implemented and under test.**
 Decisions taken at review are recorded in §18. A second round the same day settled the process
 model (§2), universe coordinates (§3), and brought pathfinding into scope (§12, phase 7).
 
@@ -61,8 +60,14 @@ a lower rate than near ones.
 
 So the honest claim is narrower than "interest management is free": **`QueryCircle`, the cell
 decomposition and the static/dynamic split are all reused unchanged; the subscription set, the
-enter/leave delta and the priority accumulator are new code that sits on top of them.** §15 phases
-it accordingly, and does not pretend it is a small phase.
+enter/leave delta and the priority accumulator are new code that sits on top of them.** §15 phased
+it accordingly and did not pretend it was a small phase.
+
+Phase 6 landed exactly on that division: `SpatialIndex` was not touched, and `InterestSet` is the
+new code. What it costs is now a measurement rather than an argument — one subscriber with a 1 km
+radius in a world of 5,000 ships is sent **18 KB per update against 417 KB** for the whole world,
+and that figure stops growing with N while the other does not. `InterestTests` prints the table on
+every run.
 
 Everything below follows from that. Where a cheaper choice would have worked for collision alone and
 a more general one is proposed instead, the reason is always the second customer.
@@ -1284,12 +1289,10 @@ about two slices in one layer they cannot run in parallel with each other — th
 | 7 | Pathfinding: clearance grid, A\*, waypoint follower (§12) | 2, 4 | landed |
 | 8 | Sectors: `WorldPos` grows its `int64` pair (§3) | 0 | landed ([work order](Collision-slice-8.md)) |
 | 2b | Loopback `Transport`, full-fidelity snapshot, artificial latency (§2, §15) | 3 | landed ([work order](Collision-slice-2b.md)) |
-| 6 | Interest management on `QueryCircle`: subscription sets, deltas, priority (§1, §15) | 2b | **not started** |
+| 6 | Interest management on `QueryCircle`: subscription sets, deltas, priority (§1, §15) | 2b | landed ([work order](Collision-slice-6.md)) |
 
 **2b** touched `NeuronCore`, `GameLogic` and the executable at once, which by the same parallelism
-rule meant it wanted the tree to itself, and it did. **6** is the one that remains: a slice of its
-own on top of 2b, and not small, since §1 records what carries over from the index unchanged and
-what does not. It is now unblocked.
+rule meant it wanted the tree to itself, and it did. **6** followed it and closed the list.
 
 **8** was scheduled early among the leftovers for one reason: it is mechanical behind the `WorldPos`
 name, but every stored position is denominated in `SECTOR_SIZE_METRES`, so it invalidates

@@ -186,6 +186,7 @@
     </ClCompile>
     <ClCompile Include="FormationTests.cpp" />
     <ClCompile Include="HullSpecTests.cpp" />
+    <ClCompile Include="InterestTests.cpp" />
     <ClCompile Include="MovementTests.cpp" />
     <ClCompile Include="AvoidanceTests.cpp" />
     <ClCompile Include="CollisionTests.cpp" />

@@ -17,8 +17,8 @@ namespace
 constexpr std::uint8_t KIND_SNAPSHOT = 1;
 constexpr std::uint8_t KIND_MOVE_ORDER = 2;
 
-// kind, snapshotId, fragmentIndex, fragmentCount, tick, recordCount
-constexpr std::uint32_t SNAPSHOT_HEADER_BYTES = 1 + 4 + 4 + 4 + 8 + 4;
+// kind, complete, snapshotId, fragmentIndex, fragmentCount, tick, recordCount, leaveCount
+constexpr std::uint32_t SNAPSHOT_HEADER_BYTES = 1 + 1 + 4 + 4 + 4 + 8 + 4 + 4;
 // handle, posWorld, prevPos, five floats, order, hullId
 constexpr std::uint32_t SHIP_RECORD_BYTES = 8 + 24 + 24 + 20 + 1 + 4;
 // kind, orderId, hasFacing, facingRad, destination, handleCount
@@ -186,6 +186,24 @@ std::uint32_t MaxShipsPerOrder() noexcept
   return (Neuron::MAX_DATAGRAM_BYTES - ORDER_HEADER_BYTES) / HANDLE_BYTES;
 }
 
+namespace
+{
+void WriteShipRecord(ByteWriter& _out, const World& _world, ShipId _id)
+{
+  const ShipState& ship = _world.Ships()[_id];
+  _out.Handle(_world.HandleOf(_id));
+  _out.Pos(ship.posWorld);
+  _out.Pos(ship.prevPos);
+  _out.F32(ship.headingRad);
+  _out.F32(ship.prevHeading);
+  _out.F32(ship.speed);
+  _out.F32(ship.accelSample);
+  _out.F32(ship.turnRateRadPerSec);
+  _out.U8(static_cast<std::uint8_t>(ship.order));
+  _out.U32(ship.hullId);
+}
+} // namespace
+
 std::uint32_t SnapshotWriter::Write(const World& _world, Neuron::Transport& _transport)
 {
   const std::span<const ShipState> ships = _world.Ships();
@@ -196,6 +214,8 @@ std::uint32_t SnapshotWriter::Write(const World& _world, Neuron::Transport& _tra
   // absence of a snapshot is indistinguishable from a stalled server.
   const std::uint32_t fragmentCount = (shipCount + perFragment - 1) / perFragment + (shipCount == 0 ? 1 : 0);
   const std::uint32_t snapshotId = m_nextSnapshotId++;
+  m_lastBytes = 0;
+  m_lastRecords = 0;
 
   std::uint32_t sent = 0;
   for (std::uint32_t fragment = 0; fragment < fragmentCount; ++fragment)
@@ -206,30 +226,91 @@ std::uint32_t SnapshotWriter::Write(const World& _world, Neuron::Transport& _tra
     m_scratch.clear();
     ByteWriter out(m_scratch);
     out.U8(KIND_SNAPSHOT);
+    out.U8(1); // complete: this is the whole world, so the receiver replaces rather than upserts
     out.U32(snapshotId);
     out.U32(fragment);
     out.U32(fragmentCount);
     out.U64(_world.Tick());
     out.U32(count);
+    out.U32(0); // and therefore nothing to say left -- anything absent is gone by construction
 
     for (std::uint32_t at = 0; at < count; ++at)
+      WriteShipRecord(out, _world, static_cast<ShipId>(first + at));
+
+    if (!_transport.Send(m_scratch.data(), static_cast<std::uint32_t>(m_scratch.size())))
+      break;
+    m_lastBytes += static_cast<std::uint32_t>(m_scratch.size());
+    m_lastRecords += count;
+    ++sent;
+  }
+  return sent;
+}
+
+std::uint32_t SnapshotWriter::WriteInterest(const World& _world, std::span<const ShipHandle> _sent, std::span<const ShipHandle> _left,
+                                            Neuron::Transport& _transport)
+{
+  m_lastBytes = 0;
+  m_lastRecords = 0;
+
+  const std::uint32_t perFragment = ShipsPerSnapshotFragment();
+  const std::uint32_t sendCount = static_cast<std::uint32_t>(_sent.size());
+  const std::uint32_t leaveCount = static_cast<std::uint32_t>(_left.size());
+
+  // Leaves ride in the first fragment, and a fragment carries fewer records when it does. A leave is
+  // eight bytes against a record's eighty-one, so this costs at most one record's room.
+  const std::uint32_t leaveBytes = leaveCount * HANDLE_BYTES;
+  const std::uint32_t firstFragmentRoom = (Neuron::MAX_DATAGRAM_BYTES > SNAPSHOT_HEADER_BYTES + leaveBytes)
+                                            ? (Neuron::MAX_DATAGRAM_BYTES - SNAPSHOT_HEADER_BYTES - leaveBytes) / SHIP_RECORD_BYTES
+                                            : 0u;
+
+  std::uint32_t remaining = (sendCount > firstFragmentRoom) ? sendCount - firstFragmentRoom : 0u;
+  const std::uint32_t fragmentCount = 1 + (remaining + perFragment - 1) / perFragment;
+  const std::uint32_t snapshotId = m_nextSnapshotId++;
+
+  std::uint32_t sent = 0;
+  std::uint32_t at = 0;
+  for (std::uint32_t fragment = 0; fragment < fragmentCount; ++fragment)
+  {
+    const std::uint32_t room = (fragment == 0) ? firstFragmentRoom : perFragment;
+    const std::uint32_t claimed = std::min(room, sendCount - at);
+
+    // Resolve BEFORE writing the header, because the header states how many records follow and a
+    // handle can have died between the set being taken and this write. Declaring a count and then
+    // skipping one would leave the receiver reading a record's worth of the next field.
+    m_resolvedScratch.clear();
+    for (std::uint32_t record = 0; record < claimed; ++record)
     {
-      const ShipId id = static_cast<ShipId>(first + at);
-      const ShipState& ship = ships[id];
-      out.Handle(_world.HandleOf(id));
-      out.Pos(ship.posWorld);
-      out.Pos(ship.prevPos);
-      out.F32(ship.headingRad);
-      out.F32(ship.prevHeading);
-      out.F32(ship.speed);
-      out.F32(ship.accelSample);
-      out.F32(ship.turnRateRadPerSec);
-      out.U8(static_cast<std::uint8_t>(ship.order));
-      out.U32(ship.hullId);
+      const ShipId id = _world.Resolve(_sent[at + record]);
+      if (id != INVALID_SHIP_ID)
+        m_resolvedScratch.push_back(id);
+    }
+    const std::uint32_t count = static_cast<std::uint32_t>(m_resolvedScratch.size());
+
+    m_scratch.clear();
+    ByteWriter out(m_scratch);
+    out.U8(KIND_SNAPSHOT);
+    out.U8(0); // an update, so the receiver upserts and applies the leave list
+    out.U32(snapshotId);
+    out.U32(fragment);
+    out.U32(fragmentCount);
+    out.U64(_world.Tick());
+    out.U32(count);
+    out.U32((fragment == 0) ? leaveCount : 0u);
+
+    for (const ShipId id : m_resolvedScratch)
+      WriteShipRecord(out, _world, id);
+
+    if (fragment == 0)
+    {
+      for (const ShipHandle handle : _left)
+        out.Handle(handle);
     }
 
     if (!_transport.Send(m_scratch.data(), static_cast<std::uint32_t>(m_scratch.size())))
       break;
+    m_lastBytes += static_cast<std::uint32_t>(m_scratch.size());
+    m_lastRecords += count;
+    at += claimed; // claimed, not count: a handle that died is consumed, not retried
     ++sent;
   }
   return sent;
@@ -239,7 +320,8 @@ void SnapshotReceiver::AbandonInProgress() noexcept
 {
   if (m_fragmentCount > 0 && m_fragmentsSeen < m_fragmentCount)
     ++m_dropped;
-  m_building.ships.clear();
+  m_pendingUpserts.clear();
+  m_pendingLeaves.clear();
   m_buildingId = 0;
   m_fragmentsSeen = 0;
   m_fragmentCount = 0;
@@ -251,11 +333,13 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
   if (in.U8() != KIND_SNAPSHOT)
     return false;
 
+  const bool complete = in.U8() != 0;
   const std::uint32_t snapshotId = in.U32();
   const std::uint32_t fragment = in.U32();
   const std::uint32_t fragmentCount = in.U32();
   const std::uint64_t tick = in.U64();
   const std::uint32_t count = in.U32();
+  const std::uint32_t leaveCount = in.U32();
   if (!in.Ok() || fragmentCount == 0 || fragment >= fragmentCount)
     return false;
 
@@ -269,7 +353,8 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
     AbandonInProgress();
     m_buildingId = snapshotId;
     m_fragmentCount = fragmentCount;
-    m_building.tick = tick;
+    m_buildingTick = tick;
+    m_buildingComplete = complete;
   }
 
   // Fragments arrive in order over this transport, so an out-of-order one means loss upstream.
@@ -298,20 +383,79 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
       AbandonInProgress();
       return false;
     }
-    m_building.ships.push_back(ship);
+    m_pendingUpserts.push_back(ship);
+  }
+
+  for (std::uint32_t at = 0; at < leaveCount; ++at)
+  {
+    const ShipHandle handle = in.Handle();
+    if (!in.Ok())
+    {
+      AbandonInProgress();
+      return false;
+    }
+    m_pendingLeaves.push_back(handle);
   }
 
   ++m_fragmentsSeen;
   if (m_fragmentsSeen < m_fragmentCount)
     return false;
 
-  m_latest = std::move(m_building);
-  m_building = WorldSnapshot{};
+  Apply();
+  m_latest.tick = m_buildingTick;
+  m_pendingUpserts.clear();
+  m_pendingLeaves.clear();
   m_buildingId = 0;
   m_fragmentsSeen = 0;
   m_fragmentCount = 0;
   m_hasSnapshot = true;
   return true;
+}
+
+// Applied only once every fragment is in, never as they land: a world left half-updated by a
+// fragment that never arrived is exactly what "dropped whole" exists to prevent.
+void SnapshotReceiver::Apply()
+{
+  // A complete snapshot IS the world, so anything it does not carry is gone. An update carries only
+  // what changed, so what it does not mention is untouched. Without this distinction a full snapshot
+  // could never remove a despawned ship, because it has no leave list to put one in.
+  if (m_buildingComplete)
+  {
+    m_latest.ships.clear();
+    m_latest.ships.insert(m_latest.ships.end(), m_pendingUpserts.begin(), m_pendingUpserts.end());
+    return;
+  }
+
+  for (const ShipHandle gone : m_pendingLeaves)
+  {
+    for (std::size_t at = 0; at < m_latest.ships.size(); ++at)
+    {
+      if (m_latest.ships[at].handle == gone)
+      {
+        // Swap-and-pop. The client's order is its own -- it is a set, not the world's array -- and
+        // WorldView carries presentation state across by handle rather than by position.
+        m_latest.ships[at] = m_latest.ships.back();
+        m_latest.ships.pop_back();
+        break;
+      }
+    }
+  }
+
+  for (const ShipSnapshot& ship : m_pendingUpserts)
+  {
+    bool found = false;
+    for (ShipSnapshot& held : m_latest.ships)
+    {
+      if (held.handle == ship.handle)
+      {
+        held = ship;
+        found = true;
+        break;
+      }
+    }
+    if (!found)
+      m_latest.ships.push_back(ship);
+  }
 }
 
 bool WriteMoveOrder(const MoveOrder& _order, Neuron::Transport& _transport)
