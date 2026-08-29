@@ -254,27 +254,24 @@ inline constexpr Neuron::BodyOverlayParams BODY_OVERLAY{1.2f, 4.0f, 0.5f, 40.0f}
 // the reference the GPU one is verified against, and it is the one the test suite exercises
 // (Design/PlanetRenderer.md 17).
 //
-// **False: the readback comparison has now been run, and the kernels do not agree with the builder.**
+// **True: the readback comparison has been run, and the two producers agree.** Measured on an
+// RTX 3070 Ti Laptop, Debug|x64, over the eight starting bodies of BODY_START_SEED, with every
+// baked vertex read back through BodyRenderer::ReadBackBody and compared with BodyMeshBuilder's:
 //
-// Measured on an RTX 3070 Ti Laptop, Debug|x64, over the eight starting bodies of BODY_START_SEED,
-// with the vertices read back through BodyRenderer::ReadBackBody and compared vertex for vertex
-// against BodyMeshBuilder's:
+//   - triangle counts equal on every body, the wet world's 3 166 included, so the sea-level cull
+//     agrees on which cells it keeps;
+//   - positions within 9e-6 of the radius, none over the work order's 1e-4;
+//   - colours within one step of 255, and uvs bitwise equal;
+//   - normals within 2.2e-4, of which up to 102 triangles on the smallest asteroids exceed 1e-4 --
+//     a metre-scale triangle on a 12 m body turns a 5e-6 R position difference into a hundredth of
+//     a degree, and the work order's 1e-4 was written with a planet's triangles in mind.
 //
-//   - the wet terran world bakes 49 152 cells and every one of them is a degenerate, so the planet
-//     is not drawn at all;
-//   - the dry bodies bake the right count and the wrong shape -- positions out by up to 0.38 of the
-//     radius, normals by up to 1.5, and colours by up to 185/255 on every vertex;
-//   - uvs are bitwise equal, which is the one part of the kernel that is certainly right.
-//
-// One cause was found and fixed on the way (BodyRenderer::BakeBody seeded the maxima buffer through
-// UploadStaticBuffer, which left it in VERTEX_AND_CONSTANT_BUFFER, so the copy that seeded them was
-// rejected and every tile scaled to nothing); the debug layer is silent now and the figures above
-// are what remains after it. The kernels' arithmetic is the next place to look, and the comparison
-// harness that produced these numbers is a dozen lines in OutpostApp against the API above.
-//
-// So this stays false, and the CPU builder is the producer. Flipping it is a one-line change and
-// the measurement that justifies it belongs in the pull request that makes it.
-inline constexpr bool BODY_BAKE_ON_GPU = false;
+// Three things had to be fixed before that held, and each was silent: BodyField::ParamsFor left the
+// octave amplitudes zero, because they were filled by MeasureTiles and the GPU path never runs it;
+// BakeBody seeded its maxima through a helper that left the buffer in the wrong state; and the
+// kernel reseeded its dither generator per triangle where the builder seeds it per cell.
+// Decisions/0020 records all three.
+inline constexpr bool BODY_BAKE_ON_GPU = true;
 
 // The starting scene, from one seed, so the pull request's screenshot reproduces. F5 reseeds with
 // BODY_START_SEED + the number of presses, which makes a scene reproducible by press count.

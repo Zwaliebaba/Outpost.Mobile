@@ -372,7 +372,10 @@ float Octaves(float3 _d, uint _tileIndex)
     // How far up this tile's own range the terrain has come. See BodyField.cpp for why it is
     // measured against the tile's own height scale and not in the source's map units.
     const float relative = (heightScale > 0.0) ? min(abs(height) / heightScale, 1.0) : 0.0;
-    octaveValue *= ROUGHNESS_FLOOR + pow(relative, smoothing) * ROUGHNESS_GAIN;
+    // pow(0, y) is zero on the CPU and is exp2(y * log2(0)) on a GPU, which is a NaN under fast
+    // math -- and the first octave always arrives here with height still zero.
+    const float roughness = (relative > 0.0) ? pow(relative, smoothing) : 0.0;
+    octaveValue *= ROUGHNESS_FLOOR + roughness * ROUGHNESS_GAIN;
 
     height += octaveValue;
     frequency *= 2.0;
@@ -633,7 +636,12 @@ uint SamplesPerSide()
 }
 
 // The colour of one triangle, from BodyMeshBuilder.cpp's per-triangle block.
-float3 TriangleColour(float3 _normal, float3 _centroid, float _heightMetres, float _maxHeightMetres, uint _cellHash)
+// The dither generator arrives from the caller rather than being seeded here, and that is the whole
+// of it: the CPU builder seeds one Pcg32 per *cell* and draws from it once per triangle, so the two
+// halves of a cell get the first and second draws of one stream. Seeding inside this function gave
+// both triangles the first draw, which is a different grain on every second triangle -- measured, a
+// fifth of all vertices came back more than a colour step from the builder's.
+float3 TriangleColour(float3 _normal, float3 _centroid, float _heightMetres, float _maxHeightMetres, inout Pcg32State _rng)
 {
   const float climateScale = (_maxHeightMetres > 0.0) ? (1.0 / _maxHeightMetres) : 0.0;
   const float sourceUnits = (radiusEllipsoid.x > 0.0) ? (SOURCE_MAP_SIZE / radiusEllipsoid.x) : 0.0;
@@ -643,8 +651,7 @@ float3 TriangleColour(float3 _normal, float3 _centroid, float _heightMetres, flo
   const float u = pow(1.0 - gradient, SLOPE_EXPONENT);
   float v = 1.0 - climate * climateScale;
 
-  Pcg32State rng = Pcg32Seed(uint64_t(_cellHash));
-  v += Pcg32Signed(rng, DITHER_STRENGTH / (abs(climate * sourceUnits) + DITHER_SOFTENING));
+  v += Pcg32Signed(_rng, DITHER_STRENGTH / (abs(climate * sourceUnits) + DITHER_SOFTENING));
 
   // Half a texel, and it is not a nicety. ColourRamp::Sample clamps to [0, 1] and multiplies by 63
   // to land on a texel index; a texture sample multiplies by 64 and subtracts half a texel. Sampling

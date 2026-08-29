@@ -81,7 +81,9 @@ void main(uint3 _id : SV_DispatchThreadID)
 
   // One draw per cell and not per triangle: the two halves of a cell are one patch of ground, and a
   // dither that split them would draw the diagonal in.
-  const uint cellHash = CellHash(BodySeed(), face, x, z);
+  // One generator per cell, drawn from once per triangle in the loop below: the two halves of a cell
+  // are one patch of ground, and a dither that restarted between them would draw the diagonal in.
+  Pcg32State rng = Pcg32Seed(uint64_t(CellHash(BodySeed(), face, x, z)));
 
   const uint order[6] = {0u, 1u, 2u, 0u, 2u, 3u};
   const float2 cellUvs[4] = {float2(0.0, 0.0), float2(0.0, 1.0), float2(1.0, 1.0), float2(1.0, 0.0)};
@@ -102,7 +104,7 @@ void main(uint3 _id : SV_DispatchThreadID)
 
     // The undipped heights, as the colour pass reads them.
     const float heightMetres = (heights[i0] + heights[i1] + heights[i2]) * (1.0 / 3.0);
-    const float3 colour = TriangleColour(normal, centreDirection, heightMetres, maxHeight, cellHash);
+    const float3 colour = TriangleColour(normal, centreDirection, heightMetres, maxHeight, rng);
 
     [unroll] for (uint corner = 0u; corner < 3u; ++corner)
     {

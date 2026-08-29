@@ -394,6 +394,15 @@ BodyHandle BodyRenderer::BakeBody(GpuDevice& _gpu, const BodyParams& _params, co
   maximaBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
   maximaBarrier.UAV.pResource = maxima.get();
 
+  // The copy above promoted the maxima buffer to COPY_DEST, and a promoted buffer does not become
+  // a UAV on its own: without this the first dispatch's InterlockedMax runs against a resource the
+  // driver still has in a copy state, and what the second pass reads back is not what the first
+  // wrote. It is the difference between every tile scaling to its measured peak and every tile
+  // scaling to nothing, which is a body with no terrain on it at all.
+  const D3D12_RESOURCE_BARRIER maximaReady =
+    Transition(maxima.get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+  cmd->ResourceBarrier(1, &maximaReady);
+
   cmd->SetPipelineState(m_bakeMaxPso.get());
   UINT control[BAKE_CONTROL_DWORDS] = {BAKE_PASS_TILE_MAXIMA, 0, 0, 0};
   cmd->SetComputeRoot32BitConstants(1, BAKE_CONTROL_DWORDS, control, 0);
