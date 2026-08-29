@@ -277,12 +277,12 @@ void WorldView::AssignGroup(int _group)
   if (_group < 0 || _group >= CONTROL_GROUPS)
     return;
 
-  std::vector<Game::ShipId>& group = m_groups[_group];
+  std::vector<Game::ShipHandle>& group = m_groups[_group];
   group.clear();
-  for (size_t i = 0; i < m_ships.size(); ++i)
+  for (size_t i = 0; i < m_ships.size() && i < m_handles.size(); ++i)
   {
     if (m_ships[i].selected)
-      group.push_back(static_cast<Game::ShipId>(i));
+      group.push_back(m_handles[i]);
   }
 
   if (m_log)
@@ -302,22 +302,29 @@ void WorldView::SelectGroup(int _group)
     return;
 
   ClearSelection();
-  for (const Game::ShipId id : m_groups[_group])
+  int selected = 0;
+  for (const Game::ShipHandle handle : m_groups[_group])
   {
-    // A group holds indices into the snapshot it was assigned from, and a later snapshot can put a
-    // different ship at that index -- so the faction is checked here too rather than trusted from
-    // assignment time. Without it a recalled group is the one way a hostile could end up selected.
-    if (id < m_ships.size() && IsOwn(id))
-      m_ships[id].selected = true;
+    const int at = RecallableIndex(handle);
+    if (at < 0)
+      continue; // out of view or no longer this client's; kept in the group either way
+    m_ships[static_cast<std::size_t>(at)].selected = true;
+    ++selected;
   }
-  m_activeGroup = m_groups[_group].empty() ? -1 : _group;
+  // A group whose members are all gone leaves nothing active to be shown as the source of a
+  // selection that did not happen.
+  m_activeGroup = (selected > 0) ? _group : -1;
 }
 
 int WorldView::GroupSize(int _group) const noexcept
 {
   if (_group < 0 || _group >= CONTROL_GROUPS)
     return 0;
-  return static_cast<int>(m_groups[_group].size());
+
+  int live = 0;
+  for (const Game::ShipHandle handle : m_groups[_group])
+    live += (RecallableIndex(handle) >= 0) ? 1 : 0;
+  return live;
 }
 
 void WorldView::TriggerCameraShake() noexcept
@@ -479,6 +486,21 @@ bool WorldView::IsOwn(std::size_t _index) const noexcept
 {
   const std::span<const Game::ShipSnapshot> state = Ships();
   return _index < state.size() && state[_index].factionId == m_ownFaction;
+}
+
+// The faction check here is not redundant, even though a handle names one ship for the whole of its
+// life and only the client's own ships are ever assigned to a group. Ownership finer than faction
+// arrives with the second subscriber (ADR 0014), and then a ship that was the player's when the
+// group was assigned need not still be. Every path into the selection asks the same question at the
+// moment it selects, rather than trusting what was true when something was remembered.
+int WorldView::RecallableIndex(Game::ShipHandle _handle) const noexcept
+{
+  for (std::size_t at = 0; at < m_handles.size(); ++at)
+  {
+    if (m_handles[at] == _handle)
+      return IsOwn(at) ? static_cast<int>(at) : -1;
+  }
+  return -1;
 }
 
 // Ray against each hull's oriented bounding box. A sphere would be far too loose on a hull three
