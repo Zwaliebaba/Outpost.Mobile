@@ -27,6 +27,9 @@
     <ClInclude Include="WorldPos.h">
       <Filter>World</Filter>
     </ClInclude>
+    <ClInclude Include="WorldSnapshot.h">
+      <Filter>World</Filter>
+    </ClInclude>
     <ClInclude Include="ShipState.h">
       <Filter>World</Filter>
     </ClInclude>
@@ -69,6 +72,9 @@
       <Filter>Motion</Filter>
     </ClCompile>
     <ClCompile Include="SpatialIndex.cpp">
+      <Filter>World</Filter>
+    </ClCompile>
+    <ClCompile Include="WorldSnapshot.cpp">
       <Filter>World</Filter>
     </ClCompile>
     <ClCompile Include="World.cpp">
