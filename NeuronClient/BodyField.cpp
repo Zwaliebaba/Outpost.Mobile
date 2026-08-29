@@ -220,6 +220,8 @@ BodyParams BodyField::ParamsFor(const BodyDesc& _desc)
     DebugTrace("body {}: {} flatten areas, of which {} fit; the rest are dropped\n", _desc.seed, _desc.flatten.size(),
                BodyParams::MAX_FLATTEN);
 
+  const std::uint32_t octaves = static_cast<std::uint32_t>(params.outsideMaxHeightGrid.w);
+
   params.tileCount = static_cast<std::uint32_t>(std::min<std::size_t>(_desc.tiles.size(), BodyParams::MAX_TILES));
   for (std::uint32_t i = 0; i < params.tileCount; ++i)
   {
@@ -238,6 +240,20 @@ BodyParams BodyField::ParamsFor(const BodyDesc& _desc)
     const float amplitude = tile.heightScale * AMPLITUDE_A * Exp(AMPLITUDE_A_RATE * tile.fractalDimension) * AMPLITUDE_B *
                             Exp(AMPLITUDE_B_RATE * tile.lowlandSmoothing);
     out.fractal = XMFLOAT4(tile.fractalDimension, tile.heightScale, tile.lowlandSmoothing, amplitude);
+
+    // Pow(len * 10, fractalDimension) * the compensated height scale, per octave. It belongs here
+    // and not in MeasureTiles, because it is not a measurement: it is a pure function of the numbers
+    // three lines above, and the block has to carry it for callers who never build a BodyField at
+    // all. The bake is exactly such a caller -- BakeBody takes what this returns -- and while these
+    // lived in MeasureTiles it took a block of zeros, so every octave contributed nothing, every
+    // tile peaked at zero, every tile scaled to zero, and a baked body came out as a smooth sphere
+    // at outsideHeight with its whole surface culled as sea floor.
+    float length = SOURCE_LEVEL_LENGTH;
+    for (std::uint32_t octave = 0; octave < octaves; ++octave)
+    {
+      params.SetOctaveAmplitude(i, octave, Pow(length * SOURCE_LEVEL_GAIN, tile.fractalDimension) * amplitude);
+      length *= 0.5f;
+    }
   }
 
   params.flattenCount = static_cast<std::uint32_t>(std::min<std::size_t>(_desc.flatten.size(), BodyParams::MAX_FLATTEN));
@@ -258,18 +274,8 @@ BodyParams BodyField::ParamsFor(const BodyDesc& _desc)
 
 void BodyField::MeasureTiles() noexcept
 {
-  const std::uint32_t octaves = static_cast<std::uint32_t>(m_params.outsideMaxHeightGrid.w);
-
-  for (std::uint32_t i = 0; i < m_params.tileCount; ++i)
-  {
-    const BodyParams::Tile& tile = m_params.tiles[i];
-    float length = SOURCE_LEVEL_LENGTH;
-    for (std::uint32_t octave = 0; octave < octaves; ++octave)
-    {
-      m_params.SetOctaveAmplitude(i, octave, Pow(length * SOURCE_LEVEL_GAIN, tile.fractal.x) * tile.fractal.w);
-      length *= 0.5f;
-    }
-  }
+  // The octave amplitudes are already in the block: ParamsFor put them there, because they are a
+  // function of the description and not of anything measured here.
 
   // The tile's maximum is measured with its edge fade already applied, because the fade is part of
   // what the tile contributes; scaling by a maximum found without it would leave a tile whose peak is

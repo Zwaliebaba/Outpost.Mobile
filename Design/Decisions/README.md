@@ -52,3 +52,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0017](0017-the-tree-gains-a-compute-pipeline.md) | The tree gains a compute pipeline, and the CPU generator stays as its reference | accepted |
 | [0018](0018-shaders-are-dxil-6-7.md) | Shaders are DXIL for shader model 6.7, compiled by DXC | accepted |
 | [0019](0019-fxvertex-is-packed.md) | FxVertex is packed: float position, SNORM16 normal, UNORM8 colour, half uv | accepted |
+| [0020](0020-the-bake-is-the-producer.md) | The compute bake is the producer, and three silent defects had to go first | accepted |
