@@ -919,9 +919,10 @@ the order is issued:
 arrivalRadius < 0.5 * slotSpacing
 ```
 
-**`Movement.h:8` and AGENTS.md's "deliberately not here yet" list both say there is no avoidance.**
+**`Movement.h:8` and AGENTS.md's "deliberately not here yet" list both said there is no avoidance.**
 AGENTS.md §"What is actually here" requires that a change making one of its sentences false updates
-that sentence in the same commit. Both are part of phase 4's diff, not a follow-up.
+that sentence in the same commit, so both were part of phase 4's diff rather than a follow-up. Done:
+`Movement.h` now opens on the neighbour list, and the rulebook's list drops pathfinding too.
 
 ---
 
@@ -1193,10 +1194,10 @@ against an unbounded query radius (§10). K moves into `HullSpec` as a per-hull 
 **phase 4** against the capped horizon, with the phase 2 benchmark showing what it costs. It is in
 the replay contract either way, so the thing to get right is the number, not the timing.
 
-**5. Yes — `Design/` is the home for documents of this kind.** `NeuronCore/Transport.h:8` cites a
-`Design.md` that does not exist; point it at a real file and add the row to AGENTS.md §2's
-repository map. Both are part of the same commit as the first phase that lands, per AGENTS.md's rule
-that a change making one of its sentences false updates the sentence.
+**5. Yes — `Design/` is the home for documents of this kind.** `NeuronCore/Transport.h:8` cited a
+`Design.md` that does not exist; point it at a real file, and give `Design/` a row in AGENTS.md §2's
+repository map. Done — the citation now reads `Design/Collision.md`, and the row is there, though
+main added it independently rather than this branch.
 
 **6. File naming: `Collision.md`.** `AGENTS.md` is upper-case and every other authored file in the
 tree is `PascalCase`; a lower-case exception here becomes the habit that makes the next one
