@@ -220,6 +220,18 @@ public:
   // Control groups: a remembered selection under a number. Assigning with nothing selected clears
   // the group. The active group is the one the current selection was last taken from, and it stops
   // being active the moment the selection is changed by any other means.
+  //
+  // A group remembers ShipHandles, not positions in the snapshot. A position is only meaningful
+  // within the snapshot it came from -- SnapshotReceiver::Apply swap-and-pops on a leave and appends
+  // on an enter, so a record's index changes whenever anything enters or leaves this client's
+  // interest set -- and a group outlives any number of those. That is the same reference-across-a-
+  // boundary that ADR 0005 exists for, and the cost of getting it wrong is the one that record warns
+  // about: not a crash, but the player recalling group 2 and getting somebody else's ship.
+  //
+  // GroupSize reports what recalling would actually select, so a member out of view or destroyed
+  // stops being counted. A member is never *dropped* for being out of view: absent from the snapshot
+  // means outside the interest set, which is not the same as dead, and a ship that comes back into
+  // view rejoins its group. A group is pruned by being reassigned, never by being recalled.
   static constexpr int CONTROL_GROUPS = 5;
   void AssignGroup(int _group);
   void SelectGroup(int _group);
@@ -300,10 +312,19 @@ private:
   [[nodiscard]] int PickShip(float _xPx, float _yPx) const;
 
   // Whether record _index is one this client may take hold of. Every selection path goes through it:
-  // PickShip for taps and hovers, OnBoxSelect for a band, and SelectGroup -- which needs it despite
-  // only ever recalling what was selected, because a group holds indices and a later snapshot can
-  // put a different ship at one.
+  // PickShip for taps and hovers, OnBoxSelect for a band, and RecallableIndex for a control group.
   [[nodiscard]] bool IsOwn(std::size_t _index) const noexcept;
+
+  // Where a group member sits in the current snapshot, or -1 if recalling the group would not take
+  // hold of it -- because this client is no longer holding that ship, or because it is no longer its
+  // own. One definition, used by SelectGroup and by GroupSize, so the number on a group button is
+  // exactly the number of ships pressing it would select.
+  //
+  // Linear, like the carry scan in ApplySnapshot and for the same reason. It costs group size times
+  // records held, and the HUD asks for it five times a frame: free at the counts this game has, and
+  // if a fleet ever makes it matter the answer is a recount when the snapshot changes rather than a
+  // map to keep in step with two parallel arrays.
+  [[nodiscard]] int RecallableIndex(Game::ShipHandle _handle) const noexcept;
   [[nodiscard]] static MotionSample SampleOf(const Game::ShipSnapshot& _ship, std::uint64_t _tick) noexcept;
   void IssueMoveOrder(const DirectX::XMFLOAT3& _point, bool _hasFacing, float _facingRad);
   [[nodiscard]] float SimTimeSec() const noexcept;
@@ -361,7 +382,7 @@ private:
   std::vector<DirectX::XMFLOAT4X4> m_bodyWorlds;
   std::uint32_t m_bodyTriangles = 0;
 
-  std::vector<Game::ShipId> m_groups[CONTROL_GROUPS];
+  std::vector<Game::ShipHandle> m_groups[CONTROL_GROUPS];
   int m_activeGroup = -1;
   EventLog* m_log = nullptr;
 

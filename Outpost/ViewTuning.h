@@ -169,6 +169,29 @@ inline constexpr float AMBIENT_LEVEL = 0.3f;
 inline constexpr Neuron::Rgba SHIP_COLOUR{0.55f, 0.6f, 0.66f, 1.0f};
 inline constexpr Neuron::Rgba SELECTED_COLOUR{0.35f, 0.95f, 0.66f, 1.0f};
 inline constexpr float SHIP_MATERIAL_MIX = 0.55f;
+
+// What a ship of another faction is drawn in: the three knobs that make an enemy a color rather than
+// a silhouette. Which faction counts as "another" is the viewer's own, supplied by the composition
+// root -- the server states identity and each client decides what it means (Design/Hostiles.md 4.1),
+// so this is a mapping the client owns and not a fact about the ship.
+//
+// The mix is the one that matters, and it is why there are three constants rather than one. The
+// pixel shader takes albedo = lerp(tint, the mesh's own vertex color, mix), so SHIP_MATERIAL_MIX
+// keeps 55 % of the paint the hull was authored with -- and these hulls are authored with bright
+// green panels (Kd 0.50 0.93 0.13 on the Interceptor). Worked through: a friendly's panel comes out
+// #86C75E, and the same panel under a red tint at the same mix comes out #B0A932 -- olive, with red
+// barely ahead of green, which is not a red ship. At a fifth it is #D57540 against a #BD473A hull:
+// enough paint left for the panels to go on shading the hull, not enough for them to argue about
+// whose ship it is.
+//
+// The accent is where the eye actually catches a hostile under way: exhaust and trail, which every
+// ship in the game drew in SELECTED_COLOUR until now, so an enemy was a green-flamed ship. One
+// accent for the whole feature -- HUD_ALERT_RED below derives from it, so retuning the enemy moves
+// the hulls, the plumes and the dots on the overview together and they cannot drift apart.
+inline constexpr Neuron::Rgba HOSTILE_SHIP_COLOUR{0.92f, 0.34f, 0.28f, 1.0f};
+inline constexpr float HOSTILE_SHIP_MATERIAL_MIX = 0.2f;
+inline constexpr Neuron::Rgba HOSTILE_ACCENT_COLOUR{0.95f, 0.43f, 0.35f, 1.0f};
+
 inline constexpr float SHIP_SCALE = 1.0f;
 inline constexpr float SHIP_HOVER_HEIGHT = 4.0f;
 inline constexpr float DECAL_LIFT_Y = 0.2f; // clear of the ground quad so the two cannot z-fight
@@ -263,7 +286,10 @@ inline constexpr Neuron::Rgba HUD_PANEL_OUTLINE{GRID_COLOUR.r, GRID_COLOUR.g, GR
 inline constexpr Neuron::Rgba HUD_LABEL_COLOUR{0.373f, 0.455f, 0.533f, 1.0f};
 inline constexpr Neuron::Rgba HUD_ACCENT_GREEN{SEL_RING_COLOUR.r, SEL_RING_COLOUR.g, SEL_RING_COLOUR.b, 1.0f}; // active, positive
 inline constexpr Neuron::Rgba HUD_ACCENT_AMBER{MARKER_COLOUR.r, MARKER_COLOUR.g, MARKER_COLOUR.b, 1.0f};       // alerts, orders
-inline constexpr Neuron::Rgba HUD_ALERT_RED{0.95f, 0.43f, 0.35f, 1.0f};                                        // hostile
+// Derived, the way HUD_ACCENT_GREEN is derived from the ring: the red a hostile draws in on the map
+// is the red it draws in on the ground, so retuning the enemy retunes both (world look, above).
+inline constexpr Neuron::Rgba HUD_ALERT_RED{HOSTILE_ACCENT_COLOUR.r, HOSTILE_ACCENT_COLOUR.g, HOSTILE_ACCENT_COLOUR.b,
+                                            1.0f}; // hostile, and alerts
 inline constexpr Neuron::Rgba HUD_INFO_GREY{0.45f, 0.50f, 0.56f, 1.0f};
 inline constexpr Neuron::Rgba HUD_BAR_TRACK{1.0f, 1.0f, 1.0f, 0.07f};
 inline constexpr float HUD_ACTIVE_OUTLINE_ALPHA = 0.7f; // a pressed or active button, in the accent

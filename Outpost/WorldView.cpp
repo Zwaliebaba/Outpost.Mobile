@@ -277,12 +277,12 @@ void WorldView::AssignGroup(int _group)
   if (_group < 0 || _group >= CONTROL_GROUPS)
     return;
 
-  std::vector<Game::ShipId>& group = m_groups[_group];
+  std::vector<Game::ShipHandle>& group = m_groups[_group];
   group.clear();
-  for (size_t i = 0; i < m_ships.size(); ++i)
+  for (size_t i = 0; i < m_ships.size() && i < m_handles.size(); ++i)
   {
     if (m_ships[i].selected)
-      group.push_back(static_cast<Game::ShipId>(i));
+      group.push_back(m_handles[i]);
   }
 
   if (m_log)
@@ -302,22 +302,29 @@ void WorldView::SelectGroup(int _group)
     return;
 
   ClearSelection();
-  for (const Game::ShipId id : m_groups[_group])
+  int selected = 0;
+  for (const Game::ShipHandle handle : m_groups[_group])
   {
-    // A group holds indices into the snapshot it was assigned from, and a later snapshot can put a
-    // different ship at that index -- so the faction is checked here too rather than trusted from
-    // assignment time. Without it a recalled group is the one way a hostile could end up selected.
-    if (id < m_ships.size() && IsOwn(id))
-      m_ships[id].selected = true;
+    const int at = RecallableIndex(handle);
+    if (at < 0)
+      continue; // out of view or no longer this client's; kept in the group either way
+    m_ships[static_cast<std::size_t>(at)].selected = true;
+    ++selected;
   }
-  m_activeGroup = m_groups[_group].empty() ? -1 : _group;
+  // A group whose members are all gone leaves nothing active to be shown as the source of a
+  // selection that did not happen.
+  m_activeGroup = (selected > 0) ? _group : -1;
 }
 
 int WorldView::GroupSize(int _group) const noexcept
 {
   if (_group < 0 || _group >= CONTROL_GROUPS)
     return 0;
-  return static_cast<int>(m_groups[_group].size());
+
+  int live = 0;
+  for (const Game::ShipHandle handle : m_groups[_group])
+    live += (RecallableIndex(handle) >= 0) ? 1 : 0;
+  return live;
 }
 
 void WorldView::TriggerCameraShake() noexcept
@@ -479,6 +486,21 @@ bool WorldView::IsOwn(std::size_t _index) const noexcept
 {
   const std::span<const Game::ShipSnapshot> state = Ships();
   return _index < state.size() && state[_index].factionId == m_ownFaction;
+}
+
+// The faction check here is not redundant, even though a handle names one ship for the whole of its
+// life and only the client's own ships are ever assigned to a group. Ownership finer than faction
+// arrives with the second subscriber (ADR 0014), and then a ship that was the player's when the
+// group was assigned need not still be. Every path into the selection asks the same question at the
+// moment it selects, rather than trusting what was true when something was remembered.
+int WorldView::RecallableIndex(Game::ShipHandle _handle) const noexcept
+{
+  for (std::size_t at = 0; at < m_handles.size(); ++at)
+  {
+    if (m_handles[at] == _handle)
+      return IsOwn(at) ? static_cast<int>(at) : -1;
+  }
+  return -1;
 }
 
 // Ray against each hull's oriented bounding box. A sphere would be far too loose on a hull three
@@ -772,10 +794,21 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
                           XMMatrixRotationY(heading) * XMMatrixTranslation(x, SHIP_HOVER_HEIGHT, z);
     XMStoreFloat4x4(&world, hull);
 
-    Rgba tint = view.selected ? SELECTED_COLOUR : SHIP_COLOUR;
+    // Selection is only ever the viewer's own, so there are three cases: mine and picked, mine, and
+    // somebody else's. The mix travels with the tint because an enemy overrides more of the hull's
+    // authored paint than a friendly does -- ViewTuning.h says why. In-scene IFF the moment a hull
+    // is on screen, rather than an overview the player has to look away to read.
+    Rgba tint = SELECTED_COLOUR;
+    float materialMix = SHIP_MATERIAL_MIX;
+    if (!view.selected)
+    {
+      const bool own = IsOwn(i);
+      tint = own ? SHIP_COLOUR : HOSTILE_SHIP_COLOUR;
+      materialMix = own ? SHIP_MATERIAL_MIX : HOSTILE_SHIP_MATERIAL_MIX;
+    }
     const float lift = view.hoverAmount * SEL_HOVER_HIGHLIGHT_STRENGTH;
     tint = Rgba{tint.r + (1.0f - tint.r) * lift, tint.g + (1.0f - tint.g) * lift, tint.b + (1.0f - tint.b) * lift, 1.0f};
-    _renderer.DrawMesh(_gpu, view.mesh, world, tint, SHIP_MATERIAL_MIX, false);
+    _renderer.DrawMesh(_gpu, view.mesh, world, tint, materialMix, false);
 
     // Remembered for the explosion, which needs where the hull was and how it was moving at a point
     // where the snapshot no longer has a record for it. Taken from the drawn pose rather than the
@@ -979,10 +1012,15 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu)
   const XMFLOAT3& cameraRight = m_camera->Right();
   const XMFLOAT3& cameraUp = m_camera->Up();
 
-  for (const ShipView& view : m_ships)
+  for (size_t i = 0; i < m_ships.size(); ++i)
   {
+    const ShipView& view = m_ships[i];
     if (view.thrusterLocals.empty() || view.thrusterIntensity <= 0.002f)
       continue;
+
+    // Hoisted out of the nozzle loop: one lookup per ship rather than one per billboard, and the
+    // whole plume of a hostile is one color rather than being decided sample by sample.
+    const Rgba accent = IsOwn(i) ? SELECTED_COLOUR : HOSTILE_ACCENT_COLOUR;
 
     // Every exhaust gets its own glow and its own trail: a bomber flying with three nozzles lays
     // down three ribbons, and they fan apart through a turn because the outboard ones sweep wider.
@@ -1030,8 +1068,7 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu)
         billboard._42 = point.y;
         billboard._43 = point.z;
         billboard._44 = 1.0f;
-        _renderer.DrawGlow(_gpu, m_quadMesh, billboard, Rgba{SELECTED_COLOUR.r, SELECTED_COLOUR.g, SELECTED_COLOUR.b, alpha},
-                           THRUSTER_GLOW_FALLOFF);
+        _renderer.DrawGlow(_gpu, m_quadMesh, billboard, Rgba{accent.r, accent.g, accent.b, alpha}, THRUSTER_GLOW_FALLOFF);
 
         if (trailLength <= 0.0f)
           break;

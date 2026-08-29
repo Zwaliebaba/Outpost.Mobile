@@ -381,6 +381,11 @@ tell the truth, once in the simulation because clients are not trusted (§4.3):
 - The 3-D scene draws hostiles exactly as it draws friendlies — mesh, `SHIP_COLOUR` mix, trails,
   banking. Silhouette and the overview carry the IFF for now; in-scene hostile treatment (tint,
   target rings, health bars) belongs to combat and is deliberately absent (§11).
+  *(The tint half is superseded: the owner asked for the enemy to read as a color in the scene, so a
+  hostile hull draws in `HOSTILE_SHIP_COLOUR` and its exhaust and trail in `HOSTILE_ACCENT_COLOUR`,
+  from which the overview's red is derived. Target rings and health bars are still combat's, and
+  nothing about what the wire carries changed — the client maps a stated identity to a color, which
+  is §4.1's whole point.)*
 
 Snapshots, interpolation and trails are untouched. The explosion is not: `ExplodeTheLost`
 detonates whatever leaves the snapshot, a hostile at the interest edge is exactly what leaves, and
@@ -517,6 +522,7 @@ Named so nobody goes looking, and so the next design knows where its edges are:
 - **Spawner and respawn systems, station lifecycle, hostile production** — the base is boot
   content, spawned once, indestructible today.
 - **In-scene hostile treatment** — tinting, target brackets, health bars belong to combat.
+  *(Tinting landed later at the owner's request; see the note in §7. The rest stands.)*
 - **An event-log line for first contact** (and a red log severity) — the log has three severities
   and gains none here; `CONTACTS` carries the information.
 - **A second NPC faction, neutrals, faction names in the HUD** — `FactionId` is a `u8` and content
