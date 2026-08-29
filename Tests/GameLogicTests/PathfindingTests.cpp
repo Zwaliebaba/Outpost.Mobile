@@ -69,8 +69,11 @@ public:
     // is what the string-pull has to preserve: it removes waypoints, and every one it removes has
     // to leave a leg that still clears.
     const float clearance = Game::HullSpecOf(Game::HullId::Frigate).BoundingRadiusMetres() + Game::PATH_CLEARANCE_MARGIN_METRES;
+    // A named vector rather than a braced list: constructing a std::span straight from one is
+    // C++26, and AGENTS.md 5 holds this tree to C++20 whatever /std:c++latest would let through.
+    const std::vector<Game::PathGrid::Obstacle> obstacles = {{Game::WorldPos{0.0f, 0.0f}, 251.77f}};
     Game::PathGrid grid;
-    grid.Rebuild({{{Game::WorldPos{0.0f, 0.0f}, 251.77f}}});
+    grid.Rebuild(obstacles);
 
     std::vector<Game::WorldPos> route;
     const Game::WorldPos from{-800.0f, 0.0f};
@@ -91,8 +94,10 @@ public:
     // gap an Interceptor threads. That is the property that makes a clearance field the right
     // structure rather than a per-hull occupancy map.
     const float gapHalf = 300.0f;
+    const std::vector<Game::PathGrid::Obstacle> obstacles = {{Game::WorldPos{0.0f, -gapHalf - 251.77f}, 251.77f},
+                                                             {Game::WorldPos{0.0f, gapHalf + 251.77f}, 251.77f}};
     Game::PathGrid grid;
-    grid.Rebuild({{{Game::WorldPos{0.0f, -gapHalf - 251.77f}, 251.77f}, {Game::WorldPos{0.0f, gapHalf + 251.77f}, 251.77f}}});
+    grid.Rebuild(obstacles);
 
     const Game::WorldPos from{-900.0f, 0.0f};
     const Game::WorldPos to{900.0f, 0.0f};
