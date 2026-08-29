@@ -6,26 +6,19 @@ Decisions taken at review are recorded in §18. A second round the same day sett
 model (§2), universe coordinates (§3), and brought pathfinding into scope (§12, phase 7).
 
 Where building it proved a proposal here wrong, the code carries the correction and says so at the
-site, and the commit that made it records the measurement. The substantive ones: the neighbour list
-sorts by surface proximity rather than centre distance (§7), because a 72:1 size ratio makes those
-different questions; the per-tick separation clamp caps what a *pair* closes before splitting it
-rather than capping each ship afterwards (§9), because the latter inverts the authority split
-whenever it binds; the avoidance horizon takes the longer of the hull's own agility and the time to
-clear that particular neighbour (§10), because 1.8 s of look-ahead cannot clear a 107 m hull;
-avoidance yields on the same authority split as separation (§9, §10); and `ShipHandle` carries a
-stable slot rather than the ship's own index (§6), because the shorter form leaves a live handle
-dangling whenever an unrelated ship despawns.
+site, and the four that reverse something written below hold a decision record: the neighbour list
+sorts by surface proximity rather than centre distance ([0003](decisions/0003-neighbour-list-sorts-by-surface-not-centre.md)),
+the separation clamp caps what a *pair* closes before splitting it rather than capping each ship
+afterwards ([0004](decisions/0004-separation-clamp-caps-the-pair-not-the-ship.md)), `ShipHandle`
+carries a stable slot rather than the ship's own index ([0005](decisions/0005-ship-handles-carry-a-slot-not-an-index.md)),
+and the separation solve runs several times per tick rather than once
+([0006](decisions/0006-separation-solve-iterates-within-a-tick.md)). Two smaller ones are recorded
+only at the site: the avoidance horizon takes the longer of the hull's own agility and the time to
+clear that particular neighbour (§10), because 1.8 s of look-ahead cannot clear a 107 m hull; and
+avoidance yields on the same authority split as separation (§9, §10), because otherwise both
+parties steer and a capital swerves for a fighter.
 
-§6's Jacobi choice has a cost the document does not name, and it is sharper than "converges more
-slowly per iteration". A compressed pack of identically oriented hulls -- which is what a fleet in
-formation is -- collapses into lines whose interiors are translation-invariant, so *any* local,
-order-independent, translation-equivariant solver gives every interior ship the same correction,
-and the same correction everywhere is a translation that lengthens nothing. Expansion is sourced
-only at the ends and diffuses inward, which measures as 3.2·N² ticks: 100 for five hulls and 20,250
-for eighty. That is a theorem about the model rather than a defect in it. The separation solve now
-runs several times per tick, which divides the constant by three to seven and costs nothing when
-there is no jam, and `SimTuning.h` records both the derivation and the three things that were
-measured and do not help.
+§19 lists the slices, what each depends on, and which have landed.
 
 This document proposes how ships stop passing through each other and each other's structures, and
 how they give way while under way. It is written against the MMO target — many players connected in
@@ -1245,3 +1238,53 @@ These have no answer yet because the information needed does not exist in the tr
   stops being acceptable the day they are expected to navigate near architecture. The proposal is
   written (§12) and its dependencies are early (phases 2 and 4); only its scheduling is open, and
   the honest trigger is "when Carriers become common near structures", not a calendar date.
+
+---
+
+## 19. Slices
+
+`Design/README.md` asks a design to end with its slice list: the work orders in order, with the
+dependency between them, so a reader knows what has to exist before what. §15 argues the ordering;
+this is the ordering itself, and the status of each.
+
+Every slice below is `GameLogic` and its suite except where noted, so by `Design/README.md`'s rule
+about two slices in one layer they cannot run in parallel with each other — they share
+`GameLogic.vcxproj`, its `.filters`, the umbrella header and this document.
+
+| # | Slice | Depends on | Status |
+|---|---|---|---|
+| 0 | Generational `ShipHandle`, despawn, the `WorldPos` name (§3, §6) | — | landed |
+| 1a | `HullSpec`: speeds, accelerations, turn rates (§5) | 0 | landed |
+| 1b | Capsule shapes; the tunnelling gate and `TUNNEL_HEADROOM` (§4, §11) | 1a | landed |
+| 2 | `SpatialIndex`: static store, one dynamic level, `QueryCircle`, benchmark (§7) | 0 | landed |
+| 3 | Pass 0 hoist; gather-separation with authority and clamp (§6, §8, §9) | 1b, 2 | landed |
+| 4 | `SolveOrder` / `AvoidNeighbours` / `IntegrateShip`; context steering (§10) | 3 | landed |
+| 5 | Formation spacing and arrival tolerance scale with the hull (§13) | 1a | landed |
+| 7 | Pathfinding: clearance grid, A\*, waypoint follower (§12) | 2, 4 | landed |
+| 2b | Loopback `Transport`, full-fidelity snapshot, artificial latency (§2, §15) | 3 | **not started** |
+| 6 | Interest management on `QueryCircle`: subscription sets, deltas, priority (§1, §15) | 2b | **not started** |
+| 8 | Sectors: `WorldPos` grows its `int64` pair (§3) | 0 | **not started** |
+
+Three of those are not `GameLogic` alone and are the reason they are last rather than merely later.
+**2b** touches `NeuronCore`, `NeuronServer`, `NeuronClient` and the executable at once, which by the
+same parallelism rule means it wants the tree to itself. **6** is a slice of its own on top of 2b
+and is not small: §1 records what carries over from the index unchanged and what does not. **8** is
+mechanical behind the `WorldPos` name but every stored position is denominated in `SECTOR_SIZE`,
+so it invalidates recordings.
+
+Two open questions gate work rather than follow it, and both are named in §18: the **target server
+tick rate** was settled at 60 Hz for the slices above, and **minimum region size** follows
+arithmetically from the widest query radius, which slice 2 measured at 647 m.
+
+### What the landed slices did not do as written
+
+Building them turned up five places where following this document produced the wrong behaviour.
+Each is corrected in the code, explained at the site, and holds a decision record so that a reader
+who finds the code disagreeing with the prose above knows which one is current:
+
+| Reversed | Record |
+|---|---|
+| The neighbour list sorts by surface proximity, not centre distance (§7) | [0003](decisions/0003-neighbour-list-sorts-by-surface-not-centre.md) |
+| The per-tick correction clamp caps the pair, then splits (§9) | [0004](decisions/0004-separation-clamp-caps-the-pair-not-the-ship.md) |
+| `ShipHandle` carries a stable slot, not the ship's index (§6) | [0005](decisions/0005-ship-handles-carry-a-slot-not-an-index.md) |
+| The separation solve runs several times per tick (§6) | [0006](decisions/0006-separation-solve-iterates-within-a-tick.md) |
