@@ -5,6 +5,8 @@
 #include "WorldSimulation.h"
 #include "WorldView.h"
 
+#include "LoopbackTransport.h"
+
 #include "AppWindow.h"
 #include "Camera.h"
 #include "GpuDevice.h"

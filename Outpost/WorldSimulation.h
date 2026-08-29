@@ -7,6 +7,7 @@
 #include "Transport.h"
 
 #include <array>
+#include <span>
 #include <vector>
 
 namespace Outpost
