@@ -23,8 +23,9 @@ is a fleet of three hulls on a ground plane: select them, order them somewhere i
 them route around architecture, give way to each other, and arrive without passing through
 anything — and F4 shatters a selected hull into tumbling debris, a fireball and smoke. Not every
 ship is the player's: an enemy station sits 1.2 km northeast with three Interceptors patrolling a
-ring around it, drawn red on the minimap and counted as contacts, and they cannot be selected or
-ordered — the simulation refuses an order from the wrong faction and the client does not offer one.
+ring around it, drawn red in the scene and on the minimap and counted as contacts, and they cannot
+be selected or ordered — the simulation refuses an order from the wrong faction and the client does
+not offer one.
 There is still no combat. Two procedurally generated planets and six asteroids share the sky with
 the fleet — seeded low-poly heightfields on cube-spheres, one flat colour per triangle from a
 colour ramp, a wire-frame outline over the top, spinning or tumbling — and F5 reseeds the lot; they
