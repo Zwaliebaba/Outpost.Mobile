@@ -37,7 +37,7 @@ one merge walk over the old and new sets.
   allocates per node and scatters them, for a set that is walked in full every update and is small
   enough to fit in cache as a vector.
 - **Two `std::set_difference` passes over sorted vectors**, which is what this slice's work order
-  specified (`Design/Collision-slice-6.md` §3.3). Correct and clearer to read. Not taken, because
+  specified (`Design/Archive/Collision-slice-6.md` §3.3). Correct and clearer to read. Not taken, because
   the two differences give entered and left but not the *carried priority* of everything that
   stayed, which then needs a third pass over the intersection to recover. One merge walk gives all
   three and touches each element once. The work order was written before that was obvious and is

@@ -5,7 +5,7 @@ using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 namespace GameLogicTests
 {
 // The sector pair behind WorldPos: the carry, the invariant it maintains, and the two consumers
-// that index on a position rather than merely measuring between two (Design/Collision-slice-8.md).
+// that index on a position rather than merely measuring between two (Design/Archive/Collision-slice-8.md).
 //
 // Everything the game ships sits in sector zero, so these are the only tests that will ever build a
 // position outside it. That is deliberate: they are what stands between "day-one content never

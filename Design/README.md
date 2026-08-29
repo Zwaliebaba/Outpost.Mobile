@@ -9,7 +9,7 @@ be a design argues where it should instruct.
 | Rules | *What are the rules right now?* | the conformance file at the repository root |
 | Design | *What are we building, and what shape does it have?* | `Design/<topic>.md` |
 | Work order | *What exactly do I do next, and when am I done?* | `Design/<topic>-work-order.md`, or `Design/<topic>-slice-N.md` when a design yields several |
-| Decision record | *Why did it go this way, and what lost?* | `Design/decisions/NNNN-<slug>.md` |
+| Decision record | *Why did it go this way, and what lost?* | `Design/Decisions/NNNN-<slug>.md` |
 
 ## Designs
 
@@ -35,6 +35,11 @@ pull request. It carries:
 A good work order needs no guessing about what finished means: positions and sizes as numbers,
 colours and paddings by the name of the constant that holds them, behaviour as rules, and an
 acceptance list at the end.
+
+A work order is finished when its pull request merges, and it then moves to `Design/Archive/` in
+the same commit that marks the slice landed in its design. It is kept, not deleted: code comments
+and decision records cite work orders by section, and the citations are meant to be followed. A
+design never moves — it stays the document later changes are reviewed against.
 
 ## Decision records
 

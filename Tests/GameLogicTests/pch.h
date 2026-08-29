@@ -33,7 +33,7 @@ template <> inline std::wstring ToString<Game::OrderState>(const Game::OrderStat
 // sector pair landed: localX is an offset inside a sector, held in [0, SECTOR_SIZE_METRES), so a
 // ship at x = -3 reads localX = 8189 and every "did it go negative" assertion silently inverts.
 // Going through the offset is what production code does, and a test that measures the world the
-// same way the simulation does cannot drift from it (Design/Collision-slice-8.md 5.3).
+// same way the simulation does cannot drift from it (Design/Archive/Collision-slice-8.md 5.3).
 [[nodiscard]] inline float WorldX(const Game::WorldPos& _pos) noexcept
 {
   return Game::OffsetX(Game::WorldPos{}, _pos);

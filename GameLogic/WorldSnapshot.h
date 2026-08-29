@@ -21,7 +21,7 @@ class World;
 // words; and Outpost could, but then the executable owns the wire format and the day there are two
 // executables it is in the wrong one. GameLogic owns the types being encoded and already depends on
 // NeuronCore, so it may include Transport.h. Same test AGENTS.md 2 applies to content readers: the
-// code lives with what it is about (Design/Collision-slice-2b.md 2.2).
+// code lives with what it is about (Design/Archive/Collision-slice-2b.md 2.2).
 //
 // Fields are written one at a time into a byte buffer rather than memcpy'd. ShipState is 120 bytes
 // of padded struct whose layout has already changed once in this design and will again; a
@@ -120,7 +120,7 @@ public:
   // one for a handle not held appends it, and a handle in the leave list removes it. That is what
   // lets a datagram carry a change to a world rather than a whole world -- and it is also why an
   // incomplete update is dropped entire, since unlike a full snapshot a delta stream cannot
-  // resynchronise by waiting for the next one (Design/Collision-slice-6.md 3.5).
+  // resynchronise by waiting for the next one (Design/Archive/Collision-slice-6.md 3.5).
   bool Accept(std::span<const std::uint8_t> _datagram);
 
   [[nodiscard]] const WorldSnapshot& Latest() const noexcept

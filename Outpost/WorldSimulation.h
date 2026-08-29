@@ -21,7 +21,7 @@ namespace Outpost
 // happen and in this order: take the orders that arrived, run the tick, publish what the tick
 // produced. Draining orders after the step would give every click an extra tick of latency that no
 // configured latency accounts for, and publishing before the step would send last tick's world
-// (Design/Collision-slice-2b.md 2.5).
+// (Design/Archive/Collision-slice-2b.md 2.5).
 class WorldSimulation final : public Neuron::Simulation
 {
 public:
@@ -71,7 +71,7 @@ private:
 
   // Where the subscriber is looking. With one client every ship is its own, so this is the fleet's
   // centroid; the day a real player has a camera on the wire, it comes from there instead
-  // (Design/Collision-slice-6.md 3.6).
+  // (Design/Archive/Collision-slice-6.md 3.6).
   //
   // Accumulated as offsets from the first ship rather than by averaging fields, so a fleet
   // straddling a sector boundary has a centre between its ships and not a sector away.

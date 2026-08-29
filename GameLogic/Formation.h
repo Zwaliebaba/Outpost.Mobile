@@ -29,7 +29,7 @@ enum class FormationShape : std::uint8_t
 // orients the order marker with it, from the same ship positions and the same tapped point, so the
 // two cannot disagree about which way an order points. Nothing is predicted here -- it is the same
 // arithmetic on the same inputs, and the client has all of them in its snapshot
-// (Design/Collision-slice-2b.md 2.5).
+// (Design/Archive/Collision-slice-2b.md 2.5).
 [[nodiscard]] float FormationHeading(std::span<const WorldPos> _shipPositions, const WorldPos& _destination,
                                      float _fallbackHeadingRad) noexcept;
 } // namespace Game

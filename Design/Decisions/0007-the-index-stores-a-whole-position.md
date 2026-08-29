@@ -9,7 +9,7 @@ Slice 8 gave `WorldPos` the `int64` sector pair `Design/Collision.md` §3 specif
 8 bytes to 24. `SpatialIndex::Cell` holds one, so `Cell` went from **24 bytes to 48** — a doubling
 of the hottest array in the simulation, the one every neighbour query walks.
 
-`Design/Collision-slice-8.md` §2.5 anticipated this and specified the compact answer: store each
+`Design/Archive/Collision-slice-8.md` §2.5 anticipated this and specified the compact answer: store each
 cell's offset from the grid's own origin sector, keeping `Cell` at 24 bytes and reconstructing the
 full position on the way out. Implementing it turned up the problem. The grid needs an origin
 sector, and the obvious source — the first entry — makes the stored offsets, and therefore the
@@ -61,6 +61,6 @@ compact layout nor any origin scheme lands in slice 8.
   touch the index sees the cost rather than discovering it.
 - The optimisation stays available and is now written down with the objection to each variant, so
   whoever takes it starts from the third alternative rather than the first.
-- `Design/Collision-slice-8.md` §2.5 said the opposite of what landed. It has been marked with what
+- `Design/Archive/Collision-slice-8.md` §2.5 said the opposite of what landed. It has been marked with what
   the implementation found, in the same commit, per the rule that a document a change made false
   changes with it.

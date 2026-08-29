@@ -464,7 +464,7 @@ float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _poi
   // The second case goes through FormationHeading rather than being spelled out here, because the
   // client orients its order marker with the same function on the same inputs -- one definition is
   // what stops the marker and the ships disagreeing about which way an order points now that the
-  // answer no longer travels back down the wire (Design/Collision-slice-2b.md 2.5).
+  // answer no longer travels back down the wire (Design/Archive/Collision-slice-2b.md 2.5).
   float heading = _facingRad;
   if (!_hasFacing)
   {

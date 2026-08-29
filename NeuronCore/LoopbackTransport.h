@@ -22,7 +22,7 @@ namespace Neuron
 // the question is really asked in: "seven ticks at 60 Hz" is what 120 ms of lag means to a
 // simulation that only advances on ticks. AdvanceTo is on this class rather than on Transport
 // because a socket has real latency and no tick -- this is an instrument's knob, not a wire's
-// (Design/Collision-slice-2b.md 2.1).
+// (Design/Archive/Collision-slice-2b.md 2.1).
 class LoopbackTransport final : public Transport
 {
 public:

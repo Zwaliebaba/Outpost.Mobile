@@ -479,7 +479,7 @@ order.
 
 | # | Slice | Layer | Depends on | Work order |
 |---|---|---|---|---|
-| 1 | `Pcg32`, tests, ADR 0010 | `NeuronCore` | — | [slice 1](SpaceshipExplosion-slice-1.md) |
+| 1 | `Pcg32`, tests, ADR 0011 | `NeuronCore` | — | [slice 1](SpaceshipExplosion-slice-1.md) |
 | 2 | `FxVertex`, `MeshShatter`, `SpriteParticles`, tests | `NeuronClient` | 1 | [slice 2](SpaceshipExplosion-slice-2.md) |
 | 3 | `FxRenderer`, `UploadColourTexture`, two shader pairs | `NeuronClient` | 2 | [slice 3](SpaceshipExplosion-slice-3.md) |
 | 4 | `ShipExplosion`, the trigger, F4, `EXPLOSION_*` tuning | `Outpost` | 3 | [slice 4](SpaceshipExplosion-slice-4.md) |

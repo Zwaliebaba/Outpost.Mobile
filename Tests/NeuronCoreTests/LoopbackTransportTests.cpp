@@ -31,7 +31,7 @@ public:
   {
     // The single-player default, and the one that decides whether this slice changed the game. If a
     // datagram sent this tick is not readable this tick, the game gains a frame of lag it did not
-    // have and "changes no gameplay" is false (Design/Collision-slice-2b.md 5.4).
+    // have and "changes no gameplay" is false (Design/Archive/Collision-slice-2b.md 5.4).
     Neuron::LoopbackTransport client;
     Neuron::LoopbackTransport server;
     Neuron::LoopbackTransport::Connect(client, server, {});

@@ -108,7 +108,7 @@ public:
   // an offset inside a sector and not a world coordinate. m_viewOrigin is the universe origin, so
   // the result is a true world metre for any sector within float range. Moving the origin to follow
   // the camera is what buys precision far from it; that is a rendering slice of its own and this is
-  // the seam it will change (Design/Collision-slice-8.md 2.7, 3).
+  // the seam it will change (Design/Archive/Collision-slice-8.md 2.7, 3).
   [[nodiscard]] float ViewX(const Game::WorldPos& _pos) const noexcept
   {
     return Game::OffsetX(m_viewOrigin, _pos);
@@ -173,7 +173,7 @@ private:
 
   // Carries per-ship presentation state onto a new snapshot by handle, so a ship that changed array
   // index -- which despawn does, by swap-and-pop -- keeps its selection, its rings and its trails
-  // instead of inheriting a stranger's (ADR 0005; Design/Collision-slice-2b.md 5.3).
+  // instead of inheriting a stranger's (ADR 0005; Design/Archive/Collision-slice-2b.md 5.3).
   void ApplySnapshot();
 
   Game::WorldPos m_viewOrigin;

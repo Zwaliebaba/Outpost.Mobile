@@ -81,7 +81,7 @@ checks.
 
 ### 2.4 The decision record
 
-`Design/decisions/0010-randomness-is-one-pcg32-in-neuroncore.md`, in the README's format, indexed.
+`Design/Decisions/0011-randomness-is-one-pcg32-in-neuroncore.md`, in the README's format, indexed.
 Context: the rulebook's sentence and the first caller being a visual effect. Decision: one
 generator type, in `NeuronCore`, seeded by whoever holds it — the simulation will hold one, the
 view holds as many as it likes. Alternatives: a private generator in the executable (loses the
@@ -113,7 +113,7 @@ can name.
 | `NeuronCore/Ease.h` | The shape of a header-only, `noexcept`, `[[nodiscard]]` maths utility in this tree |
 | `NeuronCore/NeuronCore.h` | The umbrella and the include order |
 | `Tests/NeuronCoreTests/EaseTests.cpp` | A test file in the house style, with the property-per-test comments |
-| `Design/decisions/README.md` | The record template and the index |
+| `Design/Decisions/README.md` | The record template and the index |
 | AGENTS.md §1 R3, R8 | `UPPER_CASE` constants, `m_` on class state |
 
 ---
@@ -142,7 +142,7 @@ The tree:
 
 - `python Build/CheckProjectFiles.py` and `python Build/CheckFormat.py` pass.
 - Debug|x64 builds; `NeuronCoreTests` runs and every existing test still passes.
-- ADR 0010 exists and `Design/decisions/README.md` indexes it.
+- ADR 0011 exists and `Design/Decisions/README.md` indexes it.
 - No screenshot: nothing visual.
 
 ---

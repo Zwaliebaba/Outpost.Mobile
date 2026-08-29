@@ -1,6 +1,6 @@
 # Work order — Collision slice 8: sectors
 
-Implements slice 8 of [`Collision.md`](Collision.md) §19: `WorldPos` grows the `int64` sector pair
+Implements slice 8 of [`Collision.md`](../Collision.md) §19: `WorldPos` grows the `int64` sector pair
 §3 specifies, so the universe stops having an edge.
 
 **Layer:** `GameLogic`, plus the minimum in `Outpost` needed to keep the client correct.
@@ -145,7 +145,7 @@ decision record (§6).
 > `WorldTests::ArrayOrderCannotChangeTheAnswer` exists to catch. `Cell` is 48 bytes and the index
 > costs about 25% more to rebuild and up to 30% more to query, measured. Two order-independent
 > variants survive and one of them needs no origin at all;
-> [ADR 0007](decisions/0007-the-index-stores-a-whole-position.md) has the numbers and the reasoning.
+> [ADR 0007](../Decisions/0007-the-index-stores-a-whole-position.md) has the numbers and the reasoning.
 
 ### 2.6 `PathGrid` origin becomes a position
 
@@ -270,14 +270,14 @@ helper cannot use `std::floor`, which is not `constexpr` before C++23 while this
 24 → 48 bytes, confirmed by compiling both layouts. The slice-2 benchmark sweeps 5000 entities and
 shows it: **+25% on rebuild, +13% to +30% on query**, with hits per query identical at all twelve
 configurations — so the index returns the same neighbours and the cost is memory traffic alone.
-[ADR 0007](decisions/0007-the-index-stores-a-whole-position.md) carries the table.
+[ADR 0007](../Decisions/0007-the-index-stores-a-whole-position.md) carries the table.
 
 ---
 
 ## 6. Decision records due
 
 One, for §2.5 — and it went the other way from the way this work order predicted.
-[ADR 0007](decisions/0007-the-index-stores-a-whole-position.md): **the spatial index stores a whole
+[ADR 0007](../Decisions/0007-the-index-stores-a-whole-position.md): **the spatial index stores a whole
 `WorldPos` and pays the 24 bytes**, because the compact layout as specified here is order-dependent.
 The record carries the measured cost and the two variants that survive, so whoever takes the
 optimisation starts from the one that needs no origin at all.
@@ -337,7 +337,7 @@ it instead.
 
 - `Design/Collision.md` §19 marks slice 8 `landed`.
 - `SimTuning.h`'s replay-contract comment names `SECTOR_SIZE_METRES`.
-- The decision record from §6 exists and `Design/decisions/README.md` lists it.
+- The decision record from §6 exists and `Design/Decisions/README.md` lists it.
 - `AGENTS.md`: nothing here makes a sentence in it false — check rather than assume, and if the
   check finds one, it changes in this pull request.
 

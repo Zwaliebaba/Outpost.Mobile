@@ -21,7 +21,7 @@ namespace Game
 // constant-expression exception, so even WorldPos{0.0f, 0.0f} is rejected. That property is what
 // turned this slice from a hunt into a compile: the 94 two-argument constructions in the tree all
 // failed at once and none could be missed. Reorder these fields and the next person to widen this
-// struct loses that (Design/Collision-slice-8.md 5.1).
+// struct loses that (Design/Archive/Collision-slice-8.md 5.1).
 //
 // There is no Y. The simulation is a plane; the height a hull is drawn hovering at is the view's.
 struct WorldPos

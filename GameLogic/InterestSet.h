@@ -53,7 +53,7 @@ public:
   //
   // A ship leaving the radius and a ship dying arrive identically, and the subscriber must not try
   // to tell them apart -- coming back is a leave followed by an enter
-  // (Design/Collision-slice-6.md 6.2).
+  // (Design/Archive/Collision-slice-6.md 6.2).
   [[nodiscard]] std::span<const ShipHandle> Left() const noexcept
   {
     return m_left;
@@ -78,7 +78,7 @@ private:
   // Sorted by (slot, generation), which is a total order, so the sets do not depend on the order
   // QueryCircle happened to return. A hash map would be the obvious structure here and is the one
   // thing this class must not use: AGENTS.md 5 bans iteration order that is not dense-array order,
-  // and a map would put hashing into the answer (Design/decisions/0010).
+  // and a map would put hashing into the answer (Design/Decisions/0010).
   std::vector<ShipHandle> m_subscribed;
   std::vector<float> m_priority; // parallel to m_subscribed
 

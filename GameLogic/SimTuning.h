@@ -234,7 +234,7 @@ inline constexpr float IDLE_AVOIDANCE_AUTHORITY_SCALE = 4.0f;
 // that matters.
 inline constexpr float PATH_CELL_SIZE_METRES = 32.0f;
 static_assert(IsSectorAlignedCellSize(PATH_CELL_SIZE_METRES),
-              "a path cell must not straddle a sector boundary (Design/Collision-slice-8.md 2.2)");
+              "a path cell must not straddle a sector boundary (Design/Archive/Collision-slice-8.md 2.2)");
 inline constexpr float PATH_CLEARANCE_MARGIN_METRES = 8.0f;
 
 // How far off its planned leg a follower may drift before the route is re-planned. Never per tick:

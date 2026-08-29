@@ -1,6 +1,6 @@
 # Work order — Collision slice 6: interest management
 
-Implements slice 6 of [`Collision.md`](Collision.md) §19: a snapshot carries what one subscriber can
+Implements slice 6 of [`Collision.md`](../Collision.md) §19: a snapshot carries what one subscriber can
 see rather than the whole world, with entering and leaving derived rather than diffed by the client,
 and distant entities updated less often than near ones.
 
@@ -84,7 +84,7 @@ entered and left in one pass each.
 > left but not the *carried priority* of everything that stayed, which then needs a third pass over
 > the intersection to recover it; walking the two sorted sets together gives all three and touches
 > each element once. Same order, same result, one pass
-> ([ADR 0010](decisions/0010-interest-sets-are-sorted-vectors.md)).
+> ([ADR 0010](../Decisions/0010-interest-sets-are-sorted-vectors.md)).
 
 **No `unordered_map` and no map keyed on anything.** `AGENTS.md` §5 bans iteration order that is not
 dense-array order, and this is precisely the code where a hash map would be the obvious choice and

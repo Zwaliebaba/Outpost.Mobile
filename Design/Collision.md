@@ -6,12 +6,12 @@ model (§2), universe coordinates (§3), and brought pathfinding into scope (§1
 
 Where building it proved a proposal here wrong, the code carries the correction and says so at the
 site, and the four that reverse something written below hold a decision record: the neighbour list
-sorts by surface proximity rather than centre distance ([0003](decisions/0003-neighbour-list-sorts-by-surface-not-centre.md)),
+sorts by surface proximity rather than centre distance ([0003](Decisions/0003-neighbour-list-sorts-by-surface-not-centre.md)),
 the separation clamp caps what a *pair* closes before splitting it rather than capping each ship
-afterwards ([0004](decisions/0004-separation-clamp-caps-the-pair-not-the-ship.md)), `ShipHandle`
-carries a stable slot rather than the ship's own index ([0005](decisions/0005-ship-handles-carry-a-slot-not-an-index.md)),
+afterwards ([0004](Decisions/0004-separation-clamp-caps-the-pair-not-the-ship.md)), `ShipHandle`
+carries a stable slot rather than the ship's own index ([0005](Decisions/0005-ship-handles-carry-a-slot-not-an-index.md)),
 and the separation solve runs several times per tick rather than once
-([0006](decisions/0006-separation-solve-iterates-within-a-tick.md)). Two smaller ones are recorded
+([0006](Decisions/0006-separation-solve-iterates-within-a-tick.md)). Two smaller ones are recorded
 only at the site: the avoidance horizon takes the longer of the hull's own agility and the time to
 clear that particular neighbour (§10), because 1.8 s of look-ahead cannot clear a 107 m hull; and
 avoidance yields on the same authority split as separation (§9, §10), because otherwise both
@@ -218,7 +218,7 @@ struct WorldPos
 The sector fields go first, and phase 8 found a reason this document did not have: with an integer
 in front, `WorldPos{x, z}` is ill-formed rather than merely wrong, so the compiler enumerated all 94
 two-argument constructions in the tree instead of leaving them to be found
-(`Design/Collision-slice-8.md` §5.1).
+(`Design/Archive/Collision-slice-8.md` §5.1).
 
 With `SECTOR_SIZE_METRES = 8192.0f`, local precision is `8192 / 2^24 ≈ 0.5 mm` — **uniform in every
 sector, everywhere in a universe of ±10¹⁹ m**, which is comfortably past thousands of star systems.
@@ -243,7 +243,7 @@ smeared across `ShipState`, orders, formations, snapshots and the index. **Phase
 sector fields behind that name**, a mechanical change every caller was already correct for, and
 day-one content — near the origin, inside one sector — never noticed: the 56 tests that predated it
 pass unchanged. `SECTOR_SIZE_METRES` lives in `SimTuning.h` and is a power of two, which is what
-makes the carry exact (`Design/Collision-slice-8.md` §2.2).
+makes the carry exact (`Design/Archive/Collision-slice-8.md` §2.2).
 
 ---
 
@@ -1287,9 +1287,9 @@ about two slices in one layer they cannot run in parallel with each other — th
 | 4 | `SolveOrder` / `AvoidNeighbours` / `IntegrateShip`; context steering (§10) | 3 | landed |
 | 5 | Formation spacing and arrival tolerance scale with the hull (§13) | 1a | landed |
 | 7 | Pathfinding: clearance grid, A\*, waypoint follower (§12) | 2, 4 | landed |
-| 8 | Sectors: `WorldPos` grows its `int64` pair (§3) | 0 | landed ([work order](Collision-slice-8.md)) |
-| 2b | Loopback `Transport`, full-fidelity snapshot, artificial latency (§2, §15) | 3 | landed ([work order](Collision-slice-2b.md)) |
-| 6 | Interest management on `QueryCircle`: subscription sets, deltas, priority (§1, §15) | 2b | landed ([work order](Collision-slice-6.md)) |
+| 8 | Sectors: `WorldPos` grows its `int64` pair (§3) | 0 | landed ([work order](Archive/Collision-slice-8.md)) |
+| 2b | Loopback `Transport`, full-fidelity snapshot, artificial latency (§2, §15) | 3 | landed ([work order](Archive/Collision-slice-2b.md)) |
+| 6 | Interest management on `QueryCircle`: subscription sets, deltas, priority (§1, §15) | 2b | landed ([work order](Archive/Collision-slice-6.md)) |
 
 **2b** touched `NeuronCore`, `GameLogic` and the executable at once, which by the same parallelism
 rule meant it wanted the tree to itself, and it did. **6** followed it and closed the list.
@@ -1297,7 +1297,7 @@ rule meant it wanted the tree to itself, and it did. **6** followed it and close
 **8** was scheduled early among the leftovers for one reason: it is mechanical behind the `WorldPos`
 name, but every stored position is denominated in `SECTOR_SIZE_METRES`, so it invalidates
 recordings — cheap while nothing depends on recorded positions and steadily dearer afterwards. It
-landed against [its own work order](Collision-slice-8.md), and the claim that day-one content never
+landed against [its own work order](Archive/Collision-slice-8.md), and the claim that day-one content never
 notices is not an argument but a fact: all 56 tests that existed before it pass unchanged apart from
 a mechanical rename, and a fresh test plays the same encounter four sectors from the origin and gets
 bit-identical relative motion.
@@ -1314,8 +1314,8 @@ who finds the code disagreeing with the prose above knows which one is current:
 
 | Reversed | Record |
 |---|---|
-| The neighbour list sorts by surface proximity, not centre distance (§7) | [0003](decisions/0003-neighbour-list-sorts-by-surface-not-centre.md) |
-| The per-tick correction clamp caps the pair, then splits (§9) | [0004](decisions/0004-separation-clamp-caps-the-pair-not-the-ship.md) |
-| `ShipHandle` carries a stable slot, not the ship's index (§6) | [0005](decisions/0005-ship-handles-carry-a-slot-not-an-index.md) |
-| The separation solve runs several times per tick (§6) | [0006](decisions/0006-separation-solve-iterates-within-a-tick.md) |
-| The index stores a whole position rather than a compact offset (§7) | [0007](decisions/0007-the-index-stores-a-whole-position.md) |
+| The neighbour list sorts by surface proximity, not centre distance (§7) | [0003](Decisions/0003-neighbour-list-sorts-by-surface-not-centre.md) |
+| The per-tick correction clamp caps the pair, then splits (§9) | [0004](Decisions/0004-separation-clamp-caps-the-pair-not-the-ship.md) |
+| `ShipHandle` carries a stable slot, not the ship's index (§6) | [0005](Decisions/0005-ship-handles-carry-a-slot-not-an-index.md) |
+| The separation solve runs several times per tick (§6) | [0006](Decisions/0006-separation-solve-iterates-within-a-tick.md) |
+| The index stores a whole position rather than a compact offset (§7) | [0007](Decisions/0007-the-index-stores-a-whole-position.md) |

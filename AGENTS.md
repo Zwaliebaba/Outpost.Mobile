@@ -51,6 +51,7 @@ so at the definition.
 | Macro | `SCREAMING_SNAKE` | `ASSERT`, `ENUM_HELPER` |
 | Namespace | `PascalCase` | `Neuron`, `Game`, `Outpost` |
 | File | `PascalCase.cpp` / `.h` | `ServerHost.cpp` |
+| Directory | `PascalCase` | `Design/Decisions/`, `NeuronClient/Shaders/` |
 
 ### The rules behind the table
 
@@ -86,6 +87,12 @@ no `iCount`, `pShip`, `strName`, `dwFlags`.
 `.inl` are not used; template implementations live in the header. Two exceptions: the per-project
 `pch.h`/`pch.cpp` keep the name MSBuild expects, and a file holding one *family* takes the
 family's name (`RenderTypes.h`, `GpuHelpers.h`, `SimTuning.h`).
+
+**R7a — A directory is PascalCase too**: `Design/Decisions/`, `Design/Archive/`, `Outpost/Assets/Textures/`,
+`NeuronClient/Shaders/`. A lowercase folder beside PascalCase ones reads as somebody else's, and on a
+case-insensitive file system a `decisions/` and a `Decisions/` are the same folder until the day they
+are checked out on one that is not. Two names are not ours and stay as their owners spell them:
+`.github/` (GitHub's) and `packages/` (NuGet's), along with anything a tool writes such as `x64/`.
 
 Shaders are the one thing in this tree that generates code, and they are named differently on
 purpose — see §3. Formats get hand-written parsers; no other generator is to be introduced, and
@@ -201,7 +208,7 @@ Two rules `.clang-tidy` structurally cannot state, so check them by eye:
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
 | `NeuronClient/Shaders/` | HLSL (§3). FXC compiles it into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
 | `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). |
-| `Design/` | Designs, work orders, screenprints, and `Design/decisions/` — the architecture decision records (§9). Its `README.md` says which document is which and how a slice moves from a design into the tree (§7). |
+| `Design/` | Designs, work orders, `Screenprints/`, `Archive/` for landed work orders, and `Design/Decisions/` — the architecture decision records (§9). Its `README.md` says which document is which and how a slice moves from a design into the tree (§7). |
 | `.github/` | CI (§6) and the pull request template every slice answers (§7). |
 
 The dependency rules are hard, and each of them is one thing this structure buys:
@@ -569,7 +576,7 @@ configurations you built.
   recording the reason a decision went the way it did, the defect it prevents, or the constraint
   that is not visible from the call site.
 - If a rule here blocks the task, say so in your report rather than quietly bending it.
-- **A decision that shapes the tree gets a record** in `Design/decisions/` (§9), in the same
+- **A decision that shapes the tree gets a record** in `Design/Decisions/` (§9), in the same
   commit as the change it explains.
 
 ---
@@ -609,7 +616,7 @@ configurations you built.
 This file states the rules as they stand. It does not say what was tried first, what was turned
 down, or under which assumption a rule was made — and a rule whose premise has quietly expired is
 the most expensive kind, because it goes on being obeyed. That history lives in
-`Design/decisions/`, one short file per decision, in the format its `README.md` gives: context,
+`Design/Decisions/`, one short file per decision, in the format its `README.md` gives: context,
 decision, alternatives considered, consequences.
 
 When to write one — any of these, and in the same commit as the change:

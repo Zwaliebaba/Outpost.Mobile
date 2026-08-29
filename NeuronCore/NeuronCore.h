@@ -8,7 +8,7 @@
 // timing, and the declared client/server transport seam. Nothing here knows what a ship is, and
 // nothing here touches a graphics API or names a graphics type: the server is meant to run
 // headless in a container, and this library goes with it (AGENTS.md 2). Content readers live with
-// whatever consumes what they read (Design/decisions/0002), which today is always the client.
+// whatever consumes what they read (Design/Decisions/0002), which today is always the client.
 
 #include <algorithm>
 #include <cmath>
