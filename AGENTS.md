@@ -25,10 +25,14 @@ anything — and F4 shatters a selected hull into tumbling debris, a fireball an
 ship is the player's: an enemy station sits 1.2 km northeast with three Interceptors patrolling a
 ring around it, drawn red on the minimap and counted as contacts, and they cannot be selected or
 ordered — the simulation refuses an order from the wrong faction and the client does not offer one.
-There is still no combat. D3D12 renderer, WM_POINTER input covering mouse and touch, a main-screen
-HUD drawn through one overlay pipeline (bitmap font atlases, coverage-mask icons, untextured
-quads), textured FX pipelines for the explosion's fragments and sprites, OBJ/MTL hulls,
-FXC-compiled shaders.
+There is still no combat. Two procedurally generated planets and six asteroids share the sky with
+the fleet — seeded low-poly heightfields on cube-spheres, one flat colour per triangle from a
+colour ramp, a wire-frame outline over the top, spinning or tumbling — and F5 reseeds the lot; they
+are presentation only and a ship flies straight through a rock (`Design/Decisions/0016`). D3D12
+renderer, WM_POINTER input covering mouse and touch, a main-screen HUD drawn through one overlay
+pipeline (bitmap font atlases, coverage-mask icons, untextured quads), textured FX pipelines for
+the explosion's fragments and sprites, a two-pass body pipeline, OBJ/MTL hulls, FXC-compiled
+shaders.
 
 **Deliberately not here yet**, so nobody goes looking for it: no audio, no networking, no combat, no
 economy, no damage model, no save format, no content pipeline beyond OBJ and DDS, and no

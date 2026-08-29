@@ -80,9 +80,12 @@ void ShipExplosion::Start(const Spawn& _spawn, SpriteParticles& _particles)
   XMStoreFloat3(&emitPos, corePos);
   for (int i = 0; i < numCores; ++i)
   {
-    const XMVECTOR spread =
-      XMVectorSet(m_rng.Signed(EXPLOSION_CORE_SPEED_XZ), EXPLOSION_CORE_SPEED_UP_MIN + m_rng.Float01() * EXPLOSION_CORE_SPEED_UP_RANGE,
-                  m_rng.Signed(EXPLOSION_CORE_SPEED_XZ), 0.0f);
+    // Named draws rather than three arguments: the order a compiler evaluates arguments in is
+    // unspecified, so the same seed would throw the same fireball differently on two compilers.
+    const float speedX = m_rng.Signed(EXPLOSION_CORE_SPEED_XZ);
+    const float speedUp = EXPLOSION_CORE_SPEED_UP_MIN + m_rng.Float01() * EXPLOSION_CORE_SPEED_UP_RANGE;
+    const float speedZ = m_rng.Signed(EXPLOSION_CORE_SPEED_XZ);
+    const XMVECTOR spread = XMVectorSet(speedX, speedUp, speedZ, 0.0f);
     XMFLOAT3 vel;
     XMStoreFloat3(&vel, XMVectorAdd(XMVectorScale(spread, hullScale), shipVel));
     const float size = (EXPLOSION_CORE_SIZE_MIN + m_rng.Float01() * EXPLOSION_CORE_SIZE_RANGE) * hullScale;
@@ -124,8 +127,10 @@ void ShipExplosion::Start(const Spawn& _spawn, SpriteParticles& _particles)
   const int extraCores = static_cast<int>(EXPLOSION_INTENSITY / 4.0f);
   for (int i = 0; i < extraCores; ++i)
   {
-    const XMVECTOR spread = XMVectorSet(m_rng.Signed(EXPLOSION_EXTRA_CORE_SPEED), m_rng.Signed(EXPLOSION_EXTRA_CORE_SPEED),
-                                        m_rng.Signed(EXPLOSION_EXTRA_CORE_SPEED), 0.0f);
+    const float speedX = m_rng.Signed(EXPLOSION_EXTRA_CORE_SPEED);
+    const float speedY = m_rng.Signed(EXPLOSION_EXTRA_CORE_SPEED);
+    const float speedZ = m_rng.Signed(EXPLOSION_EXTRA_CORE_SPEED);
+    const XMVECTOR spread = XMVectorSet(speedX, speedY, speedZ, 0.0f);
     XMFLOAT3 vel;
     XMStoreFloat3(&vel, XMVectorAdd(XMVectorScale(spread, hullScale), shipVel));
     _particles.Emit(SpriteType::Core, pos, vel, EXPLOSION_EXTRA_CORE_SIZE * hullScale, m_rng);

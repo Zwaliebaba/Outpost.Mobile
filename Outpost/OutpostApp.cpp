@@ -13,6 +13,7 @@ namespace
 const std::wstring MESH_DIR = L"Meshes\\";
 const std::wstring FONT_DIR = L"Fonts\\";
 const std::wstring TEXTURE_DIR = L"Textures\\";
+const std::wstring TERRAIN_DIR = L"Terrain\\";
 
 // Mesh and hull are paired here rather than left to line up by index. The simulation's hull id is
 // a row in Game::HULL_SPECS and the view's mesh is a file; an index that happened to serve as both
@@ -120,9 +121,34 @@ void OutpostApp::Init(HINSTANCE _instance)
   // Who this client is. One subscriber today, so it is the player's faction at both sites; the day
   // a login exists it arrives with the session and only this line changes.
   m_view.SetOwnFaction(m_ownFaction);
+  m_view.SetBodyRenderer(m_bodyRenderer);
   LoadHullMeshes();
   SpawnStartingFleet();
   SpawnHostileBase();
+
+  // The bodies, last, and all in one bracket. The outline texture and every body's vertices are
+  // copies recorded into one command list and carried by one submission, which is what
+  // BodyRenderer.h asks for -- and the bracket is kept tight, with nothing between its two ends but
+  // the work it is for. Opened at the top of Init instead it would still work today and would break
+  // silently the day somebody adds a second uploader in the middle of it.
+  //
+  // The ramps are content, named here for the same reason the fonts are; one that fails to load
+  // leaves its class drawing the builder's fallback grey.
+  BodyRenderer::Desc bodyDesc;
+  bodyDesc.outlineTexture = TEXTURE_DIR + L"TriangleOutline.dds";
+
+  m_gpu.BeginUploads();
+  m_bodyRenderer.Init(m_gpu, bodyDesc);
+  m_ramps.resize(BODY_CLASS_COUNT);
+  for (std::uint32_t i = 0; i < BODY_CLASS_COUNT; ++i)
+  {
+    const wchar_t* const ramp = BODY_CLASSES[i].ramp;
+    if (ramp != nullptr && !ColourRamp::Load(TERRAIN_DIR + ramp, m_ramps[i]))
+      DebugTrace(L"body ramp {} did not load; that class draws in the fallback grey\n", ramp);
+  }
+  SpawnStartingBodies(BODY_START_SEED);
+  m_gpu.ExecuteAndWait();
+  m_bodyRenderer.DiscardStaging();
   m_log.PushFormat(EventLog::Severity::Friendly, 0.0f, "FLEET ONLINE | %u SHIPS", OwnShipCount());
 
   m_window.Show();
@@ -140,6 +166,87 @@ void OutpostApp::LoadHullMeshes()
     // exists from a snapshot, which carries a hullId and knows nothing about meshes.
     m_view.RegisterHullMesh(row.hull, mesh);
   }
+}
+
+// The neighbourhood: one terran world on the north-east horizon, a barren moon north-west, and six
+// rocks among the fleet. Everything about it comes out of _seed, so the pull request's screenshot
+// reproduces and F5 is a different scene rather than an unrepeatable one.
+void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
+{
+  const std::int64_t startQpc = m_clock.Now();
+  Pcg32 rng(_seed);
+
+  // A body of a class, at a bearing and a distance. The seed each body is generated from is drawn
+  // from this scene's generator, so the whole scene follows from one number and no body has to be
+  // told where in the stream it sits.
+  const auto place = [&](BodyClass bodyClass, float _radiusMetres, float _bearingRad, float _distanceMetres, bool _asteroid)
+  {
+    const std::uint64_t bodySeed = (static_cast<std::uint64_t>(rng.Next()) << 32) | rng.Next();
+    const BodyDesc desc = RandomBody(bodySeed, bodyClass, _radiusMetres);
+    const ColourRamp& ramp = m_ramps[static_cast<std::size_t>(bodyClass)];
+
+    std::vector<FxVertex> terrain;
+    BodyBuildStats stats;
+    BodyMeshBuilder::Build(BodyField(desc), ramp.Loaded() ? &ramp : nullptr, terrain, stats);
+
+    const BodyHandle handle = m_bodyRenderer.UploadBody(m_gpu, terrain);
+    if (handle == INVALID_BODY)
+      return;
+
+    WorldView::BodyView view;
+    view.terrain = handle;
+    view.centre = Game::LocalPos(std::sin(_bearingRad) * _distanceMetres, std::cos(_bearingRad) * _distanceMetres);
+    // A planet floats clear of the ground quad; a rock rests on it, the way a Structure does.
+    view.centreY = _asteroid ? _radiusMetres : _radiusMetres * BODY_PLANET_LIFT;
+    view.spinAxis = desc.spinAxis;
+    view.triangleCount = stats.trianglesEmitted;
+    if (_asteroid)
+    {
+      // Two axes, so the rock turns end over end rather than about one pole. Named draws, not
+      // arguments: the order a compiler evaluates arguments in is unspecified and this is seeded.
+      const float tumbleX = rng.Signed(BODY_ASTEROID_TUMBLE_MAX_RAD_PER_SEC);
+      const float tumbleY = rng.Signed(BODY_ASTEROID_TUMBLE_MAX_RAD_PER_SEC);
+      view.tumbleRadPerSec = XMFLOAT3(tumbleX, tumbleY, 0.0f);
+    }
+    else
+    {
+      view.spinRadPerSec = XM_2PI / BODY_PLANET_SPIN_SEC;
+    }
+
+    m_view.AddBody(view);
+    DebugTrace("body: {} triangles, maximum height {} m, radius {} m\n", stats.trianglesEmitted, stats.maxHeightMetres, _radiusMetres);
+  };
+
+  const float planetRadius =
+    BODY_PLANET_RADIUS_MIN_METRES + rng.Float01() * (BODY_PLANET_RADIUS_MAX_METRES - BODY_PLANET_RADIUS_MIN_METRES);
+  place(BodyClass::Terran, planetRadius, XM_PIDIV4, BODY_START_PLANET_DISTANCE_METRES, false);
+  place(BodyClass::Barren, planetRadius * BODY_START_MOON_RADIUS_FRACTION, -XM_PIDIV4, BODY_START_MOON_DISTANCE_METRES, false);
+
+  for (int i = 0; i < BODY_START_ASTEROIDS; ++i)
+  {
+    const float radius =
+      BODY_ASTEROID_RADIUS_MIN_METRES + rng.Float01() * (BODY_ASTEROID_RADIUS_MAX_METRES - BODY_ASTEROID_RADIUS_MIN_METRES);
+    const float bearing = rng.Float01() * XM_2PI;
+    const float distance =
+      BODY_START_ASTEROID_RING_MIN_METRES + rng.Float01() * (BODY_START_ASTEROID_RING_MAX_METRES - BODY_START_ASTEROID_RING_MIN_METRES);
+    place(BodyClass::Asteroid, radius, bearing, distance, true);
+  }
+
+  m_bodyGenerationMs = m_clock.ElapsedMs(startQpc, m_clock.Now());
+  DebugTrace("bodies: {} generated in {} ms\n", m_view.BodyCount(), m_bodyGenerationMs);
+}
+
+// F5. A different scene each press, and the same different scene after a restart: what the seed is
+// offset by is the number of presses, not a clock.
+void OutpostApp::ReseedBodies()
+{
+  m_view.ClearBodies();
+  ++m_bodyRerollCount;
+
+  m_gpu.BeginUploads();
+  SpawnStartingBodies(BODY_START_SEED + m_bodyRerollCount);
+  m_gpu.ExecuteAndWait();
+  m_bodyRenderer.DiscardStaging();
 }
 
 void OutpostApp::SpawnStartingFleet()
@@ -228,6 +335,11 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
       m_world.DespawnShip(handle);
     break;
   }
+  case VK_F5:
+    // Reseed every body. A tuning key: what it costs is the memory of the scene it replaces, since
+    // BodyRenderer keeps every handle for the run (OutpostApp.h says so beside the key list).
+    ReseedBodies();
+    break;
   case '1':
     m_timeScale = 0.25f;
     break;
@@ -275,6 +387,9 @@ void OutpostApp::Render()
   frame.stats.particleCount = m_view.Particles().Count();
   frame.stats.particlesDropped = m_view.Particles().Dropped();
   frame.stats.fxVertsDropped = m_fxRenderer.DroppedVerts();
+  frame.stats.bodyCount = m_view.BodyCount();
+  frame.stats.bodyTriangles = m_view.BodyTriangleCount();
+  frame.stats.bodyGenerationMs = m_bodyGenerationMs;
   frame.showDebug = m_showDebug;
   frame.sector = m_view.WorldPosAt(m_camera.Target().x, m_camera.Target().z);
   frame.hullNames = HULL_NAMES;

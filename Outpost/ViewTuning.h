@@ -1,5 +1,6 @@
 #pragma once
 
+#include "BodyRenderer.h"
 #include "RenderTypes.h"
 
 #include "SimTuning.h"
@@ -171,6 +172,67 @@ inline constexpr float SHIP_MATERIAL_MIX = 0.55f;
 inline constexpr float SHIP_SCALE = 1.0f;
 inline constexpr float SHIP_HOVER_HEIGHT = 4.0f;
 inline constexpr float DECAL_LIFT_Y = 0.2f; // clear of the ground quad so the two cannot z-fight
+
+// --- planets and asteroids -----------------------------------------------------------------------
+// Bodies are presentation only, placed by the composition root, at metre scale inside the frustum
+// the camera already has (Design/PlanetRenderer.md 3, 14; Design/Decisions/0016). **Every length is
+// a fraction of the body's radius unless the name carries a unit**, which is what lets one class row
+// describe a 400 m world and a 1 200 m one.
+inline constexpr float BODY_PLANET_RADIUS_MIN_METRES = 400.0f;
+inline constexpr float BODY_PLANET_RADIUS_MAX_METRES = 1200.0f;
+inline constexpr float BODY_ASTEROID_RADIUS_MIN_METRES = 15.0f;
+inline constexpr float BODY_ASTEROID_RADIUS_MAX_METRES = 120.0f;
+inline constexpr std::uint32_t BODY_PLANET_GRID_POWER = 6;   // 65 samples a side, 49 152 triangles
+inline constexpr std::uint32_t BODY_ASTEROID_GRID_POWER = 5; // 33 a side
+
+// The centre's height above the ground plane, as a multiple of the radius. At or above one, always:
+// below it the ground quad -- 4 km across and following the camera -- slices the body in half.
+inline constexpr float BODY_PLANET_LIFT = 1.15f;
+inline constexpr float BODY_PLANET_SPIN_SEC = 240.0f; // one turn
+inline constexpr float BODY_PLANET_TILT_MAX_DEG = 30.0f;
+inline constexpr float BODY_ASTEROID_TUMBLE_MAX_RAD_PER_SEC = 0.15f;
+
+inline constexpr float BODY_ASTEROID_ELLIPSOID_MIN = 0.55f;
+inline constexpr float BODY_ASTEROID_LUMPINESS = 0.25f;
+inline constexpr float BODY_ASTEROID_HEIGHT_SCALE_MIN = 0.15f;
+inline constexpr float BODY_ASTEROID_HEIGHT_SCALE_MAX = 0.40f;
+// Over pi, so one tile covers the whole rock and there is no cap rim anywhere on it -- which is why
+// its edge fraction is zero: a fade band would put a soft dimple on the far side.
+inline constexpr float BODY_ASTEROID_TILE_HALF_WIDTH_RAD = 3.2f;
+inline constexpr float BODY_ASTEROID_TILE_EDGE_FRACTION = 0.0f;
+inline constexpr int BODY_ASTEROID_CRATERS_MIN = 6;
+inline constexpr int BODY_ASTEROID_CRATERS_MAX = 20;
+inline constexpr float BODY_ASTEROID_CRATER_HALF_WIDTH_MIN_RAD = 0.07f;
+inline constexpr float BODY_ASTEROID_CRATER_HALF_WIDTH_MAX_RAD = 0.26f;
+// How deep a bowl digs at its centre. The work order's list did not carry it and a crater needs one;
+// a tenth of the radius on a 60 m rock is a six-metre bowl, which reads as a crater at hull scale.
+inline constexpr float BODY_ASTEROID_CRATER_DEPTH_MIN = 0.04f;
+inline constexpr float BODY_ASTEROID_CRATER_DEPTH_MAX = 0.12f;
+
+inline constexpr float BODY_PLANET_HEIGHT_SCALE_MIN = 0.03f;
+inline constexpr float BODY_PLANET_HEIGHT_SCALE_MAX = 0.12f;
+inline constexpr int BODY_PLANET_TILES_MIN = 1;
+inline constexpr int BODY_PLANET_TILES_MAX = 4;
+inline constexpr float BODY_PLANET_TILE_HALF_WIDTH_MIN_RAD = 0.44f; // 25 degrees
+inline constexpr float BODY_PLANET_TILE_HALF_WIDTH_MAX_RAD = 1.22f; // 70 degrees
+inline constexpr float BODY_PLANET_TILE_EDGE_FRACTION = 0.25f;
+inline constexpr float BODY_PLANET_OUTSIDE_HEIGHT_WET = -0.02f;
+inline constexpr float BODY_PLANET_OUTSIDE_HEIGHT_DRY = 0.01f;
+inline constexpr float BODY_FRACTAL_DIMENSION = 0.8f;
+inline constexpr float BODY_LOWLAND_SMOOTHING = 1.2f;
+inline constexpr float BODY_CAP_NOISE = 0.1f;
+inline constexpr float BODY_POLAR_GEOMETRY = 0.15f;
+inline constexpr Neuron::BodyOverlayParams BODY_OVERLAY{1.2f, 4.0f, 0.5f, 40.0f};
+
+// The starting scene, from one seed, so the pull request's screenshot reproduces. F5 reseeds with
+// BODY_START_SEED + the number of presses, which makes a scene reproducible by press count.
+inline constexpr std::uint64_t BODY_START_SEED = 0x4F75747031ull; // "Outp1"
+inline constexpr float BODY_START_PLANET_DISTANCE_METRES = 4000.0f;
+inline constexpr float BODY_START_MOON_DISTANCE_METRES = 3000.0f;
+inline constexpr float BODY_START_MOON_RADIUS_FRACTION = 0.5f; // of the planet's
+inline constexpr int BODY_START_ASTEROIDS = 6;
+inline constexpr float BODY_START_ASTEROID_RING_MIN_METRES = 150.0f;
+inline constexpr float BODY_START_ASTEROID_RING_MAX_METRES = 400.0f;
 
 // --- starting scene ----------------------------------------------------------------------------
 inline constexpr float START_SPACING = 55.0f;

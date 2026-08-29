@@ -190,8 +190,15 @@ void GpuDevice::WaitForGpu()
 
 void GpuDevice::BeginUploads()
 {
-  // Allocator 0 is the boot allocator. Resetting it is safe here: nothing has been submitted on it
-  // yet on the first call, and every later call follows an ExecuteAndWait that drained the GPU.
+  // Allocator 0 is the boot allocator, and it is also frame 0's. Resetting an allocator the GPU is
+  // still reading is undefined behaviour, so this drains first rather than assuming it is idle.
+  //
+  // The assumption used to hold and no longer does. Every call was at boot, back to back, each one
+  // after an ExecuteAndWait that had already drained; the first caller to open a batch *after a
+  // frame had been drawn* -- F5, which regenerates every body -- would have reset allocator 0 with
+  // frame 0's commands possibly still in flight. A drain here is free at boot, where nothing is in
+  // flight, and correct everywhere else.
+  WaitForGpu();
   check_hresult(m_allocators[0]->Reset());
   check_hresult(m_cmd->Reset(m_allocators[0].get(), nullptr));
 }

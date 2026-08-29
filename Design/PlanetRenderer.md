@@ -1,6 +1,6 @@
 # Planets and asteroids
 
-**Status: proposed. No slice has landed.** §15 lists the slices; §16 is the implementation plan.
+**Status: in progress. Slices 1 to 4 have landed.** §15 lists the slices; §16 is the implementation plan.
 Every open question was put to the owner on 2026-08-29 and settled (§14); nothing in this design
 is open.
 
@@ -179,13 +179,27 @@ for octave in 0 .. octaves−1:                                      // octaves 
     n   = Noise3(d · frequency(octave) + seedOffset)               // in [−0.5, 0.5]
     if ridged and octave < 2:  n = 0.5 − |n|                       // stands in for generationMethod 1/2
     n  *= pow(len · 10, fractalDimension) · amp
-    n  *= 0.1 + pow(|h|, lowlandSmoothing) · 0.15                  // the height-dependent term from GenerateNoise
+    n  *= 0.1 + pow(|h| / heightScale, lowlandSmoothing) · 0.15    // the height-dependent term from GenerateNoise
     h  += n
 h += posY                                                          // LandscapeTile::m_posY, a whole-body lift
 ```
 
+**The `|h|` term, corrected by slice 1.** This document first wrote that term on `h` in the source's
+map units — a fraction of the radius times a 2 000-unit map — and that form has no fixed point.
+Measured on slice 1's test description, it runs `0.014, −1.5, −156, 3.1e+04, −7.5e+06, 3.0e+08`
+over six octaves: the first octave lifts `h` to a few hundredths of the radius, which is tens of
+source units, which multiplies the second octave by seventy, and three octaves later the body is
+noise rather than terrain. The source never met that because a diamond-square level can only
+displace by the amplitude it has left; a 3-D octave has no such bound. `h` is therefore taken
+relative to the tile's own `heightScale` — 0 in the lowlands, 1 at a peak of the height the tile is
+aiming for — which keeps the term inside `[0.1, 0.25]`. That two-and-a-half times between smooth
+and rugged is what the source's two constants are worth, and it is the behaviour the law was kept
+for. `BodyField.cpp` carries the same note beside the constants.
+
 `seedOffset` is three floats from the body's `Pcg32`, so two bodies with different seeds sample
-different regions of the same noise. `Noise3` is Perlin-style gradient noise with a 256-entry
+different regions of the same noise. They are drawn as three statements and not as three arguments
+to one constructor: the order a compiler evaluates arguments in is unspecified, and slice 1
+measured gcc and clang building two different worlds from one description before they were named. `Noise3` is Perlin-style gradient noise with a 256-entry
 permutation shuffled by a `Pcg32` at construction — no static table, so the noise itself is
 seeded and reproducible. It is written once in this tree, by hand, in a header; no library.
 
@@ -631,14 +645,14 @@ Five, in dependency order. Slices 1–3 are all `NeuronClient` and cannot run in
 other or with the explosion's slices 2 and 3 (same project file, same umbrella header); the order
 below interleaves with the explosion's where the two share a file.
 
-| # | Slice | Layer | Depends on | Work order |
-|---|---|---|---|---|
-| 1 | `Noise3`, `CubeSphere`, `BodyDesc`, `BodyField`, tests | `NeuronClient` | explosion slice 1 (`Pcg32`) | [slice 1](PlanetRenderer-slice-1.md) |
-| 2 | `ColourRamp`, `BodyMeshBuilder`, `FxVertex` if not landed, tests | `NeuronClient` | 1 | [slice 2](PlanetRenderer-slice-2.md) |
-| 3 | `BodyRenderer`, `UploadColourTexture` if not landed, three shaders and one `.hlsli` | `NeuronClient` | 2 | [slice 3](PlanetRenderer-slice-3.md) |
-| 4 | `BodyCatalogue`, `BodyView` in `WorldView`, starting bodies, F5, `BODY_*` tuning, ADR | `Outpost` | 3 | [slice 4](PlanetRenderer-slice-4.md) |
-| 5 | Ocean sphere through the scene pass, shore dip and sea-level culling wired to a class | `NeuronClient` + `Outpost` | 4 | [slice 5](PlanetRenderer-slice-5.md) |
-| 6 | Compute-shader bake: `BodyBakeCS`, the reductions, readback test against the CPU builder (§17) | `NeuronClient` | 5 | [slice 6](PlanetRenderer-slice-6.md) — cut when body counts or reseed latency ask for it |
+| # | Slice | Layer | Depends on | Status | Work order |
+|---|---|---|---|---|---|
+| 1 | `Noise3`, `CubeSphere`, `BodyDesc`, `BodyField`, tests | `NeuronClient` | explosion slice 1 (`Pcg32`) | landed | [slice 1](Archive/PlanetRenderer-slice-1.md) |
+| 2 | `ColourRamp`, `BodyMeshBuilder`, `FxVertex` if not landed, tests | `NeuronClient` | 1 | landed | [slice 2](Archive/PlanetRenderer-slice-2.md) |
+| 3 | `BodyRenderer`, `UploadColourTexture` if not landed, three shaders and one `.hlsli` | `NeuronClient` | 2 | landed | [slice 3](Archive/PlanetRenderer-slice-3.md) |
+| 4 | `BodyCatalogue`, `BodyView` in `WorldView`, starting bodies, F5, `BODY_*` tuning, ADR | `Outpost` | 3 | landed | [slice 4](Archive/PlanetRenderer-slice-4.md) |
+| 5 | Ocean sphere through the scene pass, shore dip and sea-level culling wired to a class | `NeuronClient` + `Outpost` | 4 | | [slice 5](PlanetRenderer-slice-5.md) |
+| 6 | Compute-shader bake: `BodyBakeCS`, the reductions, readback test against the CPU builder (§17) | `NeuronClient` | 5 | | [slice 6](PlanetRenderer-slice-6.md) — cut when body counts or reseed latency ask for it |
 
 Slice 5 is split from 2 and 4 so that a dry body — every asteroid, the desert world — can land
 and be looked at before the ocean rules are argued over a screenshot. It touches two layers and
@@ -647,7 +661,8 @@ is the one exception to one-layer-per-slice; it is small enough to be one pull r
 One decision record is due, in slice 4: *bodies are presentation, placed by the composition root,
 and not simulation entities* — an approach (a `Planet` entity in `GameLogic`) that a reasonable
 person will propose again, with the `HullSpec` route recorded as the way in when gameplay asks.
-It takes the next free number; the explosion's slice 1 claims 0011.
+It landed as **0016**; the number this document guessed at was taken while the slices were being
+written, and records are never renumbered.
 
 ---
 

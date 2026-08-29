@@ -13,6 +13,9 @@
     <Filter Include="Shaders">
       <UniqueIdentifier>{3d81f2a6-47bc-4e09-95d1-8f620ab74e35}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Body">
+      <UniqueIdentifier>{2c9d5b41-7e08-4f63-9a2d-6b41c7e0d582}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Build">
       <UniqueIdentifier>{6f0b7d92-8e34-4a51-b7c8-0d4e9a35f218}</UniqueIdentifier>
     </Filter>
@@ -32,6 +35,27 @@
     </ClInclude>
     <ClInclude Include="MeshData.h">
       <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="Noise3.h">
+      <Filter>Body</Filter>
+    </ClInclude>
+    <ClInclude Include="CubeSphere.h">
+      <Filter>Body</Filter>
+    </ClInclude>
+    <ClInclude Include="BodyDesc.h">
+      <Filter>Body</Filter>
+    </ClInclude>
+    <ClInclude Include="BodyParams.h">
+      <Filter>Body</Filter>
+    </ClInclude>
+    <ClInclude Include="BodyField.h">
+      <Filter>Body</Filter>
+    </ClInclude>
+    <ClInclude Include="ColourRamp.h">
+      <Filter>Body</Filter>
+    </ClInclude>
+    <ClInclude Include="BodyMeshBuilder.h">
+      <Filter>Body</Filter>
     </ClInclude>
     <ClInclude Include="FxVertex.h">
       <Filter>Render</Filter>
@@ -53,6 +77,9 @@
     </ClInclude>
     <ClInclude Include="SceneRenderer.h">
       <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="BodyRenderer.h">
+      <Filter>Body</Filter>
     </ClInclude>
     <ClInclude Include="FxRenderer.h">
       <Filter>Render</Filter>
@@ -92,6 +119,15 @@
     <ClCompile Include="ObjParser.cpp">
       <Filter>Render</Filter>
     </ClCompile>
+    <ClCompile Include="BodyField.cpp">
+      <Filter>Body</Filter>
+    </ClCompile>
+    <ClCompile Include="ColourRamp.cpp">
+      <Filter>Body</Filter>
+    </ClCompile>
+    <ClCompile Include="BodyMeshBuilder.cpp">
+      <Filter>Body</Filter>
+    </ClCompile>
     <ClCompile Include="MeshShatter.cpp">
       <Filter>Render</Filter>
     </ClCompile>
@@ -106,6 +142,9 @@
     </ClCompile>
     <ClCompile Include="SceneRenderer.cpp">
       <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="BodyRenderer.cpp">
+      <Filter>Body</Filter>
     </ClCompile>
     <ClCompile Include="FxRenderer.cpp">
       <Filter>Render</Filter>
@@ -138,6 +177,15 @@
     </None>
   </ItemGroup>
   <ItemGroup>
+    <FxCompile Include="Shaders\BodyVS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\BodyPS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\BodyOverlayPS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
     <FxCompile Include="Shaders\SceneVS.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
@@ -170,6 +218,9 @@
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
+    <None Include="Shaders\Body.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
     <None Include="Shaders\Scene.hlsli">
       <Filter>Shaders</Filter>
     </None>

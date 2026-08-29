@@ -1,5 +1,6 @@
 #pragma once
 
+#include "BodyCatalogue.h"
 #include "EventLog.h"
 #include "Hud.h"
 #include "WorldSimulation.h"
@@ -8,7 +9,9 @@
 #include "LoopbackTransport.h"
 
 #include "AppWindow.h"
+#include "BodyRenderer.h"
 #include "Camera.h"
+#include "ColourRamp.h"
 #include "FxRenderer.h"
 #include "GpuDevice.h"
 #include "MeshLibrary.h"
@@ -16,6 +19,10 @@
 #include "SceneRenderer.h"
 #include "ServerHost.h"
 #include "TextRenderer.h"
+
+#include <array>
+#include <cstdint>
+#include <vector>
 
 namespace Outpost
 {
@@ -36,6 +43,12 @@ public:
 private:
   void LoadHullMeshes();
   void SpawnStartingFleet();
+
+  // Generates, uploads and places the starting bodies from one seed. Called at boot and again on
+  // every F5; the caller brackets it with BeginUploads and ExecuteAndWait, because every body's
+  // vertex copy belongs in one submission.
+  void SpawnStartingBodies(std::uint64_t _seed);
+  void ReseedBodies();
   void SpawnHostileBase();
   [[nodiscard]] std::uint32_t OwnShipCount() const noexcept;
   void Update();
@@ -50,6 +63,7 @@ private:
   Neuron::SceneRenderer m_sceneRenderer;
   Neuron::TextRenderer m_textRenderer;
   Neuron::FxRenderer m_fxRenderer;
+  Neuron::BodyRenderer m_bodyRenderer;
   Neuron::MeshLibrary m_meshes;
 
   // Input and framing.
@@ -81,10 +95,25 @@ private:
   Hud m_hud;
   Neuron::FrameClock m_clock;
 
+  // One ramp per class, indexed by BodyClass. A ramp that fails to load leaves its class drawing the
+  // builder's fallback grey, which is a diagnostic and not a crash.
+  //
+  // On the heap and not in a std::array, which is what this wants to be. A ColourRamp is a 64x64
+  // table of floats -- 48 KB -- and six of them are nearly 300 KB; OutpostApp is a local of
+  // wWinMain, and a default 1 MB stack reserve is not the place to put a third of a megabyte of
+  // content. Sized once in Init and never resized, so it is a fixed table that happens to live
+  // somewhere else.
+  std::vector<Neuron::ColourRamp> m_ramps;
+
   // Debug: 1, 2 and 3 slow, restore and speed up the simulation without touching the frame rate;
   // F1 shows the readout, F3 shakes the camera, F4 despawns the selection so the explosion has
-  // something to consume.
+  // something to consume, and **F5 reseeds every body**. F5 does not release the buffers the last
+  // scene's bodies are in -- BodyRenderer keeps every handle for the run -- so each press costs the
+  // memory of the scene it replaced. That is acceptable for a tuning key and is not acceptable for
+  // anything a player does; a ReleaseBody is a slice of its own the day a body has to go away.
   float m_timeScale = 1.0f;
   bool m_showDebug = false;
+  std::uint32_t m_bodyRerollCount = 0;
+  float m_bodyGenerationMs = 0.0f;
 };
 } // namespace Outpost

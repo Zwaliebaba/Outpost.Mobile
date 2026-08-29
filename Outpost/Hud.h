@@ -39,6 +39,11 @@ public:
     std::uint32_t particleCount = 0;
     std::uint32_t particlesDropped = 0;
     std::uint32_t fxVertsDropped = 0;
+    // The bodies (Design/PlanetRenderer.md 9). Generation time is what decides whether the compute
+    // bake of design 17 is due, so it is read off the screen rather than guessed at.
+    std::size_t bodyCount = 0;
+    std::uint32_t bodyTriangles = 0;
+    float bodyGenerationMs = 0.0f;
   };
 
   // The rail's icons, which are the images the composition root lists in TextRenderer::Desc, in
