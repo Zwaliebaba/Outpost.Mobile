@@ -253,9 +253,18 @@ void Hud::DrawDebug(TextRenderer& _text, const Layout& _layout, const Frame& _fr
   // refused a particle and a vertex ring that ran out -- and neither is visible in what is drawn.
   std::snprintf(line, sizeof(line), "FX %d%sPARTICLES %u%sDROPPED %u%sVERTS LOST %u", _frame.stats.explosionCount, SEPARATOR,
                 _frame.stats.particleCount, SEPARATOR, _frame.stats.particlesDropped, SEPARATOR, _frame.stats.fxVertsDropped);
+  const float lineHeight = _text.LineHeightPx(FontId::Ui, HUD_TEXT_SCALE * s);
   width = advance * static_cast<float>(std::strlen(line));
-  _text.DrawTextLine(FontId::Ui, (static_cast<float>(_widthPx) - width) * 0.5f, top + _text.LineHeightPx(FontId::Ui, HUD_TEXT_SCALE * s),
-                     HUD_TEXT_SCALE * s, HUD_LABEL_COLOUR, line);
+  _text.DrawTextLine(FontId::Ui, (static_cast<float>(_widthPx) - width) * 0.5f, top + lineHeight, HUD_TEXT_SCALE * s, HUD_LABEL_COLOUR,
+                     line);
+
+  // The bodies. Generation time is the number that decides a later slice: the design will move the
+  // whole build onto the GPU when boot or a reseed stops feeling instant (Design/PlanetRenderer.md 17).
+  std::snprintf(line, sizeof(line), "BODIES %u%sBODY TRIS %u%sGEN %.1f MS", static_cast<unsigned>(_frame.stats.bodyCount), SEPARATOR,
+                _frame.stats.bodyTriangles, SEPARATOR, static_cast<double>(_frame.stats.bodyGenerationMs));
+  width = advance * static_cast<float>(std::strlen(line));
+  _text.DrawTextLine(FontId::Ui, (static_cast<float>(_widthPx) - width) * 0.5f, top + lineHeight * 2.0f, HUD_TEXT_SCALE * s,
+                     HUD_LABEL_COLOUR, line);
 }
 
 void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view,

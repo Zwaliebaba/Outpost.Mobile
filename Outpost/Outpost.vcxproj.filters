@@ -13,6 +13,9 @@
     <ClCompile Include="WorldView.cpp">
       <Filter>View</Filter>
     </ClCompile>
+    <ClCompile Include="BodyCatalogue.cpp">
+      <Filter>View</Filter>
+    </ClCompile>
     <ClCompile Include="Hud.cpp">
       <Filter>View</Filter>
     </ClCompile>
@@ -38,6 +41,9 @@
       <Filter>View</Filter>
     </ClInclude>
     <ClInclude Include="ViewTuning.h">
+      <Filter>View</Filter>
+    </ClInclude>
+    <ClInclude Include="BodyCatalogue.h">
       <Filter>View</Filter>
     </ClInclude>
     <ClInclude Include="pch.h" />

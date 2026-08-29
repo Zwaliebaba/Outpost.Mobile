@@ -48,3 +48,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0013](0013-allegiance-is-identity-on-the-wire.md) | Allegiance is identity on the wire, not a relation | accepted |
 | [0014](0014-command-authority-is-gated-in-the-simulation.md) | Command authority is gated in the simulation, not the adapter | accepted |
 | [0015](0015-npc-behavior-lives-in-gamelogic.md) | NPC behavior lives in GameLogic, inside the tick | accepted |
+| [0016](0016-bodies-are-presentation.md) | A planet or an asteroid is presentation, not a simulation entity | accepted |

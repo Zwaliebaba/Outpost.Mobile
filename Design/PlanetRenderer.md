@@ -1,6 +1,6 @@
 # Planets and asteroids
 
-**Status: in progress. Slices 1 to 3 have landed.** §15 lists the slices; §16 is the implementation plan.
+**Status: in progress. Slices 1 to 4 have landed.** §15 lists the slices; §16 is the implementation plan.
 Every open question was put to the owner on 2026-08-29 and settled (§14); nothing in this design
 is open.
 
@@ -650,7 +650,7 @@ below interleaves with the explosion's where the two share a file.
 | 1 | `Noise3`, `CubeSphere`, `BodyDesc`, `BodyField`, tests | `NeuronClient` | explosion slice 1 (`Pcg32`) | landed | [slice 1](Archive/PlanetRenderer-slice-1.md) |
 | 2 | `ColourRamp`, `BodyMeshBuilder`, `FxVertex` if not landed, tests | `NeuronClient` | 1 | landed | [slice 2](Archive/PlanetRenderer-slice-2.md) |
 | 3 | `BodyRenderer`, `UploadColourTexture` if not landed, three shaders and one `.hlsli` | `NeuronClient` | 2 | landed | [slice 3](Archive/PlanetRenderer-slice-3.md) |
-| 4 | `BodyCatalogue`, `BodyView` in `WorldView`, starting bodies, F5, `BODY_*` tuning, ADR | `Outpost` | 3 | | [slice 4](PlanetRenderer-slice-4.md) |
+| 4 | `BodyCatalogue`, `BodyView` in `WorldView`, starting bodies, F5, `BODY_*` tuning, ADR | `Outpost` | 3 | landed | [slice 4](Archive/PlanetRenderer-slice-4.md) |
 | 5 | Ocean sphere through the scene pass, shore dip and sea-level culling wired to a class | `NeuronClient` + `Outpost` | 4 | | [slice 5](PlanetRenderer-slice-5.md) |
 | 6 | Compute-shader bake: `BodyBakeCS`, the reductions, readback test against the CPU builder (§17) | `NeuronClient` | 5 | | [slice 6](PlanetRenderer-slice-6.md) — cut when body counts or reseed latency ask for it |
 
@@ -661,7 +661,8 @@ is the one exception to one-layer-per-slice; it is small enough to be one pull r
 One decision record is due, in slice 4: *bodies are presentation, placed by the composition root,
 and not simulation entities* — an approach (a `Planet` entity in `GameLogic`) that a reasonable
 person will propose again, with the `HullSpec` route recorded as the way in when gameplay asks.
-It takes the next free number; the explosion's slice 1 claims 0011.
+It landed as **0016**; the number this document guessed at was taken while the slices were being
+written, and records are never renumbered.
 
 ---
 

@@ -23,6 +23,23 @@ void WorldView::Init(Neuron::Transport& _transport, Camera& _camera, const MeshL
   m_fxSpriteVerts.reserve(Neuron::FxRenderer::MAX_FX_VERTS);
 }
 
+void WorldView::AddBody(const BodyView& _body)
+{
+  m_bodies.push_back(_body);
+  // A rate is what a caller has; an orientation is what this accumulates. Forcing identity here is
+  // what makes that split true rather than a convention nobody checks.
+  XMStoreFloat3x3(&m_bodies.back().tumble, XMMatrixIdentity());
+  m_bodyWorlds.reserve(m_bodies.size());
+  m_bodyTriangles += _body.triangleCount;
+}
+
+void WorldView::ClearBodies() noexcept
+{
+  m_bodies.clear();
+  m_bodyWorlds.clear();
+  m_bodyTriangles = 0;
+}
+
 void WorldView::RegisterHullMesh(Game::HullId _hull, MeshHandle _mesh)
 {
   const std::size_t row = static_cast<std::size_t>(_hull);
@@ -349,11 +366,25 @@ void WorldView::UpdateFeedback(float _dtSec)
 {
   const float dt = std::clamp(_dtSec, 0.0f, 0.1f);
 
-  // slice 3 placeholder, removed by slice 4: one turn every two minutes, so that two screenshots ten
-  // seconds apart show the body has moved. Slice 4 gives every body its own axis and rate.
-  m_debugBodySpinRad += dt * (XM_2PI / 120.0f);
-  if (m_debugBodySpinRad > XM_2PI)
-    m_debugBodySpinRad -= XM_2PI;
+  // Bodies turn on real time, like every other feedback here, so the debug keys that slow the
+  // simulation do not slow a planet: what 1/2/3 change is how fast the world is simulated, and a
+  // planet is not in the world.
+  for (BodyView& body : m_bodies)
+  {
+    body.spinRad += body.spinRadPerSec * dt;
+    if (body.spinRad > XM_2PI)
+      body.spinRad -= XM_2PI;
+
+    // Composed step by step, the explosion's Tumbler rule: rot = rot * delta, so the increment is
+    // about the body's own axes and not the world's. Skipped when the rates are zero rather than
+    // multiplied by an identity every frame, which would let rounding drift a planet off its axis.
+    const XMFLOAT3& rate = body.tumbleRadPerSec;
+    if (rate.x != 0.0f || rate.y != 0.0f || rate.z != 0.0f)
+    {
+      const XMMATRIX delta = XMMatrixRotationRollPitchYaw(rate.x * dt, rate.y * dt, rate.z * dt);
+      XMStoreFloat3x3(&body.tumble, XMMatrixMultiply(XMLoadFloat3x3(&body.tumble), delta));
+    }
+  }
 
   const float maxBank = XMConvertToRadians(BANK_MAX_ANGLE_DEG);
   const std::span<const Game::ShipSnapshot> state = Ships();
@@ -732,18 +763,29 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     view.drawn = true;
   }
 
-  // slice 3 placeholder, removed by slice 4: the terrain pass, then the outline pass, which is the
-  // order and the shape slice 4's two loops over WorldView's bodies will have. It goes after the
-  // hulls because the ocean, when slice 5 lands it, goes through the scene pass and has to be in the
-  // depth buffer first (Design/PlanetRenderer.md 7.3).
-  if (m_debugBodies != nullptr && m_debugBody != INVALID_BODY)
+  // The bodies: every terrain, then every outline. Two passes rather than two draws per body, so
+  // there is one pipeline switch per pass and body A's outline tests against body B's depth
+  // (Design/PlanetRenderer.md 7.3). They go after the hulls because the ocean, when slice 5 lands
+  // it, goes through the scene pass and has to be in the depth buffer before the coast dips into it.
+  if (m_bodyRenderer != nullptr && !m_bodies.empty())
   {
-    XMFLOAT4X4 bodyWorld;
-    XMStoreFloat4x4(&bodyWorld, XMMatrixRotationY(m_debugBodySpinRad) * XMMatrixTranslation(0.0f, 920.0f, 3000.0f));
+    // Built once and read twice: the world matrix of a body is four transforms and the second pass
+    // wants exactly the matrix the first one used, not one recomputed from a spin that has not moved.
+    m_bodyWorlds.clear();
+    for (const BodyView& body : m_bodies)
+    {
+      const XMMATRIX orientation =
+        XMMatrixMultiply(XMLoadFloat3x3(&body.tumble), XMMatrixRotationAxis(XMLoadFloat3(&body.spinAxis), body.spinRad));
+      XMFLOAT4X4 bodyWorld;
+      XMStoreFloat4x4(&bodyWorld, XMMatrixMultiply(orientation, XMMatrixTranslation(ViewX(body.centre), body.centreY, ViewZ(body.centre))));
+      m_bodyWorlds.push_back(bodyWorld);
+    }
 
-    m_debugBodies->Begin(_gpu, frame.viewProj, frame.lightDir, frame.ambient, frame.cameraPos, BodyOverlayParams{});
-    m_debugBodies->DrawMain(_gpu, m_debugBody, bodyWorld);
-    m_debugBodies->DrawOverlay(_gpu, m_debugBody, bodyWorld);
+    m_bodyRenderer->Begin(_gpu, frame.viewProj, frame.lightDir, frame.ambient, frame.cameraPos, BODY_OVERLAY);
+    for (std::size_t i = 0; i < m_bodies.size(); ++i)
+      m_bodyRenderer->DrawMain(_gpu, m_bodies[i].terrain, m_bodyWorlds[i]);
+    for (std::size_t i = 0; i < m_bodies.size(); ++i)
+      m_bodyRenderer->DrawOverlay(_gpu, m_bodies[i].terrain, m_bodyWorlds[i]);
   }
 
   // Hull fragments before the decals: they are blended but write depth, so a shard occludes what is

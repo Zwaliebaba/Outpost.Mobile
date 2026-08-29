@@ -63,6 +63,28 @@ public:
     float headingRad = 0.0f;
   };
 
+  // One planet or asteroid on screen. It is presentation and nothing else: it holds no simulation
+  // handle, appears in no snapshot, and a ship flies straight through it (Design/Decisions/0016).
+  //
+  // The centre is a Game::WorldPos and goes through ViewX/ViewZ like a ship's, so the day the camera
+  // rebase lands (WorldView.h's m_viewOrigin comment) a body moves with everything else for free.
+  struct BodyView
+  {
+    Neuron::BodyHandle terrain = Neuron::INVALID_BODY;
+    Neuron::MeshHandle ocean = Neuron::INVALID_MESH; // slice 5 fills it
+    Game::WorldPos centre;
+    float centreY = 0.0f;
+    DirectX::XMFLOAT3 spinAxis{0.0f, 1.0f, 0.0f};
+    float spinRadPerSec = 0.0f;
+    float spinRad = 0.0f;
+    // An accumulated orientation rather than three angles, and stored as a matrix, exactly as the
+    // explosion's Tumbler is: two angular velocities composed step by step do not decompose into
+    // Euler angles that can be integrated separately.
+    DirectX::XMFLOAT3X3 tumble{1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+    DirectX::XMFLOAT3 tumbleRadPerSec{0.0f, 0.0f, 0.0f};
+    std::uint32_t triangleCount = 0; // for the F1 readout only
+  };
+
   // One ship's presentation state, parallel to the latest snapshot's ships and indexed the same
   // way. ApplySnapshot is what keeps that true across a snapshot in which ships changed places.
   struct ShipView
@@ -216,12 +238,32 @@ public:
     m_fx = &_fx;
   }
 
-  // slice 3 placeholder, removed by slice 4: one hard-coded body, so that the renderer has a screen
-  // to be accepted on. Slice 4 replaces it with BodyCatalogue and a WorldView::AddBody.
-  void SetDebugBody(Neuron::BodyRenderer& _bodies, Neuron::BodyHandle _body) noexcept
+  // The bodies' draw path. Optional, like the log and the effect: with no renderer the scene has no
+  // planets in it and everything else is unchanged.
+  void SetBodyRenderer(Neuron::BodyRenderer& _bodies) noexcept
   {
-    m_debugBodies = &_bodies;
-    m_debugBody = _body;
+    m_bodyRenderer = &_bodies;
+  }
+
+  // The composition root generates and uploads a body, then hands the view what it needs to place
+  // and turn it. The tumble starts at identity here rather than being asked for: a caller supplies
+  // a rate, not an orientation.
+  void AddBody(const BodyView& _body);
+
+  // F5. The GPU buffers are **not** released -- BodyRenderer keeps every handle for the run -- so a
+  // reseed costs the memory of the bodies it replaces. Stated where it is done rather than left for
+  // somebody to find in a memory graph; a ReleaseBody is a slice of its own the day it matters.
+  void ClearBodies() noexcept;
+
+  [[nodiscard]] std::size_t BodyCount() const noexcept
+  {
+    return m_bodies.size();
+  }
+
+  // For the F1 readout: what the bodies on screen cost.
+  [[nodiscard]] std::uint32_t BodyTriangleCount() const noexcept
+  {
+    return m_bodyTriangles;
   }
 
   // For the debug readout: how much of the effect is live right now.
@@ -307,10 +349,13 @@ private:
   // the ship's handle and the tick it died on.
   Neuron::Pcg32 m_fxRng;
 
-  // slice 3 placeholder, removed by slice 4.
-  Neuron::BodyRenderer* m_debugBodies = nullptr;
-  Neuron::BodyHandle m_debugBody = Neuron::INVALID_BODY;
-  float m_debugBodySpinRad = 0.0f;
+  // The bodies. Presentation only: nothing in GameLogic knows one exists and nothing on the wire
+  // carries one (Design/Decisions/0016). m_bodyWorlds is a scratch vector rather than a local so
+  // that the two draw passes over the same bodies allocate nothing per frame.
+  Neuron::BodyRenderer* m_bodyRenderer = nullptr;
+  std::vector<BodyView> m_bodies;
+  std::vector<DirectX::XMFLOAT4X4> m_bodyWorlds;
+  std::uint32_t m_bodyTriangles = 0;
 
   std::vector<Game::ShipId> m_groups[CONTROL_GROUPS];
   int m_activeGroup = -1;
