@@ -544,14 +544,14 @@ Put to the owner on 2026-08-29 and answered as follows; each was the recommended
 
 Three, in dependency order. 1 and 2 are both `GameLogic` and therefore serial (one slice per layer
 at a time); 3 is `Outpost` and needs both — its display half needs 1's field on the wire, its
-scene needs 2's `AssignPatrol`. Work orders are not yet written; each slice below is one branch,
-one pull request, in the shape Design/README.md gives.
+scene needs 2's `AssignPatrol`. Each slice below is one branch, one pull request, in the shape
+Design/README.md gives; its work order is linked in the last column.
 
 | # | Slice | Layer | Depends on | Work order |
 |---|---|---|---|---|
-| 1 | Allegiance and the wire: `FactionId` on ship and record, `SpawnShip` and `IssueMoveOrder` parameters, the authority gate, the despawn log and the destroyed list (§4.4), the subscriber faction in `WorldSimulation`, SnapshotTests + OrderTests | `GameLogic` (+ two lines in `Outpost`) | — | to write |
-| 2 | Patrol: `m_patrols` + despawn repair, `AssignPatrol`, the pass in `Step`, `orderSpeedCapMetresPerSec` + the `SolveOrder` clamp, `PATROL_RING_WAYPOINTS`, PatrolTests (new file, both project files) | `GameLogic` | 1 | to write |
-| 3 | The scene and the overview: mesh table split, `SpawnHostileBase`, `SubscriberCentre` faction filter, `SetOwnFaction` + selection filters, blip colors + structure dot, real `CONTACTS`, `ExplodeTheLost` consuming *destroyed* rather than every leave (§4.4), boot-log count, `ViewTuning` content constants, comment and AGENTS.md sentence updates, screenshots at two sizes | `Outpost` | 1, 2 | to write |
+| 1 | Allegiance and the wire: `FactionId` on ship and record, `SpawnShip` and `IssueMoveOrder` parameters, the authority gate, the despawn log and the destroyed list (§4.4), the subscriber faction in `WorldSimulation`, SnapshotTests + OrderTests | `GameLogic` (+ two lines in `Outpost`) | — | [slice 1](Hostiles-slice-1.md) |
+| 2 | Patrol: `m_patrols` + despawn repair, `AssignPatrol`, the pass in `Step`, `orderSpeedCapMetresPerSec` + the `SolveOrder` clamp, `PATROL_RING_WAYPOINTS`, PatrolTests (new file, both project files) | `GameLogic` | 1 | [slice 2](Hostiles-slice-2.md) |
+| 3 | The scene and the overview: mesh table split, `SpawnHostileBase`, `SubscriberCentre` faction filter, `SetOwnFaction` + selection filters, blip colors + structure dot, real `CONTACTS`, `ExplodeTheLost` consuming *destroyed* rather than every leave (§4.4), boot-log count, `ViewTuning` content constants, comment and AGENTS.md sentence updates, screenshots at two sizes | `Outpost` | 1, 2 | [slice 3](Hostiles-slice-3.md) |
 
 Slices 1 and 2 are decided by tests (§9) and by the existing suites staying green — slice 2's
 claim that an unassigned world is bit-identical is exactly `GameLogicTests` passing unchanged.
