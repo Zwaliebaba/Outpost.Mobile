@@ -231,6 +231,8 @@
     <ClInclude Include="ColourRamp.h" />
     <ClInclude Include="BodyMeshBuilder.h" />
     <ClInclude Include="FxVertex.h" />
+    <ClInclude Include="SkyVertex.h" />
+    <ClInclude Include="SkyField.h" />
     <ClInclude Include="MeshShatter.h" />
     <ClInclude Include="SpriteParticles.h" />
     <ClInclude Include="ObjParser.h" />
@@ -239,6 +241,7 @@
     <ClInclude Include="SceneRenderer.h" />
     <ClInclude Include="BodyRenderer.h" />
     <ClInclude Include="FxRenderer.h" />
+    <ClInclude Include="SkyRenderer.h" />
     <ClInclude Include="BitmapFont.h" />
     <ClInclude Include="ScreenImage.h" />
     <ClInclude Include="TextRenderer.h" />
@@ -264,6 +267,8 @@
     <ClCompile Include="SceneRenderer.cpp" />
     <ClCompile Include="BodyRenderer.cpp" />
     <ClCompile Include="FxRenderer.cpp" />
+    <ClCompile Include="SkyField.cpp" />
+    <ClCompile Include="SkyRenderer.cpp" />
     <ClCompile Include="BitmapFont.cpp" />
     <ClCompile Include="ScreenImage.cpp" />
     <ClCompile Include="TextRenderer.cpp" />
@@ -351,6 +356,16 @@
       <HeaderFileOutput>CompiledShaders\FxSpritePS.h</HeaderFileOutput>
       <VariableName>g_pFxSpritePS</VariableName>
     </FxCompile>
+    <FxCompile Include="Shaders\SkyVS.hlsl">
+      <ShaderType>Vertex</ShaderType>
+      <HeaderFileOutput>CompiledShaders\SkyVS.h</HeaderFileOutput>
+      <VariableName>g_pSkyVS</VariableName>
+    </FxCompile>
+    <FxCompile Include="Shaders\SkyPS.hlsl">
+      <ShaderType>Pixel</ShaderType>
+      <HeaderFileOutput>CompiledShaders\SkyPS.h</HeaderFileOutput>
+      <VariableName>g_pSkyPS</VariableName>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <!-- Included by the .hlsl files above rather than compiled on their own. FXC tracks
@@ -361,6 +376,7 @@
     <None Include="Shaders\Decal.hlsli" />
     <None Include="Shaders\Text.hlsli" />
     <None Include="Shaders\Fx.hlsli" />
+    <None Include="Shaders\Sky.hlsli" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\NeuronCore\NeuronCore.vcxproj">

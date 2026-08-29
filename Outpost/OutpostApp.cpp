@@ -122,6 +122,15 @@ void OutpostApp::Init(HINSTANCE _instance)
   // a login exists it arrives with the session and only this line changes.
   m_view.SetOwnFaction(m_ownFaction);
   m_view.SetBodyRenderer(m_bodyRenderer);
+
+  // Where the sphere sits, how bright it is and how hard a star scintillates are the game's choices,
+  // so they arrive from ViewTuning rather than being the engine's defaults. The view fills in the
+  // matrices and the clock every frame.
+  SkyRenderer::Frame skyTuning;
+  skyTuning.radiusMetres = SKY_RADIUS_METRES;
+  skyTuning.intensity = SKY_INTENSITY;
+  skyTuning.twinkleMaxRateRadPerSec = SKY_TWINKLE_MAX_RATE_RAD_PER_SEC;
+  m_view.SetSkyRenderer(m_skyRenderer, skyTuning);
   LoadHullMeshes();
   SpawnStartingFleet();
   SpawnHostileBase();
@@ -137,8 +146,16 @@ void OutpostApp::Init(HINSTANCE _instance)
   BodyRenderer::Desc bodyDesc;
   bodyDesc.outlineTexture = TEXTURE_DIR + L"TriangleOutline.dds";
 
+  // The sky's three textures, named here for the same reason: the engine knows there is a nebula
+  // layer, a star layer and a flare layer, and which file fills each is content.
+  SkyRenderer::Desc skyDesc;
+  skyDesc.nebulaTexture = TEXTURE_DIR + L"CloudyGlow.dds";
+  skyDesc.starTexture = TEXTURE_DIR + L"Glow.dds";
+  skyDesc.burstTexture = TEXTURE_DIR + L"Starburst.dds";
+
   m_gpu.BeginUploads();
   m_bodyRenderer.Init(m_gpu, bodyDesc);
+  m_skyRenderer.Init(m_gpu, skyDesc);
   m_ramps.resize(BODY_CLASS_COUNT);
   for (std::uint32_t i = 0; i < BODY_CLASS_COUNT; ++i)
   {
@@ -147,8 +164,10 @@ void OutpostApp::Init(HINSTANCE _instance)
       DebugTrace(L"body ramp {} did not load; that class draws in the fallback grey\n", ramp);
   }
   SpawnStartingBodies(BODY_START_SEED);
+  BuildSky(SKY_SEED);
   m_gpu.ExecuteAndWait();
   m_bodyRenderer.DiscardStaging();
+  m_skyRenderer.DiscardStaging();
   m_log.PushFormat(EventLog::Severity::Friendly, 0.0f, "FLEET ONLINE | %u SHIPS", OwnShipCount());
 
   m_window.Show();
@@ -268,8 +287,31 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
   DebugTrace("bodies: {} generated in {} ms\n", m_view.BodyCount(), m_bodyGenerationMs);
 }
 
+// The sky the outpost is under. One call, because the whole of it follows from one number: the
+// generator is device-free and the renderer takes the result as a single static buffer.
+void OutpostApp::BuildSky(std::uint64_t _seed)
+{
+  const std::int64_t startQpc = m_clock.Now();
+
+  SkyField::Desc desc;
+  desc.seed = _seed;
+  desc.starCount = SKY_STAR_COUNT;
+  desc.brightStarCount = SKY_BRIGHT_STAR_COUNT;
+  desc.nebulaCount = SKY_NEBULA_COUNT;
+
+  SkyMesh sky;
+  SkyField::Build(desc, sky);
+  m_skyRenderer.UploadField(m_gpu, sky);
+
+  DebugTrace("sky: {} billboards generated in {} ms\n", sky.verts.size() / 6, m_clock.ElapsedMs(startQpc, m_clock.Now()));
+}
+
 // F5. A different scene each press, and the same different scene after a restart: what the seed is
 // offset by is the number of presses, not a clock.
+//
+// The sky is reseeded with the bodies rather than separately, because what F5 rerolls is the
+// neighborhood and the sky is the far half of it. A second key for it would be a second thing to
+// remember for no second question it answers.
 void OutpostApp::ReseedBodies()
 {
   m_view.ClearBodies();
@@ -277,8 +319,10 @@ void OutpostApp::ReseedBodies()
 
   m_gpu.BeginUploads();
   SpawnStartingBodies(BODY_START_SEED + m_bodyRerollCount);
+  BuildSky(SKY_SEED + m_bodyRerollCount);
   m_gpu.ExecuteAndWait();
   m_bodyRenderer.DiscardStaging();
+  m_skyRenderer.DiscardStaging();
 }
 
 void OutpostApp::SpawnStartingFleet()

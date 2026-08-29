@@ -19,7 +19,7 @@ therefore unverifiable. Keep it that way: if a change makes a sentence below fal
 changes in the same commit.
 
 **Built and tested.** Five projects and four test suites, Debug|x64, gating in CI (§6). The game
-is a fleet of three hulls on a ground plane: select them, order them somewhere in formation, watch
+is a fleet of three hulls in open space: select them, order them somewhere in formation, watch
 them route around architecture, give way to each other, and arrive without passing through
 anything — and F4 shatters a selected hull into tumbling debris, a fireball and smoke. Not every
 ship is the player's: an enemy station sits 1.2 km northeast with three Interceptors patrolling a
@@ -28,12 +28,16 @@ be selected or ordered — the simulation refuses an order from the wrong factio
 not offer one.
 There is still no combat. Two procedurally generated planets and six asteroids share the sky with
 the fleet — seeded low-poly heightfields on cube-spheres, one flat colour per triangle from a
-colour ramp, a wire-frame outline over the top, spinning or tumbling — and F5 reseeds the lot; they
-are presentation only and a ship flies straight through a rock (`Design/Decisions/0016`). D3D12
-renderer, WM_POINTER input covering mouse and touch, a main-screen HUD drawn through one overlay
-pipeline (bitmap font atlases, coverage-mask icons, untextured quads), textured FX pipelines for
-the explosion's fragments and sprites, a two-pass body pipeline, OBJ/MTL hulls, DXC-compiled
-shader model 6.7 shaders.
+colour ramp, a wire-frame outline over the top, spinning or tumbling — and behind them a
+procedurally generated star field: a seeded catalogue of stars, dust clouds and a galactic band,
+uploaded once and expanded into billboards in the vertex shader (`Design/Skybox.md`). F5 reseeds
+the lot, sky included; all of it is presentation only and a ship flies straight through a rock
+(`Design/Decisions/0016`). There is no ground: the scene pass draws no plane and has no grid
+(`Design/Decisions/0022`), and the flat y = 0 plane a move order lands on is arithmetic in `Camera`
+rather than geometry. D3D12 renderer, WM_POINTER input covering mouse and touch, a main-screen HUD
+drawn through one overlay pipeline (bitmap font atlases, coverage-mask icons, untextured quads),
+textured FX pipelines for the explosion's fragments and sprites, a two-pass body pipeline, an
+additive sky pass, OBJ/MTL hulls, DXC-compiled shader model 6.7 shaders.
 
 **Deliberately not here yet**, so nobody goes looking for it: no audio, no networking, no combat, no
 economy, no damage model, no save format, no content pipeline beyond OBJ and DDS, and no

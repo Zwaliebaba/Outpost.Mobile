@@ -60,6 +60,12 @@
     <ClInclude Include="FxVertex.h">
       <Filter>Render</Filter>
     </ClInclude>
+    <ClInclude Include="SkyVertex.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="SkyField.h">
+      <Filter>Render</Filter>
+    </ClInclude>
     <ClInclude Include="MeshShatter.h">
       <Filter>Render</Filter>
     </ClInclude>
@@ -82,6 +88,9 @@
       <Filter>Body</Filter>
     </ClInclude>
     <ClInclude Include="FxRenderer.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="SkyRenderer.h">
       <Filter>Render</Filter>
     </ClInclude>
     <ClInclude Include="BitmapFont.h">
@@ -147,6 +156,12 @@
       <Filter>Body</Filter>
     </ClCompile>
     <ClCompile Include="FxRenderer.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="SkyField.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="SkyRenderer.cpp">
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="BitmapFont.cpp">
@@ -222,6 +237,12 @@
     <FxCompile Include="Shaders\FxSpritePS.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
+    <FxCompile Include="Shaders\SkyVS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\SkyPS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\BodyBake.hlsli">
@@ -240,6 +261,9 @@
       <Filter>Shaders</Filter>
     </None>
     <None Include="Shaders\Fx.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\Sky.hlsli">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>

@@ -53,3 +53,5 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0018](0018-shaders-are-dxil-6-7.md) | Shaders are DXIL for shader model 6.7, compiled by DXC | accepted |
 | [0019](0019-fxvertex-is-packed.md) | FxVertex is packed: float position, SNORM16 normal, UNORM8 colour, half uv | accepted |
 | [0020](0020-the-bake-is-the-producer.md) | The compute bake is the producer, and three silent defects had to go first | accepted |
+| [0021](0021-the-sky-is-a-static-catalogue-expanded-on-the-gpu.md) | The sky is a static catalogue, expanded into billboards on the GPU | accepted |
+| [0022](0022-there-is-no-ground-plane.md) | There is no ground plane, and the scene pass has no grid | accepted |

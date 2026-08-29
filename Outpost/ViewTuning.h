@@ -154,14 +154,36 @@ inline constexpr float INPUT_TAP_MAX_DURATION_MS = 320.0f;
 inline constexpr float INPUT_DOUBLE_TAP_WINDOW_MS = 300.0f;
 inline constexpr float INPUT_PICK_PADDING = 1.15f;
 
+// --- the sky -----------------------------------------------------------------------------------
+// A procedurally generated star field, drawn before anything else and never tested against depth
+// (Design/Skybox.md). Everything about it follows from SKY_SEED, so a screenshot of one reproduces,
+// and F5 reseeds it with the bodies -- the sky and the neighborhood are one scene.
+//
+// The counts are what fills a sky rather than what a machine can afford: 6 000 stars is 36 000
+// vertices and one megabyte, uploaded once and drawn in three calls, and doubling it would still not
+// be measurable. What decides them is that a naked-eye sky holds about 3 000 stars over a hemisphere
+// and this one is a whole sphere, because the outpost can see below its own horizon.
+inline constexpr std::uint64_t SKY_SEED = 0x5C1B0A7E5741B0A7ull;
+inline constexpr std::uint32_t SKY_STAR_COUNT = 14000;
+inline constexpr std::uint32_t SKY_BRIGHT_STAR_COUNT = 24;
+inline constexpr std::uint32_t SKY_NEBULA_COUNT = 240;
+// Where the sphere is put: it only has to sit between CAMERA_NEAR_PLANE and CAMERA_FAR_PLANE, since
+// the pass writes no depth and nothing in the scene is ever tested against it.
+inline constexpr float SKY_RADIUS_METRES = 5000.0f;
+inline constexpr float SKY_INTENSITY = 1.0f;
+// The fastest a star scintillates. A vertex carries its own rate as a fraction of this, so the
+// number lives here and the shader is told it rather than agreeing with it (SkyRenderer::Frame).
+inline constexpr float SKY_TWINKLE_MAX_RATE_RAD_PER_SEC = 4.5f;
+
 // --- world look --------------------------------------------------------------------------------
-inline constexpr Neuron::Rgba SKY_COLOUR{0.043f, 0.051f, 0.063f, 1.0f};
-inline constexpr Neuron::Rgba GROUND_COLOUR{0.075f, 0.082f, 0.094f, 1.0f};
-inline constexpr Neuron::Rgba GRID_COLOUR{0.28f, 0.36f, 0.44f, 0.55f}; // a = strength
-inline constexpr float GRID_SPACING = 20.0f;
-inline constexpr float GRID_LINE_WIDTH_PX = 1.3f;
-inline constexpr float GRID_FADE_DISTANCE = 900.0f;
-inline constexpr float GROUND_SIZE = 4000.0f;
+// The background the sky is drawn onto. Nearly black on purpose now that there are stars in front of
+// it: what is left is the faint wash a real dark sky has, and lifting it any further washes the
+// faintest stars out. It was three times this before the sky existed, when it was the whole sky.
+inline constexpr Neuron::Rgba SKY_COLOUR{0.014f, 0.017f, 0.024f, 1.0f};
+// There is no ground. The outpost is in open space and the sky wraps all the way round it, so the
+// scene pass draws no plane and has no grid to draw on one (Design/Decisions/0022). What is still
+// flat is the *order* plane at y = 0: a move order lands on it, ships fly at SHIP_HOVER_HEIGHT above
+// it, and every ring and marker is a decal on it. That plane is arithmetic, not geometry.
 inline constexpr float LIGHT_DIR_X = -0.42f;
 inline constexpr float LIGHT_DIR_Y = 0.78f;
 inline constexpr float LIGHT_DIR_Z = -0.46f;
@@ -305,7 +327,9 @@ inline constexpr int HOSTILE_PATROL_COUNT = 3;
 // with the window DPI; the layout is anchored to corners and edges, so no width is assumed.
 inline constexpr Neuron::Rgba HUD_COLOUR{0.78f, 0.87f, 0.96f, 1.0f}; // values and body text
 inline constexpr Neuron::Rgba HUD_PANEL_FILL{0.043f, 0.051f, 0.063f, 0.82f};
-inline constexpr Neuron::Rgba HUD_PANEL_OUTLINE{GRID_COLOUR.r, GRID_COLOUR.g, GRID_COLOUR.b, 0.45f}; // the grid, as a rule
+// The slate blue the ground grid used to be drawn in. It outlived the grid: the HUD had taken it as
+// its rule colour, and a panel outline is what it is now for.
+inline constexpr Neuron::Rgba HUD_PANEL_OUTLINE{0.28f, 0.36f, 0.44f, 0.45f};
 inline constexpr Neuron::Rgba HUD_LABEL_COLOUR{0.373f, 0.455f, 0.533f, 1.0f};
 inline constexpr Neuron::Rgba HUD_ACCENT_GREEN{SEL_RING_COLOUR.r, SEL_RING_COLOUR.g, SEL_RING_COLOUR.b, 1.0f}; // active, positive
 inline constexpr Neuron::Rgba HUD_ACCENT_AMBER{MARKER_COLOUR.r, MARKER_COLOUR.g, MARKER_COLOUR.b, 1.0f};       // alerts, orders

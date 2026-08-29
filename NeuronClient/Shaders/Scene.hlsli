@@ -12,11 +12,9 @@ cbuffer VsConstants : register(b0)
 
 cbuffer PsConstants : register(b1)
 {
-  float4 baseColour;       // rgb base colour, w material mix
-  float4 lightDirAmbient;  // xyz towards the light, w ambient level
-  float4 gridColour;       // rgb line colour, a strength
-  float4 gridParams;       // x spacing, y line width px, z fade distance, w 1 for the ground
-  float4 cameraPos;        // xyz eye
+  float4 baseColour;      // rgb base colour, w material mix
+  float4 lightDirAmbient; // xyz towards the light, w ambient level
+  float4 cameraPos;       // xyz eye
 };
 
 struct VsIn

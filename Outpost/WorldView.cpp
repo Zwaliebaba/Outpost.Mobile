@@ -373,6 +373,19 @@ void WorldView::UpdateFeedback(float _dtSec)
 {
   const float dt = std::clamp(_dtSec, 0.0f, 0.1f);
 
+  // The sky's clock, wrapped rather than left to run: the twinkle is a sine of time times a rate, and
+  // a float second counter left running for a few hours loses enough precision that consecutive
+  // frames land on the same argument and every star freezes.
+  //
+  // The wrap is seamless, and it is the vertex packing that makes it so. A star's rate is a fraction
+  // of the frame's maximum quantized to eight bits (SkyVertex.h), so every rate in the sky is
+  // n/255 * max for a whole n -- and after 255 * 2pi / max seconds *every* star has completed exactly
+  // n whole cycles, whatever its n. Nothing jumps, and there is nothing to tune.
+  m_skyTimeSec += dt;
+  const float skyWrapSec = 255.0f * XM_2PI / std::max(m_skyTuning.twinkleMaxRateRadPerSec, 1e-3f);
+  if (m_skyTimeSec > skyWrapSec)
+    m_skyTimeSec -= skyWrapSec;
+
   // Bodies turn on real time, like every other feedback here, so the debug keys that slow the
   // simulation do not slow a planet: what 1/2/3 change is how fast the world is simulated, and a
   // planet is not in the world.
@@ -736,23 +749,28 @@ void WorldView::OnTap(float _xPx, float _yPx, bool _shiftHeld, bool _doubleTap)
 
 void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& _text)
 {
+  // The sky, before everything. It neither tests nor writes depth, so the ground, the hulls and the
+  // planets all draw over it whatever their distance -- which is the point: a body two kilometers out
+  // has to sit in front of a sphere nominally at five (SkyRenderer.h).
+  if (m_sky != nullptr && m_sky->Ready())
+  {
+    SkyRenderer::Frame sky = m_skyTuning;
+    sky.viewProj = m_camera->ViewProj();
+    sky.cameraRight = m_camera->Right();
+    sky.cameraUp = m_camera->Up();
+    sky.cameraPos = m_camera->Eye();
+    sky.timeSec = m_skyTimeSec;
+    m_sky->Draw(_gpu, sky);
+  }
+
   SceneFrame frame = {};
   frame.viewProj = m_camera->ViewProj();
   frame.lightDir = XMFLOAT3(LIGHT_DIR_X, LIGHT_DIR_Y, LIGHT_DIR_Z);
   frame.ambient = AMBIENT_LEVEL;
-  frame.gridColour = GRID_COLOUR;
-  frame.gridSpacing = GRID_SPACING;
-  frame.gridLineWidthPx = GRID_LINE_WIDTH_PX;
-  frame.gridFadeDistance = GRID_FADE_DISTANCE;
   frame.cameraPos = m_camera->Eye();
   _renderer.BeginScene(_gpu, frame);
 
-  // The ground follows the camera, so a plane a few kilometres across is enough however far the
-  // view travels. The grid on it is procedural, so nothing has to be rebuilt when it moves.
   XMFLOAT4X4 world;
-  const XMFLOAT3& target = m_camera->Target();
-  XMStoreFloat4x4(&world, XMMatrixScaling(GROUND_SIZE, 1.0f, GROUND_SIZE) * XMMatrixTranslation(target.x, 0.0f, target.z));
-  _renderer.DrawMesh(_gpu, m_quadMesh, world, GROUND_COLOUR, 0.0f, true);
 
   // The bodies' world matrices, built here because the ocean needs them before the hulls and the
   // terrain needs the same ones after. One transform per body per frame, not two.
@@ -773,7 +791,7 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
   for (std::size_t i = 0; i < m_bodies.size(); ++i)
   {
     if (m_bodies[i].ocean != INVALID_MESH)
-      _renderer.DrawMesh(_gpu, m_bodies[i].ocean, m_bodyWorlds[i], m_bodies[i].oceanColour, 0.0f, false);
+      _renderer.DrawMesh(_gpu, m_bodies[i].ocean, m_bodyWorlds[i], m_bodies[i].oceanColour, 0.0f);
   }
 
   const std::span<const Game::ShipSnapshot> state = Ships();
@@ -808,7 +826,7 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     }
     const float lift = view.hoverAmount * SEL_HOVER_HIGHLIGHT_STRENGTH;
     tint = Rgba{tint.r + (1.0f - tint.r) * lift, tint.g + (1.0f - tint.g) * lift, tint.b + (1.0f - tint.b) * lift, 1.0f};
-    _renderer.DrawMesh(_gpu, view.mesh, world, tint, materialMix, false);
+    _renderer.DrawMesh(_gpu, view.mesh, world, tint, materialMix);
 
     // Remembered for the explosion, which needs where the hull was and how it was moving at a point
     // where the snapshot no longer has a record for it. Taken from the drawn pose rather than the

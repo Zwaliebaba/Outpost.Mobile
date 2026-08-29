@@ -41,7 +41,8 @@ void SceneRenderer::Init(GpuDevice& _gpu)
 void SceneRenderer::CreateScenePipeline(GpuDevice& _gpu)
 {
   // Two blocks of root constants and nothing else: 32 DWORDs of matrices for the vertex stage and
-  // 20 of shading values for the pixel stage, well inside the 64-DWORD root signature budget.
+  // 12 of shading values for the pixel stage, well inside the 64-DWORD root signature budget. The
+  // decal pipelines share this signature, so Decal.hlsli's block is the same 12 DWORDs (Decal.hlsli).
   D3D12_ROOT_PARAMETER params[2] = {};
   params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
   params[0].Constants.ShaderRegister = 0;
@@ -51,7 +52,7 @@ void SceneRenderer::CreateScenePipeline(GpuDevice& _gpu)
   params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
   params[1].Constants.ShaderRegister = 1;
   params[1].Constants.RegisterSpace = 0;
-  params[1].Constants.Num32BitValues = 20;
+  params[1].Constants.Num32BitValues = 12;
   params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
   D3D12_ROOT_SIGNATURE_DESC rsDesc = {};
@@ -145,28 +146,23 @@ void SceneRenderer::BeginScene(GpuDevice& _gpu, const SceneFrame& _frame)
   cmd->SetGraphicsRoot32BitConstants(0, 16, &_frame.viewProj, 16);
 
   // Everything after baseColour, which is also per draw.
-  const float shading[16] = {
-    _frame.lightDir.x,   _frame.lightDir.y,      _frame.lightDir.z,       _frame.ambient,
-    _frame.gridColour.r, _frame.gridColour.g,    _frame.gridColour.b,     _frame.gridColour.a,
-    _frame.gridSpacing,  _frame.gridLineWidthPx, _frame.gridFadeDistance, 0.0f,
-    _frame.cameraPos.x,  _frame.cameraPos.y,     _frame.cameraPos.z,      0.0f,
+  const float shading[8] = {
+    _frame.lightDir.x,  _frame.lightDir.y,  _frame.lightDir.z,  _frame.ambient,
+    _frame.cameraPos.x, _frame.cameraPos.y, _frame.cameraPos.z, 0.0f,
   };
-  cmd->SetGraphicsRoot32BitConstants(1, 16, shading, 4);
+  cmd->SetGraphicsRoot32BitConstants(1, 8, shading, 4);
 }
 
-void SceneRenderer::DrawMesh(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _baseColour, float _materialMix,
-                             bool _isGround)
+void SceneRenderer::DrawMesh(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _baseColour, float _materialMix)
 {
   if (_mesh >= m_meshes.size() || m_meshes[_mesh].vertexCount == 0)
     return;
   const GpuMesh& mesh = m_meshes[_mesh];
   const float base[4] = {_baseColour.r, _baseColour.g, _baseColour.b, _materialMix};
-  const float mode = _isGround ? 1.0f : 0.0f;
 
   ID3D12GraphicsCommandList* cmd = _gpu.CommandList();
   cmd->SetGraphicsRoot32BitConstants(0, 16, &_world, 0);
   cmd->SetGraphicsRoot32BitConstants(1, 4, base, 0);
-  cmd->SetGraphicsRoot32BitConstants(1, 1, &mode, 15); // gridParams.w
   cmd->IASetVertexBuffers(0, 1, &mesh.vbv);
   cmd->DrawInstanced(mesh.vertexCount, 1, 0, 0);
 }
@@ -178,7 +174,7 @@ void SceneRenderer::BeginDecals(GpuDevice& _gpu, const DirectX::XMFLOAT4X4& _vie
   cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
   cmd->SetGraphicsRoot32BitConstants(0, 16, &_viewProj, 16);
   const float eye[4] = {_cameraPos.x, _cameraPos.y, _cameraPos.z, 0.0f};
-  cmd->SetGraphicsRoot32BitConstants(1, 4, eye, 16);
+  cmd->SetGraphicsRoot32BitConstants(1, 4, eye, 8);
 }
 
 void SceneRenderer::DrawDecal(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _colour, float _thickness,
