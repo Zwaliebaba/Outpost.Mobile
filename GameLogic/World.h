@@ -171,5 +171,7 @@ private:
   std::vector<std::uint32_t> m_neighbourCount; // how much of each run is filled
   std::vector<float> m_correctionX;
   std::vector<float> m_correctionZ;
+  std::vector<float> m_appliedX; // this tick's running total, so k solver steps share one clamp
+  std::vector<float> m_appliedZ;
 };
 } // namespace Game

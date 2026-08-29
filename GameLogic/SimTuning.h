@@ -119,12 +119,30 @@ inline constexpr float SEPARATION_QUERY_MARGIN_METRES = 4.0f;
 // correction at once, so anything approaching 1 overshoots and rings.
 //
 // Jacobi is the deliberate trade (Design/Collision.md 6): Gauss-Seidel converges faster and is
-// order-dependent, which is precisely the property this design spends effort to avoid. The cost is
-// visible in one configuration and worth knowing about -- a chain of identically oriented hulls,
-// each exactly balanced between the neighbour ahead and the neighbour behind, relaxes only from its
-// ends, so a pathological pack of a hundred parallel hulls on one point unwinds over thousands of
-// ticks rather than hundreds. It converges, it stays bounded, and it never explodes; it is simply
-// slow, and no amount of neighbour cap fixes it because the cancellation is exact.
+// order-dependent, which is precisely the property this design spends effort to avoid.
+//
+// The cost lands on one shape, and it is worth stating exactly rather than as "slow", because the
+// exactness is what tells the next reader not to try to tune it away. A compressed pack of
+// identically oriented hulls collapses into lines, and the interior of a line is
+// translation-invariant: every ship sees the same neighbourhood, so any solver that is local,
+// order-independent and translation-equivariant must give every interior ship the same answer --
+// and the same answer everywhere is a translation, which lengthens nothing. Expansion can only be
+// sourced at the two ends, and it reaches the middle by diffusion, so the relaxation front advances
+// as the square root of time and the whole thing costs O(N^2). Measured on a chain of Interceptors
+// compressed to half their spacing: 3.2 * N^2 ticks, from 100 at five hulls to 20,250 at eighty,
+// with the front creeping in from both ends and visibly decelerating.
+//
+// Parallel is the case that matters, because a fleet in formation is parallel by construction. The
+// same pack with varied headings relaxes an order of magnitude faster -- 275 ticks against 2,625 at
+// N = 40 -- because the closest-approach normals stop being collinear and the pack can spread in
+// two dimensions instead of one.
+//
+// Three things were measured and do NOT help, so that nobody spends the afternoon again: the
+// per-tick clamp is not the limit (raising it eightfold changed the chain by nothing), the pair cap
+// is not the limit (four settings, no material change), and softening the cap into a smooth
+// saturation to preserve its gradient made matters worse, because the magnitude it gives up costs
+// more than the gradient it buys. The one lever is running the solve more than once per tick, and
+// SEPARATION_ITERATIONS below is that lever.
 inline constexpr float SEPARATION_STIFFNESS = 0.5f;
 
 // How much of one contact's overlap the pair may close in a tick, as a fraction of the *smaller*
@@ -149,6 +167,27 @@ inline constexpr float SEPARATION_PAIR_CLOSE_FRACTION = 0.25f;
 // than an unbounded one. At 0.5 an Interceptor may be displaced 0.56 m per tick -- 33 m/s, about
 // its own top speed, which is the most that can be called a budget (Design/Collision.md 9, 10).
 inline constexpr float SEPARATION_CLAMP_FRACTION = 0.5f;
+
+// How many times the separation solve runs per tick, and the largest correction that still counts
+// as settled. Both are in the contract: the first changes how far a jam unwinds in a tick, and the
+// second changes which tick it stops on.
+//
+// Each step carries the ends' information one ship further inward, so k of them divide the
+// quadratic above. Measured on a compressed pack of parallel Interceptors, eight steps against one:
+// 8 hulls 2.9 s -> 0.4 s, 16 hulls 10.4 s -> 2.5 s, 24 hulls 21.7 s -> 6.2 s, 40 hulls 45.4 s ->
+// 13.3 s. It stays quadratic -- that is the theorem above, not a tuning failure -- but the constant
+// is three to seven times better.
+//
+// It is close to free when there is nothing to solve. A pack that is not overlapping produces no
+// corrections, so the first step's largest correction is zero and the loop leaves after one: the
+// common case pays one comparison. The cost is spent only where there is a jam, which is exactly
+// where it is worth spending.
+//
+// The clamp is applied to the tick's running total rather than to each step, so extra steps buy
+// convergence and never extra displacement -- the prediction error budget is the same number it was
+// with one step, and the dense-spawn test measures it at exactly the clamp either way.
+inline constexpr std::uint32_t SEPARATION_ITERATIONS = 8;
+inline constexpr float SEPARATION_SETTLE_METRES = 0.001f;
 
 // A parked ship holds its station harder than one under way. Formation drift under traffic is not
 // a separate problem; it is this one with a different number.

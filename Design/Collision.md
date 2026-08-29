@@ -16,6 +16,17 @@ avoidance yields on the same authority split as separation (§9, §10); and `Shi
 stable slot rather than the ship's own index (§6), because the shorter form leaves a live handle
 dangling whenever an unrelated ship despawns.
 
+§6's Jacobi choice has a cost the document does not name, and it is sharper than "converges more
+slowly per iteration". A compressed pack of identically oriented hulls -- which is what a fleet in
+formation is -- collapses into lines whose interiors are translation-invariant, so *any* local,
+order-independent, translation-equivariant solver gives every interior ship the same correction,
+and the same correction everywhere is a translation that lengthens nothing. Expansion is sourced
+only at the ends and diffuses inward, which measures as 3.2·N² ticks: 100 for five hulls and 20,250
+for eighty. That is a theorem about the model rather than a defect in it. The separation solve now
+runs several times per tick, which divides the constant by three to seven and costs nothing when
+there is no jam, and `SimTuning.h` records both the derivation and the three things that were
+measured and do not help.
+
 This document proposes how ships stop passing through each other and each other's structures, and
 how they give way while under way. It is written against the MMO target — many players connected in
 parallel, one authoritative server — because the structure that serves collision is the same

@@ -300,55 +300,83 @@ namespace
 void World::ApplySeparation()
 {
   const std::uint32_t count = ShipCount();
-  m_correctionX.assign(count, 0.0f);
-  m_correctionZ.assign(count, 0.0f);
+  m_appliedX.assign(count, 0.0f);
+  m_appliedZ.assign(count, 0.0f);
 
-  for (ShipId id = 0; id < count; ++id)
+  // More than one solve per tick, because one is not enough for a jam. A compressed line of
+  // parallel hulls can only expand from its ends -- its interior is translation-invariant, so
+  // every local solver gives every interior ship the same answer, and the same answer everywhere
+  // is a translation, which lengthens nothing. The ends' information reaches the middle by
+  // diffusion, one ship per solve step, so k steps make it k times faster and nothing else does
+  // (SimTuning.h says why at length).
+  for (std::uint32_t iteration = 0; iteration < SEPARATION_ITERATIONS; ++iteration)
   {
-    const ShipState& ship = m_ships[id];
-    const HullSpec& hull = HullSpecOf(ship.hullId);
-    if (hull.immovable || !hull.collidable)
-      continue;
+    m_correctionX.assign(count, 0.0f);
+    m_correctionZ.assign(count, 0.0f);
+    float largestCorrection = 0.0f;
 
-    const Capsule self = CapsuleAt(ship, hull, 0.0f, 0.0f);
-    float correctionX = 0.0f;
-    float correctionZ = 0.0f;
-    for (const Neighbour& neighbour : NeighboursOf(id))
+    for (ShipId id = 0; id < count; ++id)
     {
-      const ShipState& other = m_ships[neighbour.id];
-      const HullSpec& otherHull = HullSpecOf(other.hullId);
-      if (!otherHull.collidable || otherHull.immovable)
-        continue; // architecture is pass 5b's, after this one and without the clamp
-
-      const Capsule against = CapsuleAt(other, otherHull, OffsetX(ship.posWorld, other.posWorld), OffsetZ(ship.posWorld, other.posWorld));
-      const Contact contact = CapsuleContact(self, against, id, neighbour.id);
-      if (!contact.touching)
+      const ShipState& ship = m_ships[id];
+      const HullSpec& hull = HullSpecOf(ship.hullId);
+      if (hull.immovable || !hull.collidable)
         continue;
 
-      // Cap what the pair closes, then split it -- never the other way round. Both sides compute
-      // this same cap from the same two radii, so the authority ratio survives the clamp instead of
-      // being inverted by it.
-      const SeparationShares shares = SeparationSharesFor(AuthorityOf(id), false, AuthorityOf(neighbour.id), false);
-      const float pairCap = SEPARATION_PAIR_CLOSE_FRACTION * std::min(hull.capsuleRadiusMetres, otherHull.capsuleRadiusMetres);
-      const float closed = std::min(contact.overlapMetres * SEPARATION_STIFFNESS, pairCap);
-      correctionX += contact.normalX * closed * shares.a;
-      correctionZ += contact.normalZ * closed * shares.a;
+      const Capsule self = CapsuleAt(ship, hull, 0.0f, 0.0f);
+      float correctionX = 0.0f;
+      float correctionZ = 0.0f;
+      for (const Neighbour& neighbour : NeighboursOf(id))
+      {
+        const ShipState& other = m_ships[neighbour.id];
+        const HullSpec& otherHull = HullSpecOf(other.hullId);
+        if (!otherHull.collidable || otherHull.immovable)
+          continue; // architecture is pass 5b's, after this one and without the clamp
+
+        const Capsule against = CapsuleAt(other, otherHull, OffsetX(ship.posWorld, other.posWorld), OffsetZ(ship.posWorld, other.posWorld));
+        const Contact contact = CapsuleContact(self, against, id, neighbour.id);
+        if (!contact.touching)
+          continue;
+
+        // Cap what the pair closes, then split it -- never the other way round. Both sides compute
+        // this same cap from the same two radii, so the authority ratio survives the clamp instead
+        // of being inverted by it.
+        const SeparationShares shares = SeparationSharesFor(AuthorityOf(id), false, AuthorityOf(neighbour.id), false);
+        const float pairCap = SEPARATION_PAIR_CLOSE_FRACTION * std::min(hull.capsuleRadiusMetres, otherHull.capsuleRadiusMetres);
+        const float closed = std::min(contact.overlapMetres * SEPARATION_STIFFNESS, pairCap);
+        correctionX += contact.normalX * closed * shares.a;
+        correctionZ += contact.normalZ * closed * shares.a;
+      }
+
+      // The clamp bounds the tick, not the step, so extra solver steps buy convergence and never
+      // extra displacement: the prediction error budget is the same number it was with one step.
+      const float limit = SEPARATION_CLAMP_FRACTION * hull.capsuleRadiusMetres;
+      float totalX = m_appliedX[id] + correctionX;
+      float totalZ = m_appliedZ[id] + correctionZ;
+      const float magnitudeSquared = totalX * totalX + totalZ * totalZ;
+      if (magnitudeSquared > limit * limit)
+      {
+        const float scale = limit / std::sqrt(magnitudeSquared);
+        totalX *= scale;
+        totalZ *= scale;
+      }
+      m_correctionX[id] = totalX - m_appliedX[id];
+      m_correctionZ[id] = totalZ - m_appliedZ[id];
+      largestCorrection = std::max(largestCorrection, std::fabs(m_correctionX[id]));
+      largestCorrection = std::max(largestCorrection, std::fabs(m_correctionZ[id]));
     }
 
-    const float limit = SEPARATION_CLAMP_FRACTION * hull.capsuleRadiusMetres;
-    const float magnitudeSquared = correctionX * correctionX + correctionZ * correctionZ;
-    if (magnitudeSquared > limit * limit)
+    for (ShipId id = 0; id < count; ++id)
     {
-      const float scale = limit / std::sqrt(magnitudeSquared);
-      correctionX *= scale;
-      correctionZ *= scale;
+      Translate(m_ships[id].posWorld, m_correctionX[id], m_correctionZ[id]);
+      m_appliedX[id] += m_correctionX[id];
+      m_appliedZ[id] += m_correctionZ[id];
     }
-    m_correctionX[id] = correctionX;
-    m_correctionZ[id] = correctionZ;
-  }
 
-  for (ShipId id = 0; id < count; ++id)
-    Translate(m_ships[id].posWorld, m_correctionX[id], m_correctionZ[id]);
+    // A maximum rather than a sum, and that is not incidental: max is exact and order-independent
+    // over floats where a sum is neither, so where the loop stops cannot depend on array order.
+    if (largestCorrection < SEPARATION_SETTLE_METRES)
+      break;
+  }
 }
 
 void World::ApplyBlocking()
