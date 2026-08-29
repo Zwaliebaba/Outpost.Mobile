@@ -46,6 +46,31 @@ struct ScopedNCryptHandle
   ScopedNCryptHandle& operator=(const ScopedNCryptHandle&) = delete;
 };
 
+// Sets the properties a freshly created key needs and finalizes it. Returns the name of the call
+// that failed, or nullptr on success, with the status in _outStatus. Split out so that the caller
+// has one place to delete a half-made key from.
+[[nodiscard]] const char* FinalizeNewKey(NCRYPT_HANDLE _key, SECURITY_STATUS& _outStatus) noexcept
+{
+  DWORD keyBits = DEV_KEY_BITS;
+  _outStatus = NCryptSetProperty(_key, NCRYPT_LENGTH_PROPERTY, reinterpret_cast<PBYTE>(&keyBits), sizeof(keyBits), 0);
+  if (FAILED(_outStatus))
+    return "NCryptSetProperty NCRYPT_LENGTH_PROPERTY";
+
+  // Signing only. TLS 1.3 never does RSA key exchange, so a signing key is the whole of what a QUIC
+  // server needs -- and the key stays on the machine that made it, so it is not marked exportable
+  // either, which is where this differs from MsQuic's own test-only version of the same recipe.
+  DWORD keyUsage = NCRYPT_ALLOW_SIGNING_FLAG;
+  _outStatus = NCryptSetProperty(_key, NCRYPT_KEY_USAGE_PROPERTY, reinterpret_cast<PBYTE>(&keyUsage), sizeof(keyUsage), 0);
+  if (FAILED(_outStatus))
+    return "NCryptSetProperty NCRYPT_KEY_USAGE_PROPERTY";
+
+  _outStatus = NCryptFinalizeKey(_key, 0);
+  if (FAILED(_outStatus))
+    return "NCryptFinalizeKey";
+
+  return nullptr;
+}
+
 // CryptEncodeObject is a two-call API: once for the size, once for the bytes. The result has to
 // outlive CertCreateSelfSignCertificate, which is why it lands in a vector the caller holds.
 [[nodiscard]] bool EncodeObject(LPCSTR _structType, const void* _structInfo, std::vector<std::uint8_t>& _outBytes)
@@ -87,38 +112,36 @@ bool DevCertificate::Acquire()
   if (status == NTE_BAD_KEYSET)
   {
     status = NCryptCreatePersistedKey(provider.handle, &key.handle, NCRYPT_RSA_ALGORITHM, DEV_KEY_NAME, 0, 0);
-    if (FAILED(status))
+    if (status == NTE_EXISTS)
+    {
+      // Somebody created it between our open and our create: another process, or -- the case this
+      // tree actually reaches -- a second test worker on a machine seeing its first run. Their key
+      // is as good as ours would have been, so take theirs rather than fail.
+      status = NCryptOpenKey(provider.handle, &key.handle, DEV_KEY_NAME, 0, NCRYPT_SILENT_FLAG);
+      if (FAILED(status))
+      {
+        SetReason("NCryptOpenKey failed on a key another process had just created (0x%08x)", static_cast<unsigned>(status));
+        return false;
+      }
+    }
+    else if (FAILED(status))
     {
       SetReason("NCryptCreatePersistedKey failed (0x%08x) -- the key store will not take a new key", static_cast<unsigned>(status));
       return false;
     }
-
-    DWORD keyBits = DEV_KEY_BITS;
-    status = NCryptSetProperty(key.handle, NCRYPT_LENGTH_PROPERTY, reinterpret_cast<PBYTE>(&keyBits), sizeof(keyBits), 0);
-    if (FAILED(status))
+    else if (const char* const failed = FinalizeNewKey(key.handle, status); failed != nullptr)
     {
-      SetReason("NCryptSetProperty NCRYPT_LENGTH_PROPERTY failed (0x%08x)", static_cast<unsigned>(status));
+      // A key created and not finalized stays in the store as something no later run can use, and
+      // the next boot would find it and fail on it forever. It goes back out before we report.
+      (void)NCryptDeleteKey(key.handle, NCRYPT_SILENT_FLAG);
+      key.handle = 0; // NCryptDeleteKey frees the handle as well as the key
+      SetReason("%s failed (0x%08x)", failed, static_cast<unsigned>(status));
       return false;
     }
-
-    // Signing only. TLS 1.3 never does RSA key exchange, so a signing key is the whole of what a
-    // QUIC server needs -- and the key stays on the machine that made it, so it is not marked
-    // exportable either.
-    DWORD keyUsage = NCRYPT_ALLOW_SIGNING_FLAG;
-    status = NCryptSetProperty(key.handle, NCRYPT_KEY_USAGE_PROPERTY, reinterpret_cast<PBYTE>(&keyUsage), sizeof(keyUsage), 0);
-    if (FAILED(status))
+    else
     {
-      SetReason("NCryptSetProperty NCRYPT_KEY_USAGE_PROPERTY failed (0x%08x)", static_cast<unsigned>(status));
-      return false;
+      m_keyWasCreated = true;
     }
-
-    status = NCryptFinalizeKey(key.handle, 0);
-    if (FAILED(status))
-    {
-      SetReason("NCryptFinalizeKey failed (0x%08x)", static_cast<unsigned>(status));
-      return false;
-    }
-    m_keyWasCreated = true;
   }
   else if (FAILED(status))
   {

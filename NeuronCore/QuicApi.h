@@ -89,10 +89,14 @@ private:
   // protocol name end up disagreeing.
   [[nodiscard]] const char* Alpn() const noexcept;
 
-  // How many transports and listeners are standing on this object. Touched only by the owning
-  // thread -- a transport is opened and closed there, never on an MsQuic worker -- so it is a plain
-  // counter and not an atomic, which is also what keeps the synchronisation primitives confined to
-  // the two files ADR 0022 names.
+  // How many MsQuic handles are standing on this registration, so that Close can say so rather than
+  // hang inside RegistrationClose. A plain counter and not an atomic, because it is only ever
+  // touched on the owning thread: a client transport takes one in Connect, and a listener takes one
+  // in Start that covers every connection it accepts -- QuicListener::Stop closes its whole pool
+  // before it gives that one back, so the count is non-zero for as long as any accepted connection
+  // is open. An accepted connection deliberately does not take its own: QuicTransport::Adopt runs on
+  // an MsQuic worker, and a worker touching this counter is the data race the whole design exists to
+  // avoid (ADR 0022).
   void AcquireHandle() noexcept;
   void ReleaseHandle() noexcept;
 

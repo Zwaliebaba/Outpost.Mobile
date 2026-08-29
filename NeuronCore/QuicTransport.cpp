@@ -2,8 +2,9 @@
 
 // MsQuic after pch.h and before anything else, for the include-order reason at the top of
 // QuicApi.cpp: pch.h has already put Winsock ahead of <windows.h>, and QUIC_ADDR needs that.
+// msquic.hpp is deliberately not here: nothing in this file uses its wrapper types, and it drags in
+// msquicp.h, the private header MsQuic reserves the right to change without warning.
 #include <msquic.h>
-#include <msquic.hpp>
 
 #include "QuicTransport.h"
 
@@ -78,10 +79,14 @@ struct QuicTransportCallbacks
         break;
       }
 
-      const std::uint32_t at = write % end.m_capacity;
+      // The slot is carried, not computed from the counter. `write % capacity` would be wrong for one
+      // ring's worth of datagrams every time the 32-bit counter wraps, for any capacity that does not
+      // divide 2^32 -- 13 years away at 10 Hz, and not a thing to leave in a ring.
+      const std::uint32_t at = end.m_inWriteSlot;
       if (received->Length > 0)
         std::memcpy(end.m_inArena.data() + static_cast<std::size_t>(at) * MAX_DATAGRAM_BYTES, received->Buffer, received->Length);
       end.m_inSizes[at] = received->Length;
+      end.m_inWriteSlot = (at + 1u) % end.m_capacity;
       end.m_inWrite.store(write + 1u, std::memory_order_release);
       break;
     }
@@ -193,6 +198,8 @@ void QuicTransport::Reserve(QuicApi& _api, const Desc& _desc)
   m_inWrite.store(0u, std::memory_order_relaxed);
   m_inRead.store(0u, std::memory_order_relaxed);
   m_inReady = 0;
+  m_inWriteSlot = 0;
+  m_inReadSlot = 0;
 
   m_outArena.assign(arenaBytes, 0u);
   m_outInFlight = std::vector<std::atomic<bool>>(m_capacity);
@@ -211,6 +218,10 @@ bool QuicTransport::Adopt(void* _connection)
 {
   // On an MsQuic worker, inside QuicListener's accept callback. Reserve has already run on the
   // owning thread, so there is nothing to allocate here and nothing to decide.
+  //
+  // No QuicApi::AcquireHandle here, on purpose: that counter is owner-thread-only (see QuicApi.h),
+  // and the listener's own handle already covers everything it accepts, because Stop closes this
+  // whole pool before it releases that handle.
   if (m_connection != nullptr || m_api == nullptr || _connection == nullptr)
     return false;
 
@@ -246,9 +257,10 @@ void QuicTransport::Close() noexcept
   {
     table->ConnectionShutdown(connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
 
-    // The one place this class waits, and it is bounded. MsQuic may still be inside a callback on
-    // this object, so the handle cannot be closed until SHUTDOWN_COMPLETE has come back -- and if it
-    // never does, the leak of one connection handle is preferred to a deadlock at shutdown.
+    // The one place this class waits, and it is bounded by the idle timeout: MsQuic may still be
+    // inside a callback on this object, and waiting for SHUTDOWN_COMPLETE is what makes the close
+    // below safe rather than a race against a live upcall. If it never comes, the close happens
+    // anyway -- ConnectionClose drains the callbacks itself, so it is the backstop and not a leak.
     std::unique_lock<std::mutex> lock(m_closedLock);
     (void)m_closed.wait_for(lock, std::chrono::milliseconds(m_api->IdleTimeoutMs()),
                             [this] { return m_state.load(std::memory_order_acquire) == ConnectionState::Closed; });
@@ -283,9 +295,9 @@ void QuicTransport::ReconsiderConnected()
   if (limit == 0)
     return; // MsQuic has not settled on a number yet; the handshake timeout bounds the wait
 
-  ConnectionState connecting = ConnectionState::Connecting;
   if (limit >= MAX_DATAGRAM_BYTES)
   {
+    ConnectionState connecting = ConnectionState::Connecting;
     (void)m_state.compare_exchange_strong(connecting, ConnectionState::Connected);
     return;
   }
@@ -293,8 +305,29 @@ void QuicTransport::ReconsiderConnected()
   // A peer that would take 900 bytes of a 1152-byte datagram gets the connection ended, because a
   // transport that silently truncates is the bug LoopbackTransport::Send refuses to have. State()
   // and MaxSendLength() together are what the owning thread reads to say why.
-  if (m_state.compare_exchange_strong(connecting, ConnectionState::Draining))
-    m_api->Table()->ConnectionShutdown(static_cast<HQUIC>(m_connection), QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, QUIC_ERROR_DATAGRAM_TOO_SMALL);
+  //
+  // Demoted from Connected as well as from Connecting, and that is not belt and braces: MsQuic
+  // raises DATAGRAM_STATE_CHANGED again every time the limit moves -- an MTU probe settling, a path
+  // changing -- so a connection wide enough at the handshake can stop being wide enough later.
+  // Refusing only on the way up would leave that connection reporting Connected while every Send
+  // returned false, which the contract reads as "the send queue is full" (Transport.h) and which the
+  // caller answers by dropping the message and trying again forever.
+  //
+  // The margin here is not large. At QUIC's 1280-byte MTU floor, IP, UDP, the short header, the AEAD
+  // tag and the DATAGRAM frame leave a little over 1180 bytes, so 1152 has tens of bytes of headroom
+  // and a longer peer connection ID eats into it. If this ever fires on localhost, that budget is
+  // the first thing to measure -- do not lower MAX_DATAGRAM_BYTES, which the wire format's fragment
+  // sizes are derived from.
+  ConnectionState carrying = m_state.load(std::memory_order_acquire);
+  while (carrying == ConnectionState::Connecting || carrying == ConnectionState::Connected)
+  {
+    if (m_state.compare_exchange_weak(carrying, ConnectionState::Draining))
+    {
+      m_api->Table()->ConnectionShutdown(static_cast<HQUIC>(m_connection), QUIC_CONNECTION_SHUTDOWN_FLAG_NONE,
+                                         QUIC_ERROR_DATAGRAM_TOO_SMALL);
+      return;
+    }
+  }
 }
 
 bool QuicTransport::Send(const std::uint8_t* _bytes, std::uint32_t _count)
@@ -313,8 +346,8 @@ bool QuicTransport::Send(const std::uint8_t* _bytes, std::uint32_t _count)
   for (std::uint32_t probe = 0; probe < m_capacity; ++probe)
   {
     const std::uint32_t candidate = (m_outCursor + probe) % m_capacity;
-    bool free = false;
-    if (m_outInFlight[candidate].compare_exchange_strong(free, true, std::memory_order_acq_rel, std::memory_order_relaxed))
+    bool expected = false;
+    if (m_outInFlight[candidate].compare_exchange_strong(expected, true, std::memory_order_acq_rel, std::memory_order_relaxed))
     {
       at = candidate;
       break;
@@ -353,7 +386,7 @@ std::uint32_t QuicTransport::Receive(std::uint8_t* _outBytes, std::uint32_t _cap
   if (read == m_inReady)
     return 0;
 
-  const std::uint32_t at = read % m_capacity;
+  const std::uint32_t at = m_inReadSlot;
   const std::uint32_t size = m_inSizes[at];
 
   // A caller must offer at least MAX_DATAGRAM_BYTES, because that is the most a datagram can be.
@@ -366,6 +399,7 @@ std::uint32_t QuicTransport::Receive(std::uint8_t* _outBytes, std::uint32_t _cap
   if (size > 0 && _outBytes != nullptr)
     std::memcpy(_outBytes, m_inArena.data() + static_cast<std::size_t>(at) * MAX_DATAGRAM_BYTES, size);
 
+  m_inReadSlot = (at + 1u) % m_capacity;
   m_inRead.store(read + 1u, std::memory_order_release);
   return size;
 }

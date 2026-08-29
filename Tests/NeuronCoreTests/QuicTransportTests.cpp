@@ -6,6 +6,7 @@
 // name it, so it names it here.
 #include "DevCertificate.h"
 
+#include <array>
 #include <chrono>
 #include <thread>
 
@@ -54,8 +55,11 @@ constexpr int SNAPSHOT_FRAGMENTS = 13;
 // at whatever port it got. Nothing is shared between tests -- MsQuic is opened and closed per test --
 // so a test that goes wrong takes only itself with it.
 //
-// EVERY WAIT IN THIS FILE IS BOUNDED. A handshake that never completes has to fail the test in
-// seconds with the states it saw, not sit until CI's timeout kills the run and says nothing.
+// EVERY WAIT IN THIS FILE IS BOUNDED. Waiting for a state is bounded by QUIC_HANDSHAKE_TIMEOUT_MS
+// and fails the test with the states it saw, rather than sitting until CI's timeout kills the run
+// and says nothing. The one longer bound is teardown: ~Pair closes the connections, and closing one
+// waits up to the idle timeout for MsQuic to finish with it (QuicTransport::Close). That is
+// milliseconds in every passing run and ten seconds only if MsQuic has stopped answering.
 class Pair
 {
 public:
@@ -331,6 +335,11 @@ public:
     Neuron::QuicTransport* const server = pair.Server();
     Assert::IsTrue(pair.PumpUntil([&] { return server->DroppedCount() == 1; }, Neuron::QUIC_HANDSHAKE_TIMEOUT_MS),
                    L"a ring of eight did not drop the ninth datagram exactly once");
+
+    // One more Poll before reading, and it is load-bearing rather than defensive. PumpUntil polls
+    // and then tests, so the eighth datagram can land between the two -- leaving the drop counted
+    // and the ready cursor one short, and the loop below accusing correct code of losing a datagram.
+    server->Poll();
 
     Buffer got{};
     for (std::uint32_t taken = 0; taken < RING; ++taken)

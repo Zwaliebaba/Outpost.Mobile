@@ -75,8 +75,8 @@ bool QuicApi::Open(const Desc& _desc)
   const QUIC_SETTINGS* const settingsBlock = &settings;
 
   HQUIC clientConfig = nullptr;
-  QUIC_STATUS status =
-    m_table->ConfigurationOpen(registration, alpn, alpn.Length(), settingsBlock, sizeof(QUIC_SETTINGS), nullptr, &clientConfig);
+  QUIC_STATUS status = m_table->ConfigurationOpen(registration, alpn, alpn.Length(), settingsBlock,
+                                                  static_cast<std::uint32_t>(sizeof(QUIC_SETTINGS)), nullptr, &clientConfig);
   if (QUIC_FAILED(status))
   {
     SetReason("ConfigurationOpen for the client failed (0x%08x)", static_cast<unsigned>(status));
@@ -105,7 +105,8 @@ bool QuicApi::Open(const Desc& _desc)
   }
 
   HQUIC serverConfig = nullptr;
-  status = m_table->ConfigurationOpen(registration, alpn, alpn.Length(), settingsBlock, sizeof(QUIC_SETTINGS), nullptr, &serverConfig);
+  status = m_table->ConfigurationOpen(registration, alpn, alpn.Length(), settingsBlock, static_cast<std::uint32_t>(sizeof(QUIC_SETTINGS)),
+                                      nullptr, &serverConfig);
   if (QUIC_FAILED(status))
   {
     SetReason("ConfigurationOpen for the server failed (0x%08x)", static_cast<unsigned>(status));
@@ -133,10 +134,14 @@ bool QuicApi::Open(const Desc& _desc)
 void QuicApi::Close() noexcept
 {
   // A registration cannot close while a connection on it lives, and MsQuic's answer to being asked
-  // is to wait forever rather than to fail. Whoever got the order wrong wants to know here, at the
-  // call that would have hung, rather than in a shipped build's shutdown -- which must not throw
-  // (AGENTS.md 5), so this is the debug-only form of the tree's macro.
-  DEBUG_ASSERT_TEXT(m_outstanding == 0, L"QuicApi::Close ran with transports or listeners still open on it");
+  // is to wait forever rather than to fail, so whoever got the order wrong wants to hear about it
+  // here -- at the call that is about to hang, not from the hang.
+  //
+  // A trace and not an assert, because this function is noexcept and a shutdown path: ASSERT_TEXT
+  // reaches Neuron::Fatal, which throws, and a throw out of noexcept is std::terminate rather than
+  // the one exception the composition root catches (Debug.h, AGENTS.md 5). The trace lands in the
+  // debugger's output window immediately before the hang, which is the diagnostic that was wanted.
+  DEBUG_WARNING(m_outstanding != 0, L"QuicApi::Close ran with transports or listeners still open on it\n");
 
   if (m_table != nullptr)
   {
@@ -206,7 +211,7 @@ void QuicApi::AcquireHandle() noexcept
 
 void QuicApi::ReleaseHandle() noexcept
 {
-  DEBUG_ASSERT_TEXT(m_outstanding > 0, L"a QUIC handle was released twice");
+  DEBUG_WARNING(m_outstanding == 0, L"a QUIC handle was released twice\n");
   if (m_outstanding > 0)
     --m_outstanding;
 }

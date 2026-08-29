@@ -121,10 +121,17 @@ private:
   // which is what makes "delivery happens in Poll" true rather than merely intended.
   std::vector<std::uint8_t> m_inArena;
   std::vector<std::uint32_t> m_inSizes;
-  mutable std::mutex m_inLock;
+  std::mutex m_inLock;
   std::atomic<std::uint32_t> m_inWrite{0};
   std::atomic<std::uint32_t> m_inRead{0};
   std::uint32_t m_inReady = 0;
+
+  // The slot each cursor is standing on, carried rather than derived as `cursor % capacity`: the
+  // counters above are free-running 32-bit values, and 2^32 is not a multiple of every capacity, so
+  // deriving the slot would misplace one ring's worth of datagrams at the wrap. m_inWriteSlot is the
+  // workers' and moves under m_inLock; m_inReadSlot is the owning thread's alone.
+  std::uint32_t m_inWriteSlot = 0;
+  std::uint32_t m_inReadSlot = 0;
 
   // Outbound. MsQuic keeps the descriptor array *and* the bytes it points at until a send reaches a
   // final state, so both live in this object rather than on Send's stack.
