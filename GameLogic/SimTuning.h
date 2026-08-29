@@ -276,6 +276,15 @@ inline constexpr float TUNNEL_HEADROOM = 0.6f;
 inline constexpr float FORMATION_SPACING_MARGIN = 1.15f;
 inline constexpr int FORMATION_SHAPE = 1; // FormationShape::Wedge
 
+// --- patrol ------------------------------------------------------------------------------------
+// How many waypoints a patrol ring has. In the contract: it changes which points a patrolling ship
+// steers at, and therefore the whole shape of the run (Design/Hostiles.md 5.2).
+//
+// The ring radius and the cruise speed are deliberately not here. They are inputs to AssignPatrol,
+// passed by whoever assigns the patrol, the way a spawn position is passed to SpawnShip -- content,
+// not contract.
+inline constexpr std::uint32_t PATROL_RING_WAYPOINTS = 12;
+
 // --- interest management -----------------------------------------------------------------------
 // Not in the replay contract, and that is worth saying because everything around it is: these change
 // what is *sent*, never what is *simulated*. A recording made at one radius replays identically at

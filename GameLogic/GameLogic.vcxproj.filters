@@ -42,6 +42,9 @@
     <ClInclude Include="Formation.h">
       <Filter>Motion</Filter>
     </ClInclude>
+    <ClInclude Include="Patrol.h">
+      <Filter>Motion</Filter>
+    </ClInclude>
     <ClInclude Include="Movement.h">
       <Filter>Motion</Filter>
     </ClInclude>

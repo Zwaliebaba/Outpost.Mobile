@@ -10,7 +10,11 @@ namespace Outpost
 // it does. The simulation's own numbers live in GameLogic/SimTuning.h and are a different kind of
 // value -- one of these can be changed between two builds of the same match, one of those cannot.
 //
-// Nothing here is read by GameLogic, and nothing here feeds back into a tick.
+// Nothing here is ever read by GameLogic. The starting-scene block below is the one part of this
+// file a tick can be affected by, and only at one remove: it is boot content, which the composition
+// root reads and passes into the world as spawn positions and patrol numbers. That is the only route
+// any of this has into a tick, and a value on this side still changes no recorded game -- it changes
+// which game gets recorded.
 
 // --- camera ------------------------------------------------------------------------------------
 inline constexpr float CAMERA_MIN_ZOOM = 40.0f;
@@ -109,9 +113,11 @@ inline constexpr float SHOCK_RING_MAX_RADIUS = 90.0f;  // scaled by the dead hul
 inline constexpr float SHOCK_RING_WIDTH_METRES = 2.5f; // held in metres as the ring grows, so the front stays a front
 inline constexpr Neuron::Rgba SHOCK_RING_COLOUR{1.0f, 0.86f, 0.62f, 0.6f};
 
-// Nothing in the game is a station yet, so nothing sets ShipExplosion::Spawn::shockRing on its own
-// account. Until the station wave does, every death carries one, which is the only way the effect
-// can be looked at. That wave sets the flag from the station and deletes this.
+// A station exists in the game now (the hostile base below), but nothing can destroy one -- there is
+// no combat, and it cannot be selected, so F4 cannot reach it -- and so nothing sets
+// ShipExplosion::Spawn::shockRing on its own account yet. Until something can kill a station, every
+// death carries a ring, which is the only way the effect can be looked at. Whatever gives a station
+// a lifecycle sets the flag from the station and deletes this.
 inline constexpr bool SHOCK_RING_ON_EVERY_DEATH = true;
 
 // --- banking and thrusters ---------------------------------------------------------------------
@@ -169,6 +175,20 @@ inline constexpr float DECAL_LIFT_Y = 0.2f; // clear of the ground quad so the t
 // --- starting scene ----------------------------------------------------------------------------
 inline constexpr float START_SPACING = 55.0f;
 
+// The hostile base and its patrol (Design/Hostiles.md 6). The station sits 1,202 m out on the
+// diagonal: inside the 2,000 m interest radius, so the base is subscribed from the first update and
+// the overview shows red immediately, and inside the minimap's 1,400 m half-range, so it has an edge
+// to be seen against. The farthest patrol point is 1,602 m out, still inside both.
+//
+// The ring clears the station's 251.77 m skin by 148 m, and its chords clear the station's center by
+// 386 m against the 263 m an Interceptor needs -- so the legs plan straight and the station never
+// even scores as a threat. PatrolTests spells these same five numbers, and the two must agree.
+inline constexpr float HOSTILE_BASE_EAST_METRES = 850.0f;
+inline constexpr float HOSTILE_BASE_NORTH_METRES = 850.0f;
+inline constexpr float HOSTILE_PATROL_RING_METRES = 400.0f;
+inline constexpr float HOSTILE_PATROL_CRUISE_MPS = 10.0f; // 29 % of an Interceptor's maximum: a lap in about 4.2 minutes
+inline constexpr int HOSTILE_PATROL_COUNT = 3;
+
 // --- HUD ---------------------------------------------------------------------------------------
 // Flat and square-cornered: no blur, no glow, no gradients. Sizes are in px at 96 DPI and scale
 // with the window DPI; the layout is anchored to corners and edges, so no width is assumed.
@@ -203,6 +223,9 @@ inline constexpr float HUD_MINIMAP_HEADER_PX = 30.0f;
 inline constexpr float HUD_MINIMAP_MAP_PX = 140.0f;
 inline constexpr float HUD_MINIMAP_GRID_PX = 28.0f;
 inline constexpr float HUD_MINIMAP_DOT_PX = 4.0f;
+// A structure reads bigger than a fighter without pretending to scale: to scale, a 500 m station is
+// 25 px, a quarter of the map for one base. Iconography beats cartography at 0.05 px per metre.
+inline constexpr float HUD_MINIMAP_STRUCTURE_DOT_PX = 8.0f;
 inline constexpr float HUD_MINIMAP_HALF_RANGE = 1400.0f; // metres from the camera target to the map's edge; wider than CAMERA_MAX_ZOOM sees
 
 inline constexpr float HUD_RAIL_BUTTON_PX = 60.0f; // a hit target, so never below 44

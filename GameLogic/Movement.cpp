@@ -78,6 +78,12 @@ MotionIntent SolveOrder(const ShipState& _ship, const HullSpec& _hull) noexcept
       // Never faster than can still be shed before the point.
       intent.desiredSpeedMetresPerSec =
         std::min(_hull.maxSpeedMetresPerSec, std::sqrt(2.0f * _hull.decelerationMetresPerSec2 * (distance - arrival)));
+      // And never faster than the order asked for. The one place the cap is applied: AvoidNeighbours
+      // only ever sheds speed and IntegrateShip only chases the intent, so it holds through both
+      // without either learning of it. A zero cap is arithmetic this line already performed, which
+      // is what keeps an uncapped world bit-identical (Design/Hostiles.md 5.4).
+      if (_ship.orderSpeedCapMetresPerSec > 0.0f)
+        intent.desiredSpeedMetresPerSec = std::min(intent.desiredSpeedMetresPerSec, _ship.orderSpeedCapMetresPerSec);
     }
   }
   else if (_ship.order == OrderState::Aligning)
