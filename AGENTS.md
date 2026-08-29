@@ -208,6 +208,7 @@ Two rules `.clang-tidy` structurally cannot state, so check them by eye:
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
 | `NeuronClient/Shaders/` | HLSL (§3). FXC compiles it into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
 | `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). |
+| `Tools/` | Content tools, stdlib Python only: the NMO ship-mesh codec and Blender add-on (`BlenderNmo/`), the OBJ→NMO converter (`ObjToNmo.py`), and their tests (`Nmo*Test.py` — the codec test needs bare python3, the Blender one the `bpy` wheel). [`Design/NmoFormat.md`](Design/NmoFormat.md) is the format; nothing here is engine code, and no `.vcxproj` names it. |
 | `Design/` | Designs, work orders, `Screenprints/`, `Archive/` for landed work orders, and `Design/Decisions/` — the architecture decision records (§9). Its `README.md` says which document is which and how a slice moves from a design into the tree (§7). |
 | `.github/` | CI (§6) and the pull request template every slice answers (§7). |
 

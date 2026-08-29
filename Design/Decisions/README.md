@@ -43,3 +43,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0008](0008-the-wire-format-lives-in-gamelogic.md) | The wire format lives in GameLogic | accepted |
 | [0009](0009-a-snapshot-carries-a-view-record.md) | A snapshot carries a view record, not the simulation's ship | accepted |
 | [0010](0010-interest-sets-are-sorted-vectors.md) | Interest sets are sorted vectors, not hash maps | accepted |
+| [0011](0011-ship-meshes-are-nmo-and-its-tools-are-python.md) | Ship meshes are NMO v2, and its reference tooling is Python | accepted |
