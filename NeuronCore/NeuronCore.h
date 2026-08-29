@@ -68,6 +68,7 @@ using namespace winrt;
 #include "Debug.h"
 #include "NeuronHelper.h"
 #include "Ease.h"
+#include "Pcg32.h"
 #include "FileSys.h"
 #include "FrameClock.h"
 #include "Transport.h"

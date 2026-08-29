@@ -20,6 +20,9 @@
     <ClCompile Include="EaseTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="Pcg32Tests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="LoopbackTransportTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
