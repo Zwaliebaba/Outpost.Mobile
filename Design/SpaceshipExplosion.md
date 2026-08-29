@@ -1,6 +1,6 @@
 # Spaceship explosion
 
-**Status: proposed. No slice has landed.** §14 lists the slices.
+**Status: landed. All four slices are in the tree.** §14 lists them.
 
 This document proposes how a ship dies on screen: its hull shatters into tumbling triangles, a
 fireball blooms where it was, and a ring of smoking debris flies out and fades. It is a port of the
@@ -179,6 +179,10 @@ Advance(dtSec):
   ageSec += dtSec
   each tumbler:  rot = rot * RotationRollPitchYaw(angVel * dtSec);  angVel *= 1 − dtSec * ROT_FRICTION
   each fragment: pos += vel * dtSec;  vel *= 1 − min(1, |vel| * FRICTION * dtSec);  vel += gravity * dtSec
+                 [landed without the |vel| factor: vel *= 1 − min(1, FRICTION * dtSec). Slice 2's
+                  own acceptance test rules the speed-dependent form out — a fragment at 100 m/s
+                  and FRICTION = 0.05 stops dead in one second under it, where the test requires it
+                  merely slowed and still pointing the same way, and pins the clamp separately.]
   return ageSec >= lifetimeSec
 
 Build(std::vector<FxVertex>& out):
@@ -477,12 +481,15 @@ in parallel with each other; 1 and 4 are in other layers and could overlap their
 the interfaces are agreed first, but nothing forces it and the tree is small enough to go in
 order.
 
-| # | Slice | Layer | Depends on | Work order |
-|---|---|---|---|---|
-| 1 | `Pcg32`, tests, ADR 0011 | `NeuronCore` | — | [slice 1](SpaceshipExplosion-slice-1.md) |
-| 2 | `FxVertex`, `MeshShatter`, `SpriteParticles`, tests | `NeuronClient` | 1 | [slice 2](SpaceshipExplosion-slice-2.md) |
-| 3 | `FxRenderer`, `UploadColourTexture`, two shader pairs | `NeuronClient` | 2 | [slice 3](SpaceshipExplosion-slice-3.md) |
-| 4 | `ShipExplosion`, the trigger, F4, `EXPLOSION_*` tuning | `Outpost` | 3 | [slice 4](SpaceshipExplosion-slice-4.md) |
+| # | Slice | Layer | Depends on | Status | Work order |
+|---|---|---|---|---|---|
+| 1 | `Pcg32`, tests, ADR 0012 | `NeuronCore` | — | landed | [slice 1](SpaceshipExplosion-slice-1.md) |
+| 2 | `FxVertex`, `MeshShatter`, `SpriteParticles`, tests | `NeuronClient` | 1 | landed | [slice 2](SpaceshipExplosion-slice-2.md) |
+| 3 | `FxRenderer`, `UploadColourTexture`, two shader pairs | `NeuronClient` | 2 | landed | [slice 3](SpaceshipExplosion-slice-3.md) |
+| 4 | `ShipExplosion`, the trigger, F4, `EXPLOSION_*` tuning | `Outpost` | 3 | landed | [slice 4](SpaceshipExplosion-slice-4.md) |
+
+The record slice 1 wrote is **0012**, not the 0011 this table asked for: 0011 was taken by the NMO
+record between this document being written and slice 1 landing, and records are never renumbered.
 
 Slice 3 is the only one without a test that can decide it; its acceptance is a screenshot of a
 known vertex list drawn through each pipeline, from slice 4's debug key. Slices 1 and 2 are
