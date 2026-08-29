@@ -201,4 +201,78 @@ void UploadCoverageTexture(GpuDevice& _gpu, std::uint32_t _widthPx, std::uint32_
   srv.Texture2D.ResourceMinLODClamp = 0.0f;
   _gpu.Device()->CreateShaderResourceView(_outTexture.get(), &srv, _srv);
 }
+
+void UploadColourTexture(GpuDevice& _gpu, std::uint32_t _widthPx, std::uint32_t _heightPx, const ByteBuffer& _pixels,
+                         D3D12_CPU_DESCRIPTOR_HANDLE _srv, GpuPtr<ID3D12Resource>& _outTexture, GpuPtr<ID3D12Resource>& _outStaging)
+{
+  constexpr DXGI_FORMAT COLOUR_FORMAT = DXGI_FORMAT_B8G8R8A8_UNORM; // four channels, because it is colour and not coverage
+  constexpr std::uint32_t BYTES_PER_TEXEL = 4;
+
+  D3D12_RESOURCE_DESC td = {};
+  td.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+  td.Alignment = 0;
+  td.Width = _widthPx;
+  td.Height = _heightPx;
+  td.DepthOrArraySize = 1;
+  td.MipLevels = 1;
+  td.Format = COLOUR_FORMAT;
+  td.SampleDesc.Count = 1;
+  td.SampleDesc.Quality = 0;
+  td.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+  td.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+  // put() asserts the pointer is empty rather than releasing what was there, so a texture loaded
+  // twice has to let go of the first one itself.
+  _outTexture = nullptr;
+  _outStaging = nullptr;
+
+  D3D12_HEAP_PROPERTIES hp = HeapProps(D3D12_HEAP_TYPE_DEFAULT);
+  check_hresult(_gpu.Device()->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &td, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                                                       IID_PPV_ARGS(_outTexture.put())));
+
+  D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint = {};
+  UINT rowCount = 0;
+  std::uint64_t rowBytes = 0;
+  std::uint64_t totalBytes = 0;
+  _gpu.Device()->GetCopyableFootprints(&td, 0, 1, 0, &footprint, &rowCount, &rowBytes, &totalBytes);
+
+  hp = HeapProps(D3D12_HEAP_TYPE_UPLOAD);
+  const D3D12_RESOURCE_DESC ud = BufferDesc(totalBytes);
+  check_hresult(_gpu.Device()->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &ud, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                                                       IID_PPV_ARGS(_outStaging.put())));
+
+  std::uint8_t* dst = nullptr;
+  D3D12_RANGE noRead = {0, 0};
+  check_hresult(_outStaging->Map(0, &noRead, reinterpret_cast<void**>(&dst)));
+  for (UINT row = 0; row < rowCount; ++row)
+    std::memcpy(dst + static_cast<size_t>(row) * footprint.Footprint.RowPitch,
+                _pixels.data() + static_cast<size_t>(row) * _widthPx * BYTES_PER_TEXEL, static_cast<size_t>(rowBytes));
+  _outStaging->Unmap(0, nullptr);
+
+  ID3D12GraphicsCommandList* cmd = _gpu.CommandList();
+
+  D3D12_TEXTURE_COPY_LOCATION copyDst = {};
+  copyDst.pResource = _outTexture.get();
+  copyDst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+  copyDst.SubresourceIndex = 0;
+  D3D12_TEXTURE_COPY_LOCATION copySrc = {};
+  copySrc.pResource = _outStaging.get();
+  copySrc.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+  copySrc.PlacedFootprint = footprint;
+  cmd->CopyTextureRegion(&copyDst, 0, 0, 0, &copySrc, nullptr);
+
+  const D3D12_RESOURCE_BARRIER toShader =
+    Transition(_outTexture.get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+  cmd->ResourceBarrier(1, &toShader);
+
+  D3D12_SHADER_RESOURCE_VIEW_DESC srv = {};
+  srv.Format = COLOUR_FORMAT;
+  srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+  srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+  srv.Texture2D.MostDetailedMip = 0;
+  srv.Texture2D.MipLevels = 1;
+  srv.Texture2D.PlaneSlice = 0;
+  srv.Texture2D.ResourceMinLODClamp = 0.0f;
+  _gpu.Device()->CreateShaderResourceView(_outTexture.get(), &srv, _srv);
+}
 } // namespace Neuron

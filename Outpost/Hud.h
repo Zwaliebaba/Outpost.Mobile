@@ -33,6 +33,12 @@ public:
     int selectedCount = 0;
     std::uint32_t shipCount = 0;
     float timeScale = 1.0f;
+    // The explosion effect, so an overflowing pool or a full vertex ring is read off the screen
+    // rather than guessed at (Design/SpaceshipExplosion.md 6.2, 8.1).
+    int explosionCount = 0;
+    std::uint32_t particleCount = 0;
+    std::uint32_t particlesDropped = 0;
+    std::uint32_t fxVertsDropped = 0;
   };
 
   // The rail's icons, which are the images the composition root lists in TextRenderer::Desc, in

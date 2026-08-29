@@ -14,6 +14,13 @@ void WorldView::Init(Neuron::Transport& _transport, Camera& _camera, const MeshL
   m_camera = &_camera;
   m_meshes = &_meshes;
   m_quadMesh = _quadMesh;
+
+  Neuron::SpriteParticles::Desc particleDesc;
+  particleDesc.capacity = EXPLOSION_PARTICLE_CAPACITY;
+  m_particles.Init(particleDesc);
+  // Reserved once: a frame with five explosions on screen copies vertices, it does not allocate.
+  m_fxFragmentVerts.reserve(Neuron::FxRenderer::MAX_FX_VERTS);
+  m_fxSpriteVerts.reserve(Neuron::FxRenderer::MAX_FX_VERTS);
 }
 
 void WorldView::RegisterHullMesh(Game::HullId _hull, MeshHandle _mesh)
@@ -97,6 +104,9 @@ void WorldView::ApplySnapshot()
         view.to = SampleOf(ship, tick);
       }
       m_ships.push_back(std::move(view));
+      // Struck off so the leftovers can be walked below. Generation 0 is never issued, so a null
+      // handle can never match a live ship on a later pass either.
+      m_carryHandles[found] = Game::ShipHandle{};
     }
     else
     {
@@ -120,6 +130,45 @@ void WorldView::ApplySnapshot()
       m_ships.push_back(std::move(view));
     }
     m_handles.push_back(ship.handle);
+  }
+
+  ExplodeTheLost(tick);
+}
+
+// A ShipView that was not carried is a ship that has left the snapshot, and this is the only place
+// that knows it: the new snapshot has no record for it and the view is about to be discarded.
+//
+// Nothing in GameLogic can kill a ship yet, so this consumes a despawn rather than a death. The
+// day a real kill exists it produces the same despawn and nothing here changes
+// (Design/SpaceshipExplosion.md 9).
+void WorldView::ExplodeTheLost(std::uint64_t _tick)
+{
+  for (std::size_t at = 0; at < m_carryHandles.size() && at < m_carryScratch.size(); ++at)
+  {
+    const Game::ShipHandle handle = m_carryHandles[at];
+    if (handle.generation == 0)
+      continue; // carried onto the new snapshot
+
+    const ShipView& lost = m_carryScratch[at];
+    // A ship that despawned before it was ever drawn, or whose mesh never loaded, has nowhere to
+    // explode and no triangles to do it with.
+    if (!lost.drawn || lost.mesh == INVALID_MESH || m_meshes == nullptr)
+      continue;
+
+    ShipExplosion::Spawn spawn;
+    spawn.mesh = &m_meshes->Data(lost.mesh);
+    spawn.world = lost.lastWorld;
+    spawn.velMetresPerSec = lost.lastVelMetresPerSec;
+    spawn.halfExtents = lost.halfExtents;
+    // The same ship dying on the same tick shatters the same way, which is what a replay of a
+    // recorded match will want and costs nothing to give it now. The odd constant is the golden
+    // ratio in 64 bits, which is what stops two nearby ticks producing two nearby streams.
+    spawn.seed = ((static_cast<std::uint64_t>(handle.slot) << 32) | handle.generation) ^ (_tick * 0x9E3779B97F4A7C15ull);
+
+    m_explosions.emplace_back().Start(spawn, m_particles);
+    TriggerCameraShake();
+    if (m_log != nullptr)
+      m_log->Push(EventLog::Severity::Alert, SimTimeSec(), "SHIP LOST");
   }
 }
 
@@ -315,6 +364,15 @@ void WorldView::UpdateFeedback(float _dtSec)
     const float thrusterTarget = THRUSTER_IDLE_INTENSITY + (THRUSTER_MAX_INTENSITY - THRUSTER_IDLE_INTENSITY) * drive;
     view.thrusterIntensity += (thrusterTarget - view.thrusterIntensity) * HalfLifeBlend(dt, THRUSTER_RESPONSE_HALF_LIFE);
   }
+
+  // The explosion ages on real time, like every other feedback here: it is presentation, none of it
+  // feeds back into a tick, and keys 1/2/3 scale the simulation rather than the frame.
+  m_particles.Advance(dt, m_fxRng);
+  for (ShipExplosion& explosion : m_explosions)
+    explosion.Advance(dt);
+  // Dropped once the shatters have faded out. The particles the same death emitted outlive it, in
+  // the shared pool, and are aged above.
+  std::erase_if(m_explosions, [](const ShipExplosion& _explosion) { return _explosion.Finished(); });
 
   // Order markers age out on their own.
   const float markerLifeSec = std::max(0.05f, MARKER_LIFETIME_MS * 0.001f);
@@ -602,7 +660,7 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
   const std::span<const Game::ShipSnapshot> state = Ships();
   for (size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
   {
-    const ShipView& view = m_ships[i];
+    ShipView& view = m_ships[i];
 
     const DisplayPose pose = DisplayedPose(i);
     const float x = ViewX(pose.pos);
@@ -621,9 +679,48 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     const float lift = view.hoverAmount * SEL_HOVER_HIGHLIGHT_STRENGTH;
     tint = Rgba{tint.r + (1.0f - tint.r) * lift, tint.g + (1.0f - tint.g) * lift, tint.b + (1.0f - tint.b) * lift, 1.0f};
     _renderer.DrawMesh(_gpu, view.mesh, world, tint, SHIP_MATERIAL_MIX, false);
+
+    // Remembered for the explosion, which needs where the hull was and how it was moving at a point
+    // where the snapshot no longer has a record for it. Taken from the drawn pose rather than the
+    // latest one, so the shards start exactly where the hull was and drift the way it was pointing.
+    view.lastWorld = world;
+    view.lastVelMetresPerSec = XMFLOAT3(std::sin(heading) * state[i].speed, 0.0f, std::cos(heading) * state[i].speed);
+    view.drawn = true;
+  }
+
+  // Hull fragments before the decals: they are blended but write depth, so a shard occludes what is
+  // behind it, and the rings and thruster glow only test (Design/SpaceshipExplosion.md 8.3).
+  if (m_fx != nullptr && m_fx->Ready() && !m_explosions.empty())
+  {
+    m_fxFragmentVerts.clear();
+    for (const ShipExplosion& explosion : m_explosions)
+      explosion.BuildFragments(m_fxFragmentVerts);
+    if (!m_fxFragmentVerts.empty())
+    {
+      m_fx->Begin(_gpu, m_camera->ViewProj(), frame.lightDir, frame.ambient, m_camera->Eye());
+      m_fx->DrawFragments(_gpu, m_fxFragmentVerts);
+    }
   }
 
   DrawFeedback(_renderer, _gpu);
+
+  // Sprites after: they do not write depth, so they have to see the rings rather than punch a hole
+  // through them. Dark before additive, as the source draws them -- the fireball goes on top of the
+  // smoke, not behind it.
+  if (m_fx != nullptr && m_fx->Ready() && m_particles.Count() > 0)
+  {
+    const XMFLOAT3& right = m_camera->Right();
+    const XMFLOAT3& up = m_camera->Up();
+    m_fx->Begin(_gpu, m_camera->ViewProj(), frame.lightDir, frame.ambient, m_camera->Eye());
+
+    m_fxSpriteVerts.clear();
+    m_particles.Build(SpriteBlend::Dark, right, up, m_fxSpriteVerts);
+    m_fx->DrawSpritesDark(_gpu, m_fxSpriteVerts);
+
+    m_fxSpriteVerts.clear();
+    m_particles.Build(SpriteBlend::Additive, right, up, m_fxSpriteVerts);
+    m_fx->DrawSpritesAdd(_gpu, m_fxSpriteVerts);
+  }
 
   // Screen-space feedback for whatever the pointer is in the middle of. These go through the text
   // pipeline, so they land on top of everything when it flushes.

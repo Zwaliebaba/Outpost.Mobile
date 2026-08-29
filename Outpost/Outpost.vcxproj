@@ -212,6 +212,7 @@
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="OutpostApp.h" />
+    <ClInclude Include="ShipExplosion.h" />
     <ClInclude Include="WorldView.h" />
     <ClInclude Include="WorldSimulation.h" />
     <ClInclude Include="ViewTuning.h" />
@@ -224,6 +225,7 @@
     </ClCompile>
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="OutpostApp.cpp" />
+    <ClCompile Include="ShipExplosion.cpp" />
     <ClCompile Include="WorldView.cpp" />
     <ClCompile Include="Hud.cpp" />
   </ItemGroup>

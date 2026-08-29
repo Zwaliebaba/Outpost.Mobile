@@ -7,6 +7,9 @@
     <ClCompile Include="OutpostApp.cpp">
       <Filter>Boot</Filter>
     </ClCompile>
+    <ClCompile Include="ShipExplosion.cpp">
+      <Filter>View</Filter>
+    </ClCompile>
     <ClCompile Include="WorldView.cpp">
       <Filter>View</Filter>
     </ClCompile>
@@ -21,6 +24,9 @@
     </ClInclude>
     <ClInclude Include="WorldSimulation.h">
       <Filter>Boot</Filter>
+    </ClInclude>
+    <ClInclude Include="ShipExplosion.h">
+      <Filter>View</Filter>
     </ClInclude>
     <ClInclude Include="WorldView.h">
       <Filter>View</Filter>

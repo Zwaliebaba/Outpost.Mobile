@@ -200,6 +200,11 @@ D3D12_CPU_DESCRIPTOR_HANDLE GpuDevice::BackBufferView() const noexcept
   return rtv;
 }
 
+D3D12_CPU_DESCRIPTOR_HANDLE GpuDevice::DepthView() const noexcept
+{
+  return m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
+}
+
 void GpuDevice::BeginFrame(Rgba _clear)
 {
   m_frameIndex = m_swapChain->GetCurrentBackBufferIndex();

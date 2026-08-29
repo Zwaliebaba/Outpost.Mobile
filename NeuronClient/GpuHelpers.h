@@ -40,4 +40,11 @@ namespace Neuron
 class GpuDevice;
 void UploadCoverageTexture(GpuDevice& _gpu, std::uint32_t _widthPx, std::uint32_t _heightPx, const ByteBuffer& _coverage,
                            D3D12_CPU_DESCRIPTOR_HANDLE _srv, GpuPtr<ID3D12Resource>& _outTexture, GpuPtr<ID3D12Resource>& _outStaging);
+
+// The same, for one BGRA8 texture: _pixels is four bytes a texel, B G R A, rows tightly packed --
+// what DdsImage::TopMipAsBgra hands back. Deliberately a second function rather than a format
+// parameter on the one above: the coverage upload exists because the overlay draws coverage and
+// says so at its call site, and this one exists because a sprite is colour. Two names, two intents.
+void UploadColourTexture(GpuDevice& _gpu, std::uint32_t _widthPx, std::uint32_t _heightPx, const ByteBuffer& _pixels,
+                         D3D12_CPU_DESCRIPTOR_HANDLE _srv, GpuPtr<ID3D12Resource>& _outTexture, GpuPtr<ID3D12Resource>& _outStaging);
 } // namespace Neuron
