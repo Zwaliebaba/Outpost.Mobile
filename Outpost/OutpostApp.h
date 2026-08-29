@@ -8,6 +8,7 @@
 #include "LoopbackTransport.h"
 
 #include "AppWindow.h"
+#include "BodyRenderer.h"
 #include "Camera.h"
 #include "FxRenderer.h"
 #include "GpuDevice.h"
@@ -47,6 +48,7 @@ private:
   Neuron::SceneRenderer m_sceneRenderer;
   Neuron::TextRenderer m_textRenderer;
   Neuron::FxRenderer m_fxRenderer;
+  Neuron::BodyRenderer m_bodyRenderer; // slice 3 placeholder, removed by slice 4
   Neuron::MeshLibrary m_meshes;
 
   // Input and framing.

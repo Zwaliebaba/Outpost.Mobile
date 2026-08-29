@@ -7,6 +7,9 @@
 
 #include <d3d12.h>
 
+#include <cstdint>
+#include <span>
+
 namespace Neuron
 {
 // The D3D12 descriptor boilerplate every pipeline in the client needs, in one place rather than
@@ -47,4 +50,16 @@ void UploadCoverageTexture(GpuDevice& _gpu, std::uint32_t _widthPx, std::uint32_
 // says so at its call site, and this one exists because a sprite is colour. Two names, two intents.
 void UploadColourTexture(GpuDevice& _gpu, std::uint32_t _widthPx, std::uint32_t _heightPx, const ByteBuffer& _pixels,
                          D3D12_CPU_DESCRIPTOR_HANDLE _srv, GpuPtr<ID3D12Resource>& _outTexture, GpuPtr<ID3D12Resource>& _outStaging);
+
+// Records the copy of _bytes into a new DEFAULT-heap buffer and its transition to
+// VERTEX_AND_CONSTANT_BUFFER. _outStaging has to outlive the copy, which has only been recorded:
+// release it after the list has run, never before.
+//
+// This is the path for a buffer the GPU reads every frame and the CPU never touches again.
+// SceneRenderer::UploadMesh's upload-heap shortcut is the other one, and its comment still argues
+// correctly for a hull: a few thousand triangles do not justify a staging copy. A planet is seven
+// megabytes the input assembler reads twice a frame, and in an upload heap that is system memory
+// pulled across PCIe at every draw (Design/PlanetRenderer.md 7.1).
+void UploadStaticBuffer(GpuDevice& _gpu, std::span<const std::uint8_t> _bytes, GpuPtr<ID3D12Resource>& _outBuffer,
+                        GpuPtr<ID3D12Resource>& _outStaging);
 } // namespace Neuron

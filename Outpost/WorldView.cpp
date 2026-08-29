@@ -327,6 +327,13 @@ void WorldView::SampleTrails()
 void WorldView::UpdateFeedback(float _dtSec)
 {
   const float dt = std::clamp(_dtSec, 0.0f, 0.1f);
+
+  // slice 3 placeholder, removed by slice 4: one turn every two minutes, so that two screenshots ten
+  // seconds apart show the body has moved. Slice 4 gives every body its own axis and rate.
+  m_debugBodySpinRad += dt * (XM_2PI / 120.0f);
+  if (m_debugBodySpinRad > XM_2PI)
+    m_debugBodySpinRad -= XM_2PI;
+
   const float maxBank = XMConvertToRadians(BANK_MAX_ANGLE_DEG);
   const std::span<const Game::ShipSnapshot> state = Ships();
 
@@ -686,6 +693,20 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     view.lastWorld = world;
     view.lastVelMetresPerSec = XMFLOAT3(std::sin(heading) * state[i].speed, 0.0f, std::cos(heading) * state[i].speed);
     view.drawn = true;
+  }
+
+  // slice 3 placeholder, removed by slice 4: the terrain pass, then the outline pass, which is the
+  // order and the shape slice 4's two loops over WorldView's bodies will have. It goes after the
+  // hulls because the ocean, when slice 5 lands it, goes through the scene pass and has to be in the
+  // depth buffer first (Design/PlanetRenderer.md 7.3).
+  if (m_debugBodies != nullptr && m_debugBody != INVALID_BODY)
+  {
+    XMFLOAT4X4 bodyWorld;
+    XMStoreFloat4x4(&bodyWorld, XMMatrixRotationY(m_debugBodySpinRad) * XMMatrixTranslation(0.0f, 920.0f, 3000.0f));
+
+    m_debugBodies->Begin(_gpu, frame.viewProj, frame.lightDir, frame.ambient, frame.cameraPos, BodyOverlayParams{});
+    m_debugBodies->DrawMain(_gpu, m_debugBody, bodyWorld);
+    m_debugBodies->DrawOverlay(_gpu, m_debugBody, bodyWorld);
   }
 
   // Hull fragments before the decals: they are blended but write depth, so a shard occludes what is

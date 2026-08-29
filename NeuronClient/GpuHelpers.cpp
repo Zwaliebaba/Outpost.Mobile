@@ -275,4 +275,39 @@ void UploadColourTexture(GpuDevice& _gpu, std::uint32_t _widthPx, std::uint32_t 
   srv.Texture2D.ResourceMinLODClamp = 0.0f;
   _gpu.Device()->CreateShaderResourceView(_outTexture.get(), &srv, _srv);
 }
+
+void UploadStaticBuffer(GpuDevice& _gpu, std::span<const std::uint8_t> _bytes, GpuPtr<ID3D12Resource>& _outBuffer,
+                        GpuPtr<ID3D12Resource>& _outStaging)
+{
+  // put() asserts the pointer is empty rather than releasing what was there, so a buffer filled
+  // twice has to let go of the first one itself.
+  _outBuffer = nullptr;
+  _outStaging = nullptr;
+  if (_bytes.empty())
+    return;
+
+  const std::uint64_t bytes = static_cast<std::uint64_t>(_bytes.size());
+
+  D3D12_HEAP_PROPERTIES hp = HeapProps(D3D12_HEAP_TYPE_DEFAULT);
+  const D3D12_RESOURCE_DESC bd = BufferDesc(bytes);
+  check_hresult(_gpu.Device()->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                                                       IID_PPV_ARGS(_outBuffer.put())));
+
+  hp = HeapProps(D3D12_HEAP_TYPE_UPLOAD);
+  check_hresult(_gpu.Device()->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                                                       IID_PPV_ARGS(_outStaging.put())));
+
+  std::uint8_t* dst = nullptr;
+  D3D12_RANGE noRead = {0, 0};
+  check_hresult(_outStaging->Map(0, &noRead, reinterpret_cast<void**>(&dst)));
+  std::memcpy(dst, _bytes.data(), static_cast<size_t>(bytes));
+  _outStaging->Unmap(0, nullptr);
+
+  ID3D12GraphicsCommandList* cmd = _gpu.CommandList();
+  cmd->CopyBufferRegion(_outBuffer.get(), 0, _outStaging.get(), 0, bytes);
+
+  const D3D12_RESOURCE_BARRIER toVertices =
+    Transition(_outBuffer.get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+  cmd->ResourceBarrier(1, &toVertices);
+}
 } // namespace Neuron

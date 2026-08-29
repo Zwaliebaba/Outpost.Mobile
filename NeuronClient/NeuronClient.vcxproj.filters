@@ -78,6 +78,9 @@
     <ClInclude Include="SceneRenderer.h">
       <Filter>Render</Filter>
     </ClInclude>
+    <ClInclude Include="BodyRenderer.h">
+      <Filter>Body</Filter>
+    </ClInclude>
     <ClInclude Include="FxRenderer.h">
       <Filter>Render</Filter>
     </ClInclude>
@@ -140,6 +143,9 @@
     <ClCompile Include="SceneRenderer.cpp">
       <Filter>Render</Filter>
     </ClCompile>
+    <ClCompile Include="BodyRenderer.cpp">
+      <Filter>Body</Filter>
+    </ClCompile>
     <ClCompile Include="FxRenderer.cpp">
       <Filter>Render</Filter>
     </ClCompile>
@@ -171,6 +177,15 @@
     </None>
   </ItemGroup>
   <ItemGroup>
+    <FxCompile Include="Shaders\BodyVS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\BodyPS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\BodyOverlayPS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
     <FxCompile Include="Shaders\SceneVS.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
@@ -203,6 +218,9 @@
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
+    <None Include="Shaders\Body.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
     <None Include="Shaders\Scene.hlsli">
       <Filter>Shaders</Filter>
     </None>

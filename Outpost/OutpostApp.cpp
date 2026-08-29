@@ -13,6 +13,7 @@ namespace
 const std::wstring MESH_DIR = L"Meshes\\";
 const std::wstring FONT_DIR = L"Fonts\\";
 const std::wstring TEXTURE_DIR = L"Textures\\";
+const std::wstring TERRAIN_DIR = L"Terrain\\"; // slice 3 placeholder, removed by slice 4
 
 // Mesh and hull are paired here rather than left to line up by index. The simulation's hull id is
 // a row in Game::HULL_SPECS and the view's mesh is a file; an index that happened to serve as both
@@ -107,6 +108,51 @@ void OutpostApp::Init(HINSTANCE _instance)
   m_view.SetTracker(m_pointers);
   m_view.SetEventLog(m_log);
   m_view.SetFxRenderer(m_fxRenderer);
+
+  // slice 3 placeholder, removed by slice 4 -------------------------------------------------------
+  //
+  // One hard-coded body, so that BodyRenderer has a screen to be accepted on. Every number here is a
+  // literal on purpose: slice 4 brings BodyCatalogue, the BODY_* tuning constants and the F5 reseed,
+  // and this whole block goes with it. It is scaffolding and nothing here is tuned.
+  //
+  // The bracket is the one BodyRenderer's header describes: one BeginUploads, the texture and the
+  // vertices into the same list, one ExecuteAndWait, and only then the staging buffers let go.
+  {
+    BodyDesc debugBody;
+    debugBody.seed = 1;
+    debugBody.radiusMetres = 800.0f;
+    debugBody.gridPower = 6;
+    debugBody.outsideHeight = 0.01f; // dry: the ocean is slice 5
+    debugBody.polarStrength = 0.6f;
+
+    BodyTile continent;
+    continent.centre = XMFLOAT3(0.0f, 1.0f, 0.0f);
+    continent.halfWidthRad = 1.2f;
+    continent.heightScale = 0.08f;
+    continent.desiredHeight = 0.08f;
+    debugBody.tiles.push_back(continent);
+
+    ColourRamp ramp;
+    if (!ColourRamp::Load(TERRAIN_DIR + L"LandscapeEarth.dds", ramp))
+      DebugTrace("body: the placeholder ramp did not load; the debug body will be grey\n");
+
+    std::vector<FxVertex> terrain;
+    BodyBuildStats stats;
+    BodyMeshBuilder::Build(BodyField(debugBody), ramp.Loaded() ? &ramp : nullptr, terrain, stats);
+    DebugTrace("body: the placeholder built {} triangles, maximum height {} m\n", stats.trianglesEmitted, stats.maxHeightMetres);
+
+    BodyRenderer::Desc bodyDesc;
+    bodyDesc.outlineTexture = TEXTURE_DIR + L"TriangleOutline.dds";
+
+    m_gpu.BeginUploads();
+    m_bodyRenderer.Init(m_gpu, bodyDesc);
+    const BodyHandle handle = m_bodyRenderer.UploadBody(m_gpu, terrain);
+    m_gpu.ExecuteAndWait();
+    m_bodyRenderer.DiscardStaging();
+
+    m_view.SetDebugBody(m_bodyRenderer, handle);
+  }
+  // end slice 3 placeholder ------------------------------------------------------------------------
   SpawnStartingFleet();
   m_log.PushFormat(EventLog::Severity::Friendly, 0.0f, "FLEET ONLINE | %u SHIPS", m_world.ShipCount());
 

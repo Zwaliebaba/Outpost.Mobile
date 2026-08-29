@@ -233,6 +233,7 @@
     <ClInclude Include="GpuHelpers.h" />
     <ClInclude Include="GpuDevice.h" />
     <ClInclude Include="SceneRenderer.h" />
+    <ClInclude Include="BodyRenderer.h" />
     <ClInclude Include="FxRenderer.h" />
     <ClInclude Include="BitmapFont.h" />
     <ClInclude Include="ScreenImage.h" />
@@ -257,6 +258,7 @@
     <ClCompile Include="GpuHelpers.cpp" />
     <ClCompile Include="GpuDevice.cpp" />
     <ClCompile Include="SceneRenderer.cpp" />
+    <ClCompile Include="BodyRenderer.cpp" />
     <ClCompile Include="FxRenderer.cpp" />
     <ClCompile Include="BitmapFont.cpp" />
     <ClCompile Include="ScreenImage.cpp" />
@@ -270,6 +272,21 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <FxCompile Include="Shaders\BodyVS.hlsl">
+      <ShaderType>Vertex</ShaderType>
+      <HeaderFileOutput>CompiledShaders\BodyVS.h</HeaderFileOutput>
+      <VariableName>g_pBodyVS</VariableName>
+    </FxCompile>
+    <FxCompile Include="Shaders\BodyPS.hlsl">
+      <ShaderType>Pixel</ShaderType>
+      <HeaderFileOutput>CompiledShaders\BodyPS.h</HeaderFileOutput>
+      <VariableName>g_pBodyPS</VariableName>
+    </FxCompile>
+    <FxCompile Include="Shaders\BodyOverlayPS.hlsl">
+      <ShaderType>Pixel</ShaderType>
+      <HeaderFileOutput>CompiledShaders\BodyOverlayPS.h</HeaderFileOutput>
+      <VariableName>g_pBodyOverlayPS</VariableName>
+    </FxCompile>
     <FxCompile Include="Shaders\SceneVS.hlsl">
       <ShaderType>Vertex</ShaderType>
       <HeaderFileOutput>CompiledShaders\SceneVS.h</HeaderFileOutput>
@@ -324,6 +341,7 @@
   <ItemGroup>
     <!-- Included by the .hlsl files above rather than compiled on their own. FXC tracks
          them as dependencies, so editing one rebuilds both stages that read it. -->
+    <None Include="Shaders\Body.hlsli" />
     <None Include="Shaders\Scene.hlsli" />
     <None Include="Shaders\Decal.hlsli" />
     <None Include="Shaders\Text.hlsli" />

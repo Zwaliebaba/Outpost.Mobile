@@ -9,6 +9,7 @@
 
 #include "Transport.h"
 
+#include "BodyRenderer.h"
 #include "Camera.h"
 #include "FxRenderer.h"
 #include "FxVertex.h"
@@ -206,6 +207,14 @@ public:
     m_fx = &_fx;
   }
 
+  // slice 3 placeholder, removed by slice 4: one hard-coded body, so that the renderer has a screen
+  // to be accepted on. Slice 4 replaces it with BodyCatalogue and a WorldView::AddBody.
+  void SetDebugBody(Neuron::BodyRenderer& _bodies, Neuron::BodyHandle _body) noexcept
+  {
+    m_debugBodies = &_bodies;
+    m_debugBody = _body;
+  }
+
   // For the debug readout: how much of the effect is live right now.
   [[nodiscard]] int ExplosionCount() const noexcept
   {
@@ -281,6 +290,11 @@ private:
   // and does not need one: what a replay wants reproducible is the shatter, and that is seeded from
   // the ship's handle and the tick it died on.
   Neuron::Pcg32 m_fxRng;
+
+  // slice 3 placeholder, removed by slice 4.
+  Neuron::BodyRenderer* m_debugBodies = nullptr;
+  Neuron::BodyHandle m_debugBody = Neuron::INVALID_BODY;
+  float m_debugBodySpinRad = 0.0f;
 
   std::vector<Game::ShipId> m_groups[CONTROL_GROUPS];
   int m_activeGroup = -1;
