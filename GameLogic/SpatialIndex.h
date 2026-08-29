@@ -60,7 +60,10 @@ public:
     float staticCellSizeMetres = 512.0f; // at least twice the largest static bounding radius
   };
 
-  void Configure(const Desc& _desc) noexcept;
+  // Not noexcept: it sizes the level array, so it allocates. A throw out of a noexcept function is
+  // std::terminate rather than the single try in wWinMain that AGENTS.md 5 says every error path
+  // reaches.
+  void Configure(const Desc& _desc);
 
   // Rebuilt only when something immovable spawns or despawns.
   void RebuildStatic(std::span<const Entry> _entries);

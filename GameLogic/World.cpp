@@ -90,7 +90,7 @@ ShipId World::Resolve(ShipHandle _handle) const noexcept
   return (slot.generation == _handle.generation) ? slot.ship : INVALID_SHIP_ID;
 }
 
-void World::ConfigureIndex(const SpatialIndex::Desc& _desc) noexcept
+void World::ConfigureIndex(const SpatialIndex::Desc& _desc)
 {
   m_index.Configure(_desc);
   m_staticIndexDirty = true;

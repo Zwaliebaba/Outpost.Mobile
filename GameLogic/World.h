@@ -59,7 +59,7 @@ public:
 
   // The index the world keeps. Exposed so a caller can retune it -- cell size and level count are
   // performance knobs, not contract values -- and so tests can reach the query directly.
-  void ConfigureIndex(const SpatialIndex::Desc& _desc) noexcept;
+  void ConfigureIndex(const SpatialIndex::Desc& _desc);
   [[nodiscard]] const SpatialIndex& Index() const noexcept
   {
     return m_index;

@@ -31,7 +31,7 @@ namespace
 }
 } // namespace
 
-void SpatialIndex::Configure(const Desc& _desc) noexcept
+void SpatialIndex::Configure(const Desc& _desc)
 {
   m_baseCellSizeMetres = (_desc.baseCellSizeMetres > 0.0f) ? _desc.baseCellSizeMetres : 256.0f;
   m_staticCellSizeMetres = (_desc.staticCellSizeMetres > 0.0f) ? _desc.staticCellSizeMetres : 512.0f;
