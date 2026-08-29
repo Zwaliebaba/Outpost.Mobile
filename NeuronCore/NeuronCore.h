@@ -71,6 +71,7 @@ using namespace winrt;
 #include "FileSys.h"
 #include "FrameClock.h"
 #include "Transport.h"
+#include "LoopbackTransport.h"
 
 using namespace Neuron;
 
