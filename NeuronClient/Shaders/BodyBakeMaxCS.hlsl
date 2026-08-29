@@ -32,8 +32,7 @@ void main(uint3 _id : SV_DispatchThreadID)
       if (fade <= 0.0)
         continue;
 
-      uint previous;
-      InterlockedMax(Maxima[i], OrderedBits(Octaves(direction, i) * fade), previous);
+      InterlockedMax(Maxima[i], OrderedBits(Octaves(direction, i) * fade));
     }
     return;
   }
@@ -43,6 +42,5 @@ void main(uint3 _id : SV_DispatchThreadID)
 
   // Before the polar lift, deliberately: the lift is a fraction of this number, and measuring it
   // after would define the maximum in terms of itself.
-  uint previous;
-  InterlockedMax(Maxima[BAKE_MAX_TILES], OrderedBits(Flattened(direction, tileScale)), previous);
+  InterlockedMax(Maxima[BAKE_MAX_TILES], OrderedBits(Flattened(direction, tileScale)));
 }

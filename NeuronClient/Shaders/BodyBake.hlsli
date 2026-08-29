@@ -83,17 +83,37 @@ uint2 Add64(uint2 _a, uint2 _b)
   return sum;
 }
 
-uint2 Mul64(uint2 _a, uint2 _b)
+// A 32x32 -> 64 product as (low, high), out of four 16-bit partial products. HLSL documents a `umul`
+// intrinsic for exactly this and FXC does not have one -- "error X3004: undeclared identifier
+// 'umul'" -- so it is written out. Every step is exact: no partial product here exceeds 32 bits, and
+// the one place the middle can carry out of 32 is detected and folded into bit 48.
+uint2 Mul32(uint _a, uint _b)
 {
-  // The low 64 bits of a 128-bit product: one 32x32 through umul for the low word's carry, and the
-  // two cross terms, which is all that survives into the bottom half.
-  uint high;
-  uint low;
-  umul(_a.x, _b.x, high, low);
+  const uint aLow = _a & 0xffffu;
+  const uint aHigh = _a >> 16u;
+  const uint bLow = _b & 0xffffu;
+  const uint bHigh = _b >> 16u;
+
+  const uint lowLow = aLow * bLow;
+  const uint middle = aHigh * bLow + (lowLow >> 16u);
+  const uint middleSum = middle + aLow * bHigh;
+  const uint middleCarry = (middleSum < middle) ? 0x10000u : 0u; // carried out of 32 bits, so into bit 48
 
   uint2 product;
-  product.x = low;
-  product.y = high + _a.x * _b.y + _a.y * _b.x;
+  product.x = (middleSum << 16u) | (lowLow & 0xffffu);
+  product.y = aHigh * bHigh + (middleSum >> 16u) + middleCarry;
+  return product;
+}
+
+uint2 Mul64(uint2 _a, uint2 _b)
+{
+  // The low 64 bits of a 128-bit product: the full 32x32 of the low words, and the two cross terms,
+  // which is all of the rest that survives into the bottom half.
+  const uint2 lowProduct = Mul32(_a.x, _b.x);
+
+  uint2 product;
+  product.x = lowProduct.x;
+  product.y = lowProduct.y + _a.x * _b.y + _a.y * _b.x;
   return product;
 }
 
@@ -204,7 +224,9 @@ uint2 DirectionSeed(uint2 _seed, float3 _direction)
 uint Permutation(uint _index)
 {
   const uint slot = _index & (BAKE_PERMUTATION_SIZE - 1u);
-  return permutation[slot >> 2u][slot & 3u];
+  const uint4 group = permutation[slot >> 2u];
+  const uint within = slot & 3u;
+  return (within == 0u) ? group.x : ((within == 1u) ? group.y : ((within == 2u) ? group.z : group.w));
 }
 
 float NoiseFade(float _t)
@@ -350,7 +372,9 @@ float CapFade(float3 _d, BakeTile _tile)
 
 float OctaveAmplitude(uint _tile, uint _octave)
 {
-  return octaveAmplitude[_tile][_octave >> 2u][_octave & 3u];
+  const float4 group = octaveAmplitude[_tile][_octave >> 2u];
+  const uint within = _octave & 3u;
+  return (within == 0u) ? group.x : ((within == 1u) ? group.y : ((within == 2u) ? group.z : group.w));
 }
 
 // The tile's raw octaves, before the rescale the reduction's maximum decides. This is the one the
