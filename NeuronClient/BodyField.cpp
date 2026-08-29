@@ -88,6 +88,16 @@ constexpr float CLIMATE_DITHER_CELLS = 256.0f;
   return static_cast<float>(std::acos(static_cast<double>(std::clamp(_value, -1.0f, 1.0f))));
 }
 
+[[nodiscard]] float Cos(float _value) noexcept
+{
+  return static_cast<float>(std::cos(static_cast<double>(_value)));
+}
+
+[[nodiscard]] float Sin(float _value) noexcept
+{
+  return static_cast<float>(std::sin(static_cast<double>(_value)));
+}
+
 [[nodiscard]] float Dot(const XMFLOAT3& _a, const XMFLOAT3& _b) noexcept
 {
   return _a.x * _b.x + _a.y * _b.y + _a.z * _b.z;
@@ -453,8 +463,8 @@ float BodyField::Flattened(const XMFLOAT3& _d) const noexcept
       const XMVECTOR first = Perpendicular(direction);
       const XMVECTOR second = XMVector3Cross(direction, first);
       const float angle = area.centreHalfWidth.w * 0.25f;
-      const float cosine = std::cos(angle);
-      const float sine = std::sin(angle);
+      const float cosine = Cos(angle);
+      const float sine = Sin(angle);
 
       float sum = 0.0f;
       for (int step = 0; step < 4; ++step)
