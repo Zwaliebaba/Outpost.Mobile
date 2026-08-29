@@ -12,6 +12,11 @@
 //    grain of a built one exactly, not approximately.
 // 3. **The CPU draws every random number; this file draws none.** It reads the block BodyParams
 //    filled (17.3). There is no seeding here, only evaluation.
+//
+// One shape is FXC's rather than the C++'s: a function returns once, from a variable initialised
+// where it is declared, or from a select. FXC reads an early return out of a branch as a value that
+// might be uninitialised (warning X4000), so the originals' early exits are folded here. Every fold
+// was checked to be bit for bit the function it replaced.
 
 #define BAKE_MAX_TILES 8
 #define BAKE_MAX_FLATTEN 32
@@ -119,11 +124,15 @@ uint2 Mul64(uint2 _a, uint2 _b)
 
 uint2 Shr64(uint2 _value, uint _bits)
 {
-  if (_bits == 0u)
-    return _value;
+  // A shift of nothing is its own case: HLSL masks a shift count to five bits, so the general form's
+  // `_value.y << 32` would be `_value.y << 0` and would fold the high word back in.
+  uint2 shifted = _value;
   if (_bits >= 32u)
-    return uint2(_value.y >> (_bits - 32u), 0u);
-  return uint2((_value.x >> _bits) | (_value.y << (32u - _bits)), _value.y >> _bits);
+    shifted = uint2(_value.y >> (_bits - 32u), 0u);
+  else if (_bits != 0u)
+    shifted = uint2((_value.x >> _bits) | (_value.y << (32u - _bits)), _value.y >> _bits);
+
+  return shifted;
 }
 
 uint2 Xor64(uint2 _a, uint2 _b)
@@ -299,11 +308,8 @@ float Warp(float _s)
 {
   // The ends are exactly plus and minus one and not the polynomial's answer for them: an edge sample
   // has to land on the cube's edge to the last bit or the two faces that share it disagree.
-  if (_s >= 1.0)
-    return 1.0;
-  if (_s <= -1.0)
-    return -1.0;
-  return WarpTan(_s * PI_OVER_4);
+  const float warped = WarpTan(_s * PI_OVER_4);
+  return (_s >= 1.0) ? 1.0 : ((_s <= -1.0) ? -1.0 : warped);
 }
 
 float InFace(uint _index, uint _samplesPerSide)
@@ -349,25 +355,35 @@ float Smoothstep(float _from, float _to, float _value)
 
 float CapDistance(float3 _d, float4 _centreHalfWidth)
 {
-  if (_centreHalfWidth.w <= 0.0)
-    return 2.0;
+  // A cap with no width holds nothing, and two half widths is past any cap's edge.
+  float away = 2.0;
+  if (_centreHalfWidth.w > 0.0)
+    away = acos(clamp(dot(_d, _centreHalfWidth.xyz), -1.0, 1.0)) / _centreHalfWidth.w;
 
-  return acos(clamp(dot(_d, _centreHalfWidth.xyz), -1.0, 1.0)) / _centreHalfWidth.w;
+  return away;
 }
 
 float CapFade(float3 _d, BakeTile _tile)
 {
   const float away = CapDistance(_d, _tile.centreHalfWidth);
-  if (away >= 1.0)
-    return 0.0;
-
   const float edge = _tile.edgeDesiredPosYRidged.x;
   const float inner = 1.0 - edge;
-  if (away <= inner)
-    return 1.0;
 
-  const float t = (1.0 - away) / edge;
-  return t * t * (3.0 - 2.0 * t);
+  float fade = 0.0;
+  if (away < 1.0)
+  {
+    // edge is above zero in the else: away is below 1 and above inner, which cannot both hold at
+    // edge = 0.
+    if (away <= inner)
+      fade = 1.0;
+    else
+    {
+      const float t = (1.0 - away) / edge;
+      fade = t * t * (3.0 - 2.0 * t);
+    }
+  }
+
+  return fade;
 }
 
 float OctaveAmplitude(uint _tile, uint _octave)
@@ -412,17 +428,18 @@ float Octaves(float3 _d, uint _tileIndex)
 float Lumpiness(float3 _d)
 {
   const float lumpiness = seedOffset.w;
-  if (lumpiness == 0.0)
-    return 0.0;
 
   float height = 0.0;
-  float amplitude = lumpiness;
-  float frequency = LUMP_BASE_FREQUENCY;
-  for (uint octave = 0u; octave < LUMP_OCTAVES; ++octave)
+  if (lumpiness != 0.0)
   {
-    height += NoiseSample(_d * frequency + seedOffset.xyz + LUMP_OFFSET) * amplitude;
-    amplitude *= 0.5;
-    frequency *= 2.0;
+    float amplitude = lumpiness;
+    float frequency = LUMP_BASE_FREQUENCY;
+    for (uint octave = 0u; octave < LUMP_OCTAVES; ++octave)
+    {
+      height += NoiseSample(_d * frequency + seedOffset.xyz + LUMP_OFFSET) * amplitude;
+      amplitude *= 0.5;
+      frequency *= 2.0;
+    }
   }
 
   return height;
@@ -613,10 +630,10 @@ void LoadTileScales(out float _scales[BAKE_MAX_TILES])
 
 float MaxHeightMetres()
 {
-  if (outsideMaxHeightGrid.y != 0.0)
-    return outsideMaxHeightGrid.y * radiusEllipsoid.x;
-
-  return FromOrderedBits(Maxima[BAKE_MAX_TILES]) * radiusEllipsoid.x;
+  // A maxHeight the block already carries wins over the reduction's, as MeasureMaxHeight does.
+  const float unitHeight =
+      (outsideMaxHeightGrid.y != 0.0) ? outsideMaxHeightGrid.y : FromOrderedBits(Maxima[BAKE_MAX_TILES]);
+  return unitHeight * radiusEllipsoid.x;
 }
 
 uint SamplesPerSide()
