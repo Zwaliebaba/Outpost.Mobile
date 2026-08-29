@@ -21,18 +21,23 @@ changes in the same commit.
 **Built and tested.** Five projects and four test suites, Debug|x64, gating in CI (§6). The game
 is a fleet of three hulls on a ground plane: select them, order them somewhere in formation, watch
 them route around architecture, give way to each other, and arrive without passing through
-anything — and F4 shatters a selected hull into tumbling debris, a fireball and smoke. D3D12
-renderer, WM_POINTER input covering mouse and touch, a main-screen HUD drawn through one overlay
-pipeline (bitmap font atlases, coverage-mask icons, untextured quads), textured FX pipelines for
-the explosion's fragments and sprites, OBJ/MTL hulls, FXC-compiled shaders.
+anything — and F4 shatters a selected hull into tumbling debris, a fireball and smoke. Not every
+ship is the player's: an enemy station sits 1.2 km northeast with three Interceptors patrolling a
+ring around it, drawn red on the minimap and counted as contacts, and they cannot be selected or
+ordered — the simulation refuses an order from the wrong faction and the client does not offer one.
+There is still no combat. D3D12 renderer, WM_POINTER input covering mouse and touch, a main-screen
+HUD drawn through one overlay pipeline (bitmap font atlases, coverage-mask icons, untextured
+quads), textured FX pipelines for the explosion's fragments and sprites, OBJ/MTL hulls,
+FXC-compiled shaders.
 
 **Deliberately not here yet**, so nobody goes looking for it: no audio, no networking, no combat, no
 economy, no damage model, no save format, no content pipeline beyond OBJ and DDS, and no
 configuration file — tuning is `constexpr` in `SimTuning.h`, `HullSpec.h` and `ViewTuning.h` (§5).
-`Transport` has a loopback implementation and no socket, and the client sees the world through it,
-filtered to what one subscriber can see (§2). Where the HUD shows a number
-the simulation does not yet have, it is a placeholder supplied by the composition root, and it says
-so at the definition.
+The hostiles above have no weapons and no senses: the patrol is a metronome that never reacts to
+anything, and the station cannot be destroyed. `Transport` has a loopback implementation and no
+socket, and the client sees the world through it, filtered to what one subscriber can see (§2).
+Where the HUD shows a number the simulation does not yet have, it is a placeholder supplied by the
+composition root, and it says so at the definition.
 
 ---
 

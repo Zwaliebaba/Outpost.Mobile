@@ -138,16 +138,30 @@ void WorldView::ApplySnapshot()
 // A ShipView that was not carried is a ship that has left the snapshot, and this is the only place
 // that knows it: the new snapshot has no record for it and the view is about to be discarded.
 //
-// Nothing in GameLogic can kill a ship yet, so this consumes a despawn rather than a death. The
-// day a real kill exists it produces the same despawn and nothing here changes
-// (Design/SpaceshipExplosion.md 9).
+// It consumes what the server stated, not what the client inferred. A ship leaves the snapshot both
+// when it dies and when it simply falls out of the interest radius, and until hostiles existed those
+// were the same event -- every ship was the player's, so the only leave was F4's despawn. A patrol
+// living 1.2 km out makes the inference wrong in the most visible way there is: phantom explosions,
+// a camera shake and a SHIP LOST alert for enemies that are alive and patrolling. So a departure
+// removes the view silently and only a death detonates (Design/Hostiles.md 4.4).
+//
+// Destroyed() describes the last update the receiver applied, and PumpNetwork applies at most one
+// per tick because the composition root pumps on every tick -- which is what makes reading it here,
+// once per ApplySnapshot, the whole of what the server said since the last one.
 void WorldView::ExplodeTheLost(std::uint64_t _tick)
 {
+  const std::span<const Game::ShipHandle> destroyed = m_receiver.Destroyed();
   for (std::size_t at = 0; at < m_carryHandles.size() && at < m_carryScratch.size(); ++at)
   {
     const Game::ShipHandle handle = m_carryHandles[at];
     if (handle.generation == 0)
       continue; // carried onto the new snapshot
+
+    bool died = false;
+    for (const Game::ShipHandle dead : destroyed)
+      died = died || dead == handle;
+    if (!died)
+      continue; // it left this client's view, which is not a death and never was
 
     const ShipView& lost = m_carryScratch[at];
     // A ship that despawned before it was ever drawn, or whose mesh never loaded, has nowhere to
@@ -164,6 +178,10 @@ void WorldView::ExplodeTheLost(std::uint64_t _tick)
     // recorded match will want and costs nothing to give it now. The odd constant is the golden
     // ratio in 64 bits, which is what stops two nearby ticks producing two nearby streams.
     spawn.seed = ((static_cast<std::uint64_t>(handle.slot) << 32) | handle.generation) ^ (_tick * 0x9E3779B97F4A7C15ull);
+    // Whatever gives a station a lifecycle sets this from the station itself. Until something can
+    // kill one, every death carries a ring, because otherwise nothing would ever draw one
+    // (ViewTuning.h).
+    spawn.shockRing = SHOCK_RING_ON_EVERY_DEATH;
 
     m_explosions.emplace_back().Start(spawn, m_particles);
     TriggerCameraShake();
@@ -269,7 +287,10 @@ void WorldView::SelectGroup(int _group)
   ClearSelection();
   for (const Game::ShipId id : m_groups[_group])
   {
-    if (id < m_ships.size())
+    // A group holds indices into the snapshot it was assigned from, and a later snapshot can put a
+    // different ship at that index -- so the faction is checked here too rather than trusted from
+    // assignment time. Without it a recalled group is the one way a hostile could end up selected.
+    if (id < m_ships.size() && IsOwn(id))
       m_ships[id].selected = true;
   }
   m_activeGroup = m_groups[_group].empty() ? -1 : _group;
@@ -423,8 +444,18 @@ void WorldView::UpdateFeedback(float _dtSec)
   m_camera->Update(); // everything above moved it
 }
 
+bool WorldView::IsOwn(std::size_t _index) const noexcept
+{
+  const std::span<const Game::ShipSnapshot> state = Ships();
+  return _index < state.size() && state[_index].factionId == m_ownFaction;
+}
+
 // Ray against each hull's oriented bounding box. A sphere would be far too loose on a hull three
 // times longer than it is wide.
+//
+// Somebody else's ship is not pickable at all, so no hover highlight, selection ring, tap, shift-tap
+// or double-tap can ever land on one. What a client cannot command it should not appear able to
+// (Design/Hostiles.md 7).
 int WorldView::PickShip(float _xPx, float _yPx) const
 {
   XMFLOAT3 origin;
@@ -436,6 +467,9 @@ int WorldView::PickShip(float _xPx, float _yPx) const
   float bestT = 1e30f;
   for (int i = 0; i < static_cast<int>(m_ships.size()) && i < static_cast<int>(state.size()); ++i)
   {
+    if (!IsOwn(static_cast<size_t>(i)))
+      continue;
+
     const ShipView& view = m_ships[static_cast<size_t>(i)];
     // Against the hull as drawn: the latest record can be a hull-length ahead of it.
     const DisplayPose pose = DisplayedPose(static_cast<size_t>(i));
@@ -580,6 +614,9 @@ void WorldView::OnBoxSelect(float _x0Px, float _y0Px, float _x1Px, float _y1Px, 
   const std::span<const Game::ShipSnapshot> state = Ships();
   for (size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
   {
+    if (!IsOwn(i))
+      continue; // a box drawn over the enemy's base selects nothing, the same as a tap on it
+
     const DisplayPose pose = DisplayedPose(i);
     const XMFLOAT3 centre(ViewX(pose.pos), m_ships[i].halfExtents.y * SHIP_SCALE, ViewZ(pose.pos));
     float xPx = 0.0f;
@@ -854,6 +891,29 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu)
       XMStoreFloat4x4(&world, XMMatrixScaling(pip * 2.0f, 1.0f, pip * 2.0f) * XMMatrixTranslation(outX, DECAL_LIFT_Y, outZ));
       _renderer.DrawDecal(_gpu, m_quadMesh, world, Rgba{MARKER_COLOUR.r, MARKER_COLOUR.g, MARKER_COLOUR.b, alpha}, 1.0f, 1.0f);
     }
+  }
+
+  // --- shock rings ------------------------------------------------------------------------------
+  // One expanding front per death that asked for one, through the same decal the selection rings
+  // and order markers use. Drawn here rather than by the fx pass because it is a ground marker in
+  // the game's existing language, not a billboard.
+  for (const ShipExplosion& explosion : m_explosions)
+  {
+    if (!explosion.HasShockRing())
+      continue;
+
+    const float radius = explosion.ShockRingRadiusMetres();
+    if (radius <= 0.5f)
+      continue; // the frame it is born in, before the first Advance has widened it
+
+    // The decal's thickness is a fraction of its own half-extent, so holding the front to a width
+    // in metres means shrinking that fraction as the ring grows. A constant fraction would draw a
+    // band that thickens as it expands, which reads as a spreading stain rather than a wave.
+    const float thickness = std::clamp(SHOCK_RING_WIDTH_METRES / radius, 0.0f, 1.0f);
+    const XMFLOAT3& centre = explosion.ShockRingCentre();
+    XMStoreFloat4x4(&world, XMMatrixScaling(radius * 2.0f, 1.0f, radius * 2.0f) * XMMatrixTranslation(centre.x, DECAL_LIFT_Y, centre.z));
+    _renderer.DrawDecal(_gpu, m_quadMesh, world,
+                        Rgba{SHOCK_RING_COLOUR.r, SHOCK_RING_COLOUR.g, SHOCK_RING_COLOUR.b, explosion.ShockRingAlpha()}, thickness, 0.0f);
   }
 
   // --- thruster glow and trail ------------------------------------------------------------------

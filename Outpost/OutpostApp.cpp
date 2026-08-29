@@ -18,13 +18,23 @@ const std::wstring TERRAIN_DIR = L"Terrain\\"; // slice 3 placeholder, removed b
 // Mesh and hull are paired here rather than left to line up by index. The simulation's hull id is
 // a row in Game::HULL_SPECS and the view's mesh is a file; an index that happened to serve as both
 // gave the Bomber an Interceptor's turn rate the moment that table arrived.
-struct StartingHull
+//
+// Which meshes load and which ships spawn used to be one array, which worked only while the two were
+// the same list. They stopped being the same list the moment somebody else's ships existed: the
+// hostile base flies Interceptors and stands on a Structure, and the player's fleet is still three
+// hulls. So this is the mesh table, and the two spawn functions below are the content.
+struct HullMesh
 {
   std::wstring mesh;
   Game::HullId hull;
 };
-const StartingHull STARTING_HULLS[] = {
-  {L"Bomber", Game::HullId::Bomber}, {L"Corvette", Game::HullId::Corvette}, {L"Frigate", Game::HullId::Frigate}};
+const HullMesh HULL_MESHES[] = {{L"Bomber", Game::HullId::Bomber},
+                                {L"Corvette", Game::HullId::Corvette},
+                                {L"Frigate", Game::HullId::Frigate},
+                                {L"Interceptor", Game::HullId::Interceptor},
+                                {L"Structure", Game::HullId::Structure}};
+
+const Game::HullId STARTING_FLEET[] = {Game::HullId::Bomber, Game::HullId::Corvette, Game::HullId::Frigate};
 
 // What the HUD calls each hull, indexed by Game::HullId and covering the whole table rather than
 // only the three the starting fleet uses -- the id is a row in that table now, not a position in
@@ -108,6 +118,10 @@ void OutpostApp::Init(HINSTANCE _instance)
   m_view.SetTracker(m_pointers);
   m_view.SetEventLog(m_log);
   m_view.SetFxRenderer(m_fxRenderer);
+  // Who this client is. One subscriber today, so it is the player's faction at both sites; the day
+  // a login exists it arrives with the session and only this line changes.
+  m_view.SetOwnFaction(m_ownFaction);
+  LoadHullMeshes();
 
   // slice 3 placeholder, removed by slice 4 -------------------------------------------------------
   //
@@ -154,27 +168,67 @@ void OutpostApp::Init(HINSTANCE _instance)
   }
   // end slice 3 placeholder ------------------------------------------------------------------------
   SpawnStartingFleet();
-  m_log.PushFormat(EventLog::Severity::Friendly, 0.0f, "FLEET ONLINE | %u SHIPS", m_world.ShipCount());
+  SpawnHostileBase();
+  m_log.PushFormat(EventLog::Severity::Friendly, 0.0f, "FLEET ONLINE | %u SHIPS", OwnShipCount());
 
   m_window.Show();
 }
 
-void OutpostApp::SpawnStartingFleet()
+void OutpostApp::LoadHullMeshes()
 {
-  constexpr int hullCount = static_cast<int>(std::size(STARTING_HULLS));
-  for (int i = 0; i < hullCount; ++i)
+  for (const HullMesh& row : HULL_MESHES)
   {
-    const MeshHandle mesh = m_meshes.Load(m_gpu, m_sceneRenderer, MESH_DIR, STARTING_HULLS[i].mesh);
+    const MeshHandle mesh = m_meshes.Load(m_gpu, m_sceneRenderer, MESH_DIR, row.mesh);
     if (mesh == INVALID_MESH)
-      continue; // a missing hull is a content diagnostic, not a reason to fail boot
-
-    const float x = (static_cast<float>(i) - static_cast<float>(hullCount - 1) * 0.5f) * START_SPACING;
-    m_world.SpawnShip(Game::LocalPos(x, 0.0f), 0.0f, static_cast<std::uint32_t>(STARTING_HULLS[i].hull));
+      continue; // a missing hull is a content diagnostic, logged by the library; a ship still simulates
 
     // The view is told which mesh a hull uses, not which mesh this ship uses: it learns that a ship
     // exists from a snapshot, which carries a hullId and knows nothing about meshes.
-    m_view.RegisterHullMesh(STARTING_HULLS[i].hull, mesh);
+    m_view.RegisterHullMesh(row.hull, mesh);
   }
+}
+
+void OutpostApp::SpawnStartingFleet()
+{
+  constexpr int hullCount = static_cast<int>(std::size(STARTING_FLEET));
+  for (int i = 0; i < hullCount; ++i)
+  {
+    const float x = (static_cast<float>(i) - static_cast<float>(hullCount - 1) * 0.5f) * START_SPACING;
+    m_world.SpawnShip(Game::LocalPos(x, 0.0f), 0.0f, static_cast<std::uint32_t>(STARTING_FLEET[i]), Game::FACTION_PLAYER);
+  }
+}
+
+// Somebody else lives here: a station northeast of the fleet, and three Interceptors walking a ring
+// around it at a third of their top speed. They do nothing else -- no combat, no reaction to the
+// player -- and the ring is a metronome by the owner's brief (Design/Hostiles.md 6).
+void OutpostApp::SpawnHostileBase()
+{
+  const Game::ShipId station = m_world.SpawnShip(Game::LocalPos(HOSTILE_BASE_EAST_METRES, HOSTILE_BASE_NORTH_METRES), 0.0f,
+                                                 static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_HOSTILE);
+  const Game::WorldPos anchor = Game::LocalPos(HOSTILE_BASE_EAST_METRES, HOSTILE_BASE_NORTH_METRES);
+
+  for (int at = 0; at < HOSTILE_PATROL_COUNT; ++at)
+  {
+    // Spread evenly over the ring -- 0, 4, 8 of twelve -- and headed along it, so the first leg does
+    // not begin with a turn. The geometry is Patrol.h's, because the world steers by the same
+    // function and a root doing its own arithmetic would put them somewhere it then walks away from.
+    const std::uint32_t index =
+      static_cast<std::uint32_t>(at) * Game::PATROL_RING_WAYPOINTS / static_cast<std::uint32_t>(HOSTILE_PATROL_COUNT);
+    const Game::ShipId ship =
+      m_world.SpawnShip(Game::PatrolRingPoint(anchor, index, HOSTILE_PATROL_RING_METRES), Game::PatrolRingHeadingRad(index),
+                        static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_HOSTILE);
+    m_world.AssignPatrol(ship, station, HOSTILE_PATROL_RING_METRES, HOSTILE_PATROL_CRUISE_MPS);
+  }
+}
+
+// The player's own ships, not every ship in the world. Without this the game would greet the player
+// with FLEET ONLINE | 7 SHIPS, four of them the enemy's.
+std::uint32_t OutpostApp::OwnShipCount() const noexcept
+{
+  std::uint32_t count = 0;
+  for (const Game::ShipState& ship : m_world.Ships())
+    count += (ship.factionId == m_ownFaction) ? 1u : 0u;
+  return count;
 }
 
 void OutpostApp::OnResize(std::uint32_t _widthPx, std::uint32_t _heightPx)
@@ -270,6 +324,13 @@ void OutpostApp::Render()
   frame.showDebug = m_showDebug;
   frame.sector = m_view.WorldPosAt(m_camera.Target().x, m_camera.Target().z);
   frame.hullNames = HULL_NAMES;
+  frame.ownFaction = m_ownFaction;
+  // What this client currently knows about, counted off the snapshot rather than off the world: a
+  // contact is a hostile *record*, which is the only reading that stays honest over a real wire. The
+  // station counts, so the base reads as four.
+  frame.contacts = 0;
+  for (const Game::ShipSnapshot& ship : m_view.Ships())
+    frame.contacts += (ship.factionId != m_ownFaction) ? 1 : 0;
   m_hud.Draw(m_textRenderer, m_view.Ships(), m_view, m_camera, m_log, frame, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
 
   m_textRenderer.Flush(m_gpu); // the overlay goes on last, before the frame is presented

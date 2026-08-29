@@ -10,7 +10,7 @@ using namespace DirectX;
 
 namespace Game
 {
-ShipId World::SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint32_t _hullId)
+ShipId World::SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint32_t _hullId, FactionId _factionId)
 {
   ShipState ship;
   ship.posWorld = _posWorld;
@@ -18,6 +18,7 @@ ShipId World::SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint3
   ship.headingRad = _headingRad;
   ship.prevHeading = _headingRad;
   ship.hullId = _hullId;
+  ship.factionId = _factionId;
 
   const ShipId id = static_cast<ShipId>(m_ships.size());
   m_ships.push_back(ship);
@@ -39,6 +40,7 @@ ShipId World::SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint3
     m_slots[slot].generation = 1;
   m_shipSlot.push_back(slot);
   m_routes.emplace_back();
+  m_patrols.emplace_back();
   // Any spawn or despawn can move a Structure's id, not only one that adds or removes a Structure,
   // because swap-and-pop renumbers whatever was last. Marking every one of them dirty costs a
   // rebuild that only happens when the fleet changes, and gets the id-shift case right for free.
@@ -52,16 +54,23 @@ bool World::DespawnShip(ShipHandle _handle)
   if (id == INVALID_SHIP_ID)
     return false;
 
+  // Logged before the slot is retired, so the publisher can tell this death from a departure. A
+  // despawn no subscriber held is dropped when the log is drained: you cannot be told of the death
+  // of something you never knew about (Design/Hostiles.md 4.4).
+  m_despawnLog.push_back(_handle);
+
   const ShipId last = static_cast<ShipId>(m_ships.size() - 1);
   if (id != last)
   {
     m_ships[id] = m_ships[last];
     m_routes[id] = m_routes[last];
+    m_patrols[id] = m_patrols[last];
     m_shipSlot[id] = m_shipSlot[last];
     m_slots[m_shipSlot[id]].ship = id; // the moved ship keeps its slot, and its handles keep working
   }
   m_ships.pop_back();
   m_routes.pop_back();
+  m_patrols.pop_back();
   m_shipSlot.pop_back();
 
   Slot& freed = m_slots[_handle.slot];
@@ -109,6 +118,60 @@ std::span<const WorldPos> World::RouteOf(ShipId _id) const noexcept
     return {};
   const Route& route = m_routes[_id];
   return std::span<const WorldPos>(route.waypoint, route.count).subspan(route.cursor);
+}
+
+void World::AssignPatrol(ShipId _ship, ShipId _anchorStation, float _ringRadiusMetres, float _cruiseSpeedMetresPerSec)
+{
+  if (_ship >= m_ships.size() || _anchorStation >= m_ships.size() || _ship == _anchorStation)
+    return;
+
+  Patrol& patrol = m_patrols[_ship];
+  patrol.anchor = HandleOf(_anchorStation);
+  patrol.ringRadiusMetres = _ringRadiusMetres;
+  patrol.cruiseSpeedMetresPerSec = _cruiseSpeedMetresPerSec;
+  // The nearest point *minus one*, because the pass issues waypointIndex + 1: the first leg then
+  // goes to the point the ship is already nearest, rather than back round the ring to zero.
+  const std::uint32_t nearest = NearestPatrolRingIndex(m_ships[_anchorStation].posWorld, m_ships[_ship].posWorld);
+  patrol.waypointIndex = (nearest + PATROL_RING_WAYPOINTS - 1) % PATROL_RING_WAYPOINTS;
+  patrol.active = true;
+}
+
+const World::Patrol& World::PatrolOf(ShipId _id) const noexcept
+{
+  static constexpr Patrol NONE;
+  return (_id < m_patrols.size()) ? m_patrols[_id] : NONE;
+}
+
+void World::StepPatrols()
+{
+  // A patrol issues an order, and an order plans a route, so the grid has to be current here for the
+  // same reason IssueMoveOrder rebuilds it: the first leg is planned on the tick after the spawn.
+  RebuildStaticIfDirty();
+
+  for (ShipId id = 0; id < ShipCount(); ++id)
+  {
+    Patrol& patrol = m_patrols[id];
+    if (!patrol.active)
+      continue;
+
+    ShipState& ship = m_ships[id];
+    if (ship.order != OrderState::Idle)
+      continue; // still flying the last leg; arrival is the order machinery's, not this pass's
+
+    const ShipId anchor = Resolve(patrol.anchor);
+    if (anchor == INVALID_SHIP_ID)
+    {
+      patrol.active = false; // the station died; the ship stands down where it is
+      continue;
+    }
+
+    patrol.waypointIndex = (patrol.waypointIndex + 1) % PATROL_RING_WAYPOINTS;
+    ship.order = OrderState::Moving;
+    ship.orderHasFacing = false;
+    ship.orderSpeedCapMetresPerSec = patrol.cruiseSpeedMetresPerSec;
+    const WorldPos waypoint = PatrolRingPoint(m_ships[anchor].posWorld, patrol.waypointIndex, patrol.ringRadiusMetres);
+    PlanRoute(id, waypoint, HullSpecOf(ship.hullId).BoundingRadiusMetres() + PATH_CLEARANCE_MARGIN_METRES);
+  }
 }
 
 void World::PlanRoute(ShipId _id, const WorldPos& _destination, float _requiredClearanceMetres)
@@ -419,6 +482,7 @@ void World::ApplyBlocking()
 
 void World::Step()
 {
+  StepPatrols();
   SnapshotPreviousTick();
   RebuildIndex();
   GatherNeighbours();
@@ -444,7 +508,8 @@ void World::Step()
   ++m_tick;
 }
 
-float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _point, bool _hasFacing, float _facingRad)
+float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _point, bool _hasFacing, float _facingRad,
+                            FactionId _issuerFaction)
 {
   // An order can arrive before the first tick, so the grid a route is planned against has to be
   // current here rather than only at the top of Step.
@@ -454,7 +519,10 @@ float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _poi
   chosen.reserve(_ships.size());
   for (const ShipId id : _ships)
   {
-    if (id < m_ships.size())
+    // Somebody else's ship is dropped the way a stale id already is. The rest of the list is still
+    // steered, and an order that loses every ship returns the facing it was given, exactly as an
+    // empty list does (Design/Hostiles.md 4.3).
+    if (id < m_ships.size() && m_ships[id].factionId == _issuerFaction)
       chosen.push_back(id);
   }
   if (chosen.empty())
@@ -507,6 +575,11 @@ float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _poi
     ship.orderFacingRad = heading;
     ship.orderHasFacing = _hasFacing;
     ship.order = OrderState::Moving;
+    // An explicit order outranks a standing behavior, and it travels at the hull's own speed: a
+    // patrol left running underneath one would take the ship back to its ring the moment the order
+    // finished (Design/Hostiles.md 5.1).
+    ship.orderSpeedCapMetresPerSec = 0.0f;
+    m_patrols[id].active = false;
 
     WorldPos destination = _point;
     Translate(destination, local.x * cosH + local.y * sinH, -local.x * sinH + local.y * cosH);

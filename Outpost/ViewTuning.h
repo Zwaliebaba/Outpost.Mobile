@@ -10,7 +10,11 @@ namespace Outpost
 // it does. The simulation's own numbers live in GameLogic/SimTuning.h and are a different kind of
 // value -- one of these can be changed between two builds of the same match, one of those cannot.
 //
-// Nothing here is read by GameLogic, and nothing here feeds back into a tick.
+// Nothing here is ever read by GameLogic. The starting-scene block below is the one part of this
+// file a tick can be affected by, and only at one remove: it is boot content, which the composition
+// root reads and passes into the world as spawn positions and patrol numbers. That is the only route
+// any of this has into a tick, and a value on this side still changes no recorded game -- it changes
+// which game gets recorded.
 
 // --- camera ------------------------------------------------------------------------------------
 inline constexpr float CAMERA_MIN_ZOOM = 40.0f;
@@ -58,38 +62,63 @@ inline constexpr Neuron::Rgba MARKER_COLOUR{0.95f, 0.78f, 0.28f, 0.9f};
 // and scaled per ship by max(halfExtents) / EXPLOSION_REFERENCE_HALF_SIZE
 // (Design/SpaceshipExplosion.md 3). "scaled" below means multiplied by that at spawn: speeds and
 // sizes scale, lifetimes, friction and counts do not.
+//
+// The values marked "was N" have been tuned away from the source, once the effect was first seen
+// running. The source blows up a building standing on the ground, so its plume starts above the
+// roof and climbs; a ship is a free body, and the same numbers put the whole effect in a column
+// overhead with a fireball wide enough to hide the hull it came from. The two lifts are gone, the
+// upward-only velocities now straddle zero, and the cores are half the size.
 inline constexpr float EXPLOSION_REFERENCE_HALF_SIZE = 10.0f;
 inline constexpr float EXPLOSION_INTENSITY = 100.0f; // Building::Destroy(_intensity)
 inline constexpr int EXPLOSION_HULL_COPIES = 3;
 inline constexpr float EXPLOSION_HULL_FRACTION = 1.0f;
-inline constexpr float EXPLOSION_FRAGMENT_LIFETIME_SEC = 5.0f;
+inline constexpr float EXPLOSION_FRAGMENT_LIFETIME_SEC = 3.0f; // was 5: the shards hung about long after the fireball had gone
 inline constexpr float EXPLOSION_FRAGMENT_RADIAL_SPEED = 3.0f;
 inline constexpr float EXPLOSION_FRAGMENT_MAX_ANG_VEL = 4.0f;
 inline constexpr float EXPLOSION_FRAGMENT_FRICTION = 0.05f;
 inline constexpr float EXPLOSION_FRAGMENT_ROT_FRICTION = 0.2f;
 inline constexpr float EXPLOSION_FRAGMENT_MIN_CIRCUMFERENCE = 6.0f; // scaled
 inline constexpr int EXPLOSION_FRAGMENT_CAP = 500;
-inline constexpr float EXPLOSION_CORE_SIZE_MIN = 120.0f;      // scaled; Bang's cores
-inline constexpr float EXPLOSION_CORE_SIZE_RANGE = 120.0f;    // scaled
+inline constexpr float EXPLOSION_CORE_SIZE_MIN = 60.0f;       // was 120; scaled; Bang's cores
+inline constexpr float EXPLOSION_CORE_SIZE_RANGE = 60.0f;     // was 120; scaled
 inline constexpr float EXPLOSION_CORE_SPEED_XZ = 30.0f;       // scaled; Signed(30) on X and Z
-inline constexpr float EXPLOSION_CORE_SPEED_UP_MIN = 10.0f;   // scaled
-inline constexpr float EXPLOSION_CORE_SPEED_UP_RANGE = 10.0f; // scaled
-inline constexpr float EXPLOSION_CORE_LIFT = 0.3f;            // x range, along up
-inline constexpr float EXPLOSION_EXTRA_CORE_SIZE = 100.0f;    // scaled; Destroy's own cores
+inline constexpr float EXPLOSION_CORE_SPEED_UP_MIN = -10.0f;  // was 10; scaled. Negative, so the cores no longer all climb
+inline constexpr float EXPLOSION_CORE_SPEED_UP_RANGE = 20.0f; // was 10; scaled. With the min above, vertical speed is +-10
+inline constexpr float EXPLOSION_CORE_LIFT = 0.0f;            // was 0.3 x range along up, which is 26 m over a Corvette
+inline constexpr float EXPLOSION_EXTRA_CORE_SIZE = 50.0f;     // was 100; scaled; Destroy's own cores
 inline constexpr float EXPLOSION_EXTRA_CORE_SPEED = 100.0f;   // scaled; Signed(100) on all axes
 inline constexpr int EXPLOSION_DEBRIS_MIN = 2;
 inline constexpr int EXPLOSION_DEBRIS_MAX = 30;
 inline constexpr float EXPLOSION_DEBRIS_SPEED_MIN = 20.0f;   // scaled
 inline constexpr float EXPLOSION_DEBRIS_SPEED_RANGE = 30.0f; // scaled
-inline constexpr float EXPLOSION_DEBRIS_UP_MIN = 2.0f;       // the ring's tilt, before normalising
-inline constexpr float EXPLOSION_DEBRIS_UP_RANGE = 2.0f;
-inline constexpr float EXPLOSION_DEBRIS_SIZE_MIN = 20.0f;   // scaled
-inline constexpr float EXPLOSION_DEBRIS_SIZE_RANGE = 20.0f; // scaled
-inline constexpr float EXPLOSION_DEBRIS_LIFT = 0.2f;        // x range, along up
-inline constexpr bool EXPLOSION_PLUME_ALONG_UP = true;      // false: the ring is random on a sphere
+inline constexpr float EXPLOSION_DEBRIS_UP_MIN = -1.0f;      // was 2, which tilted the ring 63-76 degrees up into a cone
+inline constexpr float EXPLOSION_DEBRIS_UP_RANGE = 2.0f;     // with the min above, the ring spreads +-45 degrees
+inline constexpr float EXPLOSION_DEBRIS_SIZE_MIN = 20.0f;    // scaled
+inline constexpr float EXPLOSION_DEBRIS_SIZE_RANGE = 20.0f;  // scaled
+inline constexpr float EXPLOSION_DEBRIS_LIFT = 0.0f;         // was 0.2 x range along up, which is 17 m over a Corvette
+inline constexpr bool EXPLOSION_PLUME_ALONG_UP = true;       // false: the ring is random on a sphere
 inline constexpr std::uint32_t EXPLOSION_PARTICLE_CAPACITY = 4096;
 // The shake is Camera::Shake(), which takes no amplitude: CAMERA_SHAKE_AMPLITUDE above is the only
 // knob, so a Carrier and an Interceptor shake the camera by the same amount.
+
+// --- shock ring --------------------------------------------------------------------------------
+// The blast front a station leaves behind: one expanding ring on the ground plane, drawn through
+// the same decal the selection rings and order markers use, so it costs no pipeline, no shader and
+// no texture of its own (Design/ShockRing-work-order.md).
+//
+// Flat on purpose. A real front is a sphere; a flat ring is what every other ground marker in this
+// game already is, and a sphere would want a pass of its own.
+inline constexpr float SHOCK_RING_LIFETIME_SEC = 0.9f;
+inline constexpr float SHOCK_RING_MAX_RADIUS = 90.0f;  // scaled by the dead hull's own scale, like the rest of the effect
+inline constexpr float SHOCK_RING_WIDTH_METRES = 2.5f; // held in metres as the ring grows, so the front stays a front
+inline constexpr Neuron::Rgba SHOCK_RING_COLOUR{1.0f, 0.86f, 0.62f, 0.6f};
+
+// A station exists in the game now (the hostile base below), but nothing can destroy one -- there is
+// no combat, and it cannot be selected, so F4 cannot reach it -- and so nothing sets
+// ShipExplosion::Spawn::shockRing on its own account yet. Until something can kill a station, every
+// death carries a ring, which is the only way the effect can be looked at. Whatever gives a station
+// a lifecycle sets the flag from the station and deletes this.
+inline constexpr bool SHOCK_RING_ON_EVERY_DEATH = true;
 
 // --- banking and thrusters ---------------------------------------------------------------------
 inline constexpr float BANK_MAX_ANGLE_DEG = 28.0f;
@@ -146,6 +175,20 @@ inline constexpr float DECAL_LIFT_Y = 0.2f; // clear of the ground quad so the t
 // --- starting scene ----------------------------------------------------------------------------
 inline constexpr float START_SPACING = 55.0f;
 
+// The hostile base and its patrol (Design/Hostiles.md 6). The station sits 1,202 m out on the
+// diagonal: inside the 2,000 m interest radius, so the base is subscribed from the first update and
+// the overview shows red immediately, and inside the minimap's 1,400 m half-range, so it has an edge
+// to be seen against. The farthest patrol point is 1,602 m out, still inside both.
+//
+// The ring clears the station's 251.77 m skin by 148 m, and its chords clear the station's center by
+// 386 m against the 263 m an Interceptor needs -- so the legs plan straight and the station never
+// even scores as a threat. PatrolTests spells these same five numbers, and the two must agree.
+inline constexpr float HOSTILE_BASE_EAST_METRES = 850.0f;
+inline constexpr float HOSTILE_BASE_NORTH_METRES = 850.0f;
+inline constexpr float HOSTILE_PATROL_RING_METRES = 400.0f;
+inline constexpr float HOSTILE_PATROL_CRUISE_MPS = 10.0f; // 29 % of an Interceptor's maximum: a lap in about 4.2 minutes
+inline constexpr int HOSTILE_PATROL_COUNT = 3;
+
 // --- HUD ---------------------------------------------------------------------------------------
 // Flat and square-cornered: no blur, no glow, no gradients. Sizes are in px at 96 DPI and scale
 // with the window DPI; the layout is anchored to corners and edges, so no width is assumed.
@@ -180,6 +223,9 @@ inline constexpr float HUD_MINIMAP_HEADER_PX = 30.0f;
 inline constexpr float HUD_MINIMAP_MAP_PX = 140.0f;
 inline constexpr float HUD_MINIMAP_GRID_PX = 28.0f;
 inline constexpr float HUD_MINIMAP_DOT_PX = 4.0f;
+// A structure reads bigger than a fighter without pretending to scale: to scale, a 500 m station is
+// 25 px, a quarter of the map for one base. Iconography beats cartography at 0.05 px per metre.
+inline constexpr float HUD_MINIMAP_STRUCTURE_DOT_PX = 8.0f;
 inline constexpr float HUD_MINIMAP_HALF_RANGE = 1400.0f; // metres from the camera target to the map's edge; wider than CAMERA_MAX_ZOOM sees
 
 inline constexpr float HUD_RAIL_BUTTON_PX = 60.0f; // a hit target, so never below 44

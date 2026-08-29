@@ -30,6 +30,13 @@ void ShipExplosion::Start(const Spawn& _spawn, SpriteParticles& _particles)
   const XMFLOAT3 pos(_spawn.world._41, _spawn.world._42, _spawn.world._43);
   const XMVECTOR shipVel = XMLoadFloat3(&_spawn.velMetresPerSec);
 
+  if (_spawn.shockRing)
+  {
+    m_shockCentre = pos;
+    m_shockMaxRadiusMetres = SHOCK_RING_MAX_RADIUS * hullScale;
+    m_shockAgeSec = 0.0f;
+  }
+
   // Location::Bang(pos, range, damage) with the source's own arguments, kept as named numbers so
   // the counts below read the way the original does.
   constexpr float RANGE = EXPLOSION_INTENSITY;
@@ -135,14 +142,40 @@ void ShipExplosion::Start(const Spawn& _spawn, SpriteParticles& _particles)
 
 bool ShipExplosion::Advance(float _dtSec)
 {
+  m_shockAgeSec += _dtSec;
+
   bool finished = true;
   for (MeshShatter& shatter : m_shatters)
     finished = shatter.Advance(_dtSec) && finished; // every shatter is advanced, not just up to the first live one
-  return finished;
+  return finished && !HasShockRing();
+}
+
+bool ShipExplosion::HasShockRing() const noexcept
+{
+  return m_shockMaxRadiusMetres > 0.0f && m_shockAgeSec < SHOCK_RING_LIFETIME_SEC;
+}
+
+float ShipExplosion::ShockRingRadiusMetres() const noexcept
+{
+  const float t = std::clamp(m_shockAgeSec / SHOCK_RING_LIFETIME_SEC, 0.0f, 1.0f);
+  // Eased out: a front moves fastest at the moment of the blast and slows as it widens. A ring that
+  // grew linearly reads as a drawn circle rather than as something that was thrown.
+  return m_shockMaxRadiusMetres * (1.0f - (1.0f - t) * (1.0f - t));
+}
+
+float ShipExplosion::ShockRingAlpha() const noexcept
+{
+  const float t = std::clamp(m_shockAgeSec / SHOCK_RING_LIFETIME_SEC, 0.0f, 1.0f);
+  return SHOCK_RING_COLOUR.a * (1.0f - t);
 }
 
 bool ShipExplosion::Finished() const noexcept
 {
+  // The ring is part of the same death, so the object is not dropped while it is still drawing --
+  // even though at the tuned lifetimes it always passes first.
+  if (HasShockRing())
+    return false;
+
   for (const MeshShatter& shatter : m_shatters)
   {
     if (shatter.AgeSec() < shatter.Description().lifetimeSec)
