@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EventLog.h"
+#include "ShipExplosion.h"
 
 #include "Formation.h"
 #include "HullSpec.h"
@@ -9,10 +10,15 @@
 #include "Transport.h"
 
 #include "Camera.h"
+#include "FxRenderer.h"
+#include "FxVertex.h"
 #include "MeshLibrary.h"
 #include "PointerTracker.h"
 #include "SceneRenderer.h"
+#include "SpriteParticles.h"
 #include "TextRenderer.h"
+
+#include "Pcg32.h"
 
 #include <array>
 #include <span>
@@ -78,6 +84,13 @@ public:
     std::vector<DirectX::XMFLOAT3> trail;
     int trailCount = 0;
     int trailHead = 0;
+
+    // What Render last drew this hull with, and what it was carrying. The explosion needs both at
+    // the moment the ship leaves the snapshot, when nothing else remembers where it was: by then
+    // the new snapshot has no record for it and this ShipView is about to be discarded.
+    DirectX::XMFLOAT4X4 lastWorld{};
+    DirectX::XMFLOAT3 lastVelMetresPerSec{0.0f, 0.0f, 0.0f};
+    bool drawn = false; // false until the first Render; a ship that vanishes before one does not explode
 
     bool selected = false;
     float ringFade = 0.0f;  // 0..1 alpha ramp on select and deselect
@@ -186,6 +199,23 @@ public:
     m_log = &_log;
   }
 
+  // The explosion's draw path. Optional, like the log: with no renderer the effect is simulated and
+  // never drawn, which is what a boot with a missing texture leaves.
+  void SetFxRenderer(Neuron::FxRenderer& _fx) noexcept
+  {
+    m_fx = &_fx;
+  }
+
+  // For the debug readout: how much of the effect is live right now.
+  [[nodiscard]] int ExplosionCount() const noexcept
+  {
+    return static_cast<int>(m_explosions.size());
+  }
+  [[nodiscard]] const Neuron::SpriteParticles& Particles() const noexcept
+  {
+    return m_particles;
+  }
+
   // PointerListener.
   [[nodiscard]] bool WantsBoxSelect(bool _shiftHeld) override;
   void OnHover(float _xPx, float _yPx) override;
@@ -213,6 +243,10 @@ private:
   // instead of inheriting a stranger's (ADR 0005; Design/Archive/Collision-slice-2b.md 5.3).
   void ApplySnapshot();
 
+  // The other half of the carry: whatever ApplySnapshot did not match is a ship that vanished, and
+  // this is what it does about it.
+  void ExplodeTheLost(std::uint64_t _tick);
+
   Game::WorldPos m_viewOrigin;
   Neuron::Transport* m_transport = nullptr;
   Game::SnapshotReceiver m_receiver;
@@ -234,6 +268,20 @@ private:
 
   std::vector<ShipView> m_ships;
   std::vector<OrderMarker> m_markers;
+
+  // The explosion. Its particles are one pool shared by every death on screen -- what overflows is
+  // smoke, which is the right thing to lose -- and the shatters are per dead ship because each one
+  // holds a hull's worth of fragments.
+  Neuron::FxRenderer* m_fx = nullptr;
+  std::vector<ShipExplosion> m_explosions;
+  Neuron::SpriteParticles m_particles;
+  std::vector<Neuron::FxVertex> m_fxFragmentVerts;
+  std::vector<Neuron::FxVertex> m_fxSpriteVerts;
+  // Smoke is shed once a frame rather than once per death, so it cannot use a per-explosion seed
+  // and does not need one: what a replay wants reproducible is the shatter, and that is seeded from
+  // the ship's handle and the tick it died on.
+  Neuron::Pcg32 m_fxRng;
+
   std::vector<Game::ShipId> m_groups[CONTROL_GROUPS];
   int m_activeGroup = -1;
   EventLog* m_log = nullptr;

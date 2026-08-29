@@ -244,9 +244,18 @@ void Hud::DrawDebug(TextRenderer& _text, const Layout& _layout, const Frame& _fr
   std::snprintf(line, sizeof(line), "TICK %llu%sTIME %.2fx%s%.0f FPS%s%.2f MS", static_cast<unsigned long long>(_frame.stats.tick),
                 SEPARATOR, static_cast<double>(_frame.stats.timeScale), SEPARATOR, static_cast<double>(_frame.stats.fps), SEPARATOR,
                 static_cast<double>(_frame.stats.frameMs));
-  const float width = _text.AdvancePx(FontId::Ui, HUD_TEXT_SCALE * s) * static_cast<float>(std::strlen(line));
-  const float x = (static_cast<float>(_widthPx) - width) * 0.5f;
-  _text.DrawTextLine(FontId::Ui, x, _layout.resources[0].y0 + HUD_PANEL_PAD_Y_PX * s, HUD_TEXT_SCALE * s, HUD_LABEL_COLOUR, line);
+  const float advance = _text.AdvancePx(FontId::Ui, HUD_TEXT_SCALE * s);
+  const float top = _layout.resources[0].y0 + HUD_PANEL_PAD_Y_PX * s;
+  float width = advance * static_cast<float>(std::strlen(line));
+  _text.DrawTextLine(FontId::Ui, (static_cast<float>(_widthPx) - width) * 0.5f, top, HUD_TEXT_SCALE * s, HUD_LABEL_COLOUR, line);
+
+  // The explosion effect. Two of these four are the numbers that go wrong quietly -- a pool that
+  // refused a particle and a vertex ring that ran out -- and neither is visible in what is drawn.
+  std::snprintf(line, sizeof(line), "FX %d%sPARTICLES %u%sDROPPED %u%sVERTS LOST %u", _frame.stats.explosionCount, SEPARATOR,
+                _frame.stats.particleCount, SEPARATOR, _frame.stats.particlesDropped, SEPARATOR, _frame.stats.fxVertsDropped);
+  width = advance * static_cast<float>(std::strlen(line));
+  _text.DrawTextLine(FontId::Ui, (static_cast<float>(_widthPx) - width) * 0.5f, top + _text.LineHeightPx(FontId::Ui, HUD_TEXT_SCALE * s),
+                     HUD_TEXT_SCALE * s, HUD_LABEL_COLOUR, line);
 }
 
 void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view,
