@@ -180,8 +180,11 @@ inline constexpr float DECAL_LIFT_Y = 0.2f; // clear of the ground quad so the t
 // describe a 400 m world and a 1 200 m one.
 inline constexpr float BODY_PLANET_RADIUS_MIN_METRES = 400.0f;
 inline constexpr float BODY_PLANET_RADIUS_MAX_METRES = 1200.0f;
-inline constexpr float BODY_ASTEROID_RADIUS_MIN_METRES = 15.0f;
-inline constexpr float BODY_ASTEROID_RADIUS_MAX_METRES = 120.0f;
+// A fifth of the design's 15-120 m, on the owner's eye after the first scene was on screen: at the
+// design's figures a rock at 150 m read as another planet rather than as something the fleet flies
+// among. Design/PlanetRenderer.md 3 carries the same numbers and the same sentence.
+inline constexpr float BODY_ASTEROID_RADIUS_MIN_METRES = 3.0f;
+inline constexpr float BODY_ASTEROID_RADIUS_MAX_METRES = 24.0f;
 inline constexpr std::uint32_t BODY_PLANET_GRID_POWER = 6;   // 65 samples a side, 49 152 triangles
 inline constexpr std::uint32_t BODY_ASTEROID_GRID_POWER = 5; // 33 a side
 

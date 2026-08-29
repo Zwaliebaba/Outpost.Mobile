@@ -288,9 +288,14 @@ void UploadStaticBuffer(GpuDevice& _gpu, std::span<const std::uint8_t> _bytes, G
 
   const std::uint64_t bytes = static_cast<std::uint64_t>(_bytes.size());
 
+  // COMMON, not COPY_DEST. A committed *buffer* is always created in COMMON whatever is asked for,
+  // and D3D12 says so out loud: "Ignoring InitialState D3D12_RESOURCE_STATE_COPY_DEST"
+  // (STATE_CREATION WARNING #1328). The copy below promotes it to COPY_DEST implicitly, which is
+  // what makes the barrier after it legal. A texture is different -- it really is created in the
+  // state it is given, which is why UploadColourTexture above still asks for COPY_DEST.
   D3D12_HEAP_PROPERTIES hp = HeapProps(D3D12_HEAP_TYPE_DEFAULT);
   const D3D12_RESOURCE_DESC bd = BufferDesc(bytes);
-  check_hresult(_gpu.Device()->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+  check_hresult(_gpu.Device()->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_COMMON, nullptr,
                                                        IID_PPV_ARGS(_outBuffer.put())));
 
   hp = HeapProps(D3D12_HEAP_TYPE_UPLOAD);
@@ -306,6 +311,8 @@ void UploadStaticBuffer(GpuDevice& _gpu, std::span<const std::uint8_t> _bytes, G
   ID3D12GraphicsCommandList* cmd = _gpu.CommandList();
   cmd->CopyBufferRegion(_outBuffer.get(), 0, _outStaging.get(), 0, bytes);
 
+  // From COPY_DEST, which the copy above promoted it to, and not from COMMON: a barrier out of the
+  // state the resource is actually in is the one D3D12 wants.
   const D3D12_RESOURCE_BARRIER toVertices =
     Transition(_outBuffer.get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
   cmd->ResourceBarrier(1, &toVertices);

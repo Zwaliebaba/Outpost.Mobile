@@ -79,13 +79,45 @@ void Put32(Neuron::ByteBuffer& _bytes, std::size_t _offset, std::uint32_t _value
   return desc;
 }
 
+const XMFLOAT3 OCEAN_COLOUR(0.10f, 0.22f, 0.40f);
+
+// The same body with its sea drained. Everything about the grid -- how many triangles a cell makes,
+// what a uv is -- is the same question on a dry body and is asked there, so that the ocean's own
+// rules are the only thing the wet tests are about.
+[[nodiscard]] Neuron::BodyDesc OneDryContinent()
+{
+  Neuron::BodyDesc desc = OneContinent();
+  desc.outsideHeight = 0.01f;
+  return desc;
+}
+
 [[nodiscard]] std::vector<Neuron::FxVertex> BuildTerrain(const Neuron::BodyDesc& _desc, const Neuron::ColourRamp* _ramp,
                                                          Neuron::BodyBuildStats& _outStats)
 {
   const Neuron::BodyField field(_desc);
   std::vector<Neuron::FxVertex> terrain;
-  Neuron::BodyMeshBuilder::Build(field, _ramp, terrain, _outStats);
+  std::vector<Neuron::MeshVertex> ocean;
+  Neuron::BodyMeshBuilder::Build(field, _ramp, terrain, ocean, OCEAN_COLOUR, _outStats);
   return terrain;
+}
+
+[[nodiscard]] std::vector<Neuron::MeshVertex> BuildOcean(const Neuron::BodyDesc& _desc, Neuron::BodyBuildStats& _outStats)
+{
+  const Neuron::BodyField field(_desc);
+  std::vector<Neuron::FxVertex> terrain;
+  std::vector<Neuron::MeshVertex> ocean;
+  Neuron::BodyMeshBuilder::Build(field, nullptr, terrain, ocean, OCEAN_COLOUR, _outStats);
+  return ocean;
+}
+
+// The radius a vertex sits at once the ellipsoid is divided back out, which is the number both the
+// shore dip and the ocean sphere are stated in.
+[[nodiscard]] float RadiusOf(float _x, float _y, float _z, const XMFLOAT3& _ellipsoid)
+{
+  const float x = _x / _ellipsoid.x;
+  const float y = _y / _ellipsoid.y;
+  const float z = _z / _ellipsoid.z;
+  return std::sqrt(x * x + y * y + z * z);
 }
 
 [[nodiscard]] XMVECTOR Position(const Neuron::FxVertex& _vertex)
@@ -114,11 +146,16 @@ void Put32(Neuron::ByteBuffer& _bytes, std::size_t _offset, std::uint32_t _value
   return hash;
 }
 
-// The build of OneContinent through AxisRamp, byte for byte. **This is the replay key for the whole
-// mesh**, the way PINNED_HEIGHT_METRES is for the field. If it moves, every body the game has drawn
-// is a different body, and the pull request says why -- it is not a number to update until the test
-// goes green.
-constexpr std::uint64_t PINNED_VERTEX_HASH = 0x732268fa67202a0eull;
+// The two builds of the test description through AxisRamp, byte for byte. **These are the replay key
+// for the whole mesh**, the way PINNED_HEIGHT_METRES is for the field. If one moves, every body the
+// game has drawn is a different body, and the pull request says why -- they are not numbers to
+// update until a test goes green.
+//
+// The wet one moved once, when the ocean landed and a wet body stopped drawing its sea floor. The
+// dry one has never moved, and that is the point of it: it was 0x0a3af4ac1bb89864 built by the
+// builder that had no ocean in it, and it is that today.
+constexpr std::uint64_t PINNED_WET_VERTEX_HASH = 0x5b93f37b6cd3c306ull;
+constexpr std::uint64_t PINNED_DRY_VERTEX_HASH = 0x0a3af4ac1bb89864ull;
 constexpr std::uint32_t PINNED_CELL_HASH = 0x1cf48a38u;
 } // namespace
 
@@ -131,13 +168,13 @@ public:
     // triangle without a provoking-vertex buffer, and the reason a 65-grid planet is 7.1 MB.
     const Neuron::ColourRamp ramp = AxisRamp();
     Neuron::BodyBuildStats stats;
-    const std::vector<Neuron::FxVertex> terrain = BuildTerrain(OneContinent(), &ramp, stats);
+    const std::vector<Neuron::FxVertex> terrain = BuildTerrain(OneDryContinent(), &ramp, stats);
 
     constexpr std::uint32_t CELLS_PER_SIDE = 8;
     constexpr std::uint32_t TRIANGLES = Neuron::CUBE_FACE_COUNT * CELLS_PER_SIDE * CELLS_PER_SIDE * 2;
     Assert::AreEqual(TRIANGLES, stats.trianglesEmitted, L"a grid power of three did not emit six faces of eight by eight cells");
     Assert::AreEqual(static_cast<std::size_t>(TRIANGLES) * 3, terrain.size(), L"the vertex count is not three times the triangle count");
-    Assert::AreEqual(0u, stats.trianglesCulled, L"something was culled before slice 5 landed the ocean");
+    Assert::AreEqual(0u, stats.trianglesCulled, L"a dry body had cells culled at a sea level it does not have");
   }
 
   TEST_METHOD(EveryNormalIsTheTrianglesOwnAndFacesOutward)
@@ -193,9 +230,11 @@ public:
   {
     // One outline tile per grid cell, whatever the grid power, which is what makes the overlay a
     // wire frame rather than a texture that stretches as the body's resolution changes.
+    // On the dry body, so that the first triangle emitted really is the first cell of the first face
+    // rather than whichever cell survived the sea-level cull.
     const Neuron::ColourRamp ramp = AxisRamp();
     Neuron::BodyBuildStats stats;
-    const std::vector<Neuron::FxVertex> terrain = BuildTerrain(OneContinent(), &ramp, stats);
+    const std::vector<Neuron::FxVertex> terrain = BuildTerrain(OneDryContinent(), &ramp, stats);
 
     Assert::AreEqual(0.0f, terrain[0].u, L"the first triangle does not start at the cell's corner");
     Assert::AreEqual(0.0f, terrain[0].v, L"the first triangle does not start at the cell's corner");
@@ -287,8 +326,172 @@ public:
     Neuron::BodyBuildStats stats;
     const std::vector<Neuron::FxVertex> terrain = BuildTerrain(OneContinent(), &ramp, stats);
 
-    Assert::AreEqual(PINNED_VERTEX_HASH, HashVertices(terrain), L"the mesh has changed; see PINNED_VERTEX_HASH");
+    Assert::AreEqual(PINNED_WET_VERTEX_HASH, HashVertices(terrain), L"the mesh has changed; see PINNED_WET_VERTEX_HASH");
     Assert::AreEqual(50.0f, stats.maxHeightMetres, 0.5f, L"the reported maximum height is not the field's");
+
+    // Every cell is either drawn or culled and never both or neither, which is the one thing the
+    // cull's early exit could get wrong without any pinned number noticing.
+    constexpr std::uint32_t TRIANGLES = Neuron::CUBE_FACE_COUNT * 8 * 8 * 2;
+    Assert::AreEqual(TRIANGLES, stats.trianglesEmitted + stats.trianglesCulled, L"the cells drawn and the cells culled do not add up");
+  }
+
+  TEST_METHOD(ADryBodyIsUntouchedByTheOcean)
+  {
+    // The whole of slice 5 is behind one sign test, and this is what says so: OneContinent's own
+    // outsideHeight is below zero, so the dry version of it is the same description with that one
+    // number moved. Its vertices are what they were before an ocean existed anywhere in the tree,
+    // and nothing is culled or dipped.
+    Neuron::BodyDesc dry = OneContinent();
+    dry.outsideHeight = 0.01f;
+
+    const Neuron::ColourRamp ramp = AxisRamp();
+    const Neuron::BodyField field(dry);
+    std::vector<Neuron::FxVertex> terrain;
+    std::vector<Neuron::MeshVertex> ocean;
+    Neuron::BodyBuildStats stats;
+    Neuron::BodyMeshBuilder::Build(field, &ramp, terrain, ocean, OCEAN_COLOUR, stats);
+
+    Assert::IsTrue(ocean.empty(), L"a dry body was given an ocean");
+    Assert::AreEqual(0u, stats.trianglesCulled, L"a dry body had cells culled at sea level");
+    Assert::AreEqual(static_cast<std::size_t>(6 * 8 * 8 * 2 * 3), terrain.size(), L"a dry body lost triangles");
+
+    // Bitwise, not merely the same shape. This literal was produced by the builder that had no ocean
+    // in it at all, and a dry body has to go on getting it: the whole of the ocean is behind one
+    // sign test, and this is the assertion that says the sign test is where it says it is.
+    Assert::AreEqual(PINNED_DRY_VERTEX_HASH, HashVertices(terrain), L"the ocean changed a body that has no ocean");
+  }
+
+  TEST_METHOD(AnOceanWorldWithNoLandDrawsNoTerrainAndAWholeOcean)
+  {
+    // The far end of the sign: nothing above the water anywhere, so every cell is culled and all
+    // that is left is the sphere. It is worth pinning because the culling rule reads six samples and
+    // a rule that read the wrong six would still cull most of them.
+    Neuron::BodyDesc drowned = OneContinent();
+    drowned.tiles.clear();
+
+    Neuron::BodyBuildStats stats;
+    const Neuron::ColourRamp ramp = AxisRamp();
+    const std::vector<Neuron::FxVertex> terrain = BuildTerrain(drowned, &ramp, stats);
+
+    constexpr std::uint32_t CELLS = 6 * 8 * 8;
+    Assert::AreEqual(0u, stats.trianglesEmitted, L"a body with no land above water emitted terrain");
+    Assert::AreEqual(CELLS * 2, stats.trianglesCulled, L"a drowned body did not cull every one of its cells");
+    Assert::IsTrue(terrain.empty(), L"a body that emitted no triangles still wrote vertices");
+
+    // gridPower 3 builds its ocean at 1: three samples a side, two cells, twelve triangles a face.
+    const std::vector<Neuron::MeshVertex> ocean = BuildOcean(drowned, stats);
+    Assert::AreEqual(static_cast<std::size_t>(6 * 2 * 2 * 2 * 3), ocean.size(), L"the ocean sphere is not the expected size");
+  }
+
+  TEST_METHOD(TheOceanIsASphereOfOneColourAtTheBodysRadius)
+  {
+    // Sea level is the radius, exactly: the terrain's heights are measured from it and the coast
+    // dips below it, so an ocean at any other radius would put the whole shoreline in the wrong
+    // place. The ellipsoid applies to it as it does to the land.
+    Neuron::BodyDesc oblate = OneContinent();
+    oblate.ellipsoid = XMFLOAT3(1.0f, 0.7f, 0.85f);
+
+    Neuron::BodyBuildStats stats;
+    const std::vector<Neuron::MeshVertex> ocean = BuildOcean(oblate, stats);
+    Assert::IsFalse(ocean.empty(), L"a wet body built no ocean");
+
+    for (const Neuron::MeshVertex& vertex : ocean)
+    {
+      Assert::AreEqual(oblate.radiusMetres, RadiusOf(vertex.px, vertex.py, vertex.pz, oblate.ellipsoid), 1e-3f,
+                       L"an ocean vertex is not at the body's radius");
+      Assert::AreEqual(OCEAN_COLOUR.x, vertex.r, L"an ocean vertex is not the class's ocean colour");
+      Assert::AreEqual(OCEAN_COLOUR.y, vertex.g, L"an ocean vertex is not the class's ocean colour");
+      Assert::AreEqual(OCEAN_COLOUR.z, vertex.b, L"an ocean vertex is not the class's ocean colour");
+    }
+  }
+
+  TEST_METHOD(TheShoreDipsWellUnderTheWater)
+  {
+    // A coast that met the water edge-on would show a seam of sea floor through it at any angle.
+    // Every vertex that survived the cull is either land above the threshold or a dipped coast, and
+    // there is nothing in between -- which is the property that closes the seam.
+    const Neuron::ColourRamp ramp = AxisRamp();
+    Neuron::BodyBuildStats stats;
+    const std::vector<Neuron::FxVertex> terrain = BuildTerrain(OneContinent(), &ramp, stats);
+    Assert::IsFalse(terrain.empty(), L"the wet test body emitted no terrain at all");
+
+    const float radius = OneContinent().radiusMetres;
+    const float threshold = radius + Neuron::BodyMeshBuilder::BODY_SHORE_THRESHOLD * radius;
+    const float dipped = radius + Neuron::BodyMeshBuilder::BODY_SHORE_DIP * radius;
+
+    const XMFLOAT3 sphere(1.0f, 1.0f, 1.0f);
+    std::size_t dippedCount = 0;
+    for (const Neuron::FxVertex& vertex : terrain)
+    {
+      const float atRadius = RadiusOf(vertex.px, vertex.py, vertex.pz, sphere);
+      if (atRadius >= threshold)
+        continue;
+
+      Assert::AreEqual(dipped, atRadius, 1e-3f, L"a vertex sits between the shore threshold and the dip");
+      ++dippedCount;
+    }
+
+    Assert::IsTrue(dippedCount > 0, L"no vertex was dipped, so this test proved nothing");
+  }
+
+  TEST_METHOD(TheDipMovesGeometryAndOnlyGeometry)
+  {
+    // What the dip must not do is change how much terrain there is or what it is coloured: it moves
+    // a coast vertex down and nothing else. The two builds either side of the sign that turns it on
+    // differ by one ten-thousandth of the radius in the field, so every triangle both of them drew
+    // has to come out the same colour to well inside a ramp row.
+    //
+    // The design also asks that the colour be looked up from the *undipped* height, and it is -- but
+    // that is not what this test checks, because on any sensible body it cannot be checked at all.
+    // At a coastline the climate is already at sea level, so v is already 1 and the ramp's clamp
+    // takes both answers to the same bottom row; the largest difference a dipped lookup could make
+    // is the shore threshold over the maximum height, 0.3 m in 50, and the dither at sea level is
+    // 0.19 of a ramp row, which is thirty times larger. A test written to catch it would pass
+    // whichever height the builder used, and a test that cannot fail is worse than none.
+    Neuron::BodyDesc barelyWet = OneContinent();
+    barelyWet.outsideHeight = -0.0001f;
+    Neuron::BodyDesc barelyDry = OneContinent();
+    barelyDry.outsideHeight = 0.0001f;
+
+    const Neuron::ColourRamp ramp = AxisRamp();
+    Neuron::BodyBuildStats wetStats;
+    Neuron::BodyBuildStats dryStats;
+    const std::vector<Neuron::FxVertex> wet = BuildTerrain(barelyWet, &ramp, wetStats);
+    const std::vector<Neuron::FxVertex> dry = BuildTerrain(barelyDry, &ramp, dryStats);
+
+    // The wet build visits the cells in the same order and only ever leaves one out, so its triangles
+    // are a subsequence of the dry build's and one cursor pairs them.
+    //
+    // Paired by direction and not by uv: a uv is the cell's (x, z) and carries no face, so the six
+    // faces repeat every uv six times and a cursor that scanned for one would happily pair a cell
+    // with its namesake on the next face. The direction is what a cell actually is, and the dip
+    // moves a vertex along it rather than off it, so it survives exactly the change under test.
+    const auto sameDirection = [](const Neuron::FxVertex& _a, const Neuron::FxVertex& _b)
+    {
+      const XMVECTOR a = XMVector3Normalize(XMVectorSet(_a.px, _a.py, _a.pz, 0.0f));
+      const XMVECTOR b = XMVector3Normalize(XMVectorSet(_b.px, _b.py, _b.pz, 0.0f));
+      return XMVectorGetX(XMVector3LengthSq(XMVectorSubtract(a, b))) < 1e-8f;
+    };
+
+    std::size_t dryIndex = 0;
+    std::size_t compared = 0;
+    for (std::size_t wetIndex = 0; wetIndex < wet.size(); wetIndex += 3)
+    {
+      while (dryIndex < dry.size() && !(sameDirection(dry[dryIndex], wet[wetIndex]) && sameDirection(dry[dryIndex + 2], wet[wetIndex + 2])))
+        dryIndex += 3;
+
+      if (dryIndex >= dry.size())
+        break;
+
+      // The green channel is the climate axis of AxisRamp, which is the one the height feeds. Red is
+      // the slope, and the slope genuinely does change when a vertex moves -- that is the dip doing
+      // its job, not a defect.
+      Assert::AreEqual(dry[dryIndex].g, wet[wetIndex].g, 0.02f, L"dipping a coast moved its colour up the climate axis");
+      dryIndex += 3;
+      ++compared;
+    }
+
+    Assert::IsTrue(compared > 100, L"too few triangles paired between the two builds to prove anything");
   }
 };
 } // namespace NeuronClientTests

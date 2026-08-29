@@ -1,6 +1,6 @@
 # Planets and asteroids
 
-**Status: in progress. Slices 1 to 4 have landed.** §15 lists the slices; §16 is the implementation plan.
+**Status: in progress. Slices 1 to 5 have landed.** §15 lists the slices; §16 is the implementation plan.
 Every open question was put to the owner on 2026-08-29 and settled (§14); nothing in this design
 is open.
 
@@ -79,9 +79,9 @@ somewhere sensible relative to it.
 
 | | Planet | Asteroid |
 |---|---|---|
-| Radius `R` | 400–1 200 m | 15–120 m |
+| Radius `R` | 400–1 200 m | 3–24 m (was 15–120; the owner cut it fivefold on the first scene — a rock at the design's size read as a second planet, not as something the fleet flies among) |
 | Grid `N` per cube face | 65 (64 cells) | 17 or 33 |
-| Cell at the equator | `πR / (2·64)` ≈ 10–30 m | 1.5–11 m |
+| Cell at the equator | `πR / (2·64)` ≈ 10–30 m | 0.3–2.3 m (at the cut size; the grid power was left alone, so a small rock is finely tessellated for its size) |
 | Relief (`heightScale`, as a fraction of `R`) | 3–12 % | 15–40 % |
 | Centre height above the plane | `R · BODY_PLANET_LIFT` (default 1.15 — floats clear of the grid) | `R` (rests on the plane, as a Structure does) |
 | Where | 2.5–5 km from the fleet's start, one or two per scene | among the ships, several |
@@ -651,7 +651,7 @@ below interleaves with the explosion's where the two share a file.
 | 2 | `ColourRamp`, `BodyMeshBuilder`, `FxVertex` if not landed, tests | `NeuronClient` | 1 | landed | [slice 2](Archive/PlanetRenderer-slice-2.md) |
 | 3 | `BodyRenderer`, `UploadColourTexture` if not landed, three shaders and one `.hlsli` | `NeuronClient` | 2 | landed | [slice 3](Archive/PlanetRenderer-slice-3.md) |
 | 4 | `BodyCatalogue`, `BodyView` in `WorldView`, starting bodies, F5, `BODY_*` tuning, ADR | `Outpost` | 3 | landed | [slice 4](Archive/PlanetRenderer-slice-4.md) |
-| 5 | Ocean sphere through the scene pass, shore dip and sea-level culling wired to a class | `NeuronClient` + `Outpost` | 4 | | [slice 5](PlanetRenderer-slice-5.md) |
+| 5 | Ocean sphere through the scene pass, shore dip and sea-level culling wired to a class | `NeuronClient` + `Outpost` | 4 | landed | [slice 5](Archive/PlanetRenderer-slice-5.md) |
 | 6 | Compute-shader bake: `BodyBakeCS`, the reductions, readback test against the CPU builder (§17) | `NeuronClient` | 5 | | [slice 6](PlanetRenderer-slice-6.md) — cut when body counts or reseed latency ask for it |
 
 Slice 5 is split from 2 and 4 so that a dry body — every asteroid, the desert world — can land
