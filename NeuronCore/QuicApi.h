@@ -54,7 +54,12 @@ public:
     bool allowUnvalidatedPeer = false;
   };
 
-  QuicApi() = default;
+  // Both of these are out of line, and neither may be moved back into this header. m_certificate is
+  // a unique_ptr to a type this header only forward-declares, and the constructor needs the
+  // deleter for its own rollback path just as the destructor needs it for the ordinary one -- so a
+  // `= default` here compiles everywhere DevCertificate.h happens to have been included already and
+  // fails, in <memory>, in the one translation unit that constructs a QuicApi without it.
+  QuicApi();
   ~QuicApi();
 
   QuicApi(const QuicApi&) = delete;

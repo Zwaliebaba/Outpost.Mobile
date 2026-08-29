@@ -26,6 +26,8 @@ constexpr const char* QUIC_ALPN = "outpost-1";
 constexpr std::uint16_t QUIC_PEER_BIDI_STREAMS = 1;
 } // namespace
 
+QuicApi::QuicApi() = default;
+
 QuicApi::~QuicApi()
 {
   Close();
