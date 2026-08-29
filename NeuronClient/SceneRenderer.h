@@ -24,9 +24,9 @@ public:
   // thousand triangles do not justify a staging copy and its barrier.
   [[nodiscard]] MeshHandle UploadMesh(GpuDevice& _gpu, const std::vector<MeshVertex>& _verts);
 
-  // A unit quad in the XZ plane, built at Init. The ground, every ring and every billboard is this
-  // one mesh with a different matrix and a different shader parameter, so none of them needs
-  // geometry rebuilt when its size or thickness changes.
+  // A unit quad in the XZ plane, built at Init. Every ring, marker and billboard is this one mesh
+  // with a different matrix and a different shader parameter, so none of them needs geometry rebuilt
+  // when its size or thickness changes.
   [[nodiscard]] MeshHandle UnitQuad() const noexcept
   {
     return m_unitQuad;
@@ -34,7 +34,7 @@ public:
 
   // Opaque pass. Set once per frame, before any DrawMesh.
   void BeginScene(GpuDevice& _gpu, const SceneFrame& _frame);
-  void DrawMesh(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _baseColour, float _materialMix, bool _isGround);
+  void DrawMesh(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _baseColour, float _materialMix);
 
   // Overlay pass. Both take the unit quad and shape it in the pixel shader, so ring thickness and
   // glow falloff stay plain parameters with no geometry to rebuild.

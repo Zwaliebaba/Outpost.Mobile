@@ -45,10 +45,6 @@ struct SceneFrame
   DirectX::XMFLOAT4X4 viewProj;
   DirectX::XMFLOAT3 lightDir; // towards the light; normalised in the shader
   float ambient;
-  Rgba gridColour; // a = how far a grid line pulls away from the ground colour
-  float gridSpacing;
-  float gridLineWidthPx;
-  float gridFadeDistance;
   DirectX::XMFLOAT3 cameraPos;
 };
 

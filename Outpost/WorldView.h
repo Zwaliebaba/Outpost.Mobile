@@ -16,6 +16,7 @@
 #include "MeshLibrary.h"
 #include "PointerTracker.h"
 #include "SceneRenderer.h"
+#include "SkyRenderer.h"
 #include "SpriteParticles.h"
 #include "TextRenderer.h"
 
@@ -261,6 +262,16 @@ public:
     m_bodyRenderer = &_bodies;
   }
 
+  // The sky's draw path. Optional, like the rest: with no renderer the scene is drawn onto the clear
+  // colour and nothing else changes. The frame numbers are the composition root's, from ViewTuning,
+  // because where the sphere sits and how hard a star scintillates are the game's choices and not the
+  // engine's.
+  void SetSkyRenderer(Neuron::SkyRenderer& _sky, const Neuron::SkyRenderer::Frame& _tuning) noexcept
+  {
+    m_sky = &_sky;
+    m_skyTuning = _tuning;
+  }
+
   // The composition root generates and uploads a body, then hands the view what it needs to place
   // and turn it. The tumble starts at identity here rather than being asked for: a caller supplies
   // a rate, not an orientation.
@@ -373,6 +384,14 @@ private:
   // and does not need one: what a replay wants reproducible is the shatter, and that is seeded from
   // the ship's handle and the tick it died on.
   Neuron::Pcg32 m_fxRng;
+
+  // The sky. Presentation only, like the bodies, and further out than either: it is generated once,
+  // uploaded once and drawn before everything. m_skyTimeSec runs on real time so that pausing the
+  // simulation does not stop the stars twinkling -- a paused game with a frozen sky reads as a
+  // hung one.
+  Neuron::SkyRenderer* m_sky = nullptr;
+  Neuron::SkyRenderer::Frame m_skyTuning;
+  float m_skyTimeSec = 0.0f;
 
   // The bodies. Presentation only: nothing in GameLogic knows one exists and nothing on the wire
   // carries one (Design/Decisions/0016). m_bodyWorlds is a scratch vector rather than a local so

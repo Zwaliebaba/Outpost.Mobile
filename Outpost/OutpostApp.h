@@ -48,6 +48,10 @@ private:
   // every F5; the caller brackets it with BeginUploads and ExecuteAndWait, because every body's
   // vertex copy belongs in one submission.
   void SpawnStartingBodies(std::uint64_t _seed);
+  // The sky, unlike the bodies, *does* release its buffer when it is rebuilt: there is exactly one
+  // of them and UploadField replaces it. It is cheap enough that nothing keeps its timing -- the
+  // trace at the call site is where a regression in it would show.
+  void BuildSky(std::uint64_t _seed);
   void ReseedBodies();
   void SpawnHostileBase();
   [[nodiscard]] std::uint32_t OwnShipCount() const noexcept;
@@ -64,6 +68,7 @@ private:
   Neuron::TextRenderer m_textRenderer;
   Neuron::FxRenderer m_fxRenderer;
   Neuron::BodyRenderer m_bodyRenderer;
+  Neuron::SkyRenderer m_skyRenderer;
   Neuron::MeshLibrary m_meshes;
 
   // Input and framing.
@@ -107,7 +112,7 @@ private:
 
   // Debug: 1, 2 and 3 slow, restore and speed up the simulation without touching the frame rate;
   // F1 shows the readout, F3 shakes the camera, F4 despawns the selection so the explosion has
-  // something to consume, and **F5 reseeds every body**. F5 does not release the buffers the last
+  // something to consume, and **F5 reseeds every body and the sky with them**. F5 does not release the buffers the last
   // scene's bodies are in -- BodyRenderer keeps every handle for the run -- so each press costs the
   // memory of the scene it replaced. That is acceptable for a tuning key and is not acceptable for
   // anything a player does; a ReleaseBody is a slice of its own the day a body has to go away.
