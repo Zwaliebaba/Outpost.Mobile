@@ -29,13 +29,15 @@ template <class... Types> void DebugTrace(const std::wstring_view _fmt, [[maybe_
 #endif
 }
 
-template <class... Types> [[noreturn]] void Fatal(const std::format_string<Types...> _fmt, [[maybe_unused]] Types&&... _args)
+template <class... Types>
+[[noreturn]] void Fatal([[maybe_unused]] const std::format_string<Types...> _fmt, [[maybe_unused]] Types&&... _args)
 {
   __debugbreak();
   throw std::exception("Fatal Error");
 }
 
-template <class... Types> [[noreturn]] void Fatal(const std::wformat_string<Types...> _fmt, [[maybe_unused]] Types&&... _args)
+template <class... Types>
+[[noreturn]] void Fatal([[maybe_unused]] const std::wformat_string<Types...> _fmt, [[maybe_unused]] Types&&... _args)
 {
   __debugbreak();
   throw std::exception("Fatal Error");
