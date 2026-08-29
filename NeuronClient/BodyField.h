@@ -34,6 +34,12 @@ public:
 
   explicit BodyField(const BodyDesc& _desc);
 
+  // The description flattened into the block, with every random number drawn and nothing measured.
+  // It is what the constructor does first, exposed because the compute bake wants the block and not
+  // the field: the two measurement passes below are exactly what a kernel is there to replace, and a
+  // caller that ran them to get at the parameters would have paid for the thing it was avoiding.
+  [[nodiscard]] static BodyParams ParamsFor(const BodyDesc& _desc);
+
   // The height above the ellipsoid surface at unit direction _d, in metres. The mesh builder places
   // the vertex at P = _d * ellipsoid * (radiusMetres + Height(_d)).
   [[nodiscard]] float Height(const DirectX::XMFLOAT3& _d) const noexcept;
@@ -51,8 +57,6 @@ public:
   [[nodiscard]] const BodyParams& Params() const noexcept;
 
 private:
-  [[nodiscard]] static BodyParams FlattenDesc(const BodyDesc& _desc);
-
   [[nodiscard]] float Octaves(const DirectX::XMFLOAT3& _d, std::uint32_t _tile) const noexcept;
   [[nodiscard]] float Lumpiness(const DirectX::XMFLOAT3& _d) const noexcept;
   [[nodiscard]] float Field(const DirectX::XMFLOAT3& _d) const noexcept;
@@ -70,10 +74,5 @@ private:
   // desiredHeight divided by the tile's own measured maximum, so that desiredHeight means what it
   // says. Measured rather than predicted: no closed form gives the amplitude law's maximum back.
   float m_tileScale[BodyParams::MAX_TILES] = {};
-
-  // Pow(len * 10, fractalDimension) * the compensated height scale, per tile per octave. It varies
-  // with neither the direction nor the sample, and evaluating it inside the sample loop would put
-  // a million calls to pow between the boot screen and the first frame.
-  float m_octaveAmplitude[BodyParams::MAX_TILES][MAX_GRID_POWER] = {};
 };
 } // namespace Neuron

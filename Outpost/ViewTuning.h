@@ -250,6 +250,16 @@ inline constexpr float BODY_CAP_NOISE = 0.1f;
 inline constexpr float BODY_POLAR_GEOMETRY = 0.15f;
 inline constexpr Neuron::BodyOverlayParams BODY_OVERLAY{1.2f, 4.0f, 0.5f, 40.0f};
 
+// Which producer makes a body's vertices. Both are alive and both make the same mesh; the CPU one is
+// the reference the GPU one is verified against, and it is the one the test suite exercises
+// (Design/PlanetRenderer.md 17).
+//
+// **False until the readback comparison has been run on real hardware.** The work order's rule is
+// that this turns true once the baked body has been compared with the built one and found equal to
+// the stated tolerances; that comparison needs a GPU and has not happened. Flipping it is a one-line
+// change and the measurement that justifies it belongs in the pull request that makes it.
+inline constexpr bool BODY_BAKE_ON_GPU = false;
+
 // The starting scene, from one seed, so the pull request's screenshot reproduces. F5 reseeds with
 // BODY_START_SEED + the number of presses, which makes a scene reproducible by press count.
 inline constexpr std::uint64_t BODY_START_SEED = 0x4F75747031ull; // "Outp1"

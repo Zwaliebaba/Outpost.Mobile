@@ -61,6 +61,11 @@ public:
   static void Build(const BodyField& _field, const ColourRamp* _ramp, std::vector<FxVertex>& _outTerrain,
                     std::vector<MeshVertex>& _outOcean, const DirectX::XMFLOAT3& _oceanColour, BodyBuildStats& _outStats);
 
+  // The ocean sphere on its own, for a caller that produced its terrain some other way. It needs no
+  // height at all -- sea level is the radius -- so it takes the block rather than the field, and the
+  // compute bake can have its water without building a field to get it.
+  static void BuildOcean(const BodyParams& _params, const DirectX::XMFLOAT3& _oceanColour, std::vector<MeshVertex>& _outOcean);
+
   // Seeds one triangle's colour dither. Integer throughout -- no float anywhere in it -- so that the
   // grain is reproducible in HLSL, where integer arithmetic is exact on every GPU and float
   // arithmetic is not (Design/PlanetRenderer.md 17.3). Public because both a test and, one day, a

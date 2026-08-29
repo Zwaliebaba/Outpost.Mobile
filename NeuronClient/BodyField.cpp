@@ -164,7 +164,7 @@ constexpr float CLIMATE_DITHER_CELLS = 256.0f;
 } // namespace
 
 BodyField::BodyField(const BodyDesc& _desc)
-  : m_params(FlattenDesc(_desc)),
+  : m_params(ParamsFor(_desc)),
     m_noise(std::span<const std::uint32_t, Noise3::PERMUTATION_SIZE>(m_params.permutation))
 {
   // Third and fourth in the construction order, after the seed offset and the permutation: the tiles
@@ -173,7 +173,7 @@ BodyField::BodyField(const BodyDesc& _desc)
   MeasureMaxHeight();
 }
 
-BodyParams BodyField::FlattenDesc(const BodyDesc& _desc)
+BodyParams BodyField::ParamsFor(const BodyDesc& _desc)
 {
   BodyParams params;
   Pcg32 rng(_desc.seed);
@@ -266,7 +266,7 @@ void BodyField::MeasureTiles() noexcept
     float length = SOURCE_LEVEL_LENGTH;
     for (std::uint32_t octave = 0; octave < octaves; ++octave)
     {
-      m_octaveAmplitude[i][octave] = Pow(length * SOURCE_LEVEL_GAIN, tile.fractal.x) * tile.fractal.w;
+      m_params.SetOctaveAmplitude(i, octave, Pow(length * SOURCE_LEVEL_GAIN, tile.fractal.x) * tile.fractal.w);
       length *= 0.5f;
     }
   }
@@ -348,7 +348,7 @@ float BodyField::Octaves(const XMFLOAT3& _d, std::uint32_t _tile) const noexcept
     if (ridged && octave < RIDGED_OCTAVES)
       noise = 0.5f - std::fabs(noise);
 
-    noise *= m_octaveAmplitude[_tile][octave];
+    noise *= m_params.OctaveAmplitude(_tile, octave);
 
     // How far up this tile's own range the terrain has come: 0 in the lowlands, 1 at a peak of the
     // height it is aiming for. See ROUGHNESS_FLOOR above for why it is measured that way.

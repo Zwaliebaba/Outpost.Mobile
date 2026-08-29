@@ -1,12 +1,15 @@
 #include "pch.h"
 #include "BodyRenderer.h"
 
+#include "CubeSphere.h"
 #include "GpuHelpers.h"
 
 // Shader bytecode, compiled by FXC at build time (AGENTS.md 3).
 #include "CompiledShaders/BodyVS.h"
 #include "CompiledShaders/BodyPS.h"
 #include "CompiledShaders/BodyOverlayPS.h"
+#include "CompiledShaders/BodyBakeMaxCS.h"
+#include "CompiledShaders/BodyBakeCS.h"
 
 using namespace DirectX;
 
@@ -32,11 +35,42 @@ constexpr UINT VS_CONSTANT_DWORDS = 32;
 constexpr UINT WORLD_OFFSET_DWORDS = 0;
 constexpr UINT VIEW_PROJ_OFFSET_DWORDS = 16;
 constexpr UINT PS_CONSTANT_DWORDS = 12; // lightDirAmbient, cameraPos, overlayParams
+
+// The bake's own numbers. The thread-group size is the kernels' [numthreads(64,1,1)]; the two have
+// to agree and there is nowhere for a shader to tell C++ what it chose.
+constexpr UINT BAKE_GROUP_SIZE = 64;
+constexpr UINT BAKE_CONTROL_DWORDS = 4;
+constexpr UINT BAKE_DESCRIPTORS = 3; // the ramp SRV, the vertex UAV, the maxima UAV
+constexpr UINT BAKE_PASS_TILE_MAXIMA = 0;
+constexpr UINT BAKE_PASS_HEIGHT_MAXIMUM = 1;
+
+// The cbuffer in BodyBake.hlsli is BodyParams field for field, and nothing but this line notices if
+// one of them is edited without the other. The number is written out rather than computed so that a
+// change to either side has to be looked at rather than absorbed.
+static_assert(sizeof(BodyParams) == 2784, "BodyParams and BodyBake.hlsli's cbuffer have drifted apart");
+
+[[nodiscard]] UINT GroupsFor(UINT _threads) noexcept
+{
+  return (_threads + BAKE_GROUP_SIZE - 1u) / BAKE_GROUP_SIZE;
+}
+
+// The order-preserving uint image of a float, the inverse of the shader's OrderedBits. The maxima
+// buffer is seeded with the same starting values BodyField's constructor uses, so the reduction and
+// the loop begin from the same place.
+[[nodiscard]] std::uint32_t OrderedBits(float _value) noexcept
+{
+  std::uint32_t bits = 0;
+  std::memcpy(&bits, &_value, sizeof(bits));
+  const std::uint32_t sign = (bits & 0x80000000u) ? 0xFFFFFFFFu : 0x80000000u;
+  return bits ^ sign;
+}
 } // namespace
 
 void BodyRenderer::Init(GpuDevice& _gpu, const Desc& _desc)
 {
+  m_srvStride = _gpu.Device()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
   CreatePipelines(_gpu);
+  CreateBakePipelines(_gpu);
 
   // The table is bound on every draw, terrain included, and a descriptor heap starts uninitialised:
   // a slot that never gets a view is a handle the debug layer reports the moment anything binds it.
@@ -161,6 +195,245 @@ void BodyRenderer::CreatePipelines(GpuDevice& _gpu)
   check_hresult(_gpu.Device()->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(m_overlayPso.put())));
 }
 
+void BodyRenderer::CreateBakePipelines(GpuDevice& _gpu)
+{
+  // One table holding the ramp and the two UAVs, so a bake binds one thing. The ranges are separate
+  // because SRV and UAV are separate range types, but they sit in one heap in this order.
+  D3D12_DESCRIPTOR_RANGE ranges[2] = {};
+  ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+  ranges[0].NumDescriptors = 1;
+  ranges[0].BaseShaderRegister = 0; // t0, the ramp
+  ranges[0].OffsetInDescriptorsFromTableStart = 0;
+  ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+  ranges[1].NumDescriptors = 2;
+  ranges[1].BaseShaderRegister = 0; // u0 the vertices, u1 the maxima
+  ranges[1].OffsetInDescriptorsFromTableStart = 1;
+
+  D3D12_ROOT_PARAMETER params[3] = {};
+  params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+  params[0].Descriptor.ShaderRegister = 0; // b0, the BodyParams block
+  params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+  params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+  params[1].Constants.ShaderRegister = 1; // b1, which pass this dispatch is
+  params[1].Constants.Num32BitValues = BAKE_CONTROL_DWORDS;
+  params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+  params[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+  params[2].DescriptorTable.NumDescriptorRanges = 2;
+  params[2].DescriptorTable.pDescriptorRanges = ranges;
+  params[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+  // Bilinear and clamped, which is the filter ColourRamp implements on the CPU. The half-texel
+  // correction that makes the two agree is in the shader, not here.
+  D3D12_STATIC_SAMPLER_DESC sampler = {};
+  sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+  sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+  sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+  sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+  sampler.MaxAnisotropy = 1;
+  sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+  sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
+  sampler.MaxLOD = D3D12_FLOAT32_MAX;
+  sampler.ShaderRegister = 0;
+  sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+  // No ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT: there is no input assembler in a compute pipeline, and
+  // the flag is rejected rather than ignored.
+  D3D12_ROOT_SIGNATURE_DESC rsDesc = {};
+  rsDesc.NumParameters = 3;
+  rsDesc.pParameters = params;
+  rsDesc.NumStaticSamplers = 1;
+  rsDesc.pStaticSamplers = &sampler;
+  rsDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
+  m_bakeRootSignature = CreateRootSignature(_gpu.Device(), rsDesc, "body bake root signature");
+
+  D3D12_COMPUTE_PIPELINE_STATE_DESC pso = {};
+  pso.pRootSignature = m_bakeRootSignature.get();
+  pso.CS.pShaderBytecode = g_pBodyBakeMaxCS;
+  pso.CS.BytecodeLength = sizeof(g_pBodyBakeMaxCS);
+  check_hresult(_gpu.Device()->CreateComputePipelineState(&pso, IID_PPV_ARGS(m_bakeMaxPso.put())));
+
+  pso.CS.pShaderBytecode = g_pBodyBakeCS;
+  pso.CS.BytecodeLength = sizeof(g_pBodyBakeCS);
+  check_hresult(_gpu.Device()->CreateComputePipelineState(&pso, IID_PPV_ARGS(m_bakePso.put())));
+}
+
+BodyHandle BodyRenderer::BakeBody(GpuDevice& _gpu, const BodyParams& _params, const ColourRamp& _ramp)
+{
+  const std::uint32_t gridPower = static_cast<std::uint32_t>(_params.outsideMaxHeightGrid.z);
+  const std::uint32_t samplesPerSide = (1u << gridPower) + 1u;
+  const std::uint32_t cells = samplesPerSide - 1u;
+  const std::uint32_t vertexCount = CUBE_FACE_COUNT * cells * cells * 6u;
+  const std::uint64_t vertexBytes = static_cast<std::uint64_t>(vertexCount) * sizeof(FxVertex);
+
+  ID3D12Device* const device = _gpu.Device();
+  ID3D12GraphicsCommandList* const cmd = _gpu.CommandList();
+
+  // The vertex buffer the kernel writes and the input assembler later reads. It carries the UAV flag
+  // where UploadStaticBuffer's does not, which is the only difference between what the two producers
+  // hand back; a committed buffer is created in COMMON either way and is promoted on first use.
+  GpuMesh mesh = {};
+  D3D12_RESOURCE_DESC bufferDesc = BufferDesc(vertexBytes);
+  bufferDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+  D3D12_HEAP_PROPERTIES heap = HeapProps(D3D12_HEAP_TYPE_DEFAULT);
+  check_hresult(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_COMMON, nullptr,
+                                                IID_PPV_ARGS(mesh.vb.put())));
+
+  // The maxima: one slot per tile and one for the field, seeded with the values BodyField's
+  // constructor starts its two loops from -- zero for a tile, outsideHeight for the field.
+  constexpr std::uint32_t MAXIMA_COUNT = BodyParams::MAX_TILES + 1u;
+  GpuPtr<ID3D12Resource> maxima;
+  D3D12_RESOURCE_DESC maximaDesc = BufferDesc(MAXIMA_COUNT * sizeof(std::uint32_t));
+  maximaDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+  check_hresult(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &maximaDesc, D3D12_RESOURCE_STATE_COMMON, nullptr,
+                                                IID_PPV_ARGS(maxima.put())));
+
+  std::uint32_t seed[MAXIMA_COUNT] = {};
+  for (std::uint32_t i = 0; i < BodyParams::MAX_TILES; ++i)
+    seed[i] = OrderedBits(0.0f);
+  seed[BodyParams::MAX_TILES] = OrderedBits(_params.outsideMaxHeightGrid.x);
+
+  GpuPtr<ID3D12Resource> maximaSeed;
+  GpuPtr<ID3D12Resource> unusedStaging;
+  UploadStaticBuffer(_gpu, std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(seed), sizeof(seed)), maximaSeed,
+                     unusedStaging);
+  cmd->CopyBufferRegion(maxima.get(), 0, maximaSeed.get(), 0, sizeof(seed));
+
+  // The parameter block, in an upload heap and read as a root CBV. Constant buffers are sized in
+  // 256-byte units whatever the struct is.
+  constexpr std::uint64_t CONSTANT_ALIGNMENT = D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT;
+  const std::uint64_t paramsBytes = (sizeof(BodyParams) + CONSTANT_ALIGNMENT - 1u) & ~(CONSTANT_ALIGNMENT - 1u);
+  GpuPtr<ID3D12Resource> paramsBuffer;
+  const D3D12_HEAP_PROPERTIES uploadHeap = HeapProps(D3D12_HEAP_TYPE_UPLOAD);
+  const D3D12_RESOURCE_DESC paramsDesc = BufferDesc(paramsBytes);
+  check_hresult(device->CreateCommittedResource(&uploadHeap, D3D12_HEAP_FLAG_NONE, &paramsDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                                                IID_PPV_ARGS(paramsBuffer.put())));
+  std::uint8_t* mapped = nullptr;
+  D3D12_RANGE noRead = {0, 0};
+  check_hresult(paramsBuffer->Map(0, &noRead, reinterpret_cast<void**>(&mapped)));
+  std::memcpy(mapped, &_params, sizeof(BodyParams));
+  paramsBuffer->Unmap(0, nullptr);
+
+  // A heap of its own per bake, rather than one slot rewritten between them. Every body at boot goes
+  // into one command list and one submission, so a rewritten slot would be read by whichever
+  // dispatch happened to run after it -- and the fence that would make rewriting safe is the
+  // submission this arrangement exists to avoid splitting.
+  GpuPtr<ID3D12DescriptorHeap> bakeHeap;
+  D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+  heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+  heapDesc.NumDescriptors = BAKE_DESCRIPTORS;
+  heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+  check_hresult(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(bakeHeap.put())));
+
+  D3D12_CPU_DESCRIPTOR_HANDLE cpuSlot = bakeHeap->GetCPUDescriptorHandleForHeapStart();
+
+  ByteBuffer rampPixels;
+  _ramp.AsBgra(rampPixels);
+  GpuPtr<ID3D12Resource> rampTexture;
+  GpuPtr<ID3D12Resource> rampStaging;
+  UploadColourTexture(_gpu, ColourRamp::SIDE, ColourRamp::SIDE, rampPixels, cpuSlot, rampTexture, rampStaging);
+
+  cpuSlot.ptr += m_srvStride;
+  D3D12_UNORDERED_ACCESS_VIEW_DESC vertexUav = {};
+  vertexUav.Format = DXGI_FORMAT_UNKNOWN; // a structured buffer names its stride, not a format
+  vertexUav.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+  vertexUav.Buffer.NumElements = vertexCount;
+  vertexUav.Buffer.StructureByteStride = sizeof(FxVertex);
+  device->CreateUnorderedAccessView(mesh.vb.get(), nullptr, &vertexUav, cpuSlot);
+
+  cpuSlot.ptr += m_srvStride;
+  D3D12_UNORDERED_ACCESS_VIEW_DESC maximaUav = {};
+  maximaUav.Format = DXGI_FORMAT_R32_UINT; // a typed buffer, which is what InterlockedMax needs
+  maximaUav.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+  maximaUav.Buffer.NumElements = MAXIMA_COUNT;
+  device->CreateUnorderedAccessView(maxima.get(), nullptr, &maximaUav, cpuSlot);
+
+  ID3D12DescriptorHeap* heaps[] = {bakeHeap.get()};
+  cmd->SetDescriptorHeaps(1, heaps);
+  cmd->SetComputeRootSignature(m_bakeRootSignature.get());
+  cmd->SetComputeRootConstantBufferView(0, paramsBuffer->GetGPUVirtualAddress());
+  cmd->SetComputeRootDescriptorTable(2, bakeHeap->GetGPUDescriptorHandleForHeapStart());
+
+  const UINT sampleGroups = GroupsFor(CUBE_FACE_COUNT * samplesPerSide * samplesPerSide);
+  const UINT cellGroups = GroupsFor(CUBE_FACE_COUNT * cells * cells);
+
+  // The barrier between the two reduction passes is not optional. The second reads what the first
+  // wrote, and without it some hardware reads zeros and the implementer's reads the right answer.
+  D3D12_RESOURCE_BARRIER maximaBarrier = {};
+  maximaBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+  maximaBarrier.UAV.pResource = maxima.get();
+
+  cmd->SetPipelineState(m_bakeMaxPso.get());
+  UINT control[BAKE_CONTROL_DWORDS] = {BAKE_PASS_TILE_MAXIMA, 0, 0, 0};
+  cmd->SetComputeRoot32BitConstants(1, BAKE_CONTROL_DWORDS, control, 0);
+  cmd->Dispatch(sampleGroups, 1, 1);
+  cmd->ResourceBarrier(1, &maximaBarrier);
+
+  control[0] = BAKE_PASS_HEIGHT_MAXIMUM;
+  cmd->SetComputeRoot32BitConstants(1, BAKE_CONTROL_DWORDS, control, 0);
+  cmd->Dispatch(sampleGroups, 1, 1);
+  cmd->ResourceBarrier(1, &maximaBarrier);
+
+  cmd->SetPipelineState(m_bakePso.get());
+  cmd->Dispatch(cellGroups, 1, 1);
+
+  const D3D12_RESOURCE_BARRIER toVertices =
+    Transition(mesh.vb.get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+  cmd->ResourceBarrier(1, &toVertices);
+
+  mesh.vbv.BufferLocation = mesh.vb->GetGPUVirtualAddress();
+  mesh.vbv.SizeInBytes = static_cast<UINT>(vertexBytes);
+  mesh.vbv.StrideInBytes = sizeof(FxVertex);
+  mesh.vertexCount = vertexCount;
+
+  // Everything the dispatches read has to outlive the submission, which is what DiscardStaging is
+  // called after and for.
+  m_staging.push_back(std::move(maximaSeed));
+  m_staging.push_back(std::move(unusedStaging));
+  m_staging.push_back(std::move(maxima));
+  m_staging.push_back(std::move(paramsBuffer));
+  m_staging.push_back(std::move(rampTexture));
+  m_staging.push_back(std::move(rampStaging));
+  m_bakeHeaps.push_back(std::move(bakeHeap));
+
+  m_bodies.push_back(std::move(mesh));
+  return static_cast<BodyHandle>(m_bodies.size() - 1);
+}
+
+void BodyRenderer::ReadBackBody(GpuDevice& _gpu, BodyHandle _body, std::vector<FxVertex>& _out)
+{
+  _out.clear();
+  if (_body >= m_bodies.size() || m_bodies[_body].vertexCount == 0)
+    return;
+
+  const GpuMesh& mesh = m_bodies[_body];
+  const std::uint64_t bytes = static_cast<std::uint64_t>(mesh.vertexCount) * sizeof(FxVertex);
+
+  GpuPtr<ID3D12Resource> readback;
+  const D3D12_HEAP_PROPERTIES heap = HeapProps(D3D12_HEAP_TYPE_READBACK);
+  const D3D12_RESOURCE_DESC desc = BufferDesc(bytes);
+  check_hresult(_gpu.Device()->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                                                       IID_PPV_ARGS(readback.put())));
+
+  _gpu.BeginUploads();
+  ID3D12GraphicsCommandList* const cmd = _gpu.CommandList();
+  const D3D12_RESOURCE_BARRIER toSource =
+    Transition(mesh.vb.get(), D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_STATE_COPY_SOURCE);
+  cmd->ResourceBarrier(1, &toSource);
+  cmd->CopyBufferRegion(readback.get(), 0, mesh.vb.get(), 0, bytes);
+  const D3D12_RESOURCE_BARRIER toVertices =
+    Transition(mesh.vb.get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+  cmd->ResourceBarrier(1, &toVertices);
+  _gpu.ExecuteAndWait();
+
+  _out.resize(mesh.vertexCount);
+  std::uint8_t* mapped = nullptr;
+  const D3D12_RANGE readEverything = {0, static_cast<SIZE_T>(bytes)};
+  check_hresult(readback->Map(0, &readEverything, reinterpret_cast<void**>(&mapped)));
+  std::memcpy(_out.data(), mapped, static_cast<std::size_t>(bytes));
+  const D3D12_RANGE wroteNothing = {0, 0};
+  readback->Unmap(0, &wroteNothing);
+}
+
 BodyHandle BodyRenderer::UploadBody(GpuDevice& _gpu, std::span<const FxVertex> _verts)
 {
   if (_verts.empty())
@@ -187,6 +460,7 @@ BodyHandle BodyRenderer::UploadBody(GpuDevice& _gpu, std::span<const FxVertex> _
 void BodyRenderer::DiscardStaging() noexcept
 {
   m_staging.clear();
+  m_bakeHeaps.clear();
   m_outlineStaging = nullptr;
 }
 

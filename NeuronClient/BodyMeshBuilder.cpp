@@ -248,6 +248,17 @@ void BodyMeshBuilder::Build(const BodyField& _field, const ColourRamp* _ramp, st
   if (!wet)
     return;
 
+  BuildOcean(params, _oceanColour, _outOcean);
+}
+
+void BodyMeshBuilder::BuildOcean(const BodyParams& _params, const XMFLOAT3& _oceanColour, std::vector<MeshVertex>& _outOcean)
+{
+  if (_params.outsideMaxHeightGrid.x >= 0.0f)
+    return;
+
+  const std::uint32_t gridPower = static_cast<std::uint32_t>(_params.outsideMaxHeightGrid.z);
+  const BodyParams& params = _params;
+
   // The ocean: a smooth sphere at the body's radius, two grid powers coarser than the terrain --
   // seventeen samples a side on a planet, whose facets are seventy-five metres across and read as
   // water rather than as polygons from anywhere the camera can get to. It carries a flat colour and
