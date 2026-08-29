@@ -130,7 +130,6 @@ void WorldView::SampleTrails()
 void WorldView::UpdateFeedback(float _dtSec)
 {
   const float dt = std::clamp(_dtSec, 0.0f, 0.1f);
-  const float maxTurnRate = XMConvertToRadians(Game::TURN_RATE_DEG_PER_SEC);
   const float maxBank = XMConvertToRadians(BANK_MAX_ANGLE_DEG);
   const std::span<const Game::ShipState> state = m_world->Ships();
 
@@ -138,6 +137,9 @@ void WorldView::UpdateFeedback(float _dtSec)
   {
     ShipView& view = m_ships[static_cast<size_t>(i)];
     const Game::ShipState& ship = state[static_cast<size_t>(i)];
+    // Bank and thruster flare are both fractions of what this hull can do, so both come from its
+    // own row. Against one global value a Carrier would barely bank and would never light up.
+    const Game::HullSpec& hull = Game::HullSpecOf(ship.hullId);
 
     // Selection ring: a straight ramp on the tuned duration for the fade, and a spring for the
     // scale so it sails past and settles back.
@@ -154,14 +156,14 @@ void WorldView::UpdateFeedback(float _dtSec)
 
     // Bank into the turn, proportional to angular velocity. Rolling starboard down in a starboard
     // turn means a negative roll, since a positive rotation about +Z lifts the starboard side.
-    const float bankTarget = -std::clamp(ship.turnRateRadPerSec / maxTurnRate, -1.0f, 1.0f) * maxBank;
+    const float bankTarget = -std::clamp(ship.turnRateRadPerSec / hull.maxTurnRateRadPerSec, -1.0f, 1.0f) * maxBank;
     const bool goingIn = std::fabs(bankTarget) > std::fabs(view.bankRad);
     const float bankHalfLife = goingIn ? BANK_RESPONSE_HALF_LIFE : BANK_RETURN_HALF_LIFE;
     view.bankRad += (bankTarget - view.bankRad) * HalfLifeBlend(dt, bankHalfLife);
 
     // Thrusters follow acceleration, not speed: they flare on the way up to cruise and go quiet
     // once the ship is coasting.
-    const float drive = std::clamp(ship.accelSample / Game::ACCELERATION, 0.0f, 1.0f);
+    const float drive = std::clamp(ship.accelSample / hull.accelerationMetresPerSec2, 0.0f, 1.0f);
     const float thrusterTarget = THRUSTER_IDLE_INTENSITY + (THRUSTER_MAX_INTENSITY - THRUSTER_IDLE_INTENSITY) * drive;
     view.thrusterIntensity += (thrusterTarget - view.thrusterIntensity) * HalfLifeBlend(dt, THRUSTER_RESPONSE_HALF_LIFE);
   }

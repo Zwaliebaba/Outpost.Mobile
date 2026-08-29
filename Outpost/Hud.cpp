@@ -324,8 +324,8 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, const Game::Wo
     const std::span<const Game::ShipState> ships = _world.Ships();
     for (size_t i = 0; i < ships.size(); ++i)
     {
-      const float x = toMapX(ships[i].posWorld.x);
-      const float y = toMapY(ships[i].posWorld.z);
+      const float x = toMapX(ships[i].posWorld.localX);
+      const float y = toMapY(ships[i].posWorld.localZ);
       if (x < map.x0 + dot || x > map.x1 - dot || y < map.y0 + dot || y > map.y1 - dot)
         continue;
       const Rgba colour = _view.IsSelected(i) ? HUD_ACCENT_GREEN : WithAlpha(HUD_ACCENT_GREEN, 0.7f);

@@ -82,6 +82,10 @@ public:
       Assert::IsTrue(spec.avoidanceAuthority > 0.0f, (name + L" has no avoidance authority, which is a zero denominator").c_str());
       Assert::IsTrue(spec.neighbourCap > 0, (name + L" tracks no neighbours").c_str());
       Assert::IsTrue(spec.maxTurnRateRadPerSec > 0.0f, (name + L" cannot turn, and the horizon derivation divides by it").c_str());
+      // The view normalises bank and thruster flare by these, so a zero is a divide by zero on the
+      // client rather than merely an inert hull.
+      Assert::IsTrue(spec.accelerationMetresPerSec2 > 0.0f, (name + L" has no acceleration, which the view divides by").c_str());
+      Assert::IsTrue(spec.turnAccelerationRadPerSec2 > 0.0f, (name + L" has no angular acceleration").c_str());
       Assert::AreEqual(spec.capsuleRadiusMetres + spec.capsuleHalfLengthMetres, spec.BoundingRadiusMetres(), 1e-4f,
                        (name + L" has a bounding radius that is not L + r").c_str());
       // A hull that moves faster than the design's own numbers were computed against is exactly
