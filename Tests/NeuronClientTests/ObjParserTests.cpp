@@ -3,7 +3,7 @@
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 using namespace DirectX;
 
-namespace NeuronCoreTests
+namespace NeuronClientTests
 {
 TEST_CLASS(ObjParserTests)
 {
@@ -46,4 +46,4 @@ public:
     Assert::AreEqual(3.0f, mesh.RestY(), 1e-5f, L"the lift does not put the lowest vertex on y = 0");
   }
 };
-} // namespace NeuronCoreTests
+} // namespace NeuronClientTests

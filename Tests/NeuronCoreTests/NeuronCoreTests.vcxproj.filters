@@ -20,9 +20,6 @@
     <ClCompile Include="EaseTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
-    <ClCompile Include="ObjParserTests.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config">
