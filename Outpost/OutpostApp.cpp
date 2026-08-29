@@ -222,6 +222,7 @@ void OutpostApp::Render()
   frame.stats.particlesDropped = m_view.Particles().Dropped();
   frame.stats.fxVertsDropped = m_fxRenderer.DroppedVerts();
   frame.showDebug = m_showDebug;
+  frame.sector = m_view.WorldPosAt(m_camera.Target().x, m_camera.Target().z);
   frame.hullNames = HULL_NAMES;
   m_hud.Draw(m_textRenderer, m_view.Ships(), m_view, m_camera, m_log, frame, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
 
