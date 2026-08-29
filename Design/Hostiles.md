@@ -11,7 +11,7 @@ that says somebody else lives here.
 
 The feature is small on purpose. What it forces into existence is not: the first ship that is not
 the player's makes the tree answer **whose is a ship** (allegiance), **who may command it**
-(authority), and **where a non-player's intent comes from** (NPC behaviour). All three questions
+(authority), and **where a non-player's intent comes from** (NPC behavior). All three questions
 have MMO-shaped answers and cheaper answers, and the cheaper ones are the kind that work perfectly
 in one process and cost a rewrite the day the halves separate. This design exists to take the
 MMO-shaped answers now, while they are still one field, one filter and one pass — it is written
@@ -25,13 +25,13 @@ authoritative server.
 - **Allegiance**: every ship carries a `FactionId`. It is simulation state, it travels in the ship's
   snapshot record, and the simulation refuses move orders whose issuer's faction does not match the
   ship's (§4).
-- **A patrol behaviour**: a deterministic pass inside `World::Step` that walks an assigned ship
-  around a ring of waypoints centred on an anchor ship, at a cruise speed below the hull's maximum,
+- **A patrol behavior**: a deterministic pass inside `World::Step` that walks an assigned ship
+  around a ring of waypoints centered on an anchor ship, at a cruise speed below the hull's maximum,
   through the same order machinery a player's click uses (§5).
-- **Content**: one `Structure` at ~1.2 km north-east of the starting fleet, three `Interceptor`s
+- **Content**: one `Structure` at ~1.2 km northeast of the starting fleet, three `Interceptor`s
   assigned to a 400 m patrol ring around it, all in the hostile faction, spawned by the composition
   root at boot the way the starting fleet already is (§6).
-- **Display**: minimap blips coloured by allegiance — own faction green as today, everything else
+- **Display**: minimap blips colored by allegiance — own faction green as today, everything else
   `HUD_ALERT_RED` — with a larger blip for structures; the minimap's `CONTACTS` placeholder becomes
   the real count of hostile records in the snapshot; hostiles cannot be selected, hovered or
   ordered (§7).
@@ -69,7 +69,7 @@ More of this feature already exists than not, which is what makes the slices sma
   collidable, 251.77 m bounding radius, authored against the shipped mesh. A ship spawned with it
   enters the static index and the pathfinding obstacle set automatically
   (`World::RebuildStaticIfDirty`), traffic is projected out of it, routes are planned around it,
-  and the tunnelling and separation suites already spawn Structures. Nothing about "a station"
+  and the tunneling and separation suites already spawn Structures. Nothing about "a station"
   is new to the simulation.
 - **The mesh path is the ship mesh path.** `ObjParser` → `MeshLibrary::Load` → `RegisterHullMesh`,
   keyed by `HullId` for the whole table. `Structure.obj` and `Interceptor.obj` ship today beside
@@ -156,7 +156,7 @@ stale handle already is — left out, not an error. The gate sits in `World` rat
 `WorldSimulation` because the executable's adapter has no test suite and every future host — the
 dedicated server, a second adapter, a replay driver — would otherwise have to remember to
 duplicate the check. The simulation refusing is a property of the simulation; an adapter refusing
-is a convention (§12). `WorldSimulation` passes its subscriber's faction — a member initialised to
+is a convention (§12). `WorldSimulation` passes its subscriber's faction — a member initialized to
 `FACTION_PLAYER` with the same "the day a real player connects, this comes from the session"
 comment `SubscriberCentre` already carries.
 
@@ -172,10 +172,10 @@ On the client, the same rule shapes the UI (§7): what you cannot command, you c
 
 ## 5. The patrol — NPC intent inside the tick
 
-Owner decision 1 (§13): NPC behaviour lives in `GameLogic`, inside the tick — not in the
+Owner decision 1 (§13): NPC behavior lives in `GameLogic`, inside the tick — not in the
 executable's server half, and not behind a bot client on the transport. The reasons are ADR 0008's
 in a new coat: the wire format lives in `GameLogic` because the day there are two executables it
-must not be in one of them, and NPC behaviour is the same shape of thing. In the tick it is
+must not be in one of them, and NPC behavior is the same shape of thing. In the tick it is
 covered by the replay gate, costs no wire hop, and ships with the tree to any future server
 binary. A bot client would put fleet AI outside the replay contract and pay latency for the
 privilege; an adapter-side driver would be authoritative code in the one layer without a test
@@ -211,7 +211,7 @@ void AssignPatrol(ShipId _ship, ShipId _anchorStation, float _ringRadiusMetres,
 
 Called by the composition root at boot, after the spawns, the way `IssueMoveOrder` is called by
 the adapter. `World::IssueMoveOrder` clears the patrol of every ship it orders: an explicit order
-outranks a standing behaviour, and the rule costs one line now against a ghost behaviour later.
+outranks a standing behavior, and the rule costs one line now against a ghost behavior later.
 
 ### 5.2 The ring
 
@@ -226,7 +226,7 @@ mechanism anywhere:
 | Quantity | Value | Against |
 |---|---|---|
 | Leg length (chord) | 2 · 400 · sin 15° = **207 m** | Interceptor arrival radius 1.5 m |
-| Chord's closest approach to centre | 400 · cos 15° = **386 m** | station bounding 251.77 m + clearance margin 8 m + hull 3.5 m = 263 m — legs clear by ~120 m, so `PlanRoute` returns straight legs |
+| Chord's closest approach to center | 400 · cos 15° = **386 m** | station bounding 251.77 m + clearance margin 8 m + hull 3.5 m = 263 m — legs clear by ~120 m, so `PlanRoute` returns straight legs |
 | Avoidance clearance needed | 3.5 + 251.77 + `AVOID_MARGIN_METRES` 8 = **263 m** | 386 m miss distance — the station never even scores as a threat on the ring |
 | Ships on the ring | 3, at waypoints 0, 4, 8 | 120° apart at equal speed: they never converge on each other |
 
@@ -267,13 +267,13 @@ ever sheds speed, so the cap holds through avoidance. `IssueMoveOrder` writes 0 
 orders — player orders stay full speed, and the existing suites stay bit-identical because a zero
 cap is arithmetic the current code already performs. The cap is a property of the *order*, not the
 hull, which is what lets the same Interceptor cruise at 10 m/s on patrol today and burn at 34 m/s
-towards a fight in some later design.
+toward a fight in some later design.
 
 ### 5.5 What the pass must not do
 
 No randomness — the ring walk is a pure function of state, so the seeded-PCG32 rule stays a rule
 for the future. No reactions: the pass never reads the player's ships, never changes speed or
-target because of anything it sees. The first behaviour that *responds* (aggro, pursuit, flight)
+target because of anything it sees. The first behavior that *responds* (aggro, pursuit, flight)
 is a different design with senses and thresholds; this pass is deliberately a metronome.
 
 ---
@@ -317,7 +317,7 @@ an order of magnitude to spare.
 
 One server-half correction lands with the content: `WorldSimulation::SubscriberCentre` averages
 *every* ship to find where the subscriber is looking, because until now every ship was the
-subscriber's. Four hostiles at 1.2 km would drag that centre ~690 m towards the enemy base — the
+subscriber's. Four hostiles at 1.2 km would drag that center ~690 m toward the enemy base — the
 premise of the comment on that function has expired, and it filters to the subscriber's own
 faction in the same slice that makes the premise false.
 
@@ -325,7 +325,7 @@ faction in the same slice that makes the premise false.
 
 ## 7. The overview — red dots, and what a client may not do
 
-The minimap blip loop colours by allegiance instead of by nothing:
+The minimap blip loop colors by allegiance instead of by nothing:
 
 | Record | Blip |
 |---|---|
@@ -424,7 +424,7 @@ What this design commits to, kept deliberately in the shape the target needs:
 
 And the traps this design is specifically stepping around, named so review can check them: no
 client-side spawning or steering of NPCs, no renderer-readable `World` state, no per-viewer record
-contents, no NPC flag on the wire, no behaviour keyed off wall time, no trust in a handle a client
+contents, no NPC flag on the wire, no behavior keyed off wall time, no trust in a handle a client
 sent.
 
 ---
@@ -462,7 +462,12 @@ it cost.
   "hostile things my client currently knows about", which is the only definition that stays honest
   as content grows.
 - **Structures blip at a fixed 8 px, not to scale.** To scale, a 500 m station is 25 px — a
-  quarter of the map for one base; iconography beats cartography at 0.05 px per metre.
+  quarter of the map for one base; iconography beats cartography at 0.05 px per meter.
+- **New identifiers keep the tree's unit spellings.** `orderSpeedCapMetresPerSec` and
+  `HOSTILE_PATROL_RING_METRES` extend the `MetresPerSec` and `_METRES` families as those families
+  are spelled, per AGENTS.md R11: prose is US English, but a name extending a standing family
+  matches the family — a `MetersPerSec` beside a `MetresPerSec` is a grep that misses half its
+  answers. They convert when their families do, in the families' own rename slices.
 
 ---
 
@@ -471,7 +476,7 @@ it cost.
 Named so nobody goes looking, and so the next design knows where its edges are:
 
 - **Combat, damage, aggro, pursuit, weapons range** — the patrol is a metronome by the owner's
-  brief; the first *reacting* behaviour is a new design with senses and thresholds.
+  brief; the first *reacting* behavior is a new design with senses and thresholds.
 - **Per-viewer IFF, standings, diplomacy, stealth** — identity on the wire is the door to all of
   these (§4.1); none is built.
 - **Ownership finer than faction** — arrives with the second subscriber, as a field and a
@@ -495,10 +500,10 @@ Put to the owner on 2026-08-29 and answered as follows; each was the recommended
 
 | Question | Decision | What lost |
 |---|---|---|
-| Where does NPC patrol behaviour live? | **`GameLogic`, inside the tick** — deterministic, replay-gated, ships with `World` to any server binary (ADR 0008's argument) | an adapter-side driver in the executable — authoritative behaviour in the untested layer, duplicated per host; a bot client over `Transport` — fleet AI outside the replay contract, paying wire latency, a shape no MMO server uses for its own NPCs |
+| Where does NPC patrol behavior live? | **`GameLogic`, inside the tick** — deterministic, replay-gated, ships with `World` to any server binary (ADR 0008's argument) | an adapter-side driver in the executable — authoritative behavior in the untested layer, duplicated per host; a bot client over `Transport` — fleet AI outside the replay contract, paying wire latency, a shape no MMO server uses for its own NPCs |
 | How does a client learn a ship is hostile? | **`FactionId` in the ship record** — the server states identity, each client maps it to a relation (§4.1) | a per-subscriber friend/foe bit — forks record contents per viewer for no gameplay gain today; inferring from the hull — wrong the day both sides fly the same hull, presentation guessing baked into a protocol |
 | Which hulls fly the patrol? | **Three Interceptors** — the unused light hull; the silhouette says "not ours" before the dot does | a mixed wing (2 + 1 Corvette) and all-Corvette — both share a silhouette with the player fleet |
-| Where does the station sit? | **~1.2 km north-east** (`LocalPos(850, 850)`) — inside interest and the minimap edge, so the overview shows red from the first frame | 3 km out — the purer interest-management demo, at the price of an empty overview at boot; 600 m — looms in the start camera and crowds the grid the fleet manoeuvres in |
+| Where does the station sit? | **~1.2 km northeast** (`LocalPos(850, 850)`) — inside interest and the minimap edge, so the overview shows red from the first frame | 3 km out — the purer interest-management demo, at the price of an empty overview at boot; 600 m — looms in the start camera and crowds the grid the fleet maneuvers in |
 
 ---
 
@@ -513,7 +518,7 @@ one pull request, in the shape Design/README.md gives.
 |---|---|---|---|---|
 | 1 | Allegiance: `FactionId` on ship and record, `SpawnShip` and `IssueMoveOrder` parameters, the authority gate, the subscriber faction in `WorldSimulation`, SnapshotTests + OrderTests | `GameLogic` (+ two lines in `Outpost`) | — | to write |
 | 2 | Patrol: `m_patrols` + despawn repair, `AssignPatrol`, the pass in `Step`, `orderSpeedCapMetresPerSec` + the `SolveOrder` clamp, `PATROL_RING_WAYPOINTS`, PatrolTests (new file, both project files) | `GameLogic` | 1 | to write |
-| 3 | The scene and the overview: mesh table split, `SpawnHostileBase`, `SubscriberCentre` faction filter, `SetOwnFaction` + selection filters, blip colours + structure dot, real `CONTACTS`, boot-log count, `ViewTuning` content constants, comment and AGENTS.md sentence updates, screenshots at two sizes | `Outpost` | 1, 2 | to write |
+| 3 | The scene and the overview: mesh table split, `SpawnHostileBase`, `SubscriberCentre` faction filter, `SetOwnFaction` + selection filters, blip colors + structure dot, real `CONTACTS`, boot-log count, `ViewTuning` content constants, comment and AGENTS.md sentence updates, screenshots at two sizes | `Outpost` | 1, 2 | to write |
 
 Slices 1 and 2 are decided by tests (§9) and by the existing suites staying green — slice 2's
 claim that an unassigned world is bit-identical is exactly `GameLogicTests` passing unchanged.
@@ -522,6 +527,6 @@ new information reaching the client outside the record.
 
 Decision records due, written with the slice that lands each, in the same commit: slice 1 owes one
 for allegiance-as-identity on the wire and one for the authority gate living in the simulation
-(both turn down alternatives someone will propose again); slice 2 owes one for NPC behaviour
+(both turn down alternatives someone will propose again); slice 2 owes one for NPC behavior
 living in `GameLogic` rather than behind the transport. AGENTS.md's description of what the game
 *is* changes in slice 3, when it stops being true that every ship is the player's.

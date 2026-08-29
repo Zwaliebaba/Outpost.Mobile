@@ -79,8 +79,8 @@ are never renamed to fit: `XMFLOAT2`, `XMVECTOR`, `ID3D12Device`, `IDXGISwapChai
 **R5 — Template parameters are PascalCase**: `T`, `Fn`, `BlockBytes`, `Ts...`.
 
 **R6 — Units belong in names; types do not.** `posXCm`, `velXCmPerSec`, `etaTicks`, `zoomMetres`,
-`cooldownMs`, `dragThresholdPx` are encouraged — this game measures a plane in metres, a wire in
-centimetres, and time in ticks, so unit ambiguity is a real defect class. Never encode the type:
+`cooldownMs`, `dragThresholdPx` are encouraged — this game measures a plane in meters, a wire in
+centimeters, and time in ticks, so unit ambiguity is a real defect class. Never encode the type:
 no `iCount`, `pShip`, `strName`, `dwFlags`.
 
 **R7 — A file is named for its primary type**, PascalCase, `.h` / `.cpp` only. `.hpp`, `.cc` and
@@ -118,6 +118,17 @@ an anonymous namespace in a `.cpp` will do.
 **R10 — Integer widths are spelled `std::uint32_t`.** Design prose may use `u8`/`u16`/`u32` as
 shorthand; code uses the standard names, and any wire struct states its width explicitly on every
 field.
+
+**R11 — English is US English.** Prose everywhere — comments, design documents, commit messages,
+HUD strings — spells color, behavior, meter, center, gray. New identifiers do the same, under one
+exception that outranks it: a name extending a family the tree already has matches that family's
+spelling — an `orderSpeedCapMetresPerSec` beside `maxSpeedMetresPerSec`, never a `MetersPerSec`
+beside a `MetresPerSec`, because two spellings of one suffix is a grep that silently misses half
+its answers. The standing UK-spelled families are `*Metres*`/`*_METRES`, `*Colour*`/`*_COLOUR`,
+`Neighbour*`, `*Centre*` and `*_GREY`; each keeps its spelling until it is renamed whole, one
+family per dedicated slice, and leaves this list in the same commit that renames it. Older prose —
+the earlier design documents, the comments beside those families — converts with those slices or
+in a documentation pass of its own; prose written from now on is US English.
 
 ### Worked example — this is the target style
 
@@ -185,7 +196,7 @@ and the two of you take turns undoing each other.
 The tree is formatted and a whole-tree run is a no-op. Keep it that way: format the lines you
 write, and do not reformat files you are only passing through.
 
-Two rules `.clang-tidy` structurally cannot state, so check them by eye:
+Three rules `.clang-tidy` structurally cannot state, so check them by eye:
 
 - **R2's suffixes.** clang-tidy can require an *absent* prefix but cannot ban a *present* suffix,
   so `FooBase` slips through it entirely. A bare `struct Impl;` is the pimpl idiom and is not a
@@ -193,6 +204,8 @@ Two rules `.clang-tidy` structurally cannot state, so check them by eye:
 - **R7's file naming**, and that a new file is registered in the `.vcxproj` **and** the
   `.filters` (§3). Registering it in one and not the other is the miss §8's checklist exists to
   prevent.
+- **R11's spelling.** No tool in this tree reads English. The family list in R11 is greppable, and
+  review is the gate.
 
 ---
 
@@ -586,6 +599,8 @@ configurations you built.
 
 - [ ] Naming conforms to §1 — `_` on parameters, `m_` on class state, no `I`/`C`/`Base`/`Impl`
       prefixes or suffixes, units in names, `UPPER_CASE` on `constexpr`.
+- [ ] Prose and new identifiers are US English (R11); a name extending a standing UK-spelled
+      family matches that family.
 - [ ] Files are PascalCase, flat, and unique repo-wide — including against the CRT and the STL.
 - [ ] Every added, removed or moved file is in both the `.vcxproj` **and** the `.filters`, and
       `python Build/CheckProjectFiles.py` passes.
