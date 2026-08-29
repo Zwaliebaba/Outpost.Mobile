@@ -272,6 +272,16 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <FxCompile Include="Shaders\BodyBakeMaxCS.hlsl">
+      <ShaderType>Compute</ShaderType>
+      <HeaderFileOutput>CompiledShaders\BodyBakeMaxCS.h</HeaderFileOutput>
+      <VariableName>g_pBodyBakeMaxCS</VariableName>
+    </FxCompile>
+    <FxCompile Include="Shaders\BodyBakeCS.hlsl">
+      <ShaderType>Compute</ShaderType>
+      <HeaderFileOutput>CompiledShaders\BodyBakeCS.h</HeaderFileOutput>
+      <VariableName>g_pBodyBakeCS</VariableName>
+    </FxCompile>
     <FxCompile Include="Shaders\BodyVS.hlsl">
       <ShaderType>Vertex</ShaderType>
       <HeaderFileOutput>CompiledShaders\BodyVS.h</HeaderFileOutput>
@@ -342,6 +352,7 @@
     <!-- Included by the .hlsl files above rather than compiled on their own. FXC tracks
          them as dependencies, so editing one rebuilds both stages that read it. -->
     <None Include="Shaders\Body.hlsli" />
+    <None Include="Shaders\BodyBake.hlsli" />
     <None Include="Shaders\Scene.hlsli" />
     <None Include="Shaders\Decal.hlsli" />
     <None Include="Shaders\Text.hlsli" />

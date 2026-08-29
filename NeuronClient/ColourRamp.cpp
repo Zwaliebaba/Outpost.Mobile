@@ -54,6 +54,18 @@ bool ColourRamp::FromImage(const DdsImage& _image)
   return true;
 }
 
+void ColourRamp::AsBgra(ByteBuffer& _outPixels) const
+{
+  _outPixels.assign(static_cast<std::size_t>(SIDE) * SIDE * 4, 0);
+  for (std::uint32_t texel = 0; texel < SIDE * SIDE; ++texel)
+  {
+    _outPixels[texel * 4 + 0] = static_cast<std::uint8_t>(std::lround(m_rgb[texel * 3 + 2] * 255.0f));
+    _outPixels[texel * 4 + 1] = static_cast<std::uint8_t>(std::lround(m_rgb[texel * 3 + 1] * 255.0f));
+    _outPixels[texel * 4 + 2] = static_cast<std::uint8_t>(std::lround(m_rgb[texel * 3 + 0] * 255.0f));
+    _outPixels[texel * 4 + 3] = 255;
+  }
+}
+
 XMFLOAT3 ColourRamp::Sample(float _u, float _v) const noexcept
 {
   const float lastTexel = static_cast<float>(SIDE - 1);

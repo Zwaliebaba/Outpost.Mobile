@@ -39,6 +39,11 @@ public:
   // the end of the ramp reads the last row rather than wrapping to the first.
   [[nodiscard]] DirectX::XMFLOAT3 Sample(float _u, float _v) const noexcept;
 
+  // The table back as the bytes it was read from, for a caller that needs it as a texture -- the
+  // compute bake samples the ramp on the GPU where everything else on this side samples it here.
+  // The round trip is exact: a channel came in as a byte over 255 and goes back as that byte.
+  void AsBgra(ByteBuffer& _outPixels) const;
+
   [[nodiscard]] bool Loaded() const noexcept
   {
     return m_loaded;

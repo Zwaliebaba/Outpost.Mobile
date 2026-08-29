@@ -23,6 +23,7 @@ struct BodyParams
 {
   static constexpr std::uint32_t MAX_TILES = 8;
   static constexpr std::uint32_t MAX_FLATTEN = 32;
+  static constexpr std::uint32_t MAX_OCTAVES = 8; // one per grid level, and BodyField::MAX_GRID_POWER is eight
 
   struct Tile
   {
@@ -55,7 +56,40 @@ struct BodyParams
   std::uint32_t seedLow = 0;
   std::uint32_t seedHigh = 0;
 
+  // Pow(len * 10, fractalDimension) * the compensated height scale, per tile per octave. It varies
+  // with neither the direction nor the sample, so it is drawn once here rather than evaluated inside
+  // the sample loop -- and putting it in the block rather than beside it is what lets a kernel read
+  // it too. HLSL's pow is a twenty-one-bit exp2/log2 pair; six of them per sample would be the
+  // largest error in a baked body, and there is no reason for the GPU to compute a constant.
+  //
+  // A float4 group per four octaves, so the array packs the same way in a constant buffer.
+  DirectX::XMFLOAT4 octaveAmplitude[MAX_TILES][MAX_OCTAVES / 4]{};
+
   std::uint32_t permutation[Noise3::PERMUTATION_SIZE]{};
+
+  // The two accessors the float4 packing costs. A constant buffer packs an array element to sixteen
+  // bytes whatever its type, so eight floats per tile have to be written as two float4s; these are
+  // what stop every call site from spelling that out, and they add no state to the block.
+  [[nodiscard]] float OctaveAmplitude(std::uint32_t _tile, std::uint32_t _octave) const noexcept
+  {
+    const DirectX::XMFLOAT4& group = octaveAmplitude[_tile][_octave / 4u];
+    const std::uint32_t within = _octave % 4u;
+    return (within == 0u) ? group.x : ((within == 1u) ? group.y : ((within == 2u) ? group.z : group.w));
+  }
+
+  void SetOctaveAmplitude(std::uint32_t _tile, std::uint32_t _octave, float _value) noexcept
+  {
+    DirectX::XMFLOAT4& group = octaveAmplitude[_tile][_octave / 4u];
+    const std::uint32_t within = _octave % 4u;
+    if (within == 0u)
+      group.x = _value;
+    else if (within == 1u)
+      group.y = _value;
+    else if (within == 2u)
+      group.z = _value;
+    else
+      group.w = _value;
+  }
 };
 
 static_assert(sizeof(BodyParams) % 16 == 0, "BodyParams is laid out for a constant buffer");

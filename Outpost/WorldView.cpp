@@ -754,6 +754,28 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
   XMStoreFloat4x4(&world, XMMatrixScaling(GROUND_SIZE, 1.0f, GROUND_SIZE) * XMMatrixTranslation(target.x, 0.0f, target.z));
   _renderer.DrawMesh(_gpu, m_quadMesh, world, GROUND_COLOUR, 0.0f, true);
 
+  // The bodies' world matrices, built here because the ocean needs them before the hulls and the
+  // terrain needs the same ones after. One transform per body per frame, not two.
+  m_bodyWorlds.clear();
+  for (const BodyView& body : m_bodies)
+  {
+    const XMMATRIX orientation =
+      XMMatrixMultiply(XMLoadFloat3x3(&body.tumble), XMMatrixRotationAxis(XMLoadFloat3(&body.spinAxis), body.spinRad));
+    XMFLOAT4X4 bodyWorld;
+    XMStoreFloat4x4(&bodyWorld, XMMatrixMultiply(orientation, XMMatrixTranslation(ViewX(body.centre), body.centreY, ViewZ(body.centre))));
+    m_bodyWorlds.push_back(bodyWorld);
+  }
+
+  // The oceans, in the opaque pass and before the hulls. They go through the scene pass, so they are
+  // in the depth buffer by the time the terrain draws over them; the coast dips below sea level, so
+  // the shore hides behind the water rather than meeting it edge-on (Design/PlanetRenderer.md 5.5).
+  // The same world matrix as the terrain, spin included, so the sea turns with the land.
+  for (std::size_t i = 0; i < m_bodies.size(); ++i)
+  {
+    if (m_bodies[i].ocean != INVALID_MESH)
+      _renderer.DrawMesh(_gpu, m_bodies[i].ocean, m_bodyWorlds[i], m_bodies[i].oceanColour, 0.0f, false);
+  }
+
   const std::span<const Game::ShipSnapshot> state = Ships();
   for (size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
   {
@@ -802,18 +824,8 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
   // it, goes through the scene pass and has to be in the depth buffer before the coast dips into it.
   if (m_bodyRenderer != nullptr && !m_bodies.empty())
   {
-    // Built once and read twice: the world matrix of a body is four transforms and the second pass
-    // wants exactly the matrix the first one used, not one recomputed from a spin that has not moved.
-    m_bodyWorlds.clear();
-    for (const BodyView& body : m_bodies)
-    {
-      const XMMATRIX orientation =
-        XMMatrixMultiply(XMLoadFloat3x3(&body.tumble), XMMatrixRotationAxis(XMLoadFloat3(&body.spinAxis), body.spinRad));
-      XMFLOAT4X4 bodyWorld;
-      XMStoreFloat4x4(&bodyWorld, XMMatrixMultiply(orientation, XMMatrixTranslation(ViewX(body.centre), body.centreY, ViewZ(body.centre))));
-      m_bodyWorlds.push_back(bodyWorld);
-    }
-
+    // The matrices were built above, before the oceans drew: the two passes here want exactly the
+    // ones the water used, not ones recomputed from a spin that has not moved since.
     m_bodyRenderer->Begin(_gpu, frame.viewProj, frame.lightDir, frame.ambient, frame.cameraPos, BODY_OVERLAY);
     for (std::size_t i = 0; i < m_bodies.size(); ++i)
       m_bodyRenderer->DrawMain(_gpu, m_bodies[i].terrain, m_bodyWorlds[i]);

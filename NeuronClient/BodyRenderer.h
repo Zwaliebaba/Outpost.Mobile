@@ -2,6 +2,8 @@
 
 #include "RenderTypes.h"
 
+#include "BodyParams.h"
+#include "ColourRamp.h"
 #include "FxVertex.h"
 #include "GpuDevice.h"
 
@@ -64,6 +66,20 @@ public:
   // Returns INVALID_BODY on an empty list. A handle is an index and stays valid for the run.
   [[nodiscard]] BodyHandle UploadBody(GpuDevice& _gpu, std::span<const FxVertex> _verts);
 
+  // Records the bake of one body straight into a new default-heap buffer: three dispatches, two UAV
+  // barriers, and a transition to VERTEX_AND_CONSTANT_BUFFER. Usable after the list runs, exactly
+  // like UploadBody, and returning the same kind of handle -- the two producers make the same
+  // vertices and everything downstream of them is identical (Design/PlanetRenderer.md 17).
+  //
+  // _gridPower is the body's, and the caller passes the ramp its class uses; the ocean is not baked,
+  // because three thousand triangles through the scene pass buy nothing from a kernel.
+  [[nodiscard]] BodyHandle BakeBody(GpuDevice& _gpu, const BodyParams& _params, const ColourRamp& _ramp);
+
+  // Debug only, and the whole of slice 6's acceptance: copies a baked body back through a READBACK
+  // heap so it can be compared with what BodyMeshBuilder makes of the same description. It opens and
+  // closes its own upload bracket and blocks on the GPU, so it belongs at boot and nowhere else.
+  void ReadBackBody(GpuDevice& _gpu, BodyHandle _body, std::vector<FxVertex>& _out);
+
   // Releases the staging buffers of every upload recorded since the last call. Only safe once the
   // command list carrying those copies has run.
   void DiscardStaging() noexcept;
@@ -92,6 +108,7 @@ public:
 
 private:
   void CreatePipelines(GpuDevice& _gpu);
+  void CreateBakePipelines(GpuDevice& _gpu);
   void Draw(GpuDevice& _gpu, ID3D12PipelineState* _pso, BodyHandle _body, const DirectX::XMFLOAT4X4& _world);
 
   GpuPtr<ID3D12RootSignature> m_rootSignature;
@@ -100,8 +117,17 @@ private:
   GpuPtr<ID3D12DescriptorHeap> m_srvHeap; // one slot: the outline
   GpuPtr<ID3D12Resource> m_outline;
   GpuPtr<ID3D12Resource> m_outlineStaging;
+  // The compute side. It has its own root signature for the reason the graphics side has its own: a
+  // compute root signature cannot carry ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT and this one carries two
+  // UAVs, which the drawing one has no use for.
+  GpuPtr<ID3D12RootSignature> m_bakeRootSignature;
+  GpuPtr<ID3D12PipelineState> m_bakeMaxPso;
+  GpuPtr<ID3D12PipelineState> m_bakePso;
+  std::uint32_t m_srvStride = 0;
+
   std::vector<GpuMesh> m_bodies;
-  std::vector<GpuPtr<ID3D12Resource>> m_staging; // until DiscardStaging
+  std::vector<GpuPtr<ID3D12Resource>> m_staging;         // until DiscardStaging
+  std::vector<GpuPtr<ID3D12DescriptorHeap>> m_bakeHeaps; // one per bake, alive until its list has run
   bool m_outlineReady = false;
 };
 } // namespace Neuron

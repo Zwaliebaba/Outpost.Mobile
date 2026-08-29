@@ -185,16 +185,47 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
     const BodyDesc desc = RandomBody(bodySeed, bodyClass, _radiusMetres);
     const ColourRamp& ramp = m_ramps[static_cast<std::size_t>(bodyClass)];
 
-    std::vector<FxVertex> terrain;
+    const BodyClassSpec& spec = BodyClassOf(bodyClass);
+    std::vector<MeshVertex> ocean;
     BodyBuildStats stats;
-    BodyMeshBuilder::Build(BodyField(desc), ramp.Loaded() ? &ramp : nullptr, terrain, stats);
+    const XMFLOAT3 oceanColour(spec.oceanColour.r, spec.oceanColour.g, spec.oceanColour.b);
 
-    const BodyHandle handle = m_bodyRenderer.UploadBody(m_gpu, terrain);
+    BodyHandle handle = INVALID_BODY;
+    if constexpr (BODY_BAKE_ON_GPU)
+    {
+      // The kernel writes the vertices; this side draws the random numbers into the block and builds
+      // the water, which needs no height. No BodyField is constructed at all -- its two measurement
+      // passes over the grid are exactly what the first two dispatches replace.
+      const BodyParams params = BodyField::ParamsFor(desc);
+      BodyMeshBuilder::BuildOcean(params, oceanColour, ocean);
+      handle = m_bodyRenderer.BakeBody(m_gpu, params, ramp);
+
+      // A baked body writes a degenerate where the builder culls, so its triangle count is every
+      // cell and the sea floor is in it. There is no CPU-side cull count on this path and the
+      // readout says so rather than reporting a zero that would read as "nothing was culled".
+      const std::uint32_t cells = (1u << static_cast<std::uint32_t>(params.outsideMaxHeightGrid.z));
+      stats.trianglesEmitted = CUBE_FACE_COUNT * cells * cells * 2u;
+    }
+    else
+    {
+      std::vector<FxVertex> terrain;
+      BodyMeshBuilder::Build(BodyField(desc), ramp.Loaded() ? &ramp : nullptr, terrain, ocean, oceanColour, stats);
+      handle = m_bodyRenderer.UploadBody(m_gpu, terrain);
+    }
+
     if (handle == INVALID_BODY)
       return;
 
     WorldView::BodyView view;
     view.terrain = handle;
+    // The ocean goes through the scene renderer's own mesh path, so it is an upload-heap mesh like a
+    // hull rather than one of the body renderer's staged buffers. Three thousand triangles is what
+    // that path's comment argues for; seven megabytes of terrain is what it argues against.
+    if (!ocean.empty())
+    {
+      view.ocean = m_sceneRenderer.UploadMesh(m_gpu, ocean);
+      view.oceanColour = spec.oceanColour;
+    }
     view.centre = Game::LocalPos(std::sin(_bearingRad) * _distanceMetres, std::cos(_bearingRad) * _distanceMetres);
     // A planet floats clear of the ground quad; a rock rests on it, the way a Structure does.
     view.centreY = _asteroid ? _radiusMetres : _radiusMetres * BODY_PLANET_LIFT;
@@ -214,7 +245,8 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
     }
 
     m_view.AddBody(view);
-    DebugTrace("body: {} triangles, maximum height {} m, radius {} m\n", stats.trianglesEmitted, stats.maxHeightMetres, _radiusMetres);
+    DebugTrace("body: {} triangles ({} culled at sea level), {} ocean triangles, maximum height {} m, radius {} m\n",
+               stats.trianglesEmitted, stats.trianglesCulled, ocean.size() / 3, stats.maxHeightMetres, _radiusMetres);
   };
 
   const float planetRadius =

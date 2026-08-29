@@ -177,6 +177,12 @@
     </None>
   </ItemGroup>
   <ItemGroup>
+    <FxCompile Include="Shaders\BodyBakeMaxCS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\BodyBakeCS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
     <FxCompile Include="Shaders\BodyVS.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
@@ -218,6 +224,9 @@
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
+    <None Include="Shaders\BodyBake.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
     <None Include="Shaders\Body.hlsli">
       <Filter>Shaders</Filter>
     </None>
