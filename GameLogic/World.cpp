@@ -10,7 +10,7 @@ using namespace DirectX;
 
 namespace Game
 {
-ShipId World::SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint32_t _hullId)
+ShipId World::SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint32_t _hullId, FactionId _factionId)
 {
   ShipState ship;
   ship.posWorld = _posWorld;
@@ -18,6 +18,7 @@ ShipId World::SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint3
   ship.headingRad = _headingRad;
   ship.prevHeading = _headingRad;
   ship.hullId = _hullId;
+  ship.factionId = _factionId;
 
   const ShipId id = static_cast<ShipId>(m_ships.size());
   m_ships.push_back(ship);
@@ -51,6 +52,11 @@ bool World::DespawnShip(ShipHandle _handle)
   const ShipId id = Resolve(_handle);
   if (id == INVALID_SHIP_ID)
     return false;
+
+  // Logged before the slot is retired, so the publisher can tell this death from a departure. A
+  // despawn no subscriber held is dropped when the log is drained: you cannot be told of the death
+  // of something you never knew about (Design/Hostiles.md 4.4).
+  m_despawnLog.push_back(_handle);
 
   const ShipId last = static_cast<ShipId>(m_ships.size() - 1);
   if (id != last)
@@ -444,7 +450,8 @@ void World::Step()
   ++m_tick;
 }
 
-float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _point, bool _hasFacing, float _facingRad)
+float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _point, bool _hasFacing, float _facingRad,
+                            FactionId _issuerFaction)
 {
   // An order can arrive before the first tick, so the grid a route is planned against has to be
   // current here rather than only at the top of Step.
@@ -454,7 +461,10 @@ float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _poi
   chosen.reserve(_ships.size());
   for (const ShipId id : _ships)
   {
-    if (id < m_ships.size())
+    // Somebody else's ship is dropped the way a stale id already is. The rest of the list is still
+    // steered, and an order that loses every ship returns the facing it was given, exactly as an
+    // empty list does (Design/Hostiles.md 4.3).
+    if (id < m_ships.size() && m_ships[id].factionId == _issuerFaction)
       chosen.push_back(id);
   }
   if (chosen.empty())

@@ -30,9 +30,14 @@ class World;
 // One ship as a client is allowed to see it.
 //
 // Not ShipState. The seam exists to make "what the client may know" a reviewable list rather than
-// whatever happens to be in a struct: steerTargetPos, orderFacingRad, orderHasFacing and
-// avoidHeadingRad are deliberately absent, because together they tell any client exactly what every
-// ship intends to do next. That is a decision to take once, here, rather than to discover later.
+// whatever happens to be in a struct: steerTargetPos, orderFacingRad, orderHasFacing,
+// avoidHeadingRad and the order's speed cap are deliberately absent, because together they tell any
+// client exactly what every ship intends to do next. That is a decision to take once, here, rather
+// than to discover later.
+//
+// factionId is on the list on purpose, and what is *not* beside it matters as much: there is no NPC
+// flag, so a client cannot tell a player's ship from an NPC's -- the day real players fly beside
+// NPCs in one faction, nothing on the wire changes (Design/Hostiles.md 4.2).
 struct ShipSnapshot
 {
   ShipHandle handle; // not ShipId -- that is an array index, and despawn moves it (ADR 0005)
@@ -44,6 +49,7 @@ struct ShipSnapshot
   float accelSample = 0.0f;
   float turnRateRadPerSec = 0.0f;
   OrderState order = OrderState::Idle;
+  FactionId factionId = FACTION_PLAYER;
   std::uint32_t hullId = 0;
 };
 
@@ -72,7 +78,8 @@ struct MoveOrder
 //
 // Two shapes, and the difference is what slice 6 added. Write sends every entity every time, which
 // is what slice 2b built and what the benchmark measures against. WriteInterest sends one
-// subscriber's view: the entities that entered or came due, and the bare handles of those that left.
+// subscriber's view: the entities that entered or came due, the bare handles of those that left, and
+// separately the handles of those that were destroyed.
 //
 // Returns the number of fragments sent, or 0 if the transport refused the first one. A refusal
 // part-way through is not retried: the receiver drops an incomplete snapshot whole, and the next
@@ -84,8 +91,13 @@ public:
 
   // One subscriber's update. _sent are handles to carry in full -- entered and refreshed together,
   // because the wire cannot tell them apart and the receiver upserts either way. _left are dropped.
+  //
+  // _destroyed are dropped too, and additionally stated to have died: a leave means "no longer in
+  // your view" and nothing more, which is what it always meant, so a client can stop inferring a
+  // death from an absence (Design/Hostiles.md 4.4). A handle belongs in one list, never both; the
+  // caller decides which and the writer does not check.
   std::uint32_t WriteInterest(const World& _world, std::span<const ShipHandle> _sent, std::span<const ShipHandle> _left,
-                              Neuron::Transport& _transport);
+                              std::span<const ShipHandle> _destroyed, Neuron::Transport& _transport);
 
   // Bytes the last Write or WriteInterest put on the wire, and how many ship records it carried.
   // The benchmark in slice 6's acceptance is this pair against a growing world.
@@ -133,6 +145,13 @@ public:
     return m_hasSnapshot;
   }
 
+  // The handles the last applied update said were destroyed, as distinct from those that merely left
+  // this subscriber's view. Valid until the next update applies; empty for a full snapshot.
+  [[nodiscard]] std::span<const ShipHandle> Destroyed() const noexcept
+  {
+    return m_destroyed;
+  }
+
   // Diagnostics: snapshots abandoned because a fragment never arrived.
   [[nodiscard]] std::uint32_t DroppedSnapshotCount() const noexcept
   {
@@ -147,6 +166,8 @@ private:
   // fragments land would leave the world half-updated if one never arrived.
   std::vector<ShipSnapshot> m_pendingUpserts;
   std::vector<ShipHandle> m_pendingLeaves;
+  std::vector<ShipHandle> m_pendingDestroyed;
+  std::vector<ShipHandle> m_destroyed; // what the last applied update stated, for Destroyed()
   WorldSnapshot m_latest;
   std::uint32_t m_buildingId = 0;
   std::uint64_t m_buildingTick = 0;

@@ -9,6 +9,15 @@ namespace Game
 using ShipId = std::uint32_t;
 inline constexpr ShipId INVALID_SHIP_ID = 0xFFFFFFFFu;
 
+// Whose a ship is. The server states an identity and every client maps that identity to a relation
+// of its own -- "hostile" is the client's word, never the wire's, which is what lets standings,
+// diplomacy or a spoofed transponder arrive later as a mapping change rather than as a new field.
+// It is not an NPC flag and must not become one: a client cannot tell a player's ship from an NPC's,
+// which is the correct amount of knowledge (Design/Hostiles.md 4.1).
+using FactionId = std::uint8_t;
+inline constexpr FactionId FACTION_PLAYER = 0;
+inline constexpr FactionId FACTION_HOSTILE = 1;
+
 // A reference to a ship that survives a despawn.
 //
 // ShipId is a dense array index, which is what makes iteration cheap and is why it stays. The cost
@@ -84,5 +93,9 @@ struct ShipState
   // Which hull this ship uses. The simulation resolves it to a HullSpec; the view resolves it to a
   // mesh, and neither knows about the other's table.
   std::uint32_t hullId = 0;
+
+  // Whose ship this is. Simulation state by AGENTS.md 5's own test -- a spectator would need it --
+  // and it travels in the snapshot record like everything else here.
+  FactionId factionId = FACTION_PLAYER;
 };
 } // namespace Game

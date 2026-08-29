@@ -45,3 +45,5 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0010](0010-interest-sets-are-sorted-vectors.md) | Interest sets are sorted vectors, not hash maps | accepted |
 | [0011](0011-ship-meshes-are-nmo-and-its-tools-are-python.md) | Ship meshes are NMO v2, and its reference tooling is Python | accepted |
 | [0012](0012-randomness-is-one-pcg32-in-neuroncore.md) | Randomness is one seeded PCG32, and it lives in NeuronCore | accepted |
+| [0013](0013-allegiance-is-identity-on-the-wire.md) | Allegiance is identity on the wire, not a relation | accepted |
+| [0014](0014-command-authority-is-gated-in-the-simulation.md) | Command authority is gated in the simulation, not the adapter | accepted |

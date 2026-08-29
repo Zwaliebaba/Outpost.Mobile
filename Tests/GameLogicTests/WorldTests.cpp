@@ -104,6 +104,35 @@ public:
     }
   }
 
+  TEST_METHOD(TheDespawnLogHoldsUntilDrained)
+  {
+    // The log is the publisher's, not the tick's. An interest update happens once every six ticks,
+    // so a log cleared by Step would lose every death that did not fall on the tick an update
+    // happened to land on (Design/Hostiles.md 4.4).
+    Game::World world;
+    std::vector<Game::ShipHandle> doomed;
+    for (int at = 0; at < 3; ++at)
+      doomed.push_back(world.HandleOf(world.SpawnShip(Game::LocalPos(static_cast<float>(at) * 100.0f, 0.0f), 0.0f, 0)));
+    Assert::IsTrue(world.DespawnLog().empty(), L"a world that has killed nothing logged a death");
+
+    for (const Game::ShipHandle handle : doomed)
+    {
+      Assert::IsTrue(world.DespawnShip(handle), L"the despawn failed");
+      world.Step();
+    }
+
+    Assert::AreEqual(doomed.size(), world.DespawnLog().size(), L"three despawns across three ticks did not all survive to be read");
+    for (std::size_t at = 0; at < doomed.size(); ++at)
+      Assert::IsTrue(world.DespawnLog()[at] == doomed[at], L"the log is not in despawn order");
+
+    // A despawn that failed is not a death, and a Step is not a drain.
+    Assert::IsFalse(world.DespawnShip(doomed[0]), L"despawning the same handle twice succeeded");
+    Assert::AreEqual(doomed.size(), world.DespawnLog().size(), L"a failed despawn was logged");
+
+    world.ClearDespawnLog();
+    Assert::IsTrue(world.DespawnLog().empty(), L"the log was not drained");
+  }
+
   TEST_METHOD(ADefaultHandleIsNull)
   {
     Game::World world;

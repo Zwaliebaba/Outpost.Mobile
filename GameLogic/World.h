@@ -25,13 +25,36 @@ class World
 public:
   // Adds a ship at rest. Returns its id, which is its index for as long as nothing is despawned.
   // Take HandleOf if the reference has to outlive a tick.
-  ShipId SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint32_t _hullId);
+  //
+  // The faction defaults because every existing caller -- the starting fleet, every test -- spawns
+  // the player's own ships, so the default states what those call sites already mean rather than
+  // papering over them. A caller that means someone else has to say so (Design/Hostiles.md 11).
+  ShipId SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint32_t _hullId, FactionId _factionId = FACTION_PLAYER);
 
   // Removes a ship, moving the last one into its slot. False means the handle was already stale.
   //
   // Every stored reference to the removed ship stops resolving; every stored reference to the ship
   // that moved keeps resolving, to the same ship. That second half is the reason handles exist.
   bool DespawnShip(ShipHandle _handle);
+
+  // Handles despawned since the last ClearDespawnLog, in despawn order. The publisher drains it once
+  // per interest update, so a subscriber hears about every death in the interval and not only the
+  // ones on the tick the update happened to fall on.
+  //
+  // It exists so that the wire can say *destroyed* where it previously said only *left*: a client
+  // that infers a death from an absence detonates every ship that merely flies out of its interest
+  // radius, which is where a hostile patrol lives (Design/Hostiles.md 4.4). Step never clears it --
+  // it is the publisher's, and there is one publisher today; the day there are several it becomes
+  // per-subscriber.
+  [[nodiscard]] std::span<const ShipHandle> DespawnLog() const noexcept
+  {
+    return m_despawnLog;
+  }
+
+  void ClearDespawnLog() noexcept
+  {
+    m_despawnLog.clear();
+  }
 
   // The handle for a live ship. Null (generation 0) if the id is not one.
   [[nodiscard]] ShipHandle HandleOf(ShipId _id) const noexcept;
@@ -78,7 +101,14 @@ public:
   // lives here, with the order, rather than being guessed at again on the other side.
   //
   // With no ordered facing the formation points along the way the group is about to travel.
-  float IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _point, bool _hasFacing, float _facingRad);
+  //
+  // A ship whose faction is not the issuer's is dropped from the order exactly as a stale id is --
+  // left out, not an error. The gate is here rather than in the host's adapter because the adapter
+  // has no test suite and every future host, a dedicated server or a replay driver among them, would
+  // otherwise have to remember the check: the simulation refusing is a property, an adapter refusing
+  // is a convention (Design/Hostiles.md 4.3).
+  float IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _point, bool _hasFacing, float _facingRad,
+                       FactionId _issuerFaction = FACTION_PLAYER);
 
   [[nodiscard]] std::span<const ShipState> Ships() const noexcept
   {
@@ -136,6 +166,7 @@ private:
   std::vector<std::uint32_t> m_shipSlot; // parallel to m_ships: which slot each ship owns
   std::vector<Slot> m_slots;
   std::vector<std::uint32_t> m_freeSlots; // reused last-in-first-out, so reuse is reproducible
+  std::vector<ShipHandle> m_despawnLog;   // drained by the publisher, never by Step
   std::uint64_t m_tick = 0;
 
   SpatialIndex m_index;

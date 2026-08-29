@@ -7,7 +7,9 @@
 #include "Simulation.h"
 #include "Transport.h"
 
+#include <algorithm>
 #include <array>
+#include <iterator>
 #include <span>
 #include <vector>
 
@@ -63,10 +65,37 @@ private:
     m_sendScratch.clear();
     m_sendScratch.insert(m_sendScratch.end(), m_interest.Entered().begin(), m_interest.Entered().end());
     m_sendScratch.insert(m_sendScratch.end(), m_interest.Refreshed().begin(), m_interest.Refreshed().end());
+    SplitTheLost();
     if (m_sendScratch.empty() && m_interest.Left().empty())
       return; // nothing changed and nothing came due; an empty update is not information
 
-    (void)m_writer.WriteInterest(m_world, m_sendScratch, m_interest.Left(), *m_transport);
+    (void)m_writer.WriteInterest(m_world, m_sendScratch, m_leftScratch, m_destroyedScratch, *m_transport);
+  }
+
+  // Which of this update's leaves were deaths. A despawned ship the subscriber held always turns up
+  // in Left() -- InterestTests::ADespawnedShipLeavesTheSet is that guarantee -- so the world's
+  // despawn log intersected with Left() is exactly the set that died in view; the rest merely went
+  // out of range (Design/Hostiles.md 4.4).
+  //
+  // Left() is sorted (ADR 0010) and the log is a handful of handles, so this is a walk of the log
+  // with a binary search into Left(). The log is drained on every due update rather than only on the
+  // ones that send, since a despawn no subscriber held has nobody left to tell and would otherwise
+  // sit in the log for the rest of the match.
+  void SplitTheLost()
+  {
+    const std::span<const Game::ShipHandle> left = m_interest.Left();
+    m_destroyedScratch.clear();
+    for (const Game::ShipHandle dead : m_world.DespawnLog())
+    {
+      if (std::binary_search(left.begin(), left.end(), dead, Game::HandleOrderBefore))
+        m_destroyedScratch.push_back(dead);
+    }
+    m_world.ClearDespawnLog();
+
+    std::sort(m_destroyedScratch.begin(), m_destroyedScratch.end(), Game::HandleOrderBefore);
+    m_leftScratch.clear();
+    std::set_difference(left.begin(), left.end(), m_destroyedScratch.begin(), m_destroyedScratch.end(), std::back_inserter(m_leftScratch),
+                        Game::HandleOrderBefore);
   }
 
   // Where the subscriber is looking. With one client every ship is its own, so this is the fleet's
@@ -122,7 +151,7 @@ private:
           m_resolved.push_back(id);
       }
       if (!m_resolved.empty())
-        (void)m_world.IssueMoveOrder(m_resolved, order.destination, order.hasFacing, order.facingRad);
+        (void)m_world.IssueMoveOrder(m_resolved, order.destination, order.hasFacing, order.facingRad, m_subscriberFaction);
     }
   }
 
@@ -130,7 +159,14 @@ private:
   Neuron::Transport* m_transport = nullptr;
   Game::SnapshotWriter m_writer;
   Game::InterestSet m_interest;
+
+  // Whose orders this subscriber may give. One subscriber today, so it is the player's; the day a
+  // real player connects, this comes from the session -- the same sentence SubscriberCentre carries.
+  Game::FactionId m_subscriberFaction = Game::FACTION_PLAYER;
+
   std::vector<Game::ShipId> m_resolved;
   std::vector<Game::ShipHandle> m_sendScratch;
+  std::vector<Game::ShipHandle> m_leftScratch;
+  std::vector<Game::ShipHandle> m_destroyedScratch;
 };
 } // namespace Outpost

@@ -35,9 +35,30 @@ public:
   std::size_t refuseFrom = static_cast<std::size_t>(-1); // refuse once this many have been sent
 };
 
-Game::ShipId SpawnAt(Game::World& _world, float _x, float _z, Game::HullId _hull = Game::HullId::Corvette)
+Game::ShipId SpawnAt(Game::World& _world, float _x, float _z, Game::HullId _hull = Game::HullId::Corvette,
+                     Game::FactionId _faction = Game::FACTION_PLAYER)
 {
-  return _world.SpawnShip(Game::LocalPos(_x, _z), 0.0f, static_cast<std::uint32_t>(_hull));
+  return _world.SpawnShip(Game::LocalPos(_x, _z), 0.0f, static_cast<std::uint32_t>(_hull), _faction);
+}
+
+[[nodiscard]] bool Holds(std::span<const Game::ShipHandle> _set, Game::ShipHandle _handle)
+{
+  for (const Game::ShipHandle handle : _set)
+  {
+    if (handle == _handle)
+      return true;
+  }
+  return false;
+}
+
+[[nodiscard]] const Game::ShipSnapshot* Find(const Game::WorldSnapshot& _snapshot, Game::ShipHandle _handle)
+{
+  for (const Game::ShipSnapshot& ship : _snapshot.ships)
+  {
+    if (ship.handle == _handle)
+      return &ship;
+  }
+  return nullptr;
 }
 } // namespace
 
@@ -56,8 +77,10 @@ public:
 
   TEST_METHOD(OneShipRoundTripsFieldForField)
   {
+    // Spawned hostile so that every field is compared against a value that is not its default: a
+    // faction that round-trips only because both ends default to zero proves nothing.
     Game::World world;
-    const Game::ShipId ship = SpawnAt(world, 120.0f, -340.0f, Game::HullId::Frigate);
+    const Game::ShipId ship = SpawnAt(world, 120.0f, -340.0f, Game::HullId::Frigate, Game::FACTION_HOSTILE);
     const Game::ShipId order[] = {ship};
     world.IssueMoveOrder(order, Game::LocalPos(0.0f, 600.0f), false, 0.0f);
     for (int tick = 0; tick < 30; ++tick)
@@ -85,7 +108,103 @@ public:
     Assert::AreEqual(source.accelSample, copy.accelSample, 0.0f, L"accelSample did not survive");
     Assert::AreEqual(source.turnRateRadPerSec, copy.turnRateRadPerSec, 0.0f, L"turnRateRadPerSec did not survive");
     Assert::AreEqual(source.order, copy.order, L"the order state did not survive");
+    Assert::AreEqual(source.factionId, copy.factionId, L"factionId did not survive");
     Assert::AreEqual(source.hullId, copy.hullId, L"hullId did not survive");
+  }
+
+  TEST_METHOD(FactionSurvivesTheWire)
+  {
+    // Both shapes of send, because they are the two the game uses and only one of them is exercised
+    // by the round-trip test above.
+    Game::World world;
+    const Game::ShipId ours = SpawnAt(world, 0.0f, 0.0f, Game::HullId::Corvette, Game::FACTION_PLAYER);
+    const Game::ShipId theirs = SpawnAt(world, 200.0f, 0.0f, Game::HullId::Interceptor, Game::FACTION_HOSTILE);
+    world.Step();
+
+    const Game::ShipHandle ourHandle = world.HandleOf(ours);
+    const Game::ShipHandle theirHandle = world.HandleOf(theirs);
+
+    CaptureTransport whole;
+    Game::SnapshotWriter writer;
+    Assert::IsTrue(writer.Write(world, whole) > 0, L"the full snapshot did not send");
+    Game::SnapshotReceiver fromWhole;
+    for (const std::vector<std::uint8_t>& datagram : whole.sent)
+      (void)fromWhole.Accept(datagram);
+    Assert::IsTrue(Find(fromWhole.Latest(), ourHandle) != nullptr, L"the player's ship is missing from the full snapshot");
+    Assert::AreEqual(Game::FACTION_PLAYER, Find(fromWhole.Latest(), ourHandle)->factionId, L"the player's faction did not survive Write");
+    Assert::AreEqual(Game::FACTION_HOSTILE, Find(fromWhole.Latest(), theirHandle)->factionId, L"the hostile faction did not survive Write");
+
+    world.Step();
+    CaptureTransport update;
+    const Game::ShipHandle both[] = {ourHandle, theirHandle};
+    Assert::IsTrue(writer.WriteInterest(world, both, {}, {}, update) > 0, L"the interest update did not send");
+    Game::SnapshotReceiver fromUpdate;
+    for (const std::vector<std::uint8_t>& datagram : update.sent)
+      (void)fromUpdate.Accept(datagram);
+    Assert::AreEqual(Game::FACTION_PLAYER, Find(fromUpdate.Latest(), ourHandle)->factionId,
+                     L"the player's faction did not survive WriteInterest");
+    Assert::AreEqual(Game::FACTION_HOSTILE, Find(fromUpdate.Latest(), theirHandle)->factionId,
+                     L"the hostile faction did not survive WriteInterest");
+  }
+
+  TEST_METHOD(ADeathAndADepartureDifferOnTheWire)
+  {
+    // The distinction the client's explosion hangs on. Until now a leave meant both, so a hostile
+    // patrol crossing the edge of the interest radius detonated on screen while it was alive and
+    // well (Design/Hostiles.md 4.4).
+    //
+    // The split is WorldSimulation's, which lives in the executable and has no suite, so the rule is
+    // restated here against the same two inputs: the world's despawn log, and the interest set's
+    // leaves.
+    Game::World world;
+    const Game::ShipId doomed = SpawnAt(world, 0.0f, 0.0f);
+    const Game::ShipId departing = SpawnAt(world, 100.0f, 0.0f);
+    const Game::ShipHandle doomedHandle = world.HandleOf(doomed);
+    const Game::ShipHandle departingHandle = world.HandleOf(departing);
+    world.Step();
+
+    Game::InterestSet interest;
+    interest.Update(world, Game::LocalPos(0.0f, 0.0f));
+
+    Game::SnapshotWriter writer;
+    Game::SnapshotReceiver receiver;
+    CaptureTransport link;
+    const Game::ShipHandle both[] = {doomedHandle, departingHandle};
+    Assert::IsTrue(writer.WriteInterest(world, both, {}, {}, link) > 0, L"the first update did not send");
+    for (const std::vector<std::uint8_t>& datagram : link.sent)
+      (void)receiver.Accept(datagram);
+    Assert::AreEqual(static_cast<std::size_t>(2), receiver.Latest().ships.size(), L"the client did not take both ships");
+    Assert::IsTrue(receiver.Destroyed().empty(), L"an update that killed nothing reported a death");
+
+    // One dies; the other is left alive but carried out of range by moving the viewpoint, which is
+    // the case a subscriber actually creates. Both drop out on the same update, which is the point:
+    // they arrive in one Left() list and only the log tells them apart.
+    Assert::IsTrue(world.DespawnShip(doomedHandle), L"the despawn failed");
+    world.Step();
+    interest.Update(world, Game::LocalPos(Game::INTEREST_RADIUS_METRES * 3.0f, 0.0f));
+    Assert::AreEqual(static_cast<std::size_t>(2), interest.Left().size(), L"both ships should have dropped out on one update");
+
+    std::vector<Game::ShipHandle> destroyed;
+    std::vector<Game::ShipHandle> left;
+    for (const Game::ShipHandle handle : interest.Left())
+    {
+      if (Holds(world.DespawnLog(), handle))
+        destroyed.push_back(handle);
+      else
+        left.push_back(handle);
+    }
+    Assert::AreEqual(static_cast<std::size_t>(1), destroyed.size(), L"exactly one of the two died");
+    Assert::AreEqual(static_cast<std::size_t>(1), left.size(), L"exactly one of the two merely departed");
+
+    link.sent.clear();
+    Assert::IsTrue(writer.WriteInterest(world, {}, left, destroyed, link) > 0, L"the second update did not send");
+    for (const std::vector<std::uint8_t>& datagram : link.sent)
+      (void)receiver.Accept(datagram);
+
+    Assert::IsTrue(receiver.Latest().ships.empty(), L"the client kept a ship it was told about losing");
+    Assert::AreEqual(static_cast<std::size_t>(1), receiver.Destroyed().size(), L"the update did not state exactly one death");
+    Assert::IsTrue(Holds(receiver.Destroyed(), doomedHandle), L"the despawned ship was not reported destroyed");
+    Assert::IsFalse(Holds(receiver.Destroyed(), departingHandle), L"a ship that only left the radius was reported destroyed");
   }
 
   TEST_METHOD(AWorldTooBigForOneDatagramFragmentsAndReassembles)

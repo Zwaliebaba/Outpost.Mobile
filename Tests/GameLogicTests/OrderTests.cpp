@@ -7,6 +7,36 @@ namespace GameLogicTests
 TEST_CLASS(OrderTests)
 {
 public:
+  TEST_METHOD(AnOrderFromTheWrongFactionSteersNothing)
+  {
+    // In one process this would be a curiosity; over a wire it is the first exploit, which is why
+    // the filter is in the simulation and not in whichever host happened to hand the order over
+    // (Design/Hostiles.md 4.3).
+    Game::World world;
+    const Game::ShipId ours = world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+    const Game::ShipId alsoOurs = world.SpawnShip(Game::LocalPos(80.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+    const Game::ShipId theirs =
+      world.SpawnShip(Game::LocalPos(160.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_HOSTILE);
+
+    const Game::WorldPos before = world.Ship(theirs).steerTargetPos;
+    const Game::ShipId justTheirs[] = {theirs};
+    (void)world.IssueMoveOrder(justTheirs, Game::LocalPos(0.0f, 900.0f), false, 0.0f);
+    Assert::AreEqual(Game::OrderState::Idle, world.Ship(theirs).order, L"a hostile ship took an order from the player");
+    Assert::IsTrue(IsSamePosition(before, world.Ship(theirs).steerTargetPos), L"a refused order still moved the target point");
+
+    // A mixed list steers the ships that match and drops the one that does not, exactly as a stale
+    // id is dropped -- the order is not refused whole.
+    const Game::ShipId mixed[] = {ours, theirs, alsoOurs};
+    (void)world.IssueMoveOrder(mixed, Game::LocalPos(0.0f, 900.0f), false, 0.0f);
+    Assert::AreEqual(Game::OrderState::Moving, world.Ship(ours).order, L"a matching ship was dropped from a mixed order");
+    Assert::AreEqual(Game::OrderState::Moving, world.Ship(alsoOurs).order, L"a matching ship was dropped from a mixed order");
+    Assert::AreEqual(Game::OrderState::Idle, world.Ship(theirs).order, L"a hostile ship rode in on a mixed order");
+
+    // And the ship is orderable by its own faction: the gate is a comparison, not a ban.
+    (void)world.IssueMoveOrder(justTheirs, Game::LocalPos(0.0f, 900.0f), false, 0.0f, Game::FACTION_HOSTILE);
+    Assert::AreEqual(Game::OrderState::Moving, world.Ship(theirs).order, L"a ship refused an order from its own faction");
+  }
+
   TEST_METHOD(AnArrivalRadiusFitsInsideItsSlot)
   {
     // The trap in scaling both with the hull. Arrival radius and slot spacing grow together, so if
