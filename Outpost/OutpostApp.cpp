@@ -177,7 +177,7 @@ void OutpostApp::Render()
   m_gpu.BeginFrame(SKY_COLOUR);
   m_textRenderer.BeginFrame();
 
-  m_view.Render(m_sceneRenderer, m_gpu, m_textRenderer, m_host.InterpolationAlpha());
+  m_view.Render(m_sceneRenderer, m_gpu, m_textRenderer);
 
   Hud::Frame frame;
   frame.stats.fps = m_clock.Fps();
@@ -207,10 +207,11 @@ void OutpostApp::Run()
 
     Update();
 
-    // The simulation runs at its own fixed rate; the render frame interpolates between its last two
-    // ticks. Time scaling stretches the simulation only, so the display stays at the refresh rate.
-    // Both ends stand on the same tick, so a latency of N means N ticks either way. Advancing them
-    // before the host runs is what lets an order sent this frame be drained by this frame's tick.
+    // The simulation runs at its own fixed rate; the render frame interpolates between the last two
+    // snapshots either side of a display time held a little behind the tick. Time scaling stretches
+    // the simulation only, so the display stays at the refresh rate. Both ends stand on the same
+    // tick, so a latency of N means N ticks either way. Advancing them before the host runs is what
+    // lets an order sent this frame be drained by this frame's tick.
     m_serverLink.AdvanceTo(m_host.Tick());
     m_clientLink.AdvanceTo(m_host.Tick());
 
@@ -220,10 +221,14 @@ void OutpostApp::Run()
       m_serverLink.AdvanceTo(m_host.Tick());
       m_clientLink.AdvanceTo(m_host.Tick());
       m_view.PumpNetwork();
+      m_view.SetDisplayTime(static_cast<float>(m_host.Tick()));
       m_view.SampleTrails();
     }
     if (steps == 0)
       m_view.PumpNetwork(); // a frame with no tick still delivers what latency has made due
+
+    // The frame falls part-way through a tick; the view reads its poses at that fraction.
+    m_view.SetDisplayTime(static_cast<float>(m_host.Tick()) + m_host.InterpolationAlpha());
 
     // Feedback eases on real time rather than sim time, so it stays smooth however far the
     // swapchain runs ahead of the tick rate.

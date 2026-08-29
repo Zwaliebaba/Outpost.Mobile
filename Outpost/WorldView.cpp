@@ -56,6 +56,7 @@ void WorldView::PumpNetwork()
 void WorldView::ApplySnapshot()
 {
   const std::vector<Game::ShipSnapshot>& ships = m_receiver.Latest().ships;
+  const std::uint64_t tick = m_receiver.Latest().tick;
 
   m_carryScratch.clear();
   m_carryHandles.clear();
@@ -81,7 +82,21 @@ void WorldView::ApplySnapshot()
 
     if (found < m_carryScratch.size())
     {
-      m_ships.push_back(std::move(m_carryScratch[found]));
+      ShipView& view = m_carryScratch[found];
+
+      // An update upserts, so a record the priority accumulator skipped is still in the snapshot
+      // and reads exactly as it did last time. Only a record that actually changed is a new sample;
+      // the tick it describes is the update's, since every record in one update was written on the
+      // same tick. A ship that is genuinely still gets no new sample and holds, which is right.
+      const bool changed = view.to.pos.sectorX != ship.posWorld.sectorX || view.to.pos.sectorZ != ship.posWorld.sectorZ ||
+                           view.to.pos.localX != ship.posWorld.localX || view.to.pos.localZ != ship.posWorld.localZ ||
+                           view.to.headingRad != ship.headingRad;
+      if (changed)
+      {
+        view.from = view.to;
+        view.to = SampleOf(ship, tick);
+      }
+      m_ships.push_back(std::move(view));
     }
     else
     {
@@ -91,6 +106,8 @@ void WorldView::ApplySnapshot()
       const MeshHandle mesh = (row < m_hullMeshes.size()) ? m_hullMeshes[row] : INVALID_MESH;
       ShipView view;
       view.mesh = mesh;
+      view.to = SampleOf(ship, tick);
+      view.from = view.to; // one sample: it is drawn there until the next one gives it somewhere to go
       if (mesh != INVALID_MESH)
       {
         const MeshData& data = m_meshes->Data(mesh);
@@ -104,6 +121,59 @@ void WorldView::ApplySnapshot()
     }
     m_handles.push_back(ship.handle);
   }
+}
+
+WorldView::MotionSample WorldView::SampleOf(const Game::ShipSnapshot& _ship, std::uint64_t _tick) noexcept
+{
+  MotionSample sample;
+  sample.tick = static_cast<float>(_tick);
+  sample.pos = _ship.posWorld;
+  sample.headingRad = _ship.headingRad;
+  // prevPos is the tick before, so the offset between the two is exactly one tick of travel.
+  sample.velX = Game::OffsetX(_ship.prevPos, _ship.posWorld);
+  sample.velZ = Game::OffsetZ(_ship.prevPos, _ship.posWorld);
+  sample.turnRadPerTick = XMScalarModAngle(_ship.headingRad - _ship.prevHeading);
+  return sample;
+}
+
+void WorldView::SetDisplayTime(float _tickTime) noexcept
+{
+  m_displayTick = _tickTime - INTERP_DELAY_TICKS;
+}
+
+WorldView::DisplayPose WorldView::DisplayedPose(std::size_t _index) const noexcept
+{
+  DisplayPose pose;
+  if (_index >= m_ships.size())
+    return pose;
+
+  const MotionSample& from = m_ships[_index].from;
+  const MotionSample& to = m_ships[_index].to;
+
+  if (m_displayTick <= from.tick || to.tick <= from.tick)
+  {
+    // Before the older sample -- the first frames after a ship appears -- or with only one sample
+    // to go on: hold at the older one rather than invent motion that was never reported.
+    pose.pos = from.pos;
+    pose.headingRad = from.headingRad;
+    return pose;
+  }
+
+  if (m_displayTick <= to.tick)
+  {
+    const float t = (m_displayTick - from.tick) / (to.tick - from.tick);
+    pose.pos = Game::Lerp(from.pos, to.pos, t);
+    pose.headingRad = from.headingRad + XMScalarModAngle(to.headingRad - from.headingRad) * t;
+    return pose;
+  }
+
+  // Past the newest sample: the wire is behind, or this ship refreshes at a lower priority. Carry
+  // it on at its last velocity for a bounded while, then hold.
+  const float ahead = std::min(m_displayTick - to.tick, INTERP_MAX_EXTRAPOLATE_TICKS);
+  pose.pos = to.pos;
+  Game::Translate(pose.pos, to.velX * ahead, to.velZ * ahead);
+  pose.headingRad = to.headingRad + to.turnRadPerTick * ahead;
+  return pose;
 }
 
 void WorldView::ClearSelection() noexcept
@@ -187,17 +257,19 @@ void WorldView::SampleTrails()
     ShipView& view = m_ships[i];
     if (view.thrusterLocals.empty())
       continue;
-    const Game::ShipSnapshot& ship = state[i];
+    // Sampled where the ship is drawn, not where the latest record puts it, or the trail would step
+    // once an update while the hull glides.
+    const DisplayPose pose = DisplayedPose(i);
 
-    const float cosH = std::cos(ship.headingRad);
-    const float sinH = std::sin(ship.headingRad);
+    const float cosH = std::cos(pose.headingRad);
+    const float sinH = std::sin(pose.headingRad);
     view.trailHead = (view.trailHead + 1) % TRAIL_SAMPLES;
     for (size_t nozzle = 0; nozzle < view.thrusterLocals.size(); ++nozzle)
     {
       const XMFLOAT3& local = view.thrusterLocals[nozzle];
-      view.trail[nozzle * TRAIL_SAMPLES + static_cast<size_t>(view.trailHead)] = XMFLOAT3(
-        ViewX(ship.posWorld) + (local.x * cosH + local.z * sinH) * SHIP_SCALE, SHIP_HOVER_HEIGHT + (view.restY + local.y) * SHIP_SCALE,
-        ViewZ(ship.posWorld) + (-local.x * sinH + local.z * cosH) * SHIP_SCALE);
+      view.trail[nozzle * TRAIL_SAMPLES + static_cast<size_t>(view.trailHead)] =
+        XMFLOAT3(ViewX(pose.pos) + (local.x * cosH + local.z * sinH) * SHIP_SCALE, SHIP_HOVER_HEIGHT + (view.restY + local.y) * SHIP_SCALE,
+                 ViewZ(pose.pos) + (-local.x * sinH + local.z * cosH) * SHIP_SCALE);
     }
     view.trailCount = std::min(view.trailCount + 1, TRAIL_SAMPLES);
   }
@@ -263,10 +335,11 @@ void WorldView::UpdateFeedback(float _dtSec)
     if (!m_ships[i].selected || state[i].order != Game::OrderState::Moving)
       continue;
     ++movingCount;
-    centreX += ViewX(state[i].posWorld);
-    centreZ += ViewZ(state[i].posWorld);
-    leadX += std::sin(state[i].headingRad) * state[i].speed;
-    leadZ += std::cos(state[i].headingRad) * state[i].speed;
+    const DisplayPose pose = DisplayedPose(i);
+    centreX += ViewX(pose.pos);
+    centreZ += ViewZ(pose.pos);
+    leadX += std::sin(pose.headingRad) * state[i].speed;
+    leadZ += std::cos(pose.headingRad) * state[i].speed;
   }
   if (movingCount > 0)
   {
@@ -299,13 +372,14 @@ int WorldView::PickShip(float _xPx, float _yPx) const
   for (int i = 0; i < static_cast<int>(m_ships.size()) && i < static_cast<int>(state.size()); ++i)
   {
     const ShipView& view = m_ships[static_cast<size_t>(i)];
-    const Game::ShipSnapshot& ship = state[static_cast<size_t>(i)];
-    const float cosH = std::cos(ship.headingRad);
-    const float sinH = std::sin(ship.headingRad);
+    // Against the hull as drawn: the latest record can be a hull-length ahead of it.
+    const DisplayPose pose = DisplayedPose(static_cast<size_t>(i));
+    const float cosH = std::cos(pose.headingRad);
+    const float sinH = std::sin(pose.headingRad);
 
-    const XMFLOAT3 centre(ViewX(ship.posWorld) + (view.pickCentre.x * cosH + view.pickCentre.z * sinH) * SHIP_SCALE,
+    const XMFLOAT3 centre(ViewX(pose.pos) + (view.pickCentre.x * cosH + view.pickCentre.z * sinH) * SHIP_SCALE,
                           (view.restY + view.pickCentre.y) * SHIP_SCALE,
-                          ViewZ(ship.posWorld) + (-view.pickCentre.x * sinH + view.pickCentre.z * cosH) * SHIP_SCALE);
+                          ViewZ(pose.pos) + (-view.pickCentre.x * sinH + view.pickCentre.z * cosH) * SHIP_SCALE);
 
     // Into hull space: to the centre, undo the heading, undo the scale.
     const float rx = origin.x - centre.x;
@@ -441,7 +515,8 @@ void WorldView::OnBoxSelect(float _x0Px, float _y0Px, float _x1Px, float _y1Px, 
   const std::span<const Game::ShipSnapshot> state = Ships();
   for (size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
   {
-    const XMFLOAT3 centre(ViewX(state[i].posWorld), m_ships[i].halfExtents.y * SHIP_SCALE, ViewZ(state[i].posWorld));
+    const DisplayPose pose = DisplayedPose(i);
+    const XMFLOAT3 centre(ViewX(pose.pos), m_ships[i].halfExtents.y * SHIP_SCALE, ViewZ(pose.pos));
     float xPx = 0.0f;
     float yPx = 0.0f;
     if (m_camera->WorldToScreen(centre, xPx, yPx) && xPx >= left && xPx <= right && yPx >= top && yPx <= bottom)
@@ -500,11 +575,11 @@ void WorldView::OnTap(float _xPx, float _yPx, bool _shiftHeld, bool _doubleTap)
 }
 
 // ------------------------------------------------------------------------------------------------
-// Rendering. _alpha is the fraction of a tick already accumulated: every position and heading is
-// read between the last two ticks, so motion is smooth however far the swapchain runs ahead of the
-// simulation rate.
+// Rendering. Every position and heading is read at the display time set by SetDisplayTime, between
+// the two samples that bracket it, so motion is smooth however far the swapchain runs ahead of the
+// simulation rate and however far the update rate sits below it.
 
-void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& _text, float _alpha)
+void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& _text)
 {
   SceneFrame frame = {};
   frame.viewProj = m_camera->ViewProj();
@@ -528,12 +603,11 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
   for (size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
   {
     const ShipView& view = m_ships[i];
-    const Game::ShipSnapshot& ship = state[i];
 
-    const Game::WorldPos at = Game::Lerp(ship.prevPos, ship.posWorld, _alpha);
-    const float x = ViewX(at);
-    const float z = ViewZ(at);
-    const float heading = ship.prevHeading + XMScalarModAngle(ship.headingRad - ship.prevHeading) * _alpha;
+    const DisplayPose pose = DisplayedPose(i);
+    const float x = ViewX(pose.pos);
+    const float z = ViewZ(pose.pos);
+    const float heading = pose.headingRad;
 
     // Roll about the hull's own mid-height axis, not its base, or a banked ship pivots on one
     // wingtip. SHIP_HOVER_HEIGHT is what keeps the low wing out of the ground while it does.
@@ -549,7 +623,7 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     _renderer.DrawMesh(_gpu, view.mesh, world, tint, SHIP_MATERIAL_MIX, false);
   }
 
-  DrawFeedback(_renderer, _gpu, _alpha);
+  DrawFeedback(_renderer, _gpu);
 
   // Screen-space feedback for whatever the pointer is in the middle of. These go through the text
   // pipeline, so they land on top of everything when it flushes.
@@ -575,7 +649,7 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
 // The overlay pass: selection and hover rings on the ground, order markers, thruster glow and
 // trail in the air. All of it is the same unit quad shaped by the decal shader.
 
-void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, float _alpha)
+void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu)
 {
   _renderer.BeginDecals(_gpu, m_camera->ViewProj(), m_camera->Eye());
 
@@ -586,12 +660,11 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, float _a
   for (size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
   {
     const ShipView& view = m_ships[i];
-    const Game::ShipSnapshot& ship = state[i];
 
     const float hullRadius = std::max(view.halfExtents.x, view.halfExtents.z) * SHIP_SCALE;
-    const Game::WorldPos at = Game::Lerp(ship.prevPos, ship.posWorld, _alpha);
-    const float x = ViewX(at);
-    const float z = ViewZ(at);
+    const DisplayPose pose = DisplayedPose(i);
+    const float x = ViewX(pose.pos);
+    const float z = ViewZ(pose.pos);
 
     if (view.ringFade > 0.002f && view.ringScale > 0.002f)
     {

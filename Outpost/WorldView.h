@@ -36,11 +36,37 @@ namespace Outpost
 class WorldView : public Neuron::PointerListener
 {
 public:
+  // Where a ship was on one tick the wire told us about, and how it was moving then. Two of these
+  // bracket the display time and the pose is read between them; velocity is per tick, derived from
+  // the record's own prevPos so nothing has to be remembered across updates to get it.
+  struct MotionSample
+  {
+    float tick = 0.0f;
+    Game::WorldPos pos;
+    float headingRad = 0.0f;
+    float velX = 0.0f; // metres per tick
+    float velZ = 0.0f;
+    float turnRadPerTick = 0.0f;
+  };
+
+  // A position and heading as the player sees them: interpolated, not the latest record.
+  struct DisplayPose
+  {
+    Game::WorldPos pos;
+    float headingRad = 0.0f;
+  };
+
   // One ship's presentation state, parallel to the latest snapshot's ships and indexed the same
   // way. ApplySnapshot is what keeps that true across a snapshot in which ships changed places.
   struct ShipView
   {
     Neuron::MeshHandle mesh = Neuron::INVALID_MESH;
+
+    // The last two distinct records for this ship. Snapshots arrive at a fraction of the tick rate
+    // and a record may be skipped by priority, so these are stamped with the tick they describe
+    // and can be any number of ticks apart.
+    MotionSample from;
+    MotionSample to;
     float restY = 0.0f;                              // lifts the hull so its lowest vertex rests on the ground
     DirectX::XMFLOAT3 pickCentre{0.0f, 0.0f, 0.0f};  // mesh bounds centre, in local space
     DirectX::XMFLOAT3 halfExtents{1.0f, 1.0f, 1.0f}; // mesh half-size about that centre
@@ -86,6 +112,16 @@ public:
   // the first arrives. Presentation state in m_ships is kept parallel to it.
   [[nodiscard]] std::span<const Game::ShipSnapshot> Ships() const noexcept;
 
+  // The moment the view shows, in ticks of the host clock with the fraction of the current tick
+  // included. The view draws INTERP_DELAY_TICKS behind it, so that the samples on both sides of
+  // what it draws have normally arrived; set by the composition root before anything below reads
+  // a pose, which is every frame and every tick.
+  void SetDisplayTime(float _tickTime) noexcept;
+
+  // Where ship i is drawn right now: read between the two samples that bracket the display time,
+  // carried on past the newer one for a bounded while when the wire has not caught up.
+  [[nodiscard]] DisplayPose DisplayedPose(std::size_t _index) const noexcept;
+
   // Called once per simulation tick, from the composition root. Trail sampling has to happen on the
   // tick rather than on the frame, or trail length would mean something different at every frame
   // rate -- but it needs mesh data the simulation must not see, so it lives here.
@@ -95,7 +131,7 @@ public:
   // feeds back into a tick, so it is free to run as fast as the swapchain does.
   void UpdateFeedback(float _dtSec);
 
-  void Render(Neuron::SceneRenderer& _renderer, Neuron::GpuDevice& _gpu, Neuron::TextRenderer& _text, float _alpha);
+  void Render(Neuron::SceneRenderer& _renderer, Neuron::GpuDevice& _gpu, Neuron::TextRenderer& _text);
 
   void ClearSelection() noexcept;
   void ClearHover() noexcept
@@ -166,8 +202,9 @@ public:
   }
 
 private:
-  void DrawFeedback(Neuron::SceneRenderer& _renderer, Neuron::GpuDevice& _gpu, float _alpha);
+  void DrawFeedback(Neuron::SceneRenderer& _renderer, Neuron::GpuDevice& _gpu);
   [[nodiscard]] int PickShip(float _xPx, float _yPx) const;
+  [[nodiscard]] static MotionSample SampleOf(const Game::ShipSnapshot& _ship, std::uint64_t _tick) noexcept;
   void IssueMoveOrder(const DirectX::XMFLOAT3& _point, bool _hasFacing, float _facingRad);
   [[nodiscard]] float SimTimeSec() const noexcept;
 
@@ -179,6 +216,7 @@ private:
   Game::WorldPos m_viewOrigin;
   Neuron::Transport* m_transport = nullptr;
   Game::SnapshotReceiver m_receiver;
+  float m_displayTick = 0.0f; // host tick time less INTERP_DELAY_TICKS
 
   // Parallel to the snapshot's ships, and to m_ships.
   std::vector<Game::ShipHandle> m_handles;

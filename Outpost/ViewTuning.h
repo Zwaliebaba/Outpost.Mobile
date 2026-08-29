@@ -2,6 +2,8 @@
 
 #include "RenderTypes.h"
 
+#include "SimTuning.h"
+
 namespace Outpost
 {
 // Presentation tuning: everything that changes how the game looks and feels without changing what
@@ -63,6 +65,20 @@ inline constexpr float THRUSTER_TRAIL_FADE = 0.55f;
 inline constexpr float THRUSTER_GLOW_RADIUS = 6.0f;
 inline constexpr float THRUSTER_GLOW_FALLOFF = 2.2f;
 inline constexpr int TRAIL_SAMPLES = 32; // half a second of history at the tick rate
+
+// --- snapshot interpolation --------------------------------------------------------------------
+// The server publishes at 1/INTEREST_UPDATE_EVERY_TICKS of the tick rate, so the view cannot draw
+// the latest record and stay smooth: it draws the world as it stood INTERP_DELAY_TICKS ago, which
+// is far enough back that the two samples either side of that moment have both arrived. One update
+// interval is the minimum that holds for a ship refreshed on every update; a real wire adds its
+// jitter to this.
+//
+// A ship the priority accumulator refreshes less often runs out of samples before the next one
+// lands. It is carried on at its last velocity rather than frozen, for at most the longest gap the
+// accumulator can leave a subscribed ship in -- past that it is held, since a straight line a
+// second long is no longer a prediction.
+inline constexpr float INTERP_DELAY_TICKS = static_cast<float>(Game::INTEREST_UPDATE_EVERY_TICKS);
+inline constexpr float INTERP_MAX_EXTRAPOLATE_TICKS = static_cast<float>(Game::INTEREST_UPDATE_EVERY_TICKS) / Game::INTEREST_MIN_WEIGHT;
 
 // --- input feel --------------------------------------------------------------------------------
 inline constexpr float INPUT_DRAG_THRESHOLD_PX = 6.0f;
