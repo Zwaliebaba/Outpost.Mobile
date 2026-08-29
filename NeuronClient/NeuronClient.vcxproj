@@ -224,6 +224,8 @@
     <ClInclude Include="BodyDesc.h" />
     <ClInclude Include="BodyParams.h" />
     <ClInclude Include="BodyField.h" />
+    <ClInclude Include="ColourRamp.h" />
+    <ClInclude Include="BodyMeshBuilder.h" />
     <ClInclude Include="FxVertex.h" />
     <ClInclude Include="MeshShatter.h" />
     <ClInclude Include="SpriteParticles.h" />
@@ -248,6 +250,8 @@
     <ClCompile Include="DdsImage.cpp" />
     <ClCompile Include="ObjParser.cpp" />
     <ClCompile Include="BodyField.cpp" />
+    <ClCompile Include="ColourRamp.cpp" />
+    <ClCompile Include="BodyMeshBuilder.cpp" />
     <ClCompile Include="MeshShatter.cpp" />
     <ClCompile Include="SpriteParticles.cpp" />
     <ClCompile Include="GpuHelpers.cpp" />

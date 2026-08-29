@@ -41,6 +41,12 @@
     <ClCompile Include="BodyFieldTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="ColourRampTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="BodyMeshTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config">

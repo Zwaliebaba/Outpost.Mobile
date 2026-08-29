@@ -18,6 +18,8 @@
 #include "BodyDesc.h"
 #include "BodyParams.h"
 #include "BodyField.h"
+#include "ColourRamp.h"
+#include "BodyMeshBuilder.h"
 #include "FxVertex.h"
 #include "MeshShatter.h"
 #include "SpriteParticles.h"
