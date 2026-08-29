@@ -772,10 +772,21 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
                           XMMatrixRotationY(heading) * XMMatrixTranslation(x, SHIP_HOVER_HEIGHT, z);
     XMStoreFloat4x4(&world, hull);
 
-    Rgba tint = view.selected ? SELECTED_COLOUR : SHIP_COLOUR;
+    // Selection is only ever the viewer's own, so there are three cases: mine and picked, mine, and
+    // somebody else's. The mix travels with the tint because an enemy overrides more of the hull's
+    // authored paint than a friendly does -- ViewTuning.h says why. In-scene IFF the moment a hull
+    // is on screen, rather than an overview the player has to look away to read.
+    Rgba tint = SELECTED_COLOUR;
+    float materialMix = SHIP_MATERIAL_MIX;
+    if (!view.selected)
+    {
+      const bool own = IsOwn(i);
+      tint = own ? SHIP_COLOUR : HOSTILE_SHIP_COLOUR;
+      materialMix = own ? SHIP_MATERIAL_MIX : HOSTILE_SHIP_MATERIAL_MIX;
+    }
     const float lift = view.hoverAmount * SEL_HOVER_HIGHLIGHT_STRENGTH;
     tint = Rgba{tint.r + (1.0f - tint.r) * lift, tint.g + (1.0f - tint.g) * lift, tint.b + (1.0f - tint.b) * lift, 1.0f};
-    _renderer.DrawMesh(_gpu, view.mesh, world, tint, SHIP_MATERIAL_MIX, false);
+    _renderer.DrawMesh(_gpu, view.mesh, world, tint, materialMix, false);
 
     // Remembered for the explosion, which needs where the hull was and how it was moving at a point
     // where the snapshot no longer has a record for it. Taken from the drawn pose rather than the
@@ -989,10 +1000,15 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu)
   const XMFLOAT3& cameraRight = m_camera->Right();
   const XMFLOAT3& cameraUp = m_camera->Up();
 
-  for (const ShipView& view : m_ships)
+  for (size_t i = 0; i < m_ships.size(); ++i)
   {
+    const ShipView& view = m_ships[i];
     if (view.thrusterLocals.empty() || view.thrusterIntensity <= 0.002f)
       continue;
+
+    // Hoisted out of the nozzle loop: one lookup per ship rather than one per billboard, and the
+    // whole plume of a hostile is one color rather than being decided sample by sample.
+    const Rgba accent = IsOwn(i) ? SELECTED_COLOUR : HOSTILE_ACCENT_COLOUR;
 
     // Every exhaust gets its own glow and its own trail: a bomber flying with three nozzles lays
     // down three ribbons, and they fan apart through a turn because the outboard ones sweep wider.
@@ -1040,8 +1056,7 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu)
         billboard._42 = point.y;
         billboard._43 = point.z;
         billboard._44 = 1.0f;
-        _renderer.DrawGlow(_gpu, m_quadMesh, billboard, Rgba{SELECTED_COLOUR.r, SELECTED_COLOUR.g, SELECTED_COLOUR.b, alpha},
-                           THRUSTER_GLOW_FALLOFF);
+        _renderer.DrawGlow(_gpu, m_quadMesh, billboard, Rgba{accent.r, accent.g, accent.b, alpha}, THRUSTER_GLOW_FALLOFF);
 
         if (trailLength <= 0.0f)
           break;
