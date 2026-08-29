@@ -122,12 +122,14 @@ const XMFLOAT3 OCEAN_COLOUR(0.10f, 0.22f, 0.40f);
 
 [[nodiscard]] XMVECTOR Position(const Neuron::FxVertex& _vertex)
 {
-  return XMVectorSet(_vertex.px, _vertex.py, _vertex.pz, 0.0f);
+  const XMFLOAT3 position = _vertex.Position();
+  return XMLoadFloat3(&position);
 }
 
 [[nodiscard]] XMVECTOR Normal(const Neuron::FxVertex& _vertex)
 {
-  return XMVectorSet(_vertex.nx, _vertex.ny, _vertex.nz, 0.0f);
+  const XMFLOAT3 normal = _vertex.Normal();
+  return XMLoadFloat3(&normal);
 }
 
 // FNV-1a over the raw bytes of the vertex list. It is the whole build in one number: a change to any
@@ -152,11 +154,19 @@ const XMFLOAT3 OCEAN_COLOUR(0.10f, 0.22f, 0.40f);
 // update until a test goes green.
 //
 // The wet one moved once, when the ocean landed and a wet body stopped drawing its sea floor. The
-// dry one has never moved, and that is the point of it: it was 0x0a3af4ac1bb89864 built by the
-// builder that had no ocean in it, and it is that today.
-constexpr std::uint64_t PINNED_WET_VERTEX_HASH = 0x5b93f37b6cd3c306ull;
-constexpr std::uint64_t PINNED_DRY_VERTEX_HASH = 0x0a3af4ac1bb89864ull;
+// dry one had never moved before this: it was 0x0a3af4ac1bb89864 through both builders, the one
+// with an ocean in it and the one without.
+//
+// Both moved once more when the vertex was packed (Decisions/0019): the same two meshes, their
+// colours quantised at the vertex rather than at the render target, and their normals and uvs in
+// the formats the input assembler reads.
+constexpr std::uint64_t PINNED_WET_VERTEX_HASH = 0x14377e9ab42f7150ull;
+constexpr std::uint64_t PINNED_DRY_VERTEX_HASH = 0xc5a1168f27d54c8full;
 constexpr std::uint32_t PINNED_CELL_HASH = 0x1cf48a38u;
+
+// One UNORM8 step: the packing (FxVertex.h) moves a colour by at most half of one, and a
+// tolerance sitting exactly on that half fails on the rounding of the comparison itself.
+constexpr float UNORM8_STEP = 1.0f / 255.0f;
 } // namespace
 
 TEST_CLASS(BodyMeshTests)
@@ -165,7 +175,7 @@ public:
   TEST_METHOD(EveryCellBecomesTwoTrianglesOfThreeVerticesEach)
   {
     // Unshared vertices, three per triangle: the only way to get one colour and one normal per
-    // triangle without a provoking-vertex buffer, and the reason a 65-grid planet is 7.1 MB.
+    // triangle without a provoking-vertex buffer, and the reason a 65-grid planet is 4.1 MB.
     const Neuron::ColourRamp ramp = AxisRamp();
     Neuron::BodyBuildStats stats;
     const std::vector<Neuron::FxVertex> terrain = BuildTerrain(OneDryContinent(), &ramp, stats);
@@ -217,11 +227,11 @@ public:
       {
         const Neuron::FxVertex& first = terrain[base];
         const Neuron::FxVertex& other = terrain[base + corner];
-        Assert::IsTrue(first.nx == other.nx && first.ny == other.ny && first.nz == other.nz,
+        Assert::IsTrue(std::memcmp(first.normalSnorm, other.normalSnorm, sizeof(first.normalSnorm)) == 0,
                        L"two vertices of one triangle carry different normals");
-        Assert::IsTrue(first.r == other.r && first.g == other.g && first.b == other.b,
+        Assert::IsTrue(std::memcmp(first.colourUnorm, other.colourUnorm, sizeof(first.colourUnorm)) == 0,
                        L"two vertices of one triangle carry different colours");
-        Assert::AreEqual(1.0f, other.a, L"a terrain vertex is not opaque");
+        Assert::AreEqual(1.0f, other.Colour().w, L"a terrain vertex is not opaque");
       }
     }
   }
@@ -236,17 +246,18 @@ public:
     Neuron::BodyBuildStats stats;
     const std::vector<Neuron::FxVertex> terrain = BuildTerrain(OneDryContinent(), &ramp, stats);
 
-    Assert::AreEqual(0.0f, terrain[0].u, L"the first triangle does not start at the cell's corner");
-    Assert::AreEqual(0.0f, terrain[0].v, L"the first triangle does not start at the cell's corner");
-    Assert::AreEqual(0.0f, terrain[1].u, L"the first triangle's second vertex is not the next cell corner");
-    Assert::AreEqual(1.0f, terrain[1].v, L"the first triangle's second vertex is not the next cell corner");
-    Assert::AreEqual(1.0f, terrain[2].u, L"the first triangle's third vertex is not the far cell corner");
-    Assert::AreEqual(1.0f, terrain[2].v, L"the first triangle's third vertex is not the far cell corner");
+    Assert::AreEqual(0.0f, terrain[0].Uv().x, L"the first triangle does not start at the cell's corner");
+    Assert::AreEqual(0.0f, terrain[0].Uv().y, L"the first triangle does not start at the cell's corner");
+    Assert::AreEqual(0.0f, terrain[1].Uv().x, L"the first triangle's second vertex is not the next cell corner");
+    Assert::AreEqual(1.0f, terrain[1].Uv().y, L"the first triangle's second vertex is not the next cell corner");
+    Assert::AreEqual(1.0f, terrain[2].Uv().x, L"the first triangle's third vertex is not the far cell corner");
+    Assert::AreEqual(1.0f, terrain[2].Uv().y, L"the first triangle's third vertex is not the far cell corner");
 
     for (const Neuron::FxVertex& vertex : terrain)
     {
-      Assert::AreEqual(vertex.u, std::floor(vertex.u), L"a uv is not on a cell corner");
-      Assert::AreEqual(vertex.v, std::floor(vertex.v), L"a uv is not on a cell corner");
+      const XMFLOAT2 uv = vertex.Uv();
+      Assert::AreEqual(uv.x, std::floor(uv.x), L"a uv is not on a cell corner");
+      Assert::AreEqual(uv.y, std::floor(uv.y), L"a uv is not on a cell corner");
     }
   }
 
@@ -268,7 +279,7 @@ public:
     Neuron::BodyBuildStats stats;
     const std::vector<Neuron::FxVertex> sphere = BuildTerrain(flat, &ramp, stats);
     for (const Neuron::FxVertex& vertex : sphere)
-      Assert::IsTrue(vertex.r < 0.2f, L"a facet of a smooth sphere read the ramp's cliff end");
+      Assert::IsTrue(vertex.Colour().x < 0.2f, L"a facet of a smooth sphere read the ramp's cliff end");
 
     Neuron::BodyDesc steep = OneContinent();
     steep.tiles[0].desiredHeight = 0.4f;
@@ -276,7 +287,7 @@ public:
 
     float steepest = 0.0f;
     for (const Neuron::FxVertex& vertex : mountains)
-      steepest = std::max(steepest, vertex.r);
+      steepest = std::max(steepest, vertex.Colour().x);
     Assert::IsTrue(steepest > 0.5f, L"a body with four hundred metres of relief has no cliff on it");
   }
 
@@ -289,11 +300,12 @@ public:
 
     for (const Neuron::FxVertex& vertex : terrain)
     {
-      Assert::AreEqual(Neuron::BodyMeshBuilder::BODY_FALLBACK_GREY.x, vertex.r,
+      const XMFLOAT4 colour = vertex.Colour();
+      Assert::AreEqual(Neuron::BodyMeshBuilder::BODY_FALLBACK_GREY.x, colour.x, UNORM8_STEP,
                        L"a triangle built without a ramp is not the fallback grey");
-      Assert::AreEqual(Neuron::BodyMeshBuilder::BODY_FALLBACK_GREY.y, vertex.g,
+      Assert::AreEqual(Neuron::BodyMeshBuilder::BODY_FALLBACK_GREY.y, colour.y, UNORM8_STEP,
                        L"a triangle built without a ramp is not the fallback grey");
-      Assert::AreEqual(Neuron::BodyMeshBuilder::BODY_FALLBACK_GREY.z, vertex.b,
+      Assert::AreEqual(Neuron::BodyMeshBuilder::BODY_FALLBACK_GREY.z, colour.z, UNORM8_STEP,
                        L"a triangle built without a ramp is not the fallback grey");
     }
   }
@@ -486,7 +498,7 @@ public:
       // The green channel is the climate axis of AxisRamp, which is the one the height feeds. Red is
       // the slope, and the slope genuinely does change when a vertex moves -- that is the dip doing
       // its job, not a defect.
-      Assert::AreEqual(dry[dryIndex].g, wet[wetIndex].g, 0.02f, L"dipping a coast moved its colour up the climate axis");
+      Assert::AreEqual(dry[dryIndex].Colour().y, wet[wetIndex].Colour().y, 0.02f, L"dipping a coast moved its colour up the climate axis");
       dryIndex += 3;
       ++compared;
     }

@@ -24,7 +24,7 @@ class FxRenderer
 {
 public:
   // Three copies of a 500-fragment shatter is 4500 vertices per dead ship and a full 4096-particle
-  // pool is 24576, so the ring holds five simultaneous deaths with the pool full. 2.25 MB a frame.
+  // pool is 24576, so the ring holds five simultaneous deaths with the pool full. 1.3 MB a frame.
   static constexpr std::uint32_t MAX_FX_VERTS = 49152;
 
   struct Desc

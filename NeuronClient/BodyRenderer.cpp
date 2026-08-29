@@ -4,7 +4,7 @@
 #include "CubeSphere.h"
 #include "GpuHelpers.h"
 
-// Shader bytecode, compiled by FXC at build time (AGENTS.md 3).
+// Shader bytecode, compiled by DXC at build time (AGENTS.md 3).
 #include "CompiledShaders/BodyVS.h"
 #include "CompiledShaders/BodyPS.h"
 #include "CompiledShaders/BodyOverlayPS.h"
@@ -19,12 +19,12 @@ namespace
 {
 // Spelled here even though FxRenderer spells the same four elements: the two renderers share a
 // vertex format, not an array. The day they share one array is a RenderTypes.h change with a reason
-// behind it. FxVertex.h's static_assert on the struct's size is what keeps either from drifting.
+// behind it. FxVertex.h's static_asserts on the struct's size and offsets keep either from drifting.
 constexpr D3D12_INPUT_ELEMENT_DESC BODY_ELEMENTS[] = {
   {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-  {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-  {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-  {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 40, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+  {"NORMAL", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+  {"COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 20, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+  {"TEXCOORD", 0, DXGI_FORMAT_R16G16_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
 };
 
 // The vertex stage's root constants are the scene's layout: world at DWORD 0, viewProj at 16. Keep
@@ -48,6 +48,7 @@ constexpr UINT BAKE_PASS_HEIGHT_MAXIMUM = 1;
 // one of them is edited without the other. The number is written out rather than computed so that a
 // change to either side has to be looked at rather than absorbed.
 static_assert(sizeof(BodyParams) == 2784, "BodyParams and BodyBake.hlsli's cbuffer have drifted apart");
+static_assert(sizeof(FxVertex) == 28, "FxVertex and FxVertexGpu in BodyBake.hlsli have drifted apart");
 
 [[nodiscard]] UINT GroupsFor(UINT _threads) noexcept
 {
@@ -70,7 +71,16 @@ void BodyRenderer::Init(GpuDevice& _gpu, const Desc& _desc)
 {
   m_srvStride = _gpu.Device()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
   CreatePipelines(_gpu);
-  CreateBakePipelines(_gpu);
+
+  // A probe, not a requirement. The kernels reproduce Pcg32's 64-bit state and reduce with wave
+  // operations, so a device without either cannot run them, and the CPU builder is what it gets.
+  D3D12_FEATURE_DATA_D3D12_OPTIONS1 options1 = {};
+  if (SUCCEEDED(_gpu.Device()->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS1, &options1, sizeof(options1))))
+    m_bakeSupported = options1.Int64ShaderOps && options1.WaveOps;
+  if (m_bakeSupported)
+    CreateBakePipelines(_gpu);
+  else
+    DebugTrace("body: the device has no 64-bit integer or wave operations, so bodies are built on the CPU\n");
 
   // The table is bound on every draw, terrain included, and a descriptor heap starts uninitialised:
   // a slot that never gets a view is a handle the debug layer reports the moment anything binds it.
@@ -259,6 +269,12 @@ void BodyRenderer::CreateBakePipelines(GpuDevice& _gpu)
 
 BodyHandle BodyRenderer::BakeBody(GpuDevice& _gpu, const BodyParams& _params, const ColourRamp& _ramp)
 {
+  if (!m_bakeSupported)
+  {
+    DebugTrace("body: a bake was asked for on a device that cannot run one; build it on the CPU instead\n");
+    return INVALID_BODY;
+  }
+
   const std::uint32_t gridPower = static_cast<std::uint32_t>(_params.outsideMaxHeightGrid.z);
   const std::uint32_t samplesPerSide = (1u << gridPower) + 1u;
   const std::uint32_t cells = samplesPerSide - 1u;
@@ -292,10 +308,26 @@ BodyHandle BodyRenderer::BakeBody(GpuDevice& _gpu, const BodyParams& _params, co
     seed[i] = OrderedBits(0.0f);
   seed[BodyParams::MAX_TILES] = OrderedBits(_params.outsideMaxHeightGrid.x);
 
+  // Straight into an upload buffer, and not through UploadStaticBuffer. That helper ends by
+  // transitioning what it filled to VERTEX_AND_CONSTANT_BUFFER, which is right for the vertices it
+  // was written for and wrong for a buffer whose next use is as a copy *source*: the debug layer
+  // rejected the copy below, once per body, and the maxima kept whatever the fresh default-heap
+  // buffer held. Zeros decode to a very negative float, so every tile scaled to nothing, every
+  // height collapsed to outsideHeight, and a wet body culled its whole surface -- which is what the
+  // readback showed before this line changed. An upload heap is GENERIC_READ, which already
+  // contains COPY_SOURCE, and it is one buffer where the helper made two.
   GpuPtr<ID3D12Resource> maximaSeed;
-  GpuPtr<ID3D12Resource> unusedStaging;
-  UploadStaticBuffer(_gpu, std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(seed), sizeof(seed)), maximaSeed,
-                     unusedStaging);
+  const D3D12_RESOURCE_DESC seedDesc = BufferDesc(sizeof(seed));
+  const D3D12_HEAP_PROPERTIES seedHeap = HeapProps(D3D12_HEAP_TYPE_UPLOAD);
+  check_hresult(device->CreateCommittedResource(&seedHeap, D3D12_HEAP_FLAG_NONE, &seedDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                                                IID_PPV_ARGS(maximaSeed.put())));
+  {
+    std::uint8_t* seedMapped = nullptr;
+    D3D12_RANGE seedNoRead = {0, 0};
+    check_hresult(maximaSeed->Map(0, &seedNoRead, reinterpret_cast<void**>(&seedMapped)));
+    std::memcpy(seedMapped, seed, sizeof(seed));
+    maximaSeed->Unmap(0, nullptr);
+  }
   cmd->CopyBufferRegion(maxima.get(), 0, maximaSeed.get(), 0, sizeof(seed));
 
   // The parameter block, in an upload heap and read as a root CBV. Constant buffers are sized in
@@ -388,7 +420,6 @@ BodyHandle BodyRenderer::BakeBody(GpuDevice& _gpu, const BodyParams& _params, co
   // Everything the dispatches read has to outlive the submission, which is what DiscardStaging is
   // called after and for.
   m_staging.push_back(std::move(maximaSeed));
-  m_staging.push_back(std::move(unusedStaging));
   m_staging.push_back(std::move(maxima));
   m_staging.push_back(std::move(paramsBuffer));
   m_staging.push_back(std::move(rampTexture));

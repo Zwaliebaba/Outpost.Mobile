@@ -187,20 +187,8 @@ void MeshShatter::Build(std::vector<FxVertex>& _out) const
       XMFLOAT3 world;
       XMStoreFloat3(&world, XMVectorAdd(XMVector3TransformNormal(XMLoadFloat3(corners[i]), rot), pos));
 
-      FxVertex vertex;
-      vertex.px = world.x;
-      vertex.py = world.y;
-      vertex.pz = world.z;
-      vertex.nx = normal.x;
-      vertex.ny = normal.y;
-      vertex.nz = normal.z;
-      vertex.r = fragment.colour.x;
-      vertex.g = fragment.colour.y;
-      vertex.b = fragment.colour.z;
-      vertex.a = alpha;
-      vertex.u = US[i];
-      vertex.v = VS[i];
-      _out.push_back(vertex);
+      _out.push_back(
+        FxVertex::Make(world, normal, XMFLOAT4(fragment.colour.x, fragment.colour.y, fragment.colour.z, alpha), XMFLOAT2(US[i], VS[i])));
     }
   }
 }

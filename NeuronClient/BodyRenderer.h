@@ -78,7 +78,18 @@ public:
   // Debug only, and the whole of slice 6's acceptance: copies a baked body back through a READBACK
   // heap so it can be compared with what BodyMeshBuilder makes of the same description. It opens and
   // closes its own upload bracket and blocks on the GPU, so it belongs at boot and nowhere else.
+  //
+  // It works, and it has been run: what it reports is that the kernels do not yet agree with the
+  // builder. See BODY_BAKE_ON_GPU in ViewTuning.h for what was measured.
   void ReadBackBody(GpuDevice& _gpu, BodyHandle _body, std::vector<FxVertex>& _out);
+
+  // False when the device has no 64-bit integer or wave operations, which the kernels need for the
+  // dither generator and for the reductions (Decisions/0018). BakeBody then refuses and the caller
+  // builds on the CPU, which is the same fallback a device with no compute support at all gets.
+  [[nodiscard]] bool BakeSupported() const noexcept
+  {
+    return m_bakeSupported;
+  }
 
   // Releases the staging buffers of every upload recorded since the last call. Only safe once the
   // command list carrying those copies has run.
@@ -120,6 +131,7 @@ private:
   // The compute side. It has its own root signature for the reason the graphics side has its own: a
   // compute root signature cannot carry ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT and this one carries two
   // UAVs, which the drawing one has no use for.
+  bool m_bakeSupported = false;
   GpuPtr<ID3D12RootSignature> m_bakeRootSignature;
   GpuPtr<ID3D12PipelineState> m_bakeMaxPso;
   GpuPtr<ID3D12PipelineState> m_bakePso;

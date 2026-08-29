@@ -73,105 +73,54 @@ static const float BODY_SHORE_DIP = -0.01;
 static const float PI_OVER_4 = 0.78539816339744830961;
 
 // ------------------------------------------------------------------------------------------------
-// Sixty-four-bit integers, which shader model 5.1 does not have.
+// Sixty-four-bit integers.
 //
 // Pcg32 is 64 bits of state and a 64-bit multiply-add, and splitmix64's finaliser is two more
-// multiplies; there is no way to reproduce the CPU's dither without them. A uint2 with the low word
-// first is the whole of it, and every operation below is exact -- this is the part of the port that
-// is not "within a few ULPs" but identical.
+// multiplies; there is no way to reproduce the CPU's dither without them. Shader model 5.1 had no
+// such type, so this file once carried Add64, Mul64, Shr64 and Xor64 over a uint2 -- including a
+// 32x32 -> 64 product written out of four 16-bit partial products, because FXC has no `umul`. At
+// 6.7 (Decisions/0018) the type is native and the operators are the language's, so all four are
+// gone and what is left is one alias. This is the part of the port that is not "within a few ULPs"
+// but identical, and it is now identical by construction rather than by four careful functions.
 
-uint2 Add64(uint2 _a, uint2 _b)
+uint64_t U64(uint _low, uint _high)
 {
-  uint2 sum;
-  sum.x = _a.x + _b.x;
-  sum.y = _a.y + _b.y + ((sum.x < _a.x) ? 1u : 0u);
-  return sum;
-}
-
-// A 32x32 -> 64 product as (low, high), out of four 16-bit partial products. HLSL documents a `umul`
-// intrinsic for exactly this and FXC does not have one -- "error X3004: undeclared identifier
-// 'umul'" -- so it is written out. Every step is exact: no partial product here exceeds 32 bits, and
-// the one place the middle can carry out of 32 is detected and folded into bit 48.
-uint2 Mul32(uint _a, uint _b)
-{
-  const uint aLow = _a & 0xffffu;
-  const uint aHigh = _a >> 16u;
-  const uint bLow = _b & 0xffffu;
-  const uint bHigh = _b >> 16u;
-
-  const uint lowLow = aLow * bLow;
-  const uint middle = aHigh * bLow + (lowLow >> 16u);
-  const uint middleSum = middle + aLow * bHigh;
-  const uint middleCarry = (middleSum < middle) ? 0x10000u : 0u; // carried out of 32 bits, so into bit 48
-
-  uint2 product;
-  product.x = (middleSum << 16u) | (lowLow & 0xffffu);
-  product.y = aHigh * bHigh + (middleSum >> 16u) + middleCarry;
-  return product;
-}
-
-uint2 Mul64(uint2 _a, uint2 _b)
-{
-  // The low 64 bits of a 128-bit product: the full 32x32 of the low words, and the two cross terms,
-  // which is all of the rest that survives into the bottom half.
-  const uint2 lowProduct = Mul32(_a.x, _b.x);
-
-  uint2 product;
-  product.x = lowProduct.x;
-  product.y = lowProduct.y + _a.x * _b.y + _a.y * _b.x;
-  return product;
-}
-
-uint2 Shr64(uint2 _value, uint _bits)
-{
-  // A shift of nothing is its own case: HLSL masks a shift count to five bits, so the general form's
-  // `_value.y << 32` would be `_value.y << 0` and would fold the high word back in.
-  uint2 shifted = _value;
-  if (_bits >= 32u)
-    shifted = uint2(_value.y >> (_bits - 32u), 0u);
-  else if (_bits != 0u)
-    shifted = uint2((_value.x >> _bits) | (_value.y << (32u - _bits)), _value.y >> _bits);
-
-  return shifted;
-}
-
-uint2 Xor64(uint2 _a, uint2 _b)
-{
-  return uint2(_a.x ^ _b.x, _a.y ^ _b.y);
+  return (uint64_t(_high) << 32) | uint64_t(_low);
 }
 
 // ------------------------------------------------------------------------------------------------
 // Pcg32, from NeuronCore/Pcg32.h. PCG-XSH-RR 64/32, the reference procedure exactly: seeding is
 // zero the state, take the stream from the sequence, step, add the seed, step.
 
-static const uint2 PCG_MULTIPLIER = uint2(0x4c957f2du, 0x5851f42du);      // 6364136223846793005
-static const uint2 PCG_DEFAULT_SEQUENCE = uint2(0x94b95bdbu, 0xda3e39cbu); // 0xda3e39cb94b95bdb
+// Spelled as two 32-bit halves rather than as a 64-bit literal: the literal's type and suffix are a
+// language-version question, and two uints are not.
+static const uint PCG_MULTIPLIER_LOW = 0x4c957f2du, PCG_MULTIPLIER_HIGH = 0x5851f42du;      // 6364136223846793005
+static const uint PCG_SEQUENCE_LOW = 0x94b95bdbu, PCG_SEQUENCE_HIGH = 0xda3e39cbu;          // 0xda3e39cb94b95bdb
 
 struct Pcg32State
 {
-  uint2 state;
-  uint2 increment;
+  uint64_t state;
+  uint64_t increment;
 };
 
 uint Pcg32Step(inout Pcg32State _rng)
 {
   // The output comes from the state before the advance, as the reference does.
-  const uint2 previous = _rng.state;
-  _rng.state = Add64(Mul64(previous, PCG_MULTIPLIER), _rng.increment);
+  const uint64_t previous = _rng.state;
+  _rng.state = previous * U64(PCG_MULTIPLIER_LOW, PCG_MULTIPLIER_HIGH) + _rng.increment;
 
-  const uint2 shifted = Shr64(previous, 18u);
-  const uint xorshifted = Shr64(Xor64(shifted, previous), 27u).x;
-  const uint rotation = Shr64(previous, 59u).x;
+  const uint xorshifted = uint(((previous >> 18) ^ previous) >> 27);
+  const uint rotation = uint(previous >> 59);
   return (xorshifted >> rotation) | (xorshifted << ((0u - rotation) & 31u));
 }
 
-Pcg32State Pcg32Seed(uint2 _seed)
+Pcg32State Pcg32Seed(uint64_t _seed)
 {
   Pcg32State rng;
-  rng.state = uint2(0u, 0u);
-  rng.increment = uint2((PCG_DEFAULT_SEQUENCE.x << 1u) | 1u, (PCG_DEFAULT_SEQUENCE.y << 1u) | (PCG_DEFAULT_SEQUENCE.x >> 31u));
+  rng.state = 0;
+  rng.increment = (U64(PCG_SEQUENCE_LOW, PCG_SEQUENCE_HIGH) << 1) | 1;
   Pcg32Step(rng);
-  rng.state = Add64(rng.state, _seed);
+  rng.state += _seed;
   Pcg32Step(rng);
   return rng;
 }
@@ -191,9 +140,16 @@ float Pcg32Signed(inout Pcg32State _rng, float _magnitude)
 // ------------------------------------------------------------------------------------------------
 // The two hashes, from BodyMeshBuilder.h and BodyField.cpp. Integer throughout and bit-exact.
 
-uint CellHash(uint2 _seed, uint _face, uint _x, uint _z)
+// The description's seed, which the block carries as two words because a constant buffer has no
+// 64-bit scalar type of its own.
+uint64_t BodySeed()
 {
-  uint hash = _seed.x ^ _seed.y;
+  return U64(counts.z, counts.w);
+}
+
+uint CellHash(uint64_t _seed, uint _face, uint _x, uint _z)
+{
+  uint hash = uint(_seed) ^ uint(_seed >> 32);
   hash ^= _face * 0x9E3779B9u;
   hash = (hash ^ (hash >> 16u)) * 0x85EBCA6Bu;
   hash ^= _x * 0xC2B2AE35u;
@@ -202,27 +158,27 @@ uint CellHash(uint2 _seed, uint _face, uint _x, uint _z)
   return hash ^ (hash >> 16u);
 }
 
-uint2 SplitMix(uint2 _value)
+uint64_t SplitMix(uint64_t _value)
 {
-  uint2 mixed = Xor64(_value, Shr64(_value, 30u));
-  mixed = Mul64(mixed, uint2(0x1ce4e5b9u, 0xbf58476du));
-  mixed = Xor64(mixed, Shr64(mixed, 27u));
-  mixed = Mul64(mixed, uint2(0x133111ebu, 0x94d049bbu));
-  return Xor64(mixed, Shr64(mixed, 31u));
+  uint64_t mixed = _value ^ (_value >> 30);
+  mixed *= U64(0x1ce4e5b9u, 0xbf58476du);
+  mixed ^= mixed >> 27;
+  mixed *= U64(0x133111ebu, 0x94d049bbu);
+  return mixed ^ (mixed >> 31);
 }
 
-uint2 DirectionSeed(uint2 _seed, float3 _direction)
+uint64_t DirectionSeed(uint64_t _seed, float3 _direction)
 {
-  // The CPU floors the scaled coordinate and casts through a signed 64-bit; the cast of a negative
-  // value is its two's-complement pattern, which is what sign-extending the 32-bit result gives.
+  // The CPU floors the scaled coordinate and casts through a signed 64-bit; the sign extension the
+  // cast performs is now the language's rather than a hand-built high word.
   const int cellX = int(floor(_direction.x * CLIMATE_DITHER_CELLS + 0.5));
   const int cellY = int(floor(_direction.y * CLIMATE_DITHER_CELLS + 0.5));
   const int cellZ = int(floor(_direction.z * CLIMATE_DITHER_CELLS + 0.5));
 
-  uint2 hash = SplitMix(_seed);
-  hash = SplitMix(Xor64(hash, uint2(uint(cellX), uint(cellX >> 31))));
-  hash = SplitMix(Xor64(hash, uint2(uint(cellY), uint(cellY >> 31))));
-  return SplitMix(Xor64(hash, uint2(uint(cellZ), uint(cellZ >> 31))));
+  uint64_t hash = SplitMix(_seed);
+  hash = SplitMix(hash ^ uint64_t(int64_t(cellX)));
+  hash = SplitMix(hash ^ uint64_t(int64_t(cellY)));
+  return SplitMix(hash ^ uint64_t(int64_t(cellZ)));
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -538,7 +494,7 @@ float PolarCap(float3 _d)
 
   const float sine = abs(dot(_d, spinAxis.xyz));
 
-  Pcg32State rng = Pcg32Seed(DirectionSeed(uint2(counts.z, counts.w), _d));
+  Pcg32State rng = Pcg32Seed(DirectionSeed(BodySeed(), _d));
   const float dithered = sine + Pcg32Signed(rng, polar.z);
 
   return Smoothstep(polar.y, 1.0, dithered);
@@ -595,15 +551,50 @@ float FromOrderedBits(uint _ordered)
 // ------------------------------------------------------------------------------------------------
 // The resources both kernels bind, and the two things they read out of the reduction.
 
+// FxVertex to the byte (FxVertex.h, Decisions/0019): a float position, then the normal, colour and
+// uv packed into four words. A structured buffer packs scalars tightly, so this is 28 bytes, and
+// FxVertex.h's static_assert on 28 is the other half of that.
 struct FxVertexGpu
 {
-  // Twelve scalars and not four vectors: a structured buffer packs scalars tightly, and this has to
-  // be FxVertex to the byte. FxVertex.h's static_assert on 48 is the other half of that.
   float px, py, pz;
-  float nx, ny, nz;
-  float r, g, b, a;
-  float u, v;
+  uint2 normal; // R16G16B16A16_SNORM: x and y in the first word, z and the unused w in the second
+  uint colour;  // R8G8B8A8_UNORM
+  uint uv;      // R16G16_FLOAT
 };
+
+// The three rounding rules FxVertex.h spells, in the intrinsics that implement them: round() takes
+// halves away from zero, which on a saturated UNORM is the C++'s half-up, and f32tof16 is IEEE
+// round-to-nearest-even on every D3D12 device. Get one of these wrong and the readback comparison
+// against the CPU builder is off by a byte on the vertices where it matters least, which is the
+// hardest kind of difference to read.
+uint PackUnorm8x4(float4 _colour)
+{
+  const uint4 quantised = uint4(round(saturate(_colour) * 255.0));
+  return quantised.x | (quantised.y << 8) | (quantised.z << 16) | (quantised.w << 24);
+}
+
+uint2 PackSnorm16x4(float3 _normal)
+{
+  const int3 quantised = int3(round(clamp(_normal, -1.0, 1.0) * 32767.0));
+  return uint2((uint(quantised.x) & 0xffffu) | (uint(quantised.y) << 16), uint(quantised.z) & 0xffffu);
+}
+
+uint PackHalf2(float2 _uv)
+{
+  return f32tof16(_uv.x) | (f32tof16(_uv.y) << 16);
+}
+
+FxVertexGpu MakeVertex(float3 _position, float3 _normal, float4 _colour, float2 _uv)
+{
+  FxVertexGpu vertex;
+  vertex.px = _position.x;
+  vertex.py = _position.y;
+  vertex.pz = _position.z;
+  vertex.normal = PackSnorm16x4(_normal);
+  vertex.colour = PackUnorm8x4(_colour);
+  vertex.uv = PackHalf2(_uv);
+  return vertex;
+}
 
 RWStructuredBuffer<FxVertexGpu> Out : register(u0);
 RWBuffer<uint> Maxima : register(u1);
@@ -652,7 +643,7 @@ float3 TriangleColour(float3 _normal, float3 _centroid, float _heightMetres, flo
   const float u = pow(1.0 - gradient, SLOPE_EXPONENT);
   float v = 1.0 - climate * climateScale;
 
-  Pcg32State rng = Pcg32Seed(uint2(_cellHash, 0u));
+  Pcg32State rng = Pcg32Seed(uint64_t(_cellHash));
   v += Pcg32Signed(rng, DITHER_STRENGTH / (abs(climate * sourceUnits) + DITHER_SOFTENING));
 
   // Half a texel, and it is not a nicety. ColourRamp::Sample clamps to [0, 1] and multiplies by 63

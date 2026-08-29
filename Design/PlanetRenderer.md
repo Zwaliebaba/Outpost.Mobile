@@ -60,7 +60,7 @@ Constraints, not preferences. Each one shaped what follows.
 | Cull mode is `NONE`, and the scene shades flat from `ddx/ddy` | `GpuHelpers.cpp:83`, `ScenePS.hlsl` | Faceted shading is already the house look. The body passes carry a real per-triangle normal instead (§7), because the colour lookup needs it anyway and it is free from the builder. Cull stays `NONE`; the depth buffer sorts the sphere's far side out. |
 | No index buffer anywhere; a mesh is triangle soup | `MeshData.h`, `SceneRenderer::UploadMesh` | Unshared vertices, three per triangle, which is also the only way to get one colour and one normal per triangle without a provoking-vertex buffer. The source document's option 1, and the same choice for the same reason. |
 | The only textured pipeline is `TextRenderer`'s (R8 coverage, point sampler); a BGRA upload helper is specified but not landed | `GpuHelpers.cpp:132`; `SpaceshipExplosion.md` §8.1 | `BodyRenderer` needs `UploadColourTexture` (explosion slice 3). If that slice has not landed, this design's renderer slice lands it, exactly as specified there, and slice 3 finds it in place (§15). |
-| `FxVertex` — position, normal, colour+alpha, uv, 48 bytes — is the effect vertex format | `SpaceshipExplosion.md` §5.1 | It is exactly the body vertex too. One format, one input layout; same landing rule as above. |
+| `FxVertex` — position, packed normal, colour+alpha and uv, 28 bytes (Decisions/0018) — is the effect vertex format | `SpaceshipExplosion.md` §5.1 | It is exactly the body vertex too. One format, one input layout; same landing rule as above. |
 | DDS only, kept as on disk; `TopMipAsBgra` reads 8-bpc texels on the CPU | `DdsImage.h:93` | The colour ramps are read on the CPU through `TopMipAsBgra` and never reach the GPU (§6). No BMP reader is written. |
 | The ramp and outline textures are already in the tree, as 32-bit BGRA DDS, one mip | `Outpost/Assets/Terrain/Landscape*.dds` (8), `Textures/TriangleOutline.dds` | No conversion step. **Eight** ramps rather than the source's twenty-three, and **no `water_*` or `waves_*`** — the ocean is a flat colour in v1 (§6.3). |
 | No threads; expensive work happens at `Init` and blocks | AGENTS.md §5; `GpuDevice::ExecuteAndWait` | Bodies are generated at boot on the main thread. A 65-grid planet is tens of milliseconds (§8.4); a background generator is a later slice and an ADR. |
@@ -339,9 +339,10 @@ two pipelines and the uploaded body meshes.
 ### 7.1 Resources
 
 - **Vertex format.** `FxVertex` (§2): object-space position, per-triangle normal, baked colour
-  with `a = 1`, uv `= (cellX, cellZ)` so one outline tile covers one grid cell. 48 bytes; a
-  65-grid planet is `6·64·64·2 = 49 152` triangles → 147 456 vertices → **7.1 MB**, before
-  sea-level culling removes the ocean floor. An asteroid at `N = 33` is 1.8 MB, at 17 it is 0.44 MB.
+  with `a = 1`, uv `= (cellX, cellZ)` so one outline tile covers one grid cell. 28 bytes since
+  `Decisions/0018` (it was 48); a 65-grid planet is `6·64·64·2 = 49 152` triangles → 147 456
+  vertices → **4.1 MB**, before
+  sea-level culling removes the ocean floor. An asteroid at `N = 33` is 1.0 MB, at 17 it is 0.26 MB.
   Acceptable for the handful of bodies §3 describes; LOD is a later slice (§13).
 - **Meshes.** Static, uploaded once — but **not** into an upload heap as `SceneRenderer::UploadMesh`
   does. That helper's argument ("a few thousand triangles do not justify a staging copy") was made
@@ -754,7 +755,11 @@ finds `FxVertex.h` or `UploadColourTexture` already there.
 
 Written after the design was settled, as a Direct3D 12 review of §5–§8: what of the CPU
 pipeline could run in a shader, what it would buy, and what it would cost under this tree's
-toolchain — FXC, shader model 5.1, no DXC, no mesh shaders, and no compute pipeline yet.
+toolchain as it then stood — FXC, shader model 5.1, no DXC, no mesh shaders, and no compute
+pipeline. Slice 6 landed the compute pipeline on that toolchain (`Decisions/0017`), and the tree
+has since moved to DXC and shader model 6.7 (`Decisions/0018`), which lifts the compiler objection
+to every row below — including the emulated 64-bit multiply and the renamed identifiers the
+kernels carry to satisfy FXC.
 
 ### 17.1 Stage by stage
 
@@ -781,7 +786,7 @@ every random number once into `BodyParams` (§8.1), the split is clean: **the CP
 | Shape | What it is | Wins | Why it is not the one |
 |---|---|---|---|
 | A — vertex-shader displacement | one shared grid per `gridPower`; `BodyVS` evaluates `h(d)` for its vertex and its two mates every frame | no generation, no per-body memory, LOD is a bind | ~450 k height evaluations per body per pass, per frame, for a shape that never changes; the ramp sample and dither repeat every frame too |
-| **B — compute bake at load** | `BodyBakeCS` (`cs_5_1`, compiled by FXC through an `FxCompile` item of type `Compute`) writes the identical `FxVertex` stream into the default-heap buffer of §7.1 through a UAV; one barrier to `VERTEX_AND_CONSTANT_BUFFER`; two small reduction dispatches first | same look, boot generation ≈ 0, **a body generated mid-session no longer stalls a frame** — this tree's route to many systems without introducing a thread, since a GPU timeline is not a second CPU writer; LOD is three dispatches; F5 is instant | the first compute pipeline in the tree (a root signature with a CBV, an SRV table for the ramp and a UAV — about 150 lines); the field stops being decidable by a `CppUnitTest` on its own |
+| **B — compute bake at load** | `BodyBakeCS` (`cs_6_7` since `Decisions/0018`, compiled by DXC through an `FxCompile` item of type `Compute`, so wave intrinsics are available for the reductions) writes the identical `FxVertex` stream into the default-heap buffer of §7.1 through a UAV; one barrier to `VERTEX_AND_CONSTANT_BUFFER`; two small reduction dispatches first | same look, boot generation ≈ 0, **a body generated mid-session no longer stalls a frame** — this tree's route to many systems without introducing a thread, since a GPU timeline is not a second CPU writer; LOD is three dispatches; F5 is instant | the first compute pipeline in the tree (a root signature with a CBV, an SRV table for the ramp and a UAV — about 150 lines); the field stops being decidable by a `CppUnitTest` on its own |
 | C — tessellation / mesh shaders | hull/domain shaders for continuous LOD | continuous LOD | redoes the height per frame like A and fights the per-triangle colour; mesh shaders need SM 6.5 and DXC, which the tree does not have |
 
 **B is the shape**, and **not yet**. Tens of milliseconds at boot is invisible, the tests in §11

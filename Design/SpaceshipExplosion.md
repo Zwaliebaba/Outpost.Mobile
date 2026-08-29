@@ -119,13 +119,13 @@ three copies of the hull" is Outpost. The recipe reads no engine internals — i
 ### 5.1 Records
 
 ```cpp
-struct FxVertex          // NeuronClient/FxVertex.h — one layout for both effect passes
+struct FxVertex                 // NeuronClient/FxVertex.h — one layout for both effect passes
 {
-  float px, py, pz;      // world position
-  float nx, ny, nz;      // world normal; sprites leave it zero and the sprite shader ignores it
-  float r, g, b, a;      // colour and alpha, already curved -- the shaders do no fading
-  float u, v;
-};                       // 48 bytes
+  float px, py, pz;             // world position
+  std::int16_t normalSnorm[4];  // world normal, R16G16B16A16_SNORM; sprites leave it zero and the sprite shader ignores it
+  std::uint8_t colourUnorm[4];  // colour and alpha, R8G8B8A8_UNORM, already curved -- the shaders do no fading
+  std::uint16_t uvHalf[2];      // u, v as R16G16_FLOAT
+};                              // 28 bytes; Make() packs, Position()/Normal()/Colour()/Uv() unpack (Decisions/0018)
 
 struct Tumbler
 {
@@ -305,7 +305,7 @@ needs the device for and nothing the simulation does.
 - **Samplers.** Two static: `s0` linear min/mag, wrap (fragments); `s1` point mag / linear min,
   clamp (sprites). Point-vs-linear for sprites is the source's choice and is kept.
 - **Vertex ring.** `FRAME_COUNT` upload buffers of `MAX_FX_VERTS × sizeof(FxVertex)`, persistently
-  mapped — the `TextRenderer` pattern verbatim. `MAX_FX_VERTS = 49152` (2.25 MB per frame): three
+  mapped — the `TextRenderer` pattern verbatim. `MAX_FX_VERTS = 49152` (1.3 MB per frame): three
   copies of a 500-fragment shatter is 4500 vertices per dead ship, and a full 4096-particle pool is
   24576, so the ring holds five simultaneous deaths with the pool full. Anything over is dropped
   and traced, never silently truncated.

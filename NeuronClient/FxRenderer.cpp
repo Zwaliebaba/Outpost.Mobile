@@ -3,7 +3,7 @@
 
 #include "GpuHelpers.h"
 
-// Shader bytecode, compiled by FXC at build time (AGENTS.md 3).
+// Shader bytecode, compiled by DXC at build time (AGENTS.md 3).
 #include "CompiledShaders/FxFragmentVS.h"
 #include "CompiledShaders/FxFragmentPS.h"
 #include "CompiledShaders/FxSpriteVS.h"
@@ -15,13 +15,14 @@ namespace Neuron
 {
 namespace
 {
-// The offsets are spelled by hand here and nowhere else; FxVertex.h's static_assert on the struct's
-// size is what keeps the two from disagreeing.
+// The offsets are spelled by hand here and in BodyRenderer; FxVertex.h's static_asserts on the
+// struct's size and field offsets are what keep them from disagreeing. The packed formats are
+// expanded by the input assembler, so the vertex shaders read float3 / float4 / float2.
 constexpr D3D12_INPUT_ELEMENT_DESC FX_ELEMENTS[] = {
   {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-  {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-  {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-  {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 40, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+  {"NORMAL", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+  {"COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 20, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+  {"TEXCOORD", 0, DXGI_FORMAT_R16G16_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
 };
 } // namespace
 
