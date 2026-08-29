@@ -7,6 +7,10 @@ namespace NeuronClientTests
 {
 namespace
 {
+// One UNORM8 step: the packing (FxVertex.h) moves a colour by at most half of one, and a
+// tolerance sitting exactly on that half fails on the rounding of the comparison itself.
+constexpr float UNORM8_STEP = 1.0f / 255.0f;
+
 constexpr float PI = 3.14159265358979323846f;
 
 // Every test here builds its mesh by hand. The parser has its own suite, and a shatter test that
@@ -93,9 +97,9 @@ public:
     constexpr float VS[3] = {0.0f, 1.0f, 1.0f};
     for (int i = 0; i < 3; ++i)
     {
-      Assert::AreEqual(US[i], verts[static_cast<std::size_t>(i)].u, 1e-5f, L"the fragment's u is not the decal's");
-      Assert::AreEqual(VS[i], verts[static_cast<std::size_t>(i)].v, 1e-5f, L"the fragment's v is not the decal's");
-      Assert::AreEqual(1.0f, verts[static_cast<std::size_t>(i)].a, 1e-5f, L"a fragment is not opaque at age zero");
+      Assert::AreEqual(US[i], verts[static_cast<std::size_t>(i)].Uv().x, 1e-5f, L"the fragment's u is not the decal's");
+      Assert::AreEqual(VS[i], verts[static_cast<std::size_t>(i)].Uv().y, 1e-5f, L"the fragment's v is not the decal's");
+      Assert::AreEqual(1.0f, verts[static_cast<std::size_t>(i)].Colour().w, UNORM8_STEP, L"a fragment is not opaque at age zero");
     }
   }
 
@@ -227,9 +231,9 @@ public:
 
     shatter.Spawn(mesh, Identity(), XMFLOAT3(0.0f, 0.0f, 0.0f), Neuron::MeshShatter::Desc(), rng);
     shatter.Build(verts);
-    Assert::AreEqual(1.0f, verts[0].r, 1e-5f, L"the default Desc changed the vertex colour");
-    Assert::AreEqual(0.0f, verts[0].g, 1e-5f, L"the default Desc changed the vertex colour");
-    Assert::AreEqual(0.0f, verts[0].b, 1e-5f, L"the default Desc changed the vertex colour");
+    Assert::AreEqual(1.0f, verts[0].Colour().x, UNORM8_STEP, L"the default Desc changed the vertex colour");
+    Assert::AreEqual(0.0f, verts[0].Colour().y, UNORM8_STEP, L"the default Desc changed the vertex colour");
+    Assert::AreEqual(0.0f, verts[0].Colour().z, UNORM8_STEP, L"the default Desc changed the vertex colour");
 
     // lerp(tint, vertex, mix) -- the same operand order ScenePS mixes a hull in.
     Neuron::MeshShatter::Desc tinted;
@@ -238,9 +242,9 @@ public:
     verts.clear();
     shatter.Spawn(mesh, Identity(), XMFLOAT3(0.0f, 0.0f, 0.0f), tinted, rng);
     shatter.Build(verts);
-    Assert::AreEqual(0.25f, verts[0].r, 1e-5f, L"the tint mixed the wrong way round");
-    Assert::AreEqual(0.0f, verts[0].g, 1e-5f, L"the tint mixed the wrong way round");
-    Assert::AreEqual(0.75f, verts[0].b, 1e-5f, L"the tint mixed the wrong way round");
+    Assert::AreEqual(0.25f, verts[0].Colour().x, UNORM8_STEP, L"the tint mixed the wrong way round");
+    Assert::AreEqual(0.0f, verts[0].Colour().y, UNORM8_STEP, L"the tint mixed the wrong way round");
+    Assert::AreEqual(0.75f, verts[0].Colour().z, UNORM8_STEP, L"the tint mixed the wrong way round");
   }
 
   TEST_METHOD(ARotationAboutYIsLeftHanded)
@@ -305,7 +309,7 @@ public:
     XMFLOAT3 expected;
     XMStoreFloat3(&expected,
                   XMVectorAdd(XMVector3TransformNormal(XMLoadFloat3(&fragment.v0), XMLoadFloat3x3(&got)), XMLoadFloat3(&fragment.pos)));
-    AssertFloat3(expected, XMFLOAT3(verts[0].px, verts[0].py, verts[0].pz), 1e-4f, L"the build ignored the tumbler's rotation");
+    AssertFloat3(expected, verts[0].Position(), 1e-4f, L"the build ignored the tumbler's rotation");
   }
 
   TEST_METHOD(FrictionSlowsAFragmentAndNeverReversesIt)
@@ -374,7 +378,7 @@ public:
 
     std::vector<Neuron::FxVertex> verts;
     halfway.Build(verts);
-    Assert::AreEqual(0.5f, verts[0].a, 1e-5f, L"the fade is not linear over the lifetime");
+    Assert::AreEqual(0.5f, verts[0].Colour().w, UNORM8_STEP, L"the fade is not linear over the lifetime");
 
     Assert::IsTrue(halfway.Advance(2.5f), L"the shatter did not report itself finished at its lifetime");
   }

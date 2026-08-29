@@ -60,7 +60,7 @@ Constraints, not preferences. Each one shaped what follows.
 | Cull mode is `NONE`, and the scene shades flat from `ddx/ddy` | `GpuHelpers.cpp:83`, `ScenePS.hlsl` | Faceted shading is already the house look. The body passes carry a real per-triangle normal instead (§7), because the colour lookup needs it anyway and it is free from the builder. Cull stays `NONE`; the depth buffer sorts the sphere's far side out. |
 | No index buffer anywhere; a mesh is triangle soup | `MeshData.h`, `SceneRenderer::UploadMesh` | Unshared vertices, three per triangle, which is also the only way to get one colour and one normal per triangle without a provoking-vertex buffer. The source document's option 1, and the same choice for the same reason. |
 | The only textured pipeline is `TextRenderer`'s (R8 coverage, point sampler); a BGRA upload helper is specified but not landed | `GpuHelpers.cpp:132`; `SpaceshipExplosion.md` §8.1 | `BodyRenderer` needs `UploadColourTexture` (explosion slice 3). If that slice has not landed, this design's renderer slice lands it, exactly as specified there, and slice 3 finds it in place (§15). |
-| `FxVertex` — position, normal, colour+alpha, uv, 48 bytes — is the effect vertex format | `SpaceshipExplosion.md` §5.1 | It is exactly the body vertex too. One format, one input layout; same landing rule as above. |
+| `FxVertex` — position, packed normal, colour+alpha and uv, 28 bytes (Decisions/0018) — is the effect vertex format | `SpaceshipExplosion.md` §5.1 | It is exactly the body vertex too. One format, one input layout; same landing rule as above. |
 | DDS only, kept as on disk; `TopMipAsBgra` reads 8-bpc texels on the CPU | `DdsImage.h:93` | The colour ramps are read on the CPU through `TopMipAsBgra` and never reach the GPU (§6). No BMP reader is written. |
 | The ramp and outline textures are already in the tree, as 32-bit BGRA DDS, one mip | `Outpost/Assets/Terrain/Landscape*.dds` (8), `Textures/TriangleOutline.dds` | No conversion step. **Eight** ramps rather than the source's twenty-three, and **no `water_*` or `waves_*`** — the ocean is a flat colour in v1 (§6.3). |
 | No threads; expensive work happens at `Init` and blocks | AGENTS.md §5; `GpuDevice::ExecuteAndWait` | Bodies are generated at boot on the main thread. A 65-grid planet is tens of milliseconds (§8.4); a background generator is a later slice and an ADR. |
@@ -339,9 +339,10 @@ two pipelines and the uploaded body meshes.
 ### 7.1 Resources
 
 - **Vertex format.** `FxVertex` (§2): object-space position, per-triangle normal, baked colour
-  with `a = 1`, uv `= (cellX, cellZ)` so one outline tile covers one grid cell. 48 bytes; a
-  65-grid planet is `6·64·64·2 = 49 152` triangles → 147 456 vertices → **7.1 MB**, before
-  sea-level culling removes the ocean floor. An asteroid at `N = 33` is 1.8 MB, at 17 it is 0.44 MB.
+  with `a = 1`, uv `= (cellX, cellZ)` so one outline tile covers one grid cell. 28 bytes since
+  `Decisions/0018` (it was 48); a 65-grid planet is `6·64·64·2 = 49 152` triangles → 147 456
+  vertices → **4.1 MB**, before
+  sea-level culling removes the ocean floor. An asteroid at `N = 33` is 1.0 MB, at 17 it is 0.26 MB.
   Acceptable for the handful of bodies §3 describes; LOD is a later slice (§13).
 - **Meshes.** Static, uploaded once — but **not** into an upload heap as `SceneRenderer::UploadMesh`
   does. That helper's argument ("a few thousand triangles do not justify a staging copy") was made

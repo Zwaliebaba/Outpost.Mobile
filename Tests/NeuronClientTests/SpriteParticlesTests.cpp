@@ -7,6 +7,10 @@ namespace NeuronClientTests
 {
 namespace
 {
+// One UNORM8 step: the packing (FxVertex.h) moves a colour by at most half of one, and a
+// tolerance sitting exactly on that half fails on the rounding of the comparison itself.
+constexpr float UNORM8_STEP = 1.0f / 255.0f;
+
 const XMFLOAT3 ORIGIN(0.0f, 0.0f, 0.0f);
 const XMFLOAT3 RIGHT(1.0f, 0.0f, 0.0f);
 const XMFLOAT3 UP(0.0f, 1.0f, 0.0f);
@@ -32,8 +36,8 @@ void AssertVertex(const Neuron::FxVertex& _vertex, const XMFLOAT3& _pos, float _
   Assert::AreEqual(_pos.x, _vertex.px, 1e-5f, _what);
   Assert::AreEqual(_pos.y, _vertex.py, 1e-5f, _what);
   Assert::AreEqual(_pos.z, _vertex.pz, 1e-5f, _what);
-  Assert::AreEqual(_u, _vertex.u, 1e-5f, _what);
-  Assert::AreEqual(_v, _vertex.v, 1e-5f, _what);
+  Assert::AreEqual(_u, _vertex.Uv().x, 1e-5f, _what);
+  Assert::AreEqual(_v, _vertex.Uv().y, 1e-5f, _what);
 }
 } // namespace
 
@@ -184,22 +188,22 @@ public:
 
     std::vector<Neuron::FxVertex> verts;
     pool.Build(Neuron::SpriteBlend::Additive, RIGHT, UP, verts);
-    Assert::AreEqual(Neuron::SpriteParticles::PEAK_ALPHA, verts[0].a, 1e-5f, L"a new particle is not at peak alpha");
+    Assert::AreEqual(Neuron::SpriteParticles::PEAK_ALPHA, verts[0].Colour().w, UNORM8_STEP, L"a new particle is not at peak alpha");
 
     verts.clear();
     pool.Advance(1.5f, rng); // exactly three quarters of a core's two seconds
     pool.Build(Neuron::SpriteBlend::Additive, RIGHT, UP, verts);
-    Assert::AreEqual(Neuron::SpriteParticles::PEAK_ALPHA, verts[0].a, 1e-5f, L"the fade started before the last quarter");
+    Assert::AreEqual(Neuron::SpriteParticles::PEAK_ALPHA, verts[0].Colour().w, UNORM8_STEP, L"the fade started before the last quarter");
 
     verts.clear();
     pool.Advance(0.25f, rng); // seven eighths: halfway through the fade
     pool.Build(Neuron::SpriteBlend::Additive, RIGHT, UP, verts);
-    Assert::AreEqual(45.0f / 255.0f, verts[0].a, 1e-5f, L"the fade is not linear across the last quarter");
+    Assert::AreEqual(45.0f / 255.0f, verts[0].Colour().w, UNORM8_STEP, L"the fade is not linear across the last quarter");
 
     verts.clear();
     pool.Advance(0.249f, rng);
     pool.Build(Neuron::SpriteBlend::Additive, RIGHT, UP, verts);
-    Assert::IsTrue(verts[0].a < 0.001f, L"a particle about to expire is still visible");
+    Assert::IsTrue(verts[0].Colour().w < 0.001f, L"a particle about to expire is still visible");
   }
 
   TEST_METHOD(TheDarkPassCarriesZeroAlphaAndAPreScaledColour)
@@ -217,10 +221,10 @@ public:
     Assert::AreEqual(static_cast<std::size_t>(6), verts.size(), L"a sprite did not build two triangles");
     for (const Neuron::FxVertex& vertex : verts)
     {
-      Assert::AreEqual(0.0f, vertex.a, 1e-6f, L"the dark pass carried an alpha, so its source term would not vanish");
-      Assert::AreEqual(colour.x, vertex.r, 1e-5f, L"a new dark sprite is not at its full colour");
-      Assert::AreEqual(colour.y, vertex.g, 1e-5f, L"a new dark sprite is not at its full colour");
-      Assert::AreEqual(colour.z, vertex.b, 1e-5f, L"a new dark sprite is not at its full colour");
+      Assert::AreEqual(0.0f, vertex.Colour().w, UNORM8_STEP, L"the dark pass carried an alpha, so its source term would not vanish");
+      Assert::AreEqual(colour.x, vertex.Colour().x, UNORM8_STEP, L"a new dark sprite is not at its full colour");
+      Assert::AreEqual(colour.y, vertex.Colour().y, UNORM8_STEP, L"a new dark sprite is not at its full colour");
+      Assert::AreEqual(colour.z, vertex.Colour().z, UNORM8_STEP, L"a new dark sprite is not at its full colour");
     }
 
     verts.clear();
@@ -230,10 +234,10 @@ public:
     verts.clear();
     pool.Advance(4.75f, rng); // 95 per cent of a five second life: one fifth of the way left
     pool.Build(Neuron::SpriteBlend::Dark, RIGHT, UP, verts);
-    Assert::AreEqual(colour.x * 0.2f, verts[0].r, 1e-4f, L"the dark pass does not fade through its colour");
-    Assert::AreEqual(colour.y * 0.2f, verts[0].g, 1e-4f, L"the dark pass does not fade through its colour");
-    Assert::AreEqual(colour.z * 0.2f, verts[0].b, 1e-4f, L"the dark pass does not fade through its colour");
-    Assert::AreEqual(0.0f, verts[0].a, 1e-6f, L"the dark pass gained an alpha as it faded");
+    Assert::AreEqual(colour.x * 0.2f, verts[0].Colour().x, UNORM8_STEP, L"the dark pass does not fade through its colour");
+    Assert::AreEqual(colour.y * 0.2f, verts[0].Colour().y, UNORM8_STEP, L"the dark pass does not fade through its colour");
+    Assert::AreEqual(colour.z * 0.2f, verts[0].Colour().z, UNORM8_STEP, L"the dark pass does not fade through its colour");
+    Assert::AreEqual(0.0f, verts[0].Colour().w, UNORM8_STEP, L"the dark pass gained an alpha as it faded");
   }
 
   TEST_METHOD(TheAdditivePassCarriesTheAlphaAndTheColourUntouched)
@@ -249,10 +253,10 @@ public:
     Assert::AreEqual(static_cast<std::size_t>(6), verts.size(), L"a sprite did not build two triangles");
     for (const Neuron::FxVertex& vertex : verts)
     {
-      Assert::AreEqual(Neuron::SpriteParticles::PEAK_ALPHA, vertex.a, 1e-5f, L"the additive pass lost its alpha");
-      Assert::AreEqual(colour.x, vertex.r, 1e-5f, L"the additive pass scaled its colour");
-      Assert::AreEqual(colour.y, vertex.g, 1e-5f, L"the additive pass scaled its colour");
-      Assert::AreEqual(colour.z, vertex.b, 1e-5f, L"the additive pass scaled its colour");
+      Assert::AreEqual(Neuron::SpriteParticles::PEAK_ALPHA, vertex.Colour().w, UNORM8_STEP, L"the additive pass lost its alpha");
+      Assert::AreEqual(colour.x, vertex.Colour().x, UNORM8_STEP, L"the additive pass scaled its colour");
+      Assert::AreEqual(colour.y, vertex.Colour().y, UNORM8_STEP, L"the additive pass scaled its colour");
+      Assert::AreEqual(colour.z, vertex.Colour().z, UNORM8_STEP, L"the additive pass scaled its colour");
     }
 
     verts.clear();
@@ -280,7 +284,7 @@ public:
     AssertVertex(verts[5], XMFLOAT3(-1.0f, 0.0f, 0.0f), 0.0f, 1.0f, L"second triangle, left corner");
 
     for (const Neuron::FxVertex& vertex : verts)
-      Assert::IsTrue(vertex.nx == 0.0f && vertex.ny == 0.0f && vertex.nz == 0.0f,
+      Assert::IsTrue(vertex.normalSnorm[0] == 0 && vertex.normalSnorm[1] == 0 && vertex.normalSnorm[2] == 0,
                      L"a sprite wrote a normal the sprite shader will not read");
   }
 

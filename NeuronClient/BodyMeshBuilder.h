@@ -25,7 +25,7 @@ struct BodyBuildStats
 //
 // Unshared vertices because there is no other way to get one colour and one normal per triangle
 // without a provoking-vertex buffer, and because nothing in this tree carries an index buffer. The
-// cost is stated in the design: a 65-grid planet is 7.1 MB.
+// cost is stated in the design: a 65-grid planet is 4.1 MB.
 //
 // Device-free like everything else in the feature. It writes into a caller's vector; who uploads it,
 // and which ramp it was given, are somebody else's decisions.

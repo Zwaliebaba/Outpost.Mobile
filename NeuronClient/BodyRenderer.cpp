@@ -4,7 +4,7 @@
 #include "CubeSphere.h"
 #include "GpuHelpers.h"
 
-// Shader bytecode, compiled by FXC at build time (AGENTS.md 3).
+// Shader bytecode, compiled by DXC at build time (AGENTS.md 3).
 #include "CompiledShaders/BodyVS.h"
 #include "CompiledShaders/BodyPS.h"
 #include "CompiledShaders/BodyOverlayPS.h"
@@ -19,12 +19,12 @@ namespace
 {
 // Spelled here even though FxRenderer spells the same four elements: the two renderers share a
 // vertex format, not an array. The day they share one array is a RenderTypes.h change with a reason
-// behind it. FxVertex.h's static_assert on the struct's size is what keeps either from drifting.
+// behind it. FxVertex.h's static_asserts on the struct's size and offsets keep either from drifting.
 constexpr D3D12_INPUT_ELEMENT_DESC BODY_ELEMENTS[] = {
   {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-  {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-  {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-  {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 40, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+  {"NORMAL", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+  {"COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 20, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+  {"TEXCOORD", 0, DXGI_FORMAT_R16G16_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
 };
 
 // The vertex stage's root constants are the scene's layout: world at DWORD 0, viewProj at 16. Keep
@@ -48,6 +48,7 @@ constexpr UINT BAKE_PASS_HEIGHT_MAXIMUM = 1;
 // one of them is edited without the other. The number is written out rather than computed so that a
 // change to either side has to be looked at rather than absorbed.
 static_assert(sizeof(BodyParams) == 2784, "BodyParams and BodyBake.hlsli's cbuffer have drifted apart");
+static_assert(sizeof(FxVertex) == 28, "FxVertex and FxVertexGpu in BodyBake.hlsli have drifted apart");
 
 [[nodiscard]] UINT GroupsFor(UINT _threads) noexcept
 {

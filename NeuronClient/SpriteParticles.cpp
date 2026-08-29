@@ -153,20 +153,7 @@ void SpriteParticles::Build(SpriteBlend _blend, const XMFLOAT3& _cameraRight, co
     for (int i = 0; i < 6; ++i)
     {
       const int corner = TRIANGLES[i];
-      FxVertex vertex;
-      vertex.px = corners[corner].x;
-      vertex.py = corners[corner].y;
-      vertex.pz = corners[corner].z;
-      vertex.nx = 0.0f;
-      vertex.ny = 0.0f;
-      vertex.nz = 0.0f;
-      vertex.r = r;
-      vertex.g = g;
-      vertex.b = b;
-      vertex.a = a;
-      vertex.u = US[corner];
-      vertex.v = VS[corner];
-      _out.push_back(vertex);
+      _out.push_back(FxVertex::Make(corners[corner], XMFLOAT3(0.0f, 0.0f, 0.0f), XMFLOAT4(r, g, b, a), XMFLOAT2(US[corner], VS[corner])));
     }
   }
 }

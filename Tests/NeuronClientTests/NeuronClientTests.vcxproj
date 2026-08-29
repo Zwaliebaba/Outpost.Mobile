@@ -194,6 +194,7 @@
     <ClCompile Include="BodyFieldTests.cpp" />
     <ClCompile Include="ColourRampTests.cpp" />
     <ClCompile Include="BodyMeshTests.cpp" />
+    <ClCompile Include="FxVertexTests.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

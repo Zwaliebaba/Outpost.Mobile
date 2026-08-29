@@ -234,9 +234,9 @@ void BodyMeshBuilder::Build(const BodyField& _field, const ColourRamp* _ramp, st
           for (std::uint32_t corner = 0; corner < 3; ++corner)
           {
             const Sample& vertex = *triangles[triangle][corner];
-            _outTerrain.push_back(FxVertex{vertex.position.x, vertex.position.y, vertex.position.z, normal.x, normal.y, normal.z, colour.x,
-                                           colour.y, colour.z, 1.0f, static_cast<float>(x) + uvs[triangle][corner][0],
-                                           static_cast<float>(z) + uvs[triangle][corner][1]});
+            _outTerrain.push_back(
+              FxVertex::Make(vertex.position, normal, XMFLOAT4(colour.x, colour.y, colour.z, 1.0f),
+                             XMFLOAT2(static_cast<float>(x) + uvs[triangle][corner][0], static_cast<float>(z) + uvs[triangle][corner][1])));
           }
 
           ++_outStats.trianglesEmitted;

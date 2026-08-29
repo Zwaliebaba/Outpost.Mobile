@@ -595,15 +595,50 @@ float FromOrderedBits(uint _ordered)
 // ------------------------------------------------------------------------------------------------
 // The resources both kernels bind, and the two things they read out of the reduction.
 
+// FxVertex to the byte (FxVertex.h, Decisions/0019): a float position, then the normal, colour and
+// uv packed into four words. A structured buffer packs scalars tightly, so this is 28 bytes, and
+// FxVertex.h's static_assert on 28 is the other half of that.
 struct FxVertexGpu
 {
-  // Twelve scalars and not four vectors: a structured buffer packs scalars tightly, and this has to
-  // be FxVertex to the byte. FxVertex.h's static_assert on 48 is the other half of that.
   float px, py, pz;
-  float nx, ny, nz;
-  float r, g, b, a;
-  float u, v;
+  uint2 normal; // R16G16B16A16_SNORM: x and y in the first word, z and the unused w in the second
+  uint colour;  // R8G8B8A8_UNORM
+  uint uv;      // R16G16_FLOAT
 };
+
+// The three rounding rules FxVertex.h spells, in the intrinsics that implement them: round() takes
+// halves away from zero, which on a saturated UNORM is the C++'s half-up, and f32tof16 is IEEE
+// round-to-nearest-even on every D3D12 device. Get one of these wrong and the readback comparison
+// against the CPU builder is off by a byte on the vertices where it matters least, which is the
+// hardest kind of difference to read.
+uint PackUnorm8x4(float4 _colour)
+{
+  const uint4 quantised = uint4(round(saturate(_colour) * 255.0));
+  return quantised.x | (quantised.y << 8) | (quantised.z << 16) | (quantised.w << 24);
+}
+
+uint2 PackSnorm16x4(float3 _normal)
+{
+  const int3 quantised = int3(round(clamp(_normal, -1.0, 1.0) * 32767.0));
+  return uint2((uint(quantised.x) & 0xffffu) | (uint(quantised.y) << 16), uint(quantised.z) & 0xffffu);
+}
+
+uint PackHalf2(float2 _uv)
+{
+  return f32tof16(_uv.x) | (f32tof16(_uv.y) << 16);
+}
+
+FxVertexGpu MakeVertex(float3 _position, float3 _normal, float4 _colour, float2 _uv)
+{
+  FxVertexGpu vertex;
+  vertex.px = _position.x;
+  vertex.py = _position.y;
+  vertex.pz = _position.z;
+  vertex.normal = PackSnorm16x4(_normal);
+  vertex.colour = PackUnorm8x4(_colour);
+  vertex.uv = PackHalf2(_uv);
+  return vertex;
+}
 
 RWStructuredBuffer<FxVertexGpu> Out : register(u0);
 RWBuffer<uint> Maxima : register(u1);
