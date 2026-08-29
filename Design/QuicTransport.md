@@ -369,7 +369,7 @@ moment 1 merges; 3b follows 3a because the lane must exist before the format cho
 
 | # | Slice | Layer | Depends on | Status | Work order |
 |---|---|---|---|---|---|
-| 1 | `QuicApi`, `QuicTransport`, `QuicListener`, `DevCertificate`, the tests, ADRs 0018–0020 | `NeuronCore` | — | | [slice 1](QuicTransport-slice-1.md) |
+| 1 | `QuicApi`, `QuicTransport`, `QuicListener`, `DevCertificate`, the tests, ADRs 0018–0020 | `NeuronCore` | — | landed | [slice 1](Archive/QuicTransport-slice-1.md) |
 | 2 | The composition root: boot over QUIC, fallback, log, AGENTS.md text | `Outpost` | 1 | | [slice 2](QuicTransport-slice-2.md) |
 | 3a | A reliable lane on `Transport`, on both implementations | `NeuronCore` | 1 | | to write, after 2 has landed (§12 decision 4) |
 | 3b | Leaves, destroyed lists and orders go reliable | `GameLogic` | 3a | | to write, with 3a |
@@ -381,6 +381,10 @@ down), and *the development credential is self-signed at boot and the client doe
 They are written as 0018–0020 here; if the numbers are taken while the slice is in flight, the
 records take the next free ones and this document is not corrected — records are never
 renumbered.
+
+They were taken: 0018, 0019 and 0020 went to the planet renderer's last slices while this design was
+being written, so the three records above landed as **0021**, **0022** and **0023**. The numbers in
+the row and the paragraph above are the ones this document guessed at, and they stay as written.
 
 ---
 

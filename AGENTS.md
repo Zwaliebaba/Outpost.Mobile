@@ -278,10 +278,14 @@ is memory: `WorldView` reads a snapshot that arrived over a `Transport` and send
 up the same wire, and its header does not include `World.h`, so the seam is structural rather than
 a convention.
 
-`NeuronCore/Transport.h` declares the seam and `LoopbackTransport` implements it, with latency and
-loss you can configure — counted in ticks rather than seconds, so a measurement reproduces. What
-remains is a socket and a second process, and neither is scheduled: the code boundary is the part
-that had to land early, because it is what stops the two halves growing into each other. Do not
+`NeuronCore/Transport.h` declares the seam, and two implementations answer it. `LoopbackTransport`
+puts the far end in this process, with latency and loss you can configure — counted in ticks rather
+than seconds, so a measurement reproduces. `QuicTransport` puts it on one MsQuic connection, with
+the same datagrams and the same contract (`Design/Decisions/0021`); `QuicListener` beside it is the
+half a dedicated server would start. The game still boots on the loopback — the composition root
+does not reach for QUIC yet — so what remains is that wiring and a second process, and the second
+process is not scheduled: the code boundary is the part that had to land early, because it is what
+stops the two halves growing into each other. Do not
 shortcut it: if you find yourself wanting the simulation to call into the renderer, or the renderer
 to reach into the world, that is the seam telling you the change belongs somewhere else.
 
@@ -446,11 +450,14 @@ macro of that shape appears.
   `packages.config` files, and C++/WinRT as above. If you believe a third-party library is
   justified, present the case and **stop** — do not assume approval.
 
-  What the tree does *not* use yet, whatever the package list suggests: there is no audio, no
-  networking, and no WinUI. Several Windows App SDK packages are restored because the executable
-  was generated from an MSIX template; none of them is referenced by code. MsQuic
-  (`Microsoft.Native.Quic.MsQuic.Schannel`) is restored and its build targets imported ahead of
-  the socket transport; no code references it yet either.
+  What the tree does *not* use yet, whatever the package list suggests: there is no audio and no
+  WinUI. Several Windows App SDK packages are restored because the executable was generated from an
+  MSIX template; none of them is referenced by code. MsQuic
+  (`Microsoft.Native.Quic.MsQuic.Schannel`) is no longer one of those: it is what
+  `NeuronCore/QuicTransport` is built on (`Design/Decisions/0021`), `NeuronCoreTests` drives a real
+  connection over `127.0.0.1` against it, and `msquic.dll` is copied beside every executable that
+  imports it by the package's own targets — nothing in this tree copies it and nothing should
+  start.
 
 ---
 

@@ -6,11 +6,12 @@ namespace Neuron
 {
 // The declared seam between the client and server halves.
 //
-// LoopbackTransport implements it, and the client half reaches the world only through it: the game
-// still runs both halves in one process, but no longer by letting one read the other's memory
-// (AGENTS.md 2 and Design/Collision.md 2). The plan this comment used to describe has happened as
-// written -- a loopback implementation first, a network one after it, and neither half changing --
-// so what remains is the socket.
+// LoopbackTransport and QuicTransport implement it, and the client half reaches the world only
+// through one of them: the game still runs both halves in one process, but no longer by letting one
+// read the other's memory (AGENTS.md 2 and Design/Collision.md 2). The plan this comment used to
+// describe has happened as written -- a loopback implementation first, a network one after it, and
+// neither half changing -- so what remains is a second process, and nothing here is what would
+// change on the day there is one.
 //
 // The rule the seam exists to protect: the two halves communicate only through a Transport. No
 // shared memory, no cross-half calls, no singleton bridging them -- because anything that works

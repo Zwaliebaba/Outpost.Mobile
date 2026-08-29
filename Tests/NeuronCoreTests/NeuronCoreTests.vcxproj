@@ -187,6 +187,7 @@
     <ClCompile Include="EaseTests.cpp" />
     <ClCompile Include="Pcg32Tests.cpp" />
     <ClCompile Include="LoopbackTransportTests.cpp" />
+    <ClCompile Include="QuicTransportTests.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
