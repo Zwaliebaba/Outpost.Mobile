@@ -54,9 +54,13 @@ public:
 
   // What the composition root knows and the HUD does not. The economy has no home in the world
   // yet, so its numbers arrive from here; the defaults are the mock's so the panel reads right
-  // until it does. The same goes for hull and shield, which have no damage model to read. The
-  // sector is real: the position under the camera target, of which the minimap names the sector
-  // pair.
+  // until it does. The same goes for hull and shield, which have no damage model to read.
+  //
+  // Three of these are real. The sector is the position under the camera target, of which the
+  // minimap names the sector pair. contacts is the count of records this client holds that are not
+  // its own -- the subscription, not the map rectangle, so a contact past the map edge is counted
+  // and clipped. ownFaction is session identity: the HUD colors by allegiance and cannot know whose
+  // side it is on without being told.
   struct Frame
   {
     Stats stats;
@@ -67,6 +71,7 @@ public:
     int alloyPerMin = 8;
     Game::WorldPos sector;
     int contacts = 0;
+    Game::FactionId ownFaction = Game::FACTION_PLAYER;
     float hullFraction = 1.0f;
     float shieldFraction = 1.0f;
     std::span<const char* const> hullNames; // indexed by ShipSnapshot::hullId; an id past the end is unnamed

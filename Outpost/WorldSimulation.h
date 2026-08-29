@@ -98,27 +98,36 @@ private:
                         Game::HandleOrderBefore);
   }
 
-  // Where the subscriber is looking. With one client every ship is its own, so this is the fleet's
-  // centroid; the day a real player has a camera on the wire, it comes from there instead
-  // (Design/Archive/Collision-slice-6.md 3.6).
+  // Where the subscriber is looking: the centroid of its own fleet. The day a real player has a
+  // camera on the wire, it comes from there instead (Design/Archive/Collision-slice-6.md 3.6).
   //
-  // Accumulated as offsets from the first ship rather than by averaging fields, so a fleet
-  // straddling a sector boundary has a centre between its ships and not a sector away.
+  // Its own, not every ship's. That distinction was free while every ship was the subscriber's and
+  // stopped being the moment a hostile base existed: four hostiles 1.2 km out drag an unfiltered
+  // centroid some 690 m toward the enemy, which moves what the player is sent (Design/Hostiles.md 6).
+  //
+  // Accumulated as offsets from the first own ship rather than by averaging fields, so a fleet
+  // straddling a sector boundary has a center between its ships and not a sector away.
   [[nodiscard]] Game::WorldPos SubscriberCentre() const
   {
     const std::span<const Game::ShipState> ships = m_world.Ships();
-    if (ships.empty())
-      return Game::WorldPos{};
-
-    Game::WorldPos centre = ships[0].posWorld;
+    Game::WorldPos centre;
+    std::uint32_t counted = 0;
     float offsetX = 0.0f;
     float offsetZ = 0.0f;
     for (const Game::ShipState& ship : ships)
     {
+      if (ship.factionId != m_subscriberFaction)
+        continue;
+      if (counted == 0)
+        centre = ship.posWorld;
       offsetX += Game::OffsetX(centre, ship.posWorld);
       offsetZ += Game::OffsetZ(centre, ship.posWorld);
+      ++counted;
     }
-    Game::Translate(centre, offsetX / static_cast<float>(ships.size()), offsetZ / static_cast<float>(ships.size()));
+    if (counted == 0)
+      return Game::WorldPos{}; // nothing of its own to look from, as an empty world already returned
+
+    Game::Translate(centre, offsetX / static_cast<float>(counted), offsetZ / static_cast<float>(counted));
     return centre;
   }
 

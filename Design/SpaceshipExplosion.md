@@ -377,6 +377,9 @@ the client *can* know is that a ship it was drawing is no longer in the snapshot
 left in `m_carryScratch` whose handle was not matched is a ship that vanished.
 
 So the trigger is: **a `ShipView` that is not carried explodes at the last place it was drawn.**
+*(Superseded by Design/Hostiles.md §4.4: a ship that is not carried has either died or left the
+interest radius, and the wire now says which. `ExplodeTheLost` consumes the update's destroyed list
+and drops a bare departure silently. The rest of this section stands.)*
 For that `ShipView` needs two fields it does not have — the last world matrix it was drawn with
 (bank, hover, interpolation and all, so the shards start exactly where the hull was) and its
 velocity, `(sin h, 0, cos h) × speed`, which the snapshot gives — both written in `Render`.
@@ -436,8 +439,10 @@ shimmer at distance, mip generation is a slice of its own.
 
 - **Sound, damage, and any simulation of death.** Out of scope by the owner's decision and the
   rulebook; the trigger in §9 is what stands in.
-- **A destroy event on the wire.** The client infers the despawn. If a later design carries a
-  cause of death, the same code consumes it.
+- **A destroy event on the wire.** The client infers the despawn. *(Landed since, in
+  Design/Hostiles.md §4.4: the interest update states a death as distinct from a departure, because
+  the first ship living at the edge of the interest radius made the inference produce phantom
+  explosions. A cause or a killer would extend the same list.)*
 - **The `Starburst.dds` one-frame flash.** The source document's §8 lists it as an improvement,
   not part of the effect. The texture is loaded so adding it is a `Build` of six vertices, but
   it is not in any slice.

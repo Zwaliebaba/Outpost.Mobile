@@ -41,8 +41,9 @@ public:
     std::uint64_t seed = 0;                              // the ship's handle mixed with the tick it died on
 
     // Whether this death leaves a blast front on the ground. A parameter rather than something the
-    // effect works out for itself: nothing in the game is a station yet, and when one exists it is
-    // the thing that knows it should get one -- not a size threshold guessing on its behalf.
+    // effect works out for itself: the station that exists cannot be destroyed, and whatever can
+    // destroy one is the thing that knows it should get a ring -- not a size threshold guessing on
+    // its behalf.
     bool shockRing = false;
   };
 

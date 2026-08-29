@@ -117,6 +117,15 @@ public:
   // root registers the table up front and the view resolves against it as ships appear.
   void RegisterHullMesh(Game::HullId _hull, Neuron::MeshHandle _mesh);
 
+  // Which faction this client is, which is session identity no library can know: the composition
+  // root supplies it. What it decides here is what may be selected -- and therefore what may be
+  // ordered, since an order carries the selection. The simulation refuses somebody else's ship
+  // anyway (Design/Hostiles.md 4.3); this is the affordance telling the same truth.
+  void SetOwnFaction(Game::FactionId _faction) noexcept
+  {
+    m_ownFaction = _faction;
+  }
+
   // Drains the transport and applies whatever snapshots arrived. Called once per tick from the
   // composition root, before anything reads Ships().
   void PumpNetwork();
@@ -234,6 +243,12 @@ public:
 private:
   void DrawFeedback(Neuron::SceneRenderer& _renderer, Neuron::GpuDevice& _gpu);
   [[nodiscard]] int PickShip(float _xPx, float _yPx) const;
+
+  // Whether record _index is one this client may take hold of. Every selection path goes through it:
+  // PickShip for taps and hovers, OnBoxSelect for a band, and SelectGroup -- which needs it despite
+  // only ever recalling what was selected, because a group holds indices and a later snapshot can
+  // put a different ship at one.
+  [[nodiscard]] bool IsOwn(std::size_t _index) const noexcept;
   [[nodiscard]] static MotionSample SampleOf(const Game::ShipSnapshot& _ship, std::uint64_t _tick) noexcept;
   void IssueMoveOrder(const DirectX::XMFLOAT3& _point, bool _hasFacing, float _facingRad);
   [[nodiscard]] float SimTimeSec() const noexcept;
@@ -248,6 +263,7 @@ private:
   void ExplodeTheLost(std::uint64_t _tick);
 
   Game::WorldPos m_viewOrigin;
+  Game::FactionId m_ownFaction = Game::FACTION_PLAYER;
   Neuron::Transport* m_transport = nullptr;
   Game::SnapshotReceiver m_receiver;
   float m_displayTick = 0.0f; // host tick time less INTERP_DELAY_TICKS

@@ -277,7 +277,8 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
 
     std::snprintf(line, sizeof(line), "CONTACTS %d", _frame.contacts);
     const float width = textPx * static_cast<float>(std::strlen(line));
-    _text.DrawTextLine(FontId::Ui, panel.x1 - HUD_PANEL_PAD_Y_PX * s - width, y, HUD_SMALL_SCALE * s, HUD_ACCENT_AMBER, line);
+    _text.DrawTextLine(FontId::Ui, panel.x1 - HUD_PANEL_PAD_Y_PX * s - width, y, HUD_SMALL_SCALE * s,
+                       _frame.contacts > 0 ? HUD_ALERT_RED : HUD_ACCENT_AMBER, line);
 
     const float line1 = std::max(1.0f, std::floor(s));
     _text.DrawScreenRect(panel.x0, map.y0 - line1, panel.x1, map.y0, HUD_PANEL_OUTLINE);
@@ -348,18 +349,27 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
     }
   }
 
-  // Blips. Every ship in the world is friendly today; hostiles arrive with combat, and they draw
-  // in HUD_ALERT_RED when they do.
+  // Blips, colored by allegiance. The server states whose a ship is and this is where the client
+  // turns that identity into a relation: anything that is not the viewer's own draws red, and an
+  // immovable hull draws at the larger dot so a base reads bigger than a fighter without pretending
+  // to scale (Design/Hostiles.md 7). The hull table is how a station is told from a ship, so no wire
+  // field had to be invented for it.
   {
-    const float dot = HUD_MINIMAP_DOT_PX * s;
     const std::span<const Game::ShipSnapshot>& ships = _ships;
     for (size_t i = 0; i < ships.size(); ++i)
     {
+      const bool own = ships[i].factionId == _frame.ownFaction;
+      const bool structure = Game::HullSpecOf(ships[i].hullId).immovable;
+      const float dot = (!own && structure) ? HUD_MINIMAP_STRUCTURE_DOT_PX * s : HUD_MINIMAP_DOT_PX * s;
       const float x = toMapX(_view.ViewX(ships[i].posWorld));
       const float y = toMapY(_view.ViewZ(ships[i].posWorld));
+      // Clipped against the dot's own size, so the bigger square does not hang over the edge.
       if (x < map.x0 + dot || x > map.x1 - dot || y < map.y0 + dot || y > map.y1 - dot)
         continue;
-      const Rgba colour = _view.IsSelected(i) ? HUD_ACCENT_GREEN : WithAlpha(HUD_ACCENT_GREEN, 0.7f);
+
+      Rgba colour = HUD_ALERT_RED;
+      if (own)
+        colour = _view.IsSelected(i) ? HUD_ACCENT_GREEN : WithAlpha(HUD_ACCENT_GREEN, 0.7f);
       _text.DrawScreenRect(x - dot * 0.5f, y - dot * 0.5f, x + dot * 0.5f, y + dot * 0.5f, colour);
     }
   }

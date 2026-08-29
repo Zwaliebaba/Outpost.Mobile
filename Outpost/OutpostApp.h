@@ -34,7 +34,10 @@ public:
   void Shutdown();
 
 private:
+  void LoadHullMeshes();
   void SpawnStartingFleet();
+  void SpawnHostileBase();
+  [[nodiscard]] std::uint32_t OwnShipCount() const noexcept;
   void Update();
   void Render();
 
@@ -62,6 +65,12 @@ private:
   // changes is the code boundary, not the process boundary (Design/Collision.md 2).
   Game::World m_world;
   WorldSimulation m_simulation{m_world};
+
+  // Which faction this client is. Session identity, which nothing below the composition root can
+  // know: it decides what the overview colors green, what may be selected, and what counts as a
+  // contact. The day a login exists it arrives with the session and only this line changes.
+  Game::FactionId m_ownFaction = Game::FACTION_PLAYER;
+
   Neuron::ServerHost m_host;
   Neuron::LoopbackTransport m_serverLink;
   Neuron::LoopbackTransport m_clientLink;
