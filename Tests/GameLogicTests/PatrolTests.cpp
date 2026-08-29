@@ -48,7 +48,7 @@ public:
     // The replay gate, extended over the new pass. The patrol is the first intent in the tree that
     // does not come from a client, so the claim that it reproduces has to be measured rather than
     // argued -- and it is measured over the fields the pass itself writes, not only over position.
-    const auto play = [](std::vector<Game::WorldPos>& _outTrack, std::vector<float>& _outSpeeds, std::vector<std::uint32_t>& _outWaypoints)
+    const auto play = [](std::vector<Game::WorldPos>& _outTrack, std::vector<float>& _outMotion, std::vector<std::uint32_t>& _outWaypoints)
     {
       Game::World world;
       std::vector<Game::ShipId> patrol;
@@ -59,25 +59,25 @@ public:
         for (const Game::ShipId id : patrol)
         {
           _outTrack.push_back(world.Ship(id).posWorld);
-          _outSpeeds.push_back(world.Ship(id).speed);
-          _outSpeeds.push_back(world.Ship(id).headingRad);
-          _outSpeeds.push_back(world.Ship(id).orderSpeedCapMetresPerSec);
+          _outMotion.push_back(world.Ship(id).speed);
+          _outMotion.push_back(world.Ship(id).headingRad);
+          _outMotion.push_back(world.Ship(id).orderSpeedCapMetresPerSec);
           _outWaypoints.push_back(world.PatrolOf(id).waypointIndex);
         }
       }
     };
 
     std::vector<Game::WorldPos> firstTrack, secondTrack;
-    std::vector<float> firstSpeeds, secondSpeeds;
+    std::vector<float> firstMotion, secondMotion;
     std::vector<std::uint32_t> firstWaypoints, secondWaypoints;
-    play(firstTrack, firstSpeeds, firstWaypoints);
-    play(secondTrack, secondSpeeds, secondWaypoints);
+    play(firstTrack, firstMotion, firstWaypoints);
+    play(secondTrack, secondMotion, secondWaypoints);
 
     Assert::AreEqual(firstTrack.size(), secondTrack.size(), L"the two runs produced different numbers of samples");
     for (std::size_t at = 0; at < firstTrack.size(); ++at)
       Assert::IsTrue(IsSamePosition(firstTrack[at], secondTrack[at]), L"a patrolling ship's position diverged between two identical runs");
-    for (std::size_t at = 0; at < firstSpeeds.size(); ++at)
-      Assert::AreEqual(firstSpeeds[at], secondSpeeds[at], 0.0f, L"a patrolling ship's motion diverged between two identical runs");
+    for (std::size_t at = 0; at < firstMotion.size(); ++at)
+      Assert::AreEqual(firstMotion[at], secondMotion[at], 0.0f, L"a patrolling ship's motion diverged between two identical runs");
     for (std::size_t at = 0; at < firstWaypoints.size(); ++at)
       Assert::AreEqual(firstWaypoints[at], secondWaypoints[at], L"the ring walk diverged between two identical runs");
   }

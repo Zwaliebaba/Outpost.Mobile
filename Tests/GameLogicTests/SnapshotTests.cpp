@@ -51,6 +51,13 @@ Game::ShipId SpawnAt(Game::World& _world, float _x, float _z, Game::HullId _hull
   return false;
 }
 
+// A faction id is one byte, and a byte is a character to anything that prints one -- so a failure
+// would report an unprintable glyph rather than "1". Widened for the assertion, never for the wire.
+[[nodiscard]] std::uint32_t Faction(Game::FactionId _faction)
+{
+  return _faction;
+}
+
 [[nodiscard]] const Game::ShipSnapshot* Find(const Game::WorldSnapshot& _snapshot, Game::ShipHandle _handle)
 {
   for (const Game::ShipSnapshot& ship : _snapshot.ships)
@@ -108,7 +115,7 @@ public:
     Assert::AreEqual(source.accelSample, copy.accelSample, 0.0f, L"accelSample did not survive");
     Assert::AreEqual(source.turnRateRadPerSec, copy.turnRateRadPerSec, 0.0f, L"turnRateRadPerSec did not survive");
     Assert::AreEqual(source.order, copy.order, L"the order state did not survive");
-    Assert::AreEqual(source.factionId, copy.factionId, L"factionId did not survive");
+    Assert::AreEqual(Faction(source.factionId), Faction(copy.factionId), L"factionId did not survive");
     Assert::AreEqual(source.hullId, copy.hullId, L"hullId did not survive");
   }
 
@@ -131,8 +138,10 @@ public:
     for (const std::vector<std::uint8_t>& datagram : whole.sent)
       (void)fromWhole.Accept(datagram);
     Assert::IsTrue(Find(fromWhole.Latest(), ourHandle) != nullptr, L"the player's ship is missing from the full snapshot");
-    Assert::AreEqual(Game::FACTION_PLAYER, Find(fromWhole.Latest(), ourHandle)->factionId, L"the player's faction did not survive Write");
-    Assert::AreEqual(Game::FACTION_HOSTILE, Find(fromWhole.Latest(), theirHandle)->factionId, L"the hostile faction did not survive Write");
+    Assert::AreEqual(Faction(Game::FACTION_PLAYER), Faction(Find(fromWhole.Latest(), ourHandle)->factionId),
+                     L"the player's faction did not survive Write");
+    Assert::AreEqual(Faction(Game::FACTION_HOSTILE), Faction(Find(fromWhole.Latest(), theirHandle)->factionId),
+                     L"the hostile faction did not survive Write");
 
     world.Step();
     CaptureTransport update;
@@ -141,9 +150,9 @@ public:
     Game::SnapshotReceiver fromUpdate;
     for (const std::vector<std::uint8_t>& datagram : update.sent)
       (void)fromUpdate.Accept(datagram);
-    Assert::AreEqual(Game::FACTION_PLAYER, Find(fromUpdate.Latest(), ourHandle)->factionId,
+    Assert::AreEqual(Faction(Game::FACTION_PLAYER), Faction(Find(fromUpdate.Latest(), ourHandle)->factionId),
                      L"the player's faction did not survive WriteInterest");
-    Assert::AreEqual(Game::FACTION_HOSTILE, Find(fromUpdate.Latest(), theirHandle)->factionId,
+    Assert::AreEqual(Faction(Game::FACTION_HOSTILE), Faction(Find(fromUpdate.Latest(), theirHandle)->factionId),
                      L"the hostile faction did not survive WriteInterest");
   }
 
