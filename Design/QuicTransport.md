@@ -92,8 +92,9 @@ a real certificate chain, more than one client, NAT traversal (§11).
 | Nothing | GameLogic, NeuronServer, NeuronClient | — | The format does not change; `ServerHost` ticks and knows no transport; the renderer never sees one. |
 
 The umbrella `NeuronCore.h` gains three includes after `LoopbackTransport.h`. `msquic.h` is
-included only by the three `.cpp` files and `QuicApi.h`; no other header in the tree names an
-MsQuic type, so the day the package version changes, the blast radius is one directory.
+included only by the three `Quic*.cpp` files; no header in the tree names an MsQuic type
+(`QuicApi.h` forward-declares the API table and holds handles as `void*`), so the day the package
+version changes, the blast radius is one directory.
 
 ---
 
