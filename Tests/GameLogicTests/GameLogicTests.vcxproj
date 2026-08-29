@@ -185,7 +185,17 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="FormationTests.cpp" />
+    <ClCompile Include="HullSpecTests.cpp" />
     <ClCompile Include="MovementTests.cpp" />
+    <ClCompile Include="AvoidanceTests.cpp" />
+    <ClCompile Include="CollisionTests.cpp" />
+    <ClCompile Include="OrderTests.cpp" />
+    <ClCompile Include="PathfindingTests.cpp" />
+    <ClCompile Include="SeparationTests.cpp" />
+    <ClCompile Include="SectorTests.cpp" />
+    <ClCompile Include="SnapshotTests.cpp" />
+    <ClCompile Include="SpatialIndexTests.cpp" />
+    <ClCompile Include="WorldTests.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

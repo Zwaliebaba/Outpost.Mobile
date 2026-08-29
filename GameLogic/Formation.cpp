@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "Formation.h"
 
+#include <cmath>
+
 using namespace DirectX;
 
 namespace Game
@@ -32,5 +34,27 @@ XMFLOAT2 FormationOffset(int _slot, int _count, FormationShape _shape, float _sp
   default:
     return XMFLOAT2(lane * _spacing, -std::fabs(lane) * _spacing * 0.8f);
   }
+}
+
+float FormationHeading(std::span<const WorldPos> _shipPositions, const WorldPos& _destination, float _fallbackHeadingRad) noexcept
+{
+  if (_shipPositions.empty())
+    return _fallbackHeadingRad;
+
+  // The centroid is accumulated as offsets from the first ship rather than by averaging fields,
+  // so a group straddling a sector boundary has a centre between its ships and not a sector away.
+  WorldPos centre = _shipPositions[0];
+  float centreX = 0.0f;
+  float centreZ = 0.0f;
+  for (const WorldPos& position : _shipPositions)
+  {
+    centreX += OffsetX(centre, position);
+    centreZ += OffsetZ(centre, position);
+  }
+  Translate(centre, centreX / static_cast<float>(_shipPositions.size()), centreZ / static_cast<float>(_shipPositions.size()));
+
+  const float dx = OffsetX(centre, _destination);
+  const float dz = OffsetZ(centre, _destination);
+  return (dx * dx + dz * dz > 1e-4f) ? std::atan2(dx, dz) : _fallbackHeadingRad;
 }
 } // namespace Game

@@ -20,7 +20,37 @@
     <ClCompile Include="FormationTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="HullSpecTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="MovementTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="AvoidanceTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="CollisionTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="OrderTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="PathfindingTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="SeparationTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="SectorTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="SnapshotTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="SpatialIndexTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="WorldTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
   </ItemGroup>

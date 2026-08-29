@@ -24,14 +24,32 @@
     <ClInclude Include="SimTuning.h">
       <Filter>Tuning</Filter>
     </ClInclude>
+    <ClInclude Include="WorldPos.h">
+      <Filter>World</Filter>
+    </ClInclude>
+    <ClInclude Include="WorldSnapshot.h">
+      <Filter>World</Filter>
+    </ClInclude>
     <ClInclude Include="ShipState.h">
       <Filter>World</Filter>
+    </ClInclude>
+    <ClInclude Include="HullSpec.h">
+      <Filter>Tuning</Filter>
     </ClInclude>
     <ClInclude Include="Formation.h">
       <Filter>Motion</Filter>
     </ClInclude>
     <ClInclude Include="Movement.h">
       <Filter>Motion</Filter>
+    </ClInclude>
+    <ClInclude Include="Collision.h">
+      <Filter>Motion</Filter>
+    </ClInclude>
+    <ClInclude Include="PathGrid.h">
+      <Filter>Motion</Filter>
+    </ClInclude>
+    <ClInclude Include="SpatialIndex.h">
+      <Filter>World</Filter>
     </ClInclude>
     <ClInclude Include="World.h">
       <Filter>World</Filter>
@@ -46,6 +64,18 @@
     </ClCompile>
     <ClCompile Include="Movement.cpp">
       <Filter>Motion</Filter>
+    </ClCompile>
+    <ClCompile Include="Collision.cpp">
+      <Filter>Motion</Filter>
+    </ClCompile>
+    <ClCompile Include="PathGrid.cpp">
+      <Filter>Motion</Filter>
+    </ClCompile>
+    <ClCompile Include="SpatialIndex.cpp">
+      <Filter>World</Filter>
+    </ClCompile>
+    <ClCompile Include="WorldSnapshot.cpp">
+      <Filter>World</Filter>
     </ClCompile>
     <ClCompile Include="World.cpp">
       <Filter>World</Filter>

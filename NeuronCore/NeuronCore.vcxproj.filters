@@ -39,6 +39,9 @@
     <ClInclude Include="Transport.h">
       <Filter>Net</Filter>
     </ClInclude>
+    <ClInclude Include="LoopbackTransport.h">
+      <Filter>Net</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -48,6 +51,9 @@
       <Filter>Content</Filter>
     </ClCompile>
     <ClCompile Include="FrameClock.cpp">
+      <Filter>Foundation</Filter>
+    </ClCompile>
+    <ClCompile Include="LoopbackTransport.cpp">
       <Filter>Foundation</Filter>
     </ClCompile>
   </ItemGroup>

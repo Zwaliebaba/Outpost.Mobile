@@ -35,3 +35,10 @@ What the decision costs and what it makes easier, including what now has to be d
 |---|---|---|
 | [0001](0001-headless-core-and-server.md) | NeuronCore and NeuronServer are headless | accepted |
 | [0002](0002-content-readers-live-with-their-consumer.md) | A content reader lives in the library that consumes what it reads | accepted |
+| [0003](0003-neighbour-list-sorts-by-surface-not-centre.md) | The neighbour list sorts by surface proximity, not centre distance | accepted |
+| [0004](0004-separation-clamp-caps-the-pair-not-the-ship.md) | The separation clamp caps what a pair closes, then splits it | accepted |
+| [0005](0005-ship-handles-carry-a-slot-not-an-index.md) | A ship handle carries a stable slot, not the ship's array index | accepted |
+| [0006](0006-separation-solve-iterates-within-a-tick.md) | The separation solve runs several times per tick | accepted |
+| [0007](0007-the-index-stores-a-whole-position.md) | The spatial index stores a whole position, and pays for it | accepted |
+| [0008](0008-the-wire-format-lives-in-gamelogic.md) | The wire format lives in GameLogic | accepted |
+| [0009](0009-a-snapshot-carries-a-view-record.md) | A snapshot carries a view record, not the simulation's ship | accepted |

@@ -176,6 +176,7 @@
     <ClInclude Include="FileSys.h" />
     <ClInclude Include="FrameClock.h" />
     <ClInclude Include="Transport.h" />
+    <ClInclude Include="LoopbackTransport.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -183,6 +184,7 @@
     </ClCompile>
     <ClCompile Include="FileSys.cpp" />
     <ClCompile Include="FrameClock.cpp" />
+    <ClCompile Include="LoopbackTransport.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

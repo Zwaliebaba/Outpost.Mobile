@@ -18,7 +18,9 @@ constexpr char TIMES[] = "\xD7";
 constexpr const char* RAIL_LABELS[Hud::RAIL_BUTTONS] = {"RSRCH", "WALLET", "STORE", "UNIVRS"};
 constexpr const char* ORDER_NAMES[] = {"IDLE", "MOVING", "ALIGNING"}; // by Game::OrderState
 
-constexpr int MAX_HULL_KINDS = 8; // counted per hullId in the selection summary; more than this are lumped
+// Counted per hullId in the selection summary. Taken from the hull table rather than guessed, so a
+// hull added there cannot quietly start being counted as a different one.
+constexpr int MAX_HULL_KINDS = static_cast<int>(Game::HULL_COUNT);
 
 Rgba WithAlpha(Rgba _colour, float _alpha) noexcept
 {
@@ -247,8 +249,8 @@ void Hud::DrawDebug(TextRenderer& _text, const Layout& _layout, const Frame& _fr
   _text.DrawTextLine(FontId::Ui, x, _layout.resources[0].y0 + HUD_PANEL_PAD_Y_PX * s, HUD_TEXT_SCALE * s, HUD_LABEL_COLOUR, line);
 }
 
-void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, const Game::World& _world, const WorldView& _view, const Camera& _camera,
-                      const Frame& _frame, std::uint32_t _widthPx, std::uint32_t _heightPx) const
+void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view,
+                      const Camera& _camera, const Frame& _frame, std::uint32_t _widthPx, std::uint32_t _heightPx) const
 {
   const float s = _layout.scale;
   const Rect& panel = _layout.minimap;
@@ -319,11 +321,11 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, const Game::Wo
   // in HUD_ALERT_RED when they do.
   {
     const float dot = HUD_MINIMAP_DOT_PX * s;
-    const std::span<const Game::ShipState> ships = _world.Ships();
+    const std::span<const Game::ShipSnapshot>& ships = _ships;
     for (size_t i = 0; i < ships.size(); ++i)
     {
-      const float x = toMapX(ships[i].posWorld.x);
-      const float y = toMapY(ships[i].posWorld.z);
+      const float x = toMapX(_view.ViewX(ships[i].posWorld));
+      const float y = toMapY(_view.ViewZ(ships[i].posWorld));
       if (x < map.x0 + dot || x > map.x1 - dot || y < map.y0 + dot || y > map.y1 - dot)
         continue;
       const Rgba colour = _view.IsSelected(i) ? HUD_ACCENT_GREEN : WithAlpha(HUD_ACCENT_GREEN, 0.7f);
@@ -391,7 +393,7 @@ void Hud::DrawEventLog(TextRenderer& _text, const Layout& _layout, const EventLo
   }
 }
 
-void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, const Game::World& _world, const WorldView& _view,
+void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view,
                         const Frame& _frame) const
 {
   const float s = _layout.scale;
@@ -438,7 +440,7 @@ void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, const Game::
 
   // --- selection summary ------------------------------------------------------------------------
   {
-    const std::span<const Game::ShipState> ships = _world.Ships();
+    const std::span<const Game::ShipSnapshot>& ships = _ships;
     int hullCounts[MAX_HULL_KINDS] = {};
     int selected = 0;
     for (size_t i = 0; i < ships.size(); ++i)
@@ -479,7 +481,7 @@ void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, const Game::
   // width; on a narrow one it flows on after the summary instead.
   x = std::max(x, bar.x1 - (HUD_MARGIN_PX + HUD_STATS_WIDTH_PX) * s);
   {
-    const std::span<const Game::ShipState> ships = _world.Ships();
+    const std::span<const Game::ShipSnapshot>& ships = _ships;
     int selected = 0;
     float speedSum = 0.0f;
     bool anyMoving = false;
@@ -539,8 +541,8 @@ void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, const Game::
 
 // ------------------------------------------------------------------------------------------------
 
-void Hud::Draw(TextRenderer& _text, const Game::World& _world, const WorldView& _view, const Camera& _camera, const EventLog& _log,
-               const Frame& _frame, float _dpiScale, std::uint32_t _widthPx, std::uint32_t _heightPx)
+void Hud::Draw(TextRenderer& _text, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view, const Camera& _camera,
+               const EventLog& _log, const Frame& _frame, float _dpiScale, std::uint32_t _widthPx, std::uint32_t _heightPx)
 {
   m_cellPx = std::max(1.0f, _text.AdvancePx(FontId::Ui, 1.0f));
   const Layout layout = ComputeLayout(_dpiScale, _widthPx, _heightPx);
@@ -548,10 +550,10 @@ void Hud::Draw(TextRenderer& _text, const Game::World& _world, const WorldView& 
   DrawResources(_text, layout, _frame);
   if (_frame.showDebug)
     DrawDebug(_text, layout, _frame, _widthPx);
-  DrawMinimap(_text, layout, _world, _view, _camera, _frame, _widthPx, _heightPx);
+  DrawMinimap(_text, layout, _ships, _view, _camera, _frame, _widthPx, _heightPx);
   DrawRail(_text, layout);
   DrawEventLog(_text, layout, _log);
-  DrawBottomBar(_text, layout, _world, _view, _frame);
+  DrawBottomBar(_text, layout, _ships, _view, _frame);
 
   // Scanlines go over the panels and only the panels: the scene underneath is not a CRT.
   if constexpr (HUD_SCANLINES)

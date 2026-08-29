@@ -18,7 +18,13 @@
 #include "NeuronCore.h"
 
 #include "SimTuning.h"
+#include "WorldPos.h"
 #include "ShipState.h"
+#include "HullSpec.h"
+#include "Collision.h"
+#include "PathGrid.h"
+#include "SpatialIndex.h"
 #include "Formation.h"
 #include "Movement.h"
 #include "World.h"
+#include "WorldSnapshot.h"

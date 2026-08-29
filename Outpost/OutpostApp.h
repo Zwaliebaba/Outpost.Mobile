@@ -5,6 +5,8 @@
 #include "WorldSimulation.h"
 #include "WorldView.h"
 
+#include "LoopbackTransport.h"
+
 #include "AppWindow.h"
 #include "Camera.h"
 #include "GpuDevice.h"
@@ -52,10 +54,15 @@ private:
   // are current, so a pick tests against what was on screen when the contact happened.
   std::vector<Neuron::PointerEvent> m_pendingEvents;
 
-  // Simulation, hosted.
+  // Simulation, hosted. The two halves meet only at the transport: the simulation publishes a
+  // snapshot on each tick and reads the orders that arrived, and the view reads the snapshot. This
+  // is one executable and stays one for every phase of Design/Collision.md -- what the transport
+  // changes is the code boundary, not the process boundary (Design/Collision.md 2).
   Game::World m_world;
   WorldSimulation m_simulation{m_world};
   Neuron::ServerHost m_host;
+  Neuron::LoopbackTransport m_serverLink;
+  Neuron::LoopbackTransport m_clientLink;
 
   // Presentation.
   WorldView m_view;

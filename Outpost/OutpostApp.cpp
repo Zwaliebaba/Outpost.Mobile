@@ -13,9 +13,24 @@ namespace
 const std::wstring MESH_DIR = L"Meshes\\";
 const std::wstring FONT_DIR = L"Fonts\\";
 const std::wstring TEXTURE_DIR = L"Textures\\";
-const std::wstring STARTING_HULLS[] = {L"Bomber", L"Corvette", L"Frigate"};
-// What the HUD calls each hull, by the hullId SpawnStartingFleet hands out: the index above.
-const char* const HULL_NAMES[] = {"BOMBER", "CORVETTE", "FRIGATE"};
+
+// Mesh and hull are paired here rather than left to line up by index. The simulation's hull id is
+// a row in Game::HULL_SPECS and the view's mesh is a file; an index that happened to serve as both
+// gave the Bomber an Interceptor's turn rate the moment that table arrived.
+struct StartingHull
+{
+  std::wstring mesh;
+  Game::HullId hull;
+};
+const StartingHull STARTING_HULLS[] = {
+  {L"Bomber", Game::HullId::Bomber}, {L"Corvette", Game::HullId::Corvette}, {L"Frigate", Game::HullId::Frigate}};
+
+// What the HUD calls each hull, indexed by Game::HullId and covering the whole table rather than
+// only the three the starting fleet uses -- the id is a row in that table now, not a position in
+// the array above, so a name list of three would have called a Frigate a hull it is not.
+const char* const HULL_NAMES[] = {"INTERCEPTOR", "BOMBER",     "CORVETTE", "MINER",    "FRIGATE",
+                                  "HAULER",      "BATTLESHIP", "CARRIER",  "STARGATE", "STRUCTURE"};
+static_assert(std::size(HULL_NAMES) == Game::HULL_COUNT, "the HUD's hull names have drifted from the hull table");
 } // namespace
 
 void OutpostApp::Init(HINSTANCE _instance)
@@ -70,7 +85,16 @@ void OutpostApp::Init(HINSTANCE _instance)
   hostDesc.tickHz = Game::TICK_HZ;
   m_host.Init(hostDesc, m_simulation);
 
-  m_view.Init(m_world, m_camera, m_meshes, m_sceneRenderer.UnitQuad());
+  // Zero latency is the single-player default and has to mean genuinely zero: a snapshot published
+  // this tick is readable this tick, or the game gains a frame of lag it never had. The knob is
+  // here rather than in a config file because there is no config file (AGENTS.md 5); the
+  // measurements Design/Collision.md 18 wants are taken by changing this line.
+  LoopbackTransport::Desc linkDesc;
+  linkDesc.latencyTicks = 0;
+  LoopbackTransport::Connect(m_serverLink, m_clientLink, linkDesc);
+  m_simulation.Connect(m_serverLink);
+
+  m_view.Init(m_clientLink, m_camera, m_meshes, m_sceneRenderer.UnitQuad());
   m_view.SetTracker(m_pointers);
   m_view.SetEventLog(m_log);
   SpawnStartingFleet();
@@ -84,13 +108,16 @@ void OutpostApp::SpawnStartingFleet()
   constexpr int hullCount = static_cast<int>(std::size(STARTING_HULLS));
   for (int i = 0; i < hullCount; ++i)
   {
-    const MeshHandle mesh = m_meshes.Load(m_gpu, m_sceneRenderer, MESH_DIR, STARTING_HULLS[i]);
+    const MeshHandle mesh = m_meshes.Load(m_gpu, m_sceneRenderer, MESH_DIR, STARTING_HULLS[i].mesh);
     if (mesh == INVALID_MESH)
       continue; // a missing hull is a content diagnostic, not a reason to fail boot
 
     const float x = (static_cast<float>(i) - static_cast<float>(hullCount - 1) * 0.5f) * START_SPACING;
-    m_world.SpawnShip(XMFLOAT3(x, 0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(i));
-    m_view.AddShip(mesh);
+    m_world.SpawnShip(Game::LocalPos(x, 0.0f), 0.0f, static_cast<std::uint32_t>(STARTING_HULLS[i].hull));
+
+    // The view is told which mesh a hull uses, not which mesh this ship uses: it learns that a ship
+    // exists from a snapshot, which carries a hullId and knows nothing about meshes.
+    m_view.RegisterHullMesh(STARTING_HULLS[i].hull, mesh);
   }
 }
 
@@ -161,7 +188,7 @@ void OutpostApp::Render()
   frame.stats.timeScale = m_timeScale;
   frame.showDebug = m_showDebug;
   frame.hullNames = HULL_NAMES;
-  m_hud.Draw(m_textRenderer, m_world, m_view, m_camera, m_log, frame, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
+  m_hud.Draw(m_textRenderer, m_view.Ships(), m_view, m_camera, m_log, frame, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
 
   m_textRenderer.Flush(m_gpu); // the overlay goes on last, before the frame is presented
   m_gpu.EndFrame();
@@ -182,9 +209,21 @@ void OutpostApp::Run()
 
     // The simulation runs at its own fixed rate; the render frame interpolates between its last two
     // ticks. Time scaling stretches the simulation only, so the display stays at the refresh rate.
+    // Both ends stand on the same tick, so a latency of N means N ticks either way. Advancing them
+    // before the host runs is what lets an order sent this frame be drained by this frame's tick.
+    m_serverLink.AdvanceTo(m_host.Tick());
+    m_clientLink.AdvanceTo(m_host.Tick());
+
     const int steps = m_host.Advance(dtSec * m_timeScale);
     for (int step = 0; step < steps; ++step)
+    {
+      m_serverLink.AdvanceTo(m_host.Tick());
+      m_clientLink.AdvanceTo(m_host.Tick());
+      m_view.PumpNetwork();
       m_view.SampleTrails();
+    }
+    if (steps == 0)
+      m_view.PumpNetwork(); // a frame with no tick still delivers what latency has made due
 
     // Feedback eases on real time rather than sim time, so it stays smooth however far the
     // swapchain runs ahead of the tick rate.

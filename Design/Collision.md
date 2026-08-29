@@ -1,8 +1,24 @@
 # Collision and avoidance
 
-**Status: proposal, revised after review 2026-08-28. Nothing here is implemented.**
+**Status: phases 0, 1a, 1b, 2, 2b, 3, 4, 5, 7 and 8 of §15 are implemented and under test.**
+Phase 6 (interest management) is not.
 Decisions taken at review are recorded in §18. A second round the same day settled the process
 model (§2), universe coordinates (§3), and brought pathfinding into scope (§12, phase 7).
+
+Where building it proved a proposal here wrong, the code carries the correction and says so at the
+site, and the four that reverse something written below hold a decision record: the neighbour list
+sorts by surface proximity rather than centre distance ([0003](decisions/0003-neighbour-list-sorts-by-surface-not-centre.md)),
+the separation clamp caps what a *pair* closes before splitting it rather than capping each ship
+afterwards ([0004](decisions/0004-separation-clamp-caps-the-pair-not-the-ship.md)), `ShipHandle`
+carries a stable slot rather than the ship's own index ([0005](decisions/0005-ship-handles-carry-a-slot-not-an-index.md)),
+and the separation solve runs several times per tick rather than once
+([0006](decisions/0006-separation-solve-iterates-within-a-tick.md)). Two smaller ones are recorded
+only at the site: the avoidance horizon takes the longer of the hull's own agility and the time to
+clear that particular neighbour (§10), because 1.8 s of look-ahead cannot clear a 107 m hull; and
+avoidance yields on the same authority split as separation (§9, §10), because otherwise both
+parties steer and a capital swerves for a fighter.
+
+§19 lists the slices, what each depends on, and which have landed.
 
 This document proposes how ships stop passing through each other and each other's structures, and
 how they give way while under way. It is written against the MMO target — many players connected in
@@ -117,9 +133,9 @@ processes. **Every phase in §15 runs client and server together in one `Outpost
 how the tree already runs (`NeuronCore/Transport.h`), and stays how it runs until well after
 phase 6.
 
-What changes at phase 2b is the *code* boundary, not the process boundary: from 2b onward the
-client half touches the world only through a loopback `Transport` and the snapshots it carries,
-with artificial latency available in the loopback for the measurements this document needs. The
+What changed at phase 2b is the *code* boundary, not the process boundary: the client half now
+touches the world only through a loopback `Transport` and the snapshots it carries, with artificial
+latency available in the loopback for the measurements this document needs. The
 split into a separate server executable is then a transport swap plus a composition root, not a
 redesign — which is the entire point of paying for 2b early. Separation itself is a named later
 step, deliberately outside this document's scope, taken when there is an operational reason — a
@@ -189,28 +205,40 @@ struct WorldPos
 {
   std::int64_t sectorX = 0;   // which sector
   std::int64_t sectorZ = 0;
-  float localX = 0.0f;        // metres within it, [0, SECTOR_SIZE)
+  float localX = 0.0f;        // metres within it, [0, SECTOR_SIZE_METRES)
   float localZ = 0.0f;
 };
 ```
 
-With `SECTOR_SIZE = 8192.0f`, local precision is `8192 / 2^24 ≈ 0.5 mm` — **uniform in every
+The sector fields go first, and phase 8 found a reason this document did not have: with an integer
+in front, `WorldPos{x, z}` is ill-formed rather than merely wrong, so the compiler enumerated all 94
+two-argument constructions in the tree instead of leaving them to be found
+(`Design/Collision-slice-8.md` §5.1).
+
+With `SECTOR_SIZE_METRES = 8192.0f`, local precision is `8192 / 2^24 ≈ 0.5 mm` — **uniform in every
 sector, everywhere in a universe of ±10¹⁹ m**, which is comfortably past thousands of star systems.
-Everything in this document — the index, the narrow phase, avoidance, the pathfinding grid — runs
-in small local floats within a sector's frame and does not change. A cross-sector relative vector
-is `sectorDelta × SECTOR_SIZE + localDelta`, computed in float, and that is safe *because this
-design already made every interaction local*: §10 caps the query radius near 700 m, an order of
-magnitude under a sector. The renderer rebases camera-relative on its own side of the line, which
-it wants at these scales regardless.
+The value is a power of two and that is a correctness requirement, not a preference: the carry
+divides by it, and at 2^13 the division is an exponent adjustment and therefore exact on every
+machine. Everything in this document — the index, the narrow phase, avoidance, the pathfinding grid
+— runs in small local floats within a sector's frame and does not change. A cross-sector relative
+vector is `sectorDelta × SECTOR_SIZE_METRES + localDelta`, computed in float, and that is safe
+*because this design already made every interaction local*: §10 caps the query radius near 700 m, an
+order of magnitude under a sector. The renderer rebases camera-relative on its own side of the line,
+which it wants at these scales regardless — phase 8 put the seam in (`WorldView::ViewX`/`ViewZ`) and
+left the origin at the universe origin, which is correct everywhere in float range and precise near
+it.
 
 The same structure is the MMO's spatial currency. The sector is the natural unit of region sharding
 (§17 — shard by space), the ghost zone is a ring of cells along a sector border, and a snapshot
 position compresses to a sector id plus a quantised local offset.
 
-None of the machinery is built now. **Phase 0 wraps `posWorld` in the `WorldPos` name while it is
-still plain floats**, so position has one definition instead of being smeared across `ShipState`,
-orders, formations, snapshots and the index. The sector fields land in phase 8 as a mechanical
-change behind that name, and day-one content — near the origin, inside one sector — never notices.
+This landed in two steps, and the split was the point. **Phase 0 wrapped `posWorld` in the
+`WorldPos` name while it was still plain floats**, so position had one definition instead of being
+smeared across `ShipState`, orders, formations, snapshots and the index. **Phase 8 then grew the
+sector fields behind that name**, a mechanical change every caller was already correct for, and
+day-one content — near the origin, inside one sector — never noticed: the 56 tests that predated it
+pass unchanged. `SECTOR_SIZE_METRES` lives in `SimTuning.h` and is a power of two, which is what
+makes the carry exact (`Design/Collision-slice-8.md` §2.2).
 
 ---
 
@@ -903,9 +931,10 @@ the order is issued:
 arrivalRadius < 0.5 * slotSpacing
 ```
 
-**`Movement.h:8` and AGENTS.md's "deliberately not here yet" list both say there is no avoidance.**
+**`Movement.h:8` and AGENTS.md's "deliberately not here yet" list both said there is no avoidance.**
 AGENTS.md §"What is actually here" requires that a change making one of its sentences false updates
-that sentence in the same commit. Both are part of phase 4's diff, not a follow-up.
+that sentence in the same commit, so both were part of phase 4's diff rather than a follow-up. Done:
+`Movement.h` now opens on the neighbour list, and the rulebook's list drops pathfinding too.
 
 ---
 
@@ -926,7 +955,8 @@ line, so the split is worth writing down explicitly.
 - **The per-tick correction clamp** (§9), because it changes how deep overlap unwinds.
 - **Pathfinding grid cell size, clearance margin and A\* tie-break** (§12), once phase 7 lands,
   because they change which path is found.
-- **`SECTOR_SIZE`** (§3), once phase 8 lands, because every stored position is denominated in it.
+- **`SECTOR_SIZE_METRES`** (§3), landed in phase 8, because every stored position is denominated
+  in it.
 
 **Not in the contract** — free to retune at any time, including per region on a live server:
 
@@ -1024,17 +1054,25 @@ then, not here.
 
 ### The property worth protecting
 
-Phases 0, 1b and 2 change no behaviour, and 2b changes no behaviour a single-player build can see.
-Phase 8 is designed to join them: day-one content sits inside one sector, where sector-plus-local
-arithmetic is bit-identical to plain float — and the replay gate is what proves the design achieved
-it. The gate must be green across all five without a single tuning value moving. That is a real
-property, it is what makes each of them safe to land and review alone, and it is the argument for
-this ordering over the tempting one where separation lands first and everything else is retrofitted
-underneath it.
+Phases 0, 1b, 2, 2b and 8 change no behaviour a single-player build can see. All five have landed
+and the suite was green across each without a tuning value moving.
+Phase 8 was the one that had to prove it hardest, because sector-plus-local arithmetic only equals
+plain float while content stays inside one sector — day-one content does, so the 56 tests that
+predated it passed unchanged, and a new test plays the same encounter four sectors out and gets
+bit-identical relative motion. That property is what makes each of these safe to land and review
+alone, and it is the argument for this ordering over the tempting one where separation lands first
+and everything else is retrofitted underneath it.
 
-Phases 1a, 3, 4, 5 and 7 each change recorded outcomes, and each should say so in its commit.
-Knowing which five of the eleven invalidate replays — rather than discovering it when a replay
-fails — is most of what this table is for.
+Two different things are worth keeping apart here, because this section used to run them together.
+Phases 1a, 3, 4, 5 and 7 **change what the simulation does**, so a recorded match replays to a
+different outcome; each says so in its commit. Phase 8 changes nothing the simulation does but
+**re-denominates every stored position** in `SECTOR_SIZE_METRES`, so old recordings no longer mean
+what they say. Both invalidate recordings and only the first five are a behaviour change. Knowing
+which is which — rather than discovering it when a replay fails — is most of what this table is
+for.
+
+There is still no replay-equality test in the tree to gate any of it; the order-independence and
+two-identical-runs tests stand in for one, and writing the real one is a slice of its own.
 
 ---
 
@@ -1177,23 +1215,21 @@ against an unbounded query radius (§10). K moves into `HullSpec` as a per-hull 
 **phase 4** against the capped horizon, with the phase 2 benchmark showing what it costs. It is in
 the replay contract either way, so the thing to get right is the number, not the timing.
 
-**5. Yes — `Design/` is the home for documents of this kind.** `NeuronCore/Transport.h:8` cites a
-`Design.md` that does not exist; point it at a real file and add the row to AGENTS.md §2's
-repository map. Both are part of the same commit as the first phase that lands, per AGENTS.md's rule
-that a change making one of its sentences false updates the sentence.
+**5. Yes — `Design/` is the home for documents of this kind.** `NeuronCore/Transport.h:8` cited a
+`Design.md` that does not exist; point it at a real file, and give `Design/` a row in AGENTS.md §2's
+repository map. Done — the citation now reads `Design/Collision.md`, and the row is there, though
+main added it independently rather than this branch.
 
 **6. File naming: `Collision.md`.** `AGENTS.md` is upper-case and every other authored file in the
 tree is `PascalCase`; a lower-case exception here becomes the habit that makes the next one
-arguable. The rename is trivial and has not been made yet — it is the one item on this list still
-outstanding.
+arguable. Done — the file was renamed when phase 0 landed.
 
-**7. The universe is sector + local float, committed now, built later.** The stated ambition is
-thousands of star systems with a small accessible area on day one. Raw `uint64` coordinates, a
-global fixed-point coordinate and `double` positions are all rejected (§3, §17); `WorldPos` —
-an `int64` sector pair plus a local float offset at `SECTOR_SIZE = 8192 m`, giving ~0.5 mm
-precision uniformly across ±10¹⁹ m — is the committed representation. The name lands in phase 0
-while it is still plain floats; the sector fields land in phase 8, behaviour-neutral for day-one
-content, with the replay gate as proof.
+**7. The universe is sector + local float.** The stated ambition is thousands of star systems with
+a small accessible area on day one. Raw `uint64` coordinates, a global fixed-point coordinate and
+`double` positions are all rejected (§3, §17); `WorldPos` — an `int64` sector pair plus a local
+float offset at `SECTOR_SIZE_METRES = 8192 m`, giving ~0.5 mm precision uniformly across ±10¹⁹ m —
+is the representation. Done — the name landed in phase 0 while it was still plain floats, and the
+sector fields in phase 8, behaviour-neutral for day-one content with the suite as proof.
 
 **8. Client and server stay in one `Outpost.exe` for every phase of this document.** The split at
 phase 2b is a code boundary — from there the client reaches the world only through the loopback
@@ -1223,3 +1259,60 @@ These have no answer yet because the information needed does not exist in the tr
   stops being acceptable the day they are expected to navigate near architecture. The proposal is
   written (§12) and its dependencies are early (phases 2 and 4); only its scheduling is open, and
   the honest trigger is "when Carriers become common near structures", not a calendar date.
+
+---
+
+## 19. Slices
+
+`Design/README.md` asks a design to end with its slice list: the work orders in order, with the
+dependency between them, so a reader knows what has to exist before what. §15 argues the ordering;
+this is the ordering itself, and the status of each.
+
+Every slice below is `GameLogic` and its suite except where noted, so by `Design/README.md`'s rule
+about two slices in one layer they cannot run in parallel with each other — they share
+`GameLogic.vcxproj`, its `.filters`, the umbrella header and this document.
+
+| # | Slice | Depends on | Status |
+|---|---|---|---|
+| 0 | Generational `ShipHandle`, despawn, the `WorldPos` name (§3, §6) | — | landed |
+| 1a | `HullSpec`: speeds, accelerations, turn rates (§5) | 0 | landed |
+| 1b | Capsule shapes; the tunnelling gate and `TUNNEL_HEADROOM` (§4, §11) | 1a | landed |
+| 2 | `SpatialIndex`: static store, one dynamic level, `QueryCircle`, benchmark (§7) | 0 | landed |
+| 3 | Pass 0 hoist; gather-separation with authority and clamp (§6, §8, §9) | 1b, 2 | landed |
+| 4 | `SolveOrder` / `AvoidNeighbours` / `IntegrateShip`; context steering (§10) | 3 | landed |
+| 5 | Formation spacing and arrival tolerance scale with the hull (§13) | 1a | landed |
+| 7 | Pathfinding: clearance grid, A\*, waypoint follower (§12) | 2, 4 | landed |
+| 8 | Sectors: `WorldPos` grows its `int64` pair (§3) | 0 | landed ([work order](Collision-slice-8.md)) |
+| 2b | Loopback `Transport`, full-fidelity snapshot, artificial latency (§2, §15) | 3 | landed ([work order](Collision-slice-2b.md)) |
+| 6 | Interest management on `QueryCircle`: subscription sets, deltas, priority (§1, §15) | 2b | **not started** |
+
+**2b** touched `NeuronCore`, `GameLogic` and the executable at once, which by the same parallelism
+rule meant it wanted the tree to itself, and it did. **6** is the one that remains: a slice of its
+own on top of 2b, and not small, since §1 records what carries over from the index unchanged and
+what does not. It is now unblocked.
+
+**8** was scheduled early among the leftovers for one reason: it is mechanical behind the `WorldPos`
+name, but every stored position is denominated in `SECTOR_SIZE_METRES`, so it invalidates
+recordings — cheap while nothing depends on recorded positions and steadily dearer afterwards. It
+landed against [its own work order](Collision-slice-8.md), and the claim that day-one content never
+notices is not an argument but a fact: all 56 tests that existed before it pass unchanged apart from
+a mechanical rename, and a fresh test plays the same encounter four sectors from the origin and gets
+bit-identical relative motion.
+
+Two open questions gate work rather than follow it, and both are named in §18: the **target server
+tick rate** was settled at 60 Hz for the slices above, and **minimum region size** follows
+arithmetically from the widest query radius, which slice 2 measured at 647 m.
+
+### What the landed slices did not do as written
+
+Building them turned up five places where following this document produced the wrong behaviour.
+Each is corrected in the code, explained at the site, and holds a decision record so that a reader
+who finds the code disagreeing with the prose above knows which one is current:
+
+| Reversed | Record |
+|---|---|
+| The neighbour list sorts by surface proximity, not centre distance (§7) | [0003](decisions/0003-neighbour-list-sorts-by-surface-not-centre.md) |
+| The per-tick correction clamp caps the pair, then splits (§9) | [0004](decisions/0004-separation-clamp-caps-the-pair-not-the-ship.md) |
+| `ShipHandle` carries a stable slot, not the ship's index (§6) | [0005](decisions/0005-ship-handles-carry-a-slot-not-an-index.md) |
+| The separation solve runs several times per tick (§6) | [0006](decisions/0006-separation-solve-iterates-within-a-tick.md) |
+| The index stores a whole position rather than a compact offset (§7) | [0007](decisions/0007-the-index-stores-a-whole-position.md) |
