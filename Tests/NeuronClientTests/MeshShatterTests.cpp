@@ -147,17 +147,19 @@ public:
     Assert::AreEqual(0u, shatter.FragmentCount(), L"a triangle with two coincident vertices became a fragment");
 
     // A right triangle with legs L has a circumference of L * (2 + sqrt(2)); this one is 5.9 m.
+    // Not called `small`: the Windows SDK's <rpcndr.h> defines that as `char`, and the umbrella
+    // header pulls it in, so the declaration below would read `const MeshData char`.
     const float leg = 5.9f / (2.0f + std::sqrt(2.0f));
-    const Neuron::MeshData small = OneTriangle(XMFLOAT3(0.0f, 0.0f, 0.0f), XMFLOAT3(leg, 0.0f, 0.0f), XMFLOAT3(0.0f, leg, 0.0f));
+    const Neuron::MeshData undersized = OneTriangle(XMFLOAT3(0.0f, 0.0f, 0.0f), XMFLOAT3(leg, 0.0f, 0.0f), XMFLOAT3(0.0f, leg, 0.0f));
 
     Neuron::MeshShatter::Desc strict;
     strict.minCircumferenceMetres = 6.0f;
-    shatter.Spawn(small, Identity(), XMFLOAT3(0.0f, 0.0f, 0.0f), strict, rng);
+    shatter.Spawn(undersized, Identity(), XMFLOAT3(0.0f, 0.0f, 0.0f), strict, rng);
     Assert::AreEqual(0u, shatter.FragmentCount(), L"a triangle under the minimum circumference became a fragment");
 
     Neuron::MeshShatter::Desc lenient;
     lenient.minCircumferenceMetres = 5.0f;
-    shatter.Spawn(small, Identity(), XMFLOAT3(0.0f, 0.0f, 0.0f), lenient, rng);
+    shatter.Spawn(undersized, Identity(), XMFLOAT3(0.0f, 0.0f, 0.0f), lenient, rng);
     Assert::AreEqual(1u, shatter.FragmentCount(), L"the same triangle was skipped with the threshold below it");
   }
 
