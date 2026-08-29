@@ -27,8 +27,15 @@ std::uint32_t MeshShatter::Spawn(const MeshData& _mesh, const XMFLOAT4X4& _world
   for (int i = 0; i < TUMBLER_COUNT; ++i)
   {
     XMStoreFloat3x3(&m_tumblers[i].rot, XMMatrixIdentity());
-    m_tumblers[i].angVelRadPerSec =
-      XMFLOAT3(_rng.Signed(_desc.maxAngVelRadPerSec), _rng.Signed(_desc.maxAngVelRadPerSec), _rng.Signed(_desc.maxAngVelRadPerSec));
+    // Three statements and not three arguments: the order a compiler evaluates a function's
+    // arguments in is unspecified, so three draws inside one XMFLOAT3 is three draws in whichever
+    // order the compiler felt like, and two compilers that disagree hand one seed two different
+    // tumbles. Measured rather than feared -- the same shape in BodyField built two different worlds
+    // under gcc and clang before its draws were named.
+    const float pitch = _rng.Signed(_desc.maxAngVelRadPerSec);
+    const float yaw = _rng.Signed(_desc.maxAngVelRadPerSec);
+    const float roll = _rng.Signed(_desc.maxAngVelRadPerSec);
+    m_tumblers[i].angVelRadPerSec = XMFLOAT3(pitch, yaw, roll);
   }
 
   const XMMATRIX world = XMLoadFloat4x4(&_world);
