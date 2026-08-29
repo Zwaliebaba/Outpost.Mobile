@@ -71,7 +71,16 @@ void BodyRenderer::Init(GpuDevice& _gpu, const Desc& _desc)
 {
   m_srvStride = _gpu.Device()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
   CreatePipelines(_gpu);
-  CreateBakePipelines(_gpu);
+
+  // A probe, not a requirement. The kernels reproduce Pcg32's 64-bit state and reduce with wave
+  // operations, so a device without either cannot run them, and the CPU builder is what it gets.
+  D3D12_FEATURE_DATA_D3D12_OPTIONS1 options1 = {};
+  if (SUCCEEDED(_gpu.Device()->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS1, &options1, sizeof(options1))))
+    m_bakeSupported = options1.Int64ShaderOps && options1.WaveOps;
+  if (m_bakeSupported)
+    CreateBakePipelines(_gpu);
+  else
+    DebugTrace("body: the device has no 64-bit integer or wave operations, so bodies are built on the CPU\n");
 
   // The table is bound on every draw, terrain included, and a descriptor heap starts uninitialised:
   // a slot that never gets a view is a handle the debug layer reports the moment anything binds it.
@@ -260,6 +269,12 @@ void BodyRenderer::CreateBakePipelines(GpuDevice& _gpu)
 
 BodyHandle BodyRenderer::BakeBody(GpuDevice& _gpu, const BodyParams& _params, const ColourRamp& _ramp)
 {
+  if (!m_bakeSupported)
+  {
+    DebugTrace("body: a bake was asked for on a device that cannot run one; build it on the CPU instead\n");
+    return INVALID_BODY;
+  }
+
   const std::uint32_t gridPower = static_cast<std::uint32_t>(_params.outsideMaxHeightGrid.z);
   const std::uint32_t samplesPerSide = (1u << gridPower) + 1u;
   const std::uint32_t cells = samplesPerSide - 1u;
@@ -293,10 +308,26 @@ BodyHandle BodyRenderer::BakeBody(GpuDevice& _gpu, const BodyParams& _params, co
     seed[i] = OrderedBits(0.0f);
   seed[BodyParams::MAX_TILES] = OrderedBits(_params.outsideMaxHeightGrid.x);
 
+  // Straight into an upload buffer, and not through UploadStaticBuffer. That helper ends by
+  // transitioning what it filled to VERTEX_AND_CONSTANT_BUFFER, which is right for the vertices it
+  // was written for and wrong for a buffer whose next use is as a copy *source*: the debug layer
+  // rejected the copy below, once per body, and the maxima kept whatever the fresh default-heap
+  // buffer held. Zeros decode to a very negative float, so every tile scaled to nothing, every
+  // height collapsed to outsideHeight, and a wet body culled its whole surface -- which is what the
+  // readback showed before this line changed. An upload heap is GENERIC_READ, which already
+  // contains COPY_SOURCE, and it is one buffer where the helper made two.
   GpuPtr<ID3D12Resource> maximaSeed;
-  GpuPtr<ID3D12Resource> unusedStaging;
-  UploadStaticBuffer(_gpu, std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(seed), sizeof(seed)), maximaSeed,
-                     unusedStaging);
+  const D3D12_RESOURCE_DESC seedDesc = BufferDesc(sizeof(seed));
+  const D3D12_HEAP_PROPERTIES seedHeap = HeapProps(D3D12_HEAP_TYPE_UPLOAD);
+  check_hresult(device->CreateCommittedResource(&seedHeap, D3D12_HEAP_FLAG_NONE, &seedDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                                                IID_PPV_ARGS(maximaSeed.put())));
+  {
+    std::uint8_t* seedMapped = nullptr;
+    D3D12_RANGE seedNoRead = {0, 0};
+    check_hresult(maximaSeed->Map(0, &seedNoRead, reinterpret_cast<void**>(&seedMapped)));
+    std::memcpy(seedMapped, seed, sizeof(seed));
+    maximaSeed->Unmap(0, nullptr);
+  }
   cmd->CopyBufferRegion(maxima.get(), 0, maximaSeed.get(), 0, sizeof(seed));
 
   // The parameter block, in an upload heap and read as a root CBV. Constant buffers are sized in
@@ -389,7 +420,6 @@ BodyHandle BodyRenderer::BakeBody(GpuDevice& _gpu, const BodyParams& _params, co
   // Everything the dispatches read has to outlive the submission, which is what DiscardStaging is
   // called after and for.
   m_staging.push_back(std::move(maximaSeed));
-  m_staging.push_back(std::move(unusedStaging));
   m_staging.push_back(std::move(maxima));
   m_staging.push_back(std::move(paramsBuffer));
   m_staging.push_back(std::move(rampTexture));

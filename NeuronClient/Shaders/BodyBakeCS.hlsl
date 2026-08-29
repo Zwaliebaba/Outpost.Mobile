@@ -81,7 +81,7 @@ void main(uint3 _id : SV_DispatchThreadID)
 
   // One draw per cell and not per triangle: the two halves of a cell are one patch of ground, and a
   // dither that split them would draw the diagonal in.
-  const uint cellHash = CellHash(uint2(counts.z, counts.w), face, x, z);
+  const uint cellHash = CellHash(BodySeed(), face, x, z);
 
   const uint order[6] = {0u, 1u, 2u, 0u, 2u, 3u};
   const float2 cellUvs[4] = {float2(0.0, 0.0), float2(0.0, 1.0), float2(1.0, 1.0), float2(1.0, 0.0)};
