@@ -20,14 +20,17 @@ changes in the same commit.
 
 **Built and tested.** Five projects and four test suites, Debug|x64, gating in CI (§6). The game
 is a fleet of three hulls on a ground plane: select them, order them somewhere in formation, watch
-them route around architecture, give way to each other, and arrive without passing through anything.
-D3D12 renderer, WM_POINTER input covering mouse and touch, DDS bitmap font atlases for the HUD and
-for in-world text, OBJ/MTL hulls, FXC-compiled shaders.
+them route around architecture, give way to each other, and arrive without passing through
+anything. D3D12 renderer, WM_POINTER input covering mouse and touch, a main-screen HUD drawn
+through one overlay pipeline (bitmap font atlases, coverage-mask icons, untextured quads), OBJ/MTL
+hulls, FXC-compiled shaders.
 
 **Deliberately not here yet**, so nobody goes looking for it: no audio, no networking, no interest
-management, no combat, no save format, no content pipeline beyond OBJ and DDS, and no configuration
-file — tuning is `constexpr` in `SimTuning.h`, `HullSpec.h` and `ViewTuning.h` (§5). `Transport` is
-declared and unimplemented (§2).
+management, no combat, no economy, no damage model, no save format, no content pipeline beyond OBJ
+and DDS, and no configuration file — tuning is `constexpr` in `SimTuning.h`, `HullSpec.h` and
+`ViewTuning.h` (§5). `Transport` is declared and unimplemented (§2). Where the HUD shows a number
+the simulation does not yet have, it is a placeholder supplied by the composition root, and it says
+so at the definition.
 
 ---
 
@@ -189,16 +192,16 @@ Two rules `.clang-tidy` structurally cannot state, so check them by eye:
 
 | Path | What it is |
 |---|---|
-| `NeuronCore/` | Engine primitives shared by every layer — zero game semantics, no graphics API, headless (below). Diagnostics, file IO, framerate-independent easing, the frame clock, and `Transport`. No content readers: those live with their consumer (ADR 0002). |
+| `NeuronCore/` | Engine primitives shared by every layer — zero game semantics, no graphics API, headless (below). Diagnostics, file IO, framerate-independent easing, the frame clock, and `Transport`. No content readers: those live with their consumer (below). |
 | `GameLogic/` | The deterministic simulation, namespace `Game`. `World`, `ShipState`, `WorldPos`, `HullSpec`, `Movement`, `Collision`, `SpatialIndex`, `PathGrid`, `Formation`, `SimTuning`. Depends on NeuronCore only. |
 | `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, and the content readers `DdsImage`, `ObjParser`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
-| `Outpost/` | The executable: composition root, presentation state, HUD, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |
+| `Outpost/` | The executable: composition root, presentation state, the HUD and its event log, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
 | `NeuronClient/Shaders/` | HLSL (§3). FXC compiles it into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
 | `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). |
-| `Design/` | Designs, work orders, the HUD screenprints, and `Design/decisions/` — the architecture decision records (§9). [`Design/README.md`](Design/README.md) says which document is which and how a slice moves from a design into the tree. |
-| `.github/workflows/build.yml` | CI (§6). |
+| `Design/` | Designs, work orders, screenprints, and `Design/decisions/` — the architecture decision records (§9). Its `README.md` says which document is which and how a slice moves from a design into the tree (§7). |
+| `.github/` | CI (§6) and the pull request template every slice answers (§7). |
 
 The dependency rules are hard, and each of them is one thing this structure buys:
 
@@ -225,13 +228,15 @@ The dependency rules are hard, and each of them is one thing this structure buys
   no screen, so neither may include a graphics header — no `<d3d12.h>`, no `<dxgi*.h>`, not even
   `<dxgiformat.h>` — and neither may hold a device, a swapchain, a window, a descriptor, or any
   other data only a GPU can use. Everything client-specific lives in `NeuronClient`. DirectXMath
-  is mathematics, not graphics, and stays. `Build/CheckProjectFiles.py` checks the include rule
-  (ADR 0001).
+  is mathematics, not graphics, and stays. `Build/CheckProjectFiles.py` checks the include rule.
 - **A content reader lives with what consumes it**, not in NeuronCore by default. The test is
-  "who calls it", not "does it include a graphics header": the DDS and OBJ readers are both client
-  code because only the renderer reads a texture or a mesh, and collision shapes are authored
-  numbers in GameLogic rather than anything derived from a mesh (ADR 0002,
-  [`Design/Collision.md`](Design/Collision.md) §5).
+  "who calls it", not "does it include a graphics header": the texture and mesh readers are client
+  code because only the renderer reads a texture or a mesh. Anything the simulation needs to know
+  about a hull — its size, its collision shape — arrives as authored numbers in GameLogic, never
+  as something derived from a mesh at load time.
+
+Both of the last two rules have decision records behind them (§9); read those before arguing
+either one, because the alternatives were considered and the records say why they lost.
 
 ### Where the client/server seam stands today
 
@@ -545,6 +550,15 @@ configurations you built.
 
 ## 7. Working rules
 
+- **Work arrives as a slice.** A design says what is being built; a work order says what one
+  slice is, what it must not touch, and how "done" is decided. `Design/README.md` defines both.
+  One slice is one branch and one pull request, answered in the template under `.github/`, and
+  carries its own evidence: which configurations built, which suites ran, screenshots at two
+  window sizes for anything visual, and every assumption or placeholder stated rather than left
+  to be found.
+- **One slice per layer at a time.** Slices in different layers can proceed in parallel because
+  they share no files; two in the same layer collide on the project files, the umbrella header
+  and this document, and the second to merge pays for it.
 - Change the lines the task requires and no others. No drive-by reformatting, no opportunistic
   renames.
 - New files follow §1's worked example: `#pragma once`, PascalCase filename, Allman braces, the
@@ -581,8 +595,10 @@ configurations you built.
 - [ ] Tests for the layer you touched were run, and you said which.
 - [ ] Your report states plainly what you verified, what you assumed, and any rule you bent.
 - [ ] Moved a type between libraries, changed a dependency rule, added a project, or turned an
-      alternative down that someone will propose again? There is an ADR for it (§9), the index in
-      `Design/decisions/README.md` lists it, and any sentence here it made false has changed.
+      alternative down that someone will propose again? There is a decision record for it (§9),
+      the index lists it, and any sentence here it made false has changed.
+- [ ] The pull request answers its template: work order, layers touched, out of scope,
+      assumptions, evidence.
 
 ---
 
@@ -591,9 +607,8 @@ configurations you built.
 This file states the rules as they stand. It does not say what was tried first, what was turned
 down, or under which assumption a rule was made — and a rule whose premise has quietly expired is
 the most expensive kind, because it goes on being obeyed. That history lives in
-[`Design/decisions/`](Design/decisions/), one short file per decision, in the format its
-[`README.md`](Design/decisions/README.md) gives: context, decision, alternatives considered,
-consequences.
+`Design/decisions/`, one short file per decision, in the format its `README.md` gives: context,
+decision, alternatives considered, consequences.
 
 When to write one — any of these, and in the same commit as the change:
 
@@ -608,8 +623,6 @@ and the old one stays with its status changed; and the index in the README lists
 record is a page, not a paper: if it needs more than that, the design document it came from is
 where the rest goes, and the record links to it.
 
-The first two records are the worked examples: [0001](Design/decisions/0001-headless-core-and-server.md)
-is the reason §2's headless rule exists and names the alternative it beat, and
-[0002](Design/decisions/0002-content-readers-live-with-their-consumer.md) is the reason the
-readers live in `NeuronClient` — and it reverses an argument this file made the day before, which
-is exactly the kind of thing the folder is for.
+A record may reverse a sentence in this file. When it does, the sentence changes in the same
+commit and the record is the place that says why — that is the folder doing its job, not a
+contradiction to be smoothed over.
