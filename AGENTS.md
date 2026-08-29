@@ -195,7 +195,7 @@ Two rules `.clang-tidy` structurally cannot state, so check them by eye:
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
 | `NeuronClient/Shaders/` | HLSL (§3). FXC compiles it into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
 | `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). |
-| `Design/` | Design documents, the HUD screenprints, and `Design/decisions/` — the architecture decision records (§9). |
+| `Design/` | Designs, work orders, the HUD screenprints, and `Design/decisions/` — the architecture decision records (§9). [`Design/README.md`](Design/README.md) says which document is which and how a slice moves from a design into the tree. |
 | `.github/workflows/build.yml` | CI (§6). |
 
 The dependency rules are hard, and each of them is one thing this structure buys:
