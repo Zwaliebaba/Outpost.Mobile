@@ -30,6 +30,9 @@
     <ClInclude Include="Ease.h">
       <Filter>Foundation</Filter>
     </ClInclude>
+    <ClInclude Include="Pcg32.h">
+      <Filter>Foundation</Filter>
+    </ClInclude>
     <ClInclude Include="FileSys.h">
       <Filter>Content</Filter>
     </ClInclude>

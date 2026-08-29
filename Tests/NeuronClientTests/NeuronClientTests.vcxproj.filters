@@ -26,6 +26,12 @@
     <ClCompile Include="ObjParserTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="MeshShatterTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="SpriteParticlesTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config">

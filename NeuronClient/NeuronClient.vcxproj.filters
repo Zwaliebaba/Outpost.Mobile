@@ -33,6 +33,15 @@
     <ClInclude Include="MeshData.h">
       <Filter>Render</Filter>
     </ClInclude>
+    <ClInclude Include="FxVertex.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="MeshShatter.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="SpriteParticles.h">
+      <Filter>Render</Filter>
+    </ClInclude>
     <ClInclude Include="ObjParser.h">
       <Filter>Render</Filter>
     </ClInclude>
@@ -43,6 +52,9 @@
       <Filter>Render</Filter>
     </ClInclude>
     <ClInclude Include="SceneRenderer.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="FxRenderer.h">
       <Filter>Render</Filter>
     </ClInclude>
     <ClInclude Include="BitmapFont.h">
@@ -80,6 +92,12 @@
     <ClCompile Include="ObjParser.cpp">
       <Filter>Render</Filter>
     </ClCompile>
+    <ClCompile Include="MeshShatter.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="SpriteParticles.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
     <ClCompile Include="GpuHelpers.cpp">
       <Filter>Render</Filter>
     </ClCompile>
@@ -87,6 +105,9 @@
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="SceneRenderer.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="FxRenderer.cpp">
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="BitmapFont.cpp">
@@ -135,6 +156,18 @@
     <FxCompile Include="Shaders\TextPS.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
+    <FxCompile Include="Shaders\FxFragmentVS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\FxFragmentPS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\FxSpriteVS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\FxSpritePS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Scene.hlsli">
@@ -144,6 +177,9 @@
       <Filter>Shaders</Filter>
     </None>
     <None Include="Shaders\Text.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\Fx.hlsli">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>

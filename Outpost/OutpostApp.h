@@ -9,6 +9,7 @@
 
 #include "AppWindow.h"
 #include "Camera.h"
+#include "FxRenderer.h"
 #include "GpuDevice.h"
 #include "MeshLibrary.h"
 #include "PointerTracker.h"
@@ -45,6 +46,7 @@ private:
   Neuron::GpuDevice m_gpu;
   Neuron::SceneRenderer m_sceneRenderer;
   Neuron::TextRenderer m_textRenderer;
+  Neuron::FxRenderer m_fxRenderer;
   Neuron::MeshLibrary m_meshes;
 
   // Input and framing.
@@ -71,7 +73,8 @@ private:
   Neuron::FrameClock m_clock;
 
   // Debug: 1, 2 and 3 slow, restore and speed up the simulation without touching the frame rate;
-  // F1 shows the readout.
+  // F1 shows the readout, F3 shakes the camera, F4 despawns the selection so the explosion has
+  // something to consume.
   float m_timeScale = 1.0f;
   bool m_showDebug = false;
 };

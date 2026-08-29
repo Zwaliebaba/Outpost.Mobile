@@ -57,6 +57,15 @@ void OutpostApp::Init(HINSTANCE _instance)
                      TEXTURE_DIR + L"IconUniverse.dds"};
   m_textRenderer.Init(m_gpu, textDesc); // records the atlas uploads into the command list, so it goes last
 
+  // The explosion's three textures, named here for the same reason the fonts are: a library that
+  // spelled the name of a file would be a library with content in it. Starburst is loaded and
+  // slotted but drawn by nothing yet (Design/SpaceshipExplosion.md 12).
+  FxRenderer::Desc fxDesc;
+  fxDesc.fragmentTexture = TEXTURE_DIR + L"ShapeWireframe.dds";
+  fxDesc.spriteTexture = TEXTURE_DIR + L"Particle.dds";
+  fxDesc.flashTexture = TEXTURE_DIR + L"Starburst.dds";
+  m_fxRenderer.Init(m_gpu, fxDesc); // also records uploads and executes them, so it goes beside the atlases
+
   Camera::Desc cameraDesc;
   cameraDesc.minZoom = CAMERA_MIN_ZOOM;
   cameraDesc.maxZoom = CAMERA_MAX_ZOOM;
@@ -97,6 +106,7 @@ void OutpostApp::Init(HINSTANCE _instance)
   m_view.Init(m_clientLink, m_camera, m_meshes, m_sceneRenderer.UnitQuad());
   m_view.SetTracker(m_pointers);
   m_view.SetEventLog(m_log);
+  m_view.SetFxRenderer(m_fxRenderer);
   SpawnStartingFleet();
   m_log.PushFormat(EventLog::Severity::Friendly, 0.0f, "FLEET ONLINE | %u SHIPS", m_world.ShipCount());
 
@@ -143,6 +153,27 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
   case VK_F3:
     m_view.TriggerCameraShake(); // the debug hook, so the shake curve can be tuned on demand
     break;
+  case VK_F4:
+  {
+    // Debug hook, beside F3's. Nothing in the game can destroy a ship -- there is no health, no
+    // damage and no order for it -- and the explosion needs something to consume, so the
+    // composition root calls World directly. It is the one place allowed to, and this design must
+    // not invent a despawn order on the wire for a tuning aid (Design/SpaceshipExplosion.md 9).
+    //
+    // The handles are collected before the first despawn: Ships() is a span over the last snapshot
+    // rather than over the world, so the walk itself is safe, and taking the handles first keeps it
+    // that way if it ever stops being.
+    std::vector<Game::ShipHandle> doomed;
+    const std::span<const Game::ShipSnapshot> ships = m_view.Ships();
+    for (std::size_t i = 0; i < ships.size(); ++i)
+    {
+      if (m_view.IsSelected(i))
+        doomed.push_back(ships[i].handle);
+    }
+    for (const Game::ShipHandle handle : doomed)
+      m_world.DespawnShip(handle);
+    break;
+  }
   case '1':
     m_timeScale = 0.25f;
     break;
@@ -186,6 +217,10 @@ void OutpostApp::Render()
   frame.stats.selectedCount = m_view.SelectedCount();
   frame.stats.shipCount = m_world.ShipCount();
   frame.stats.timeScale = m_timeScale;
+  frame.stats.explosionCount = m_view.ExplosionCount();
+  frame.stats.particleCount = m_view.Particles().Count();
+  frame.stats.particlesDropped = m_view.Particles().Dropped();
+  frame.stats.fxVertsDropped = m_fxRenderer.DroppedVerts();
   frame.showDebug = m_showDebug;
   frame.sector = m_view.WorldPosAt(m_camera.Target().x, m_camera.Target().z);
   frame.hullNames = HULL_NAMES;

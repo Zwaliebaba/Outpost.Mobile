@@ -53,6 +53,44 @@ inline constexpr float MARKER_THICKNESS = 0.18f;
 inline constexpr float MARKER_PULSE_SCALE = 0.18f;
 inline constexpr Neuron::Rgba MARKER_COLOUR{0.95f, 0.78f, 0.28f, 0.9f};
 
+// --- ship explosion ----------------------------------------------------------------------------
+// The source values from Interstellar Outpost's Building::Destroy, read as metres and seconds 1:1
+// and scaled per ship by max(halfExtents) / EXPLOSION_REFERENCE_HALF_SIZE
+// (Design/SpaceshipExplosion.md 3). "scaled" below means multiplied by that at spawn: speeds and
+// sizes scale, lifetimes, friction and counts do not.
+inline constexpr float EXPLOSION_REFERENCE_HALF_SIZE = 10.0f;
+inline constexpr float EXPLOSION_INTENSITY = 100.0f; // Building::Destroy(_intensity)
+inline constexpr int EXPLOSION_HULL_COPIES = 3;
+inline constexpr float EXPLOSION_HULL_FRACTION = 1.0f;
+inline constexpr float EXPLOSION_FRAGMENT_LIFETIME_SEC = 5.0f;
+inline constexpr float EXPLOSION_FRAGMENT_RADIAL_SPEED = 3.0f;
+inline constexpr float EXPLOSION_FRAGMENT_MAX_ANG_VEL = 4.0f;
+inline constexpr float EXPLOSION_FRAGMENT_FRICTION = 0.05f;
+inline constexpr float EXPLOSION_FRAGMENT_ROT_FRICTION = 0.2f;
+inline constexpr float EXPLOSION_FRAGMENT_MIN_CIRCUMFERENCE = 6.0f; // scaled
+inline constexpr int EXPLOSION_FRAGMENT_CAP = 500;
+inline constexpr float EXPLOSION_CORE_SIZE_MIN = 120.0f;      // scaled; Bang's cores
+inline constexpr float EXPLOSION_CORE_SIZE_RANGE = 120.0f;    // scaled
+inline constexpr float EXPLOSION_CORE_SPEED_XZ = 30.0f;       // scaled; Signed(30) on X and Z
+inline constexpr float EXPLOSION_CORE_SPEED_UP_MIN = 10.0f;   // scaled
+inline constexpr float EXPLOSION_CORE_SPEED_UP_RANGE = 10.0f; // scaled
+inline constexpr float EXPLOSION_CORE_LIFT = 0.3f;            // x range, along up
+inline constexpr float EXPLOSION_EXTRA_CORE_SIZE = 100.0f;    // scaled; Destroy's own cores
+inline constexpr float EXPLOSION_EXTRA_CORE_SPEED = 100.0f;   // scaled; Signed(100) on all axes
+inline constexpr int EXPLOSION_DEBRIS_MIN = 2;
+inline constexpr int EXPLOSION_DEBRIS_MAX = 30;
+inline constexpr float EXPLOSION_DEBRIS_SPEED_MIN = 20.0f;   // scaled
+inline constexpr float EXPLOSION_DEBRIS_SPEED_RANGE = 30.0f; // scaled
+inline constexpr float EXPLOSION_DEBRIS_UP_MIN = 2.0f;       // the ring's tilt, before normalising
+inline constexpr float EXPLOSION_DEBRIS_UP_RANGE = 2.0f;
+inline constexpr float EXPLOSION_DEBRIS_SIZE_MIN = 20.0f;   // scaled
+inline constexpr float EXPLOSION_DEBRIS_SIZE_RANGE = 20.0f; // scaled
+inline constexpr float EXPLOSION_DEBRIS_LIFT = 0.2f;        // x range, along up
+inline constexpr bool EXPLOSION_PLUME_ALONG_UP = true;      // false: the ring is random on a sphere
+inline constexpr std::uint32_t EXPLOSION_PARTICLE_CAPACITY = 4096;
+// The shake is Camera::Shake(), which takes no amplitude: CAMERA_SHAKE_AMPLITUDE above is the only
+// knob, so a Carrier and an Interceptor shake the camera by the same amount.
+
 // --- banking and thrusters ---------------------------------------------------------------------
 inline constexpr float BANK_MAX_ANGLE_DEG = 28.0f;
 inline constexpr float BANK_RESPONSE_HALF_LIFE = 0.14f;

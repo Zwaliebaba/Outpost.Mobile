@@ -63,6 +63,9 @@ public:
   // The current back buffer's view, for a pass that needs to rebind the target without depth.
   [[nodiscard]] D3D12_CPU_DESCRIPTOR_HANDLE BackBufferView() const noexcept;
 
+  // The depth view BeginFrame bound, for a pass that rebinds the target and has to keep depth.
+  [[nodiscard]] D3D12_CPU_DESCRIPTOR_HANDLE DepthView() const noexcept;
+
 private:
   void CreateSizedResources();
   void ReleaseSizedResources();
