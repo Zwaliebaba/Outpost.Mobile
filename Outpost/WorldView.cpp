@@ -164,6 +164,9 @@ void WorldView::ExplodeTheLost(std::uint64_t _tick)
     // recorded match will want and costs nothing to give it now. The odd constant is the golden
     // ratio in 64 bits, which is what stops two nearby ticks producing two nearby streams.
     spawn.seed = ((static_cast<std::uint64_t>(handle.slot) << 32) | handle.generation) ^ (_tick * 0x9E3779B97F4A7C15ull);
+    // The station wave sets this from the station itself. Until there is one, every death carries a
+    // ring, because otherwise nothing would ever draw one (ViewTuning.h).
+    spawn.shockRing = SHOCK_RING_ON_EVERY_DEATH;
 
     m_explosions.emplace_back().Start(spawn, m_particles);
     TriggerCameraShake();
@@ -833,6 +836,29 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu)
       XMStoreFloat4x4(&world, XMMatrixScaling(pip * 2.0f, 1.0f, pip * 2.0f) * XMMatrixTranslation(outX, DECAL_LIFT_Y, outZ));
       _renderer.DrawDecal(_gpu, m_quadMesh, world, Rgba{MARKER_COLOUR.r, MARKER_COLOUR.g, MARKER_COLOUR.b, alpha}, 1.0f, 1.0f);
     }
+  }
+
+  // --- shock rings ------------------------------------------------------------------------------
+  // One expanding front per death that asked for one, through the same decal the selection rings
+  // and order markers use. Drawn here rather than by the fx pass because it is a ground marker in
+  // the game's existing language, not a billboard.
+  for (const ShipExplosion& explosion : m_explosions)
+  {
+    if (!explosion.HasShockRing())
+      continue;
+
+    const float radius = explosion.ShockRingRadiusMetres();
+    if (radius <= 0.5f)
+      continue; // the frame it is born in, before the first Advance has widened it
+
+    // The decal's thickness is a fraction of its own half-extent, so holding the front to a width
+    // in metres means shrinking that fraction as the ring grows. A constant fraction would draw a
+    // band that thickens as it expands, which reads as a spreading stain rather than a wave.
+    const float thickness = std::clamp(SHOCK_RING_WIDTH_METRES / radius, 0.0f, 1.0f);
+    const XMFLOAT3& centre = explosion.ShockRingCentre();
+    XMStoreFloat4x4(&world, XMMatrixScaling(radius * 2.0f, 1.0f, radius * 2.0f) * XMMatrixTranslation(centre.x, DECAL_LIFT_Y, centre.z));
+    _renderer.DrawDecal(_gpu, m_quadMesh, world,
+                        Rgba{SHOCK_RING_COLOUR.r, SHOCK_RING_COLOUR.g, SHOCK_RING_COLOUR.b, explosion.ShockRingAlpha()}, thickness, 0.0f);
   }
 
   // --- thruster glow and trail ------------------------------------------------------------------

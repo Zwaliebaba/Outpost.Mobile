@@ -97,6 +97,23 @@ inline constexpr std::uint32_t EXPLOSION_PARTICLE_CAPACITY = 4096;
 // The shake is Camera::Shake(), which takes no amplitude: CAMERA_SHAKE_AMPLITUDE above is the only
 // knob, so a Carrier and an Interceptor shake the camera by the same amount.
 
+// --- shock ring --------------------------------------------------------------------------------
+// The blast front a station leaves behind: one expanding ring on the ground plane, drawn through
+// the same decal the selection rings and order markers use, so it costs no pipeline, no shader and
+// no texture of its own (Design/ShockRing-work-order.md).
+//
+// Flat on purpose. A real front is a sphere; a flat ring is what every other ground marker in this
+// game already is, and a sphere would want a pass of its own.
+inline constexpr float SHOCK_RING_LIFETIME_SEC = 0.9f;
+inline constexpr float SHOCK_RING_MAX_RADIUS = 90.0f;  // scaled by the dead hull's own scale, like the rest of the effect
+inline constexpr float SHOCK_RING_WIDTH_METRES = 2.5f; // held in metres as the ring grows, so the front stays a front
+inline constexpr Neuron::Rgba SHOCK_RING_COLOUR{1.0f, 0.86f, 0.62f, 0.6f};
+
+// Nothing in the game is a station yet, so nothing sets ShipExplosion::Spawn::shockRing on its own
+// account. Until the station wave does, every death carries one, which is the only way the effect
+// can be looked at. That wave sets the flag from the station and deletes this.
+inline constexpr bool SHOCK_RING_ON_EVERY_DEATH = true;
+
 // --- banking and thrusters ---------------------------------------------------------------------
 inline constexpr float BANK_MAX_ANGLE_DEG = 28.0f;
 inline constexpr float BANK_RESPONSE_HALF_LIFE = 0.14f;
