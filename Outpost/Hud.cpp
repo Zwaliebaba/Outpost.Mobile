@@ -262,7 +262,8 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
     const float textPx = _text.AdvancePx(FontId::Ui, HUD_SMALL_SCALE * s);
     const float y = panel.y0 + (HUD_MINIMAP_HEADER_PX * s - textPx) * 0.5f;
     char line[64] = {};
-    std::snprintf(line, sizeof(line), "SECTOR %s", _frame.sector);
+    std::snprintf(line, sizeof(line), "SECTOR %lld,%lld", static_cast<long long>(_frame.sector.sectorX),
+                  static_cast<long long>(_frame.sector.sectorZ));
     _text.DrawTextLine(FontId::Ui, panel.x0 + HUD_PANEL_PAD_Y_PX * s, y, HUD_SMALL_SCALE * s, HUD_COLOUR, line);
 
     std::snprintf(line, sizeof(line), "CONTACTS %d", _frame.contacts);
@@ -291,6 +292,27 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
   const float mapCy = (map.y0 + map.y1) * 0.5f;
   const auto toMapX = [&](float _worldX) { return mapCx + (_worldX - centre.x) * pxPerMetre; };
   const auto toMapY = [&](float _worldZ) { return mapCy - (_worldZ - centre.z) * pxPerMetre; };
+
+  // Sector boundaries, so the header's sector pair has an edge to read against. View metres are
+  // universe metres (WorldView::ViewX), so a boundary sits at a whole multiple of the sector size.
+  {
+    const float line1 = std::max(1.0f, std::floor(s));
+    const Rgba boundary = WithAlpha(HUD_ACCENT_AMBER, 0.45f);
+    const float size = Game::SECTOR_SIZE_METRES;
+    const auto firstAfter = [](float _metres, float _size) { return std::ceil(_metres / _size) * _size; };
+    for (float x = firstAfter(centre.x - HUD_MINIMAP_HALF_RANGE, size); x <= centre.x + HUD_MINIMAP_HALF_RANGE; x += size)
+    {
+      const float px = std::floor(toMapX(x));
+      if (px > map.x0 && px < map.x1 - line1)
+        _text.DrawScreenRect(px, map.y0, px + line1, map.y1, boundary);
+    }
+    for (float z = firstAfter(centre.z - HUD_MINIMAP_HALF_RANGE, size); z <= centre.z + HUD_MINIMAP_HALF_RANGE; z += size)
+    {
+      const float py = std::floor(toMapY(z));
+      if (py > map.y0 && py < map.y1 - line1)
+        _text.DrawScreenRect(map.x0, py, map.x1, py + line1, boundary);
+    }
+  }
 
   // The camera's view, as its four corners dropped onto the ground. A corner that looks at the sky
   // has no ground point, so that edge is simply not drawn rather than guessed.

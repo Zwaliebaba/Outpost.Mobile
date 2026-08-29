@@ -48,7 +48,9 @@ public:
 
   // What the composition root knows and the HUD does not. The economy has no home in the world
   // yet, so its numbers arrive from here; the defaults are the mock's so the panel reads right
-  // until it does. The same goes for hull and shield, which have no damage model to read.
+  // until it does. The same goes for hull and shield, which have no damage model to read. The
+  // sector is real: the position under the camera target, of which the minimap names the sector
+  // pair.
   struct Frame
   {
     Stats stats;
@@ -57,7 +59,7 @@ public:
     int creditsPerMin = 42;
     int alloy = 3215;
     int alloyPerMin = 8;
-    const char* sector = "7-K";
+    Game::WorldPos sector;
     int contacts = 0;
     float hullFraction = 1.0f;
     float shieldFraction = 1.0f;

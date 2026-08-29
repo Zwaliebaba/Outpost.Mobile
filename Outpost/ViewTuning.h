@@ -142,7 +142,7 @@ inline constexpr float HUD_MINIMAP_HEADER_PX = 30.0f;
 inline constexpr float HUD_MINIMAP_MAP_PX = 140.0f;
 inline constexpr float HUD_MINIMAP_GRID_PX = 28.0f;
 inline constexpr float HUD_MINIMAP_DOT_PX = 4.0f;
-inline constexpr float HUD_MINIMAP_HALF_RANGE = 420.0f; // metres from the camera target to the edge of the map
+inline constexpr float HUD_MINIMAP_HALF_RANGE = 1400.0f; // metres from the camera target to the map's edge; wider than CAMERA_MAX_ZOOM sees
 
 inline constexpr float HUD_RAIL_BUTTON_PX = 60.0f; // a hit target, so never below 44
 inline constexpr float HUD_RAIL_GAP_PX = 10.0f;
