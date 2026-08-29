@@ -26,6 +26,7 @@
 #include "SpatialIndex.h"
 #include "InterestSet.h"
 #include "Formation.h"
+#include "Patrol.h"
 #include "Movement.h"
 #include "World.h"
 #include "WorldSnapshot.h"

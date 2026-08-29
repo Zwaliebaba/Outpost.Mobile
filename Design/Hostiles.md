@@ -1,6 +1,6 @@
 # Hostiles — an enemy station and its patrol
 
-**Status: slice 1 landed.** Four decisions were put to the owner on 2026-08-29 and taken (§13); each
+**Status: slices 1 and 2 landed.** Four decisions were put to the owner on 2026-08-29 and taken (§13); each
 was the recommended option. §14 lists the slices, what each depends on, and which have landed.
 
 This document proposes the game's first hostile presence: one enemy station, using the `Structure`
@@ -550,7 +550,7 @@ Design/README.md gives; its work order is linked in the last column.
 | # | Slice | Layer | Depends on | Status | Work order |
 |---|---|---|---|---|---|
 | 1 | Allegiance and the wire: `FactionId` on ship and record, `SpawnShip` and `IssueMoveOrder` parameters, the authority gate, the despawn log and the destroyed list (§4.4), the subscriber faction in `WorldSimulation`, SnapshotTests + OrderTests | `GameLogic` (+ two lines in `Outpost`) | — | landed | [slice 1](Archive/Hostiles-slice-1.md) |
-| 2 | Patrol: `m_patrols` + despawn repair, `AssignPatrol`, the pass in `Step`, `orderSpeedCapMetresPerSec` + the `SolveOrder` clamp, `PATROL_RING_WAYPOINTS`, PatrolTests (new file, both project files) | `GameLogic` | 1 | | [slice 2](Hostiles-slice-2.md) |
+| 2 | Patrol: `m_patrols` + despawn repair, `AssignPatrol`, the pass in `Step`, `orderSpeedCapMetresPerSec` + the `SolveOrder` clamp, `PATROL_RING_WAYPOINTS`, PatrolTests (new file, both project files) | `GameLogic` | 1 | landed | [slice 2](Archive/Hostiles-slice-2.md) |
 | 3 | The scene and the overview: mesh table split, `SpawnHostileBase`, `SubscriberCentre` faction filter, `SetOwnFaction` + selection filters, blip colors + structure dot, real `CONTACTS`, `ExplodeTheLost` consuming *destroyed* rather than every leave (§4.4), boot-log count, `ViewTuning` content constants, comment and AGENTS.md sentence updates, screenshots at two sizes | `Outpost` | 1, 2 | | [slice 3](Hostiles-slice-3.md) |
 
 Slices 1 and 2 are decided by tests (§9) and by the existing suites staying green — slice 2's
@@ -562,6 +562,8 @@ Decision records due, written with the slice that lands each, in the same commit
 for allegiance-as-identity on the wire and one for the authority gate living in the simulation (both
 turn down alternatives someone will propose again), and landed them as
 [ADR 0013](Decisions/0013-allegiance-is-identity-on-the-wire.md) and
-[ADR 0014](Decisions/0014-command-authority-is-gated-in-the-simulation.md); slice 2 owes one for NPC
-behavior living in `GameLogic` rather than behind the transport. AGENTS.md's description of what the
-game *is* changes in slice 3, when it stops being true that every ship is the player's.
+[ADR 0014](Decisions/0014-command-authority-is-gated-in-the-simulation.md); slice 2 owed one for NPC
+behavior living in `GameLogic` rather than behind the transport, and landed it as
+[ADR 0015](Decisions/0015-npc-behavior-lives-in-gamelogic.md). Slice 3 owes none. AGENTS.md's
+description of what the game *is* changes in slice 3, when it stops being true that every ship is
+the player's.

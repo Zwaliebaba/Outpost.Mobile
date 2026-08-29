@@ -79,6 +79,11 @@ struct ShipState
   float orderFacingRad = 0.0f;
   bool orderHasFacing = false;
 
+  // A ceiling on the speed an order asks for; 0 is uncapped. It is a property of the order, not of
+  // the hull -- the same Interceptor cruises at 10 m/s on patrol and burns at 34 m/s under a player
+  // -- and it is intent, so it stays off the wire beside steerTargetPos (Design/Hostiles.md 5.4).
+  float orderSpeedCapMetresPerSec = 0.0f;
+
   // The heading the avoidance pass committed to last tick. It is the one piece of state the
   // steering carries between ticks, and it is what stops a plain per-tick argmax chattering when
   // two candidate headings score within noise of each other. Simulation state, so it goes over the

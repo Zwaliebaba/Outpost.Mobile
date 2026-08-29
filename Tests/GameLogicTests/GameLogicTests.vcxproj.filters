@@ -41,6 +41,9 @@
     <ClCompile Include="PathfindingTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="PatrolTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="SeparationTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

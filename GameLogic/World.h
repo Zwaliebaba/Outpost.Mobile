@@ -3,6 +3,7 @@
 #include "Formation.h"
 #include "Movement.h"
 #include "PathGrid.h"
+#include "Patrol.h"
 #include "ShipState.h"
 #include "SpatialIndex.h"
 #include "WorldPos.h"
@@ -23,6 +24,18 @@ namespace Game
 class World
 {
 public:
+  // What one ship's standing patrol is. The anchor is a handle rather than a position so that the
+  // station's death ends the patrol instead of leaving three ships solemnly orbiting the site of a
+  // building that no longer exists (ADR 0005).
+  struct Patrol
+  {
+    ShipHandle anchor;
+    float ringRadiusMetres = 0.0f;
+    float cruiseSpeedMetresPerSec = 0.0f;
+    std::uint32_t waypointIndex = 0; // the ring point last issued
+    bool active = false;
+  };
+
   // Adds a ship at rest. Returns its id, which is its index for as long as nothing is despawned.
   // Take HandleOf if the reference has to outlive a tick.
   //
@@ -62,7 +75,25 @@ public:
   // The ship a handle names, or INVALID_SHIP_ID if it has been despawned.
   [[nodiscard]] ShipId Resolve(ShipHandle _handle) const noexcept;
 
+  // Assigns _ship to walk the ring around _anchorStation for as long as the anchor lives.
+  //
+  // The first leg goes to the ring point nearest the ship's current bearing from the anchor, so an
+  // assignment never teleports intent. A call naming a ship that is not live, or naming the ship as
+  // its own anchor, does nothing: a station does not patrol itself.
+  //
+  // The ring radius and cruise speed are arguments rather than tuning constants because they are
+  // content -- what the composition root spawns, the way a spawn position is (Design/Hostiles.md 5.1).
+  void AssignPatrol(ShipId _ship, ShipId _anchorStation, float _ringRadiusMetres, float _cruiseSpeedMetresPerSec);
+
+  // A ship's standing patrol. Server-side only, like a route: an assignment is intent, and the
+  // snapshot exists to withhold intent. Exposed for tests and for a debug overlay.
+  [[nodiscard]] const Patrol& PatrolOf(ShipId _id) const noexcept;
+
   // One fixed tick. The only thing in the game that advances simulation state.
+  //
+  // Standing NPC intent is issued first, before pass 0 -- the position an adapter's incoming orders
+  // occupy from outside, so an NPC order and a player order entering on the same tick are
+  // indistinguishable to every pass below (Design/Hostiles.md 5.3).
   //
   // Five passes over the whole array rather than one fused per-ship loop, and the reason is a
   // property rather than a preference: every read in a pass comes from a snapshot no pass is
@@ -128,6 +159,15 @@ public:
   }
 
 private:
+  // Standing NPC intent, issued through the same order machinery a player's click uses.
+  //
+  // Order-independent by construction: it runs before anything in the tick moves, so every read --
+  // the ship's own state, the anchor's posWorld -- is end-of-last-tick state whatever the array
+  // order, and it writes only the ship it is visiting. It draws no randomness, reads no other ship,
+  // and reacts to nothing; the first behavior that responds to what it sees is a different design
+  // with senses and thresholds (Design/Hostiles.md 5.5, 8).
+  void StepPatrols();
+
   void SnapshotPreviousTick() noexcept;
   void RebuildStaticIfDirty();
   void RebuildIndex();
@@ -188,6 +228,12 @@ private:
     bool reachesDestination = true; // false means the list ran out and the rest is still to plan
   };
   std::vector<Route> m_routes;
+
+  // A ship's patrol, parallel to m_ships and swap-and-popped with them exactly as m_routes is. It is
+  // not a field on ShipState, deliberately: that struct promises nothing in it a snapshot could not
+  // carry, and an assignment is the kind of intent the snapshot exists to withhold.
+  std::vector<Patrol> m_patrols;
+
   std::vector<WorldPos> m_routeScratch;
   std::vector<PathGrid::Obstacle> m_obstacleScratch;
 
