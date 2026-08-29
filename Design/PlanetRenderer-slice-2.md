@@ -30,7 +30,7 @@ The ocean rules are **not** here (slice 5): a dry body lands and is looked at fi
 ### 2.1 `NeuronClient/FxVertex.h`
 
 If `SpaceshipExplosion` slice 2 has landed, nothing. If not, this slice lands the file **exactly
-as `SpaceshipExplosion-slice-2.md` §2.1 specifies it** — same fields, same order, the same
+as `Archive/SpaceshipExplosion-slice-2.md` §2.1 specifies it** — same fields, same order, the same
 `static_assert(sizeof(FxVertex) == 48)` — and that slice finds it in place. Two designs, one
 vertex; the comment in the header names both.
 
@@ -199,7 +199,7 @@ The tree:
 
 ## 6. Assumptions the implementer may make
 
-- **`FxVertex` is the 48-byte record in `SpaceshipExplosion-slice-2.md`** whether it arrived
+- **`FxVertex` is the 48-byte record in `Archive/SpaceshipExplosion-slice-2.md`** whether it arrived
   from there or from here.
 - **Bilinear over nearest** for the ramp is settled (design §6.1); do not add a mode.
 - **The dither strength constant `0.45`** and the `+ 2` are the source's and stay; the

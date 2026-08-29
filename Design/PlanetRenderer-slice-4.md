@@ -234,7 +234,7 @@ would otherwise be false (AGENTS.md §14's own rule).
 | `Outpost/ViewTuning.h:73–90` | The "world look" section, the shape for the new one |
 | `Outpost/Hud.cpp`, `Hud.h:54` | The F1 readout and `Frame::stats` |
 | `NeuronClient/BodyRenderer.h`, `BodyMeshBuilder.h`, `BodyField.h`, `ColourRamp.h`, `BodyDesc.h` (slices 1–3) | The whole engine surface this slice calls |
-| `Design/SpaceshipExplosion-slice-4.md` §2.3 | The tumbler update line and `XMFLOAT3X3` storage |
+| `Design/Archive/SpaceshipExplosion-slice-4.md` §2.3 | The tumbler update line and `XMFLOAT3X3` storage |
 | `Design/Decisions/README.md` | The record template and the index |
 
 ---

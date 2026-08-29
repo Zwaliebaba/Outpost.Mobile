@@ -28,7 +28,7 @@ temporary hook this slice adds and slice 4 removes (§2.5).
 ### 2.1 `UploadColourTexture` in `GpuHelpers`
 
 If `SpaceshipExplosion` slice 3 has landed, nothing. If not, this slice lands it **exactly as
-`SpaceshipExplosion-slice-3.md` §2.1 specifies** — beside `UploadCoverageTexture`, `B8G8R8A8_UNORM`,
+`Archive/SpaceshipExplosion-slice-3.md` §2.1 specifies** — beside `UploadCoverageTexture`, `B8G8R8A8_UNORM`,
 four bytes a texel, same staging contract, two names for two intents — and that slice finds it.
 
 ### 2.2 `UploadStaticBuffer` in `GpuHelpers`
@@ -156,7 +156,7 @@ Rules:
   shininess`. Each `Draw` sets `world` (DWORDs 0–15), the PSO, the table, the view, and
   `DrawInstanced`.
 - **`Draw` sets `OMSetRenderTargets` with the depth view**, for the reason
-  `SpaceshipExplosion-slice-3.md` §2.3 gives: the overlay's `Flush` drops it.
+  `Archive/SpaceshipExplosion-slice-3.md` §2.3 gives: the overlay's `Flush` drops it.
 
 ### 2.5 A temporary body, for the screenshot
 
@@ -200,7 +200,7 @@ so.
 | `NeuronClient/GpuHelpers.h/.cpp` | `HeapProps`, `BufferDesc`, `Transition`, `CreateRootSignature`, `DefaultPipelineDesc`, `UploadCoverageTexture` (the model for both new helpers) |
 | `NeuronClient/ScreenImage.cpp` | The load-and-upload sequence for one texture |
 | `NeuronClient/Shaders/Scene.hlsli`, `ScenePS.hlsl` | `row_major`, the cbuffer layout, the lighting line `BodyPS` reproduces |
-| `Design/SpaceshipExplosion-slice-3.md` §5 | The five surprises — `put()` asserts, heaps per list, the depth view — all apply here unchanged |
+| `Design/Archive/SpaceshipExplosion-slice-3.md` §5 | The five surprises — `put()` asserts, heaps per list, the depth view — all apply here unchanged |
 | `Design/PlanetRenderer.md` §7, §6.3 | The passes, the shaders, the alpha-mask rule, the fade |
 
 ---
