@@ -55,10 +55,12 @@ public:
     // recorded game would diverge from its replay for no reason anybody could see.
     const Game::WorldPos start = Game::LocalPos(123.5f, -4321.25f);
     Game::WorldPos pos = start;
-    const float far = Game::SECTOR_SIZE_METRES * 5.0f + 137.75f;
+    // Not named "far": the Windows SDK still defines that as a 16-bit memory-model keyword, so a
+    // variable called it compiles here and nowhere that includes minwindef.h.
+    const float farMetres = Game::SECTOR_SIZE_METRES * 5.0f + 137.75f;
 
-    Game::Translate(pos, far, -far);
-    Game::Translate(pos, -far, far);
+    Game::Translate(pos, farMetres, -farMetres);
+    Game::Translate(pos, -farMetres, farMetres);
 
     Assert::IsTrue(IsSamePosition(start, pos), L"translating out and back did not land on the same position");
   }
