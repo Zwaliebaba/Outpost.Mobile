@@ -192,6 +192,7 @@
     <ClCompile Include="OrderTests.cpp" />
     <ClCompile Include="PathfindingTests.cpp" />
     <ClCompile Include="SeparationTests.cpp" />
+    <ClCompile Include="SectorTests.cpp" />
     <ClCompile Include="SpatialIndexTests.cpp" />
     <ClCompile Include="WorldTests.cpp" />
   </ItemGroup>

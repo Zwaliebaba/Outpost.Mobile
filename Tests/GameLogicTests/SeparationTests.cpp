@@ -39,8 +39,8 @@ public:
   TEST_METHOD(ShipsSpawnedOnOneSpotUnpackThemselves)
   {
     Game::World world;
-    const Game::ShipId first = world.SpawnShip(Game::WorldPos{0.0f, 0.0f}, 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
-    const Game::ShipId second = world.SpawnShip(Game::WorldPos{0.0f, 0.0f}, 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+    const Game::ShipId first = world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+    const Game::ShipId second = world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
 
     Assert::IsTrue(OverlapBetween(world, first, second) > 0.0f, L"two hulls on the same point do not start overlapping");
     for (int tick = 0; tick < 240; ++tick)
@@ -65,7 +65,7 @@ public:
     };
     for (int i = 0; i < 100; ++i)
     {
-      ships.push_back(world.SpawnShip(Game::WorldPos{(jitter() - 0.5f) * 6.0f, (jitter() - 0.5f) * 6.0f}, jitter() * 6.2831853f,
+      ships.push_back(world.SpawnShip(Game::LocalPos((jitter() - 0.5f) * 6.0f, (jitter() - 0.5f) * 6.0f), jitter() * 6.2831853f,
                                       static_cast<std::uint32_t>(Game::HullId::Interceptor)));
     }
 
@@ -77,7 +77,7 @@ public:
       for (const Game::ShipId id : ships)
       {
         const Game::ShipState& ship = world.Ship(id);
-        Assert::IsTrue(std::isfinite(ship.posWorld.localX) && std::isfinite(ship.posWorld.localZ), L"a ship's position became a NaN");
+        Assert::IsTrue(std::isfinite(WorldX(ship.posWorld)) && std::isfinite(WorldZ(ship.posWorld)), L"a ship's position became a NaN");
         worstStep = std::max(worstStep, MovedThisTick(ship));
       }
     }
@@ -125,7 +125,7 @@ public:
     for (int i = 0; i < SHIPS; ++i)
     {
       // One heading for the whole pack: that is the point of the case.
-      pack.push_back(world.SpawnShip(Game::WorldPos{(jitter() - 0.5f) * spread, (jitter() - 0.5f) * spread}, 0.0f,
+      pack.push_back(world.SpawnShip(Game::LocalPos((jitter() - 0.5f) * spread, (jitter() - 0.5f) * spread), 0.0f,
                                      static_cast<std::uint32_t>(Game::HullId::Interceptor)));
     }
 
@@ -162,8 +162,8 @@ public:
     // The asymmetry has to be visible, not merely present: a Carrier that yields to an Interceptor
     // reads as a bug to anyone watching.
     Game::World world;
-    const Game::ShipId carrier = world.SpawnShip(Game::WorldPos{0.0f, 0.0f}, 0.0f, static_cast<std::uint32_t>(Game::HullId::Carrier));
-    const Game::ShipId fighter = world.SpawnShip(Game::WorldPos{30.0f, 0.0f}, 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor));
+    const Game::ShipId carrier = world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Carrier));
+    const Game::ShipId fighter = world.SpawnShip(Game::LocalPos(30.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor));
 
     const Game::WorldPos carrierStart = world.Ship(carrier).posWorld;
     const Game::WorldPos fighterStart = world.Ship(fighter).posWorld;
@@ -183,12 +183,12 @@ public:
     // where a ship is, and a correct correction applied at the wrong point in the pass order is
     // still a ship inside a wall.
     Game::World world;
-    const Game::ShipId structure = world.SpawnShip(Game::WorldPos{0.0f, 0.0f}, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure));
-    const Game::ShipId ship = world.SpawnShip(Game::WorldPos{-600.0f, 0.0f}, 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+    const Game::ShipId structure = world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure));
+    const Game::ShipId ship = world.SpawnShip(Game::LocalPos(-600.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
 
     const Game::WorldPos structureStart = world.Ship(structure).posWorld;
     const Game::ShipId order[] = {ship};
-    world.IssueMoveOrder(order, Game::WorldPos{600.0f, 0.0f}, false, 0.0f);
+    world.IssueMoveOrder(order, Game::LocalPos(600.0f, 0.0f), false, 0.0f);
 
     for (int tick = 0; tick < 3000; ++tick)
     {
@@ -204,15 +204,15 @@ public:
     // behind it has a soft correction pushing it in and a hard one pushing it out; the hard one
     // runs second and is unbounded, which is what makes blocking hard rather than decorative.
     Game::World world;
-    const Game::ShipId structure = world.SpawnShip(Game::WorldPos{0.0f, 0.0f}, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure));
+    const Game::ShipId structure = world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure));
 
     std::vector<Game::ShipId> column;
     for (int i = 0; i < 12; ++i)
     {
-      column.push_back(world.SpawnShip(Game::WorldPos{-400.0f - static_cast<float>(i) * 26.0f, 0.0f}, 0.0f,
+      column.push_back(world.SpawnShip(Game::LocalPos(-400.0f - static_cast<float>(i) * 26.0f, 0.0f), 0.0f,
                                        static_cast<std::uint32_t>(Game::HullId::Corvette)));
     }
-    world.IssueMoveOrder(column, Game::WorldPos{400.0f, 0.0f}, false, 0.0f);
+    world.IssueMoveOrder(column, Game::LocalPos(400.0f, 0.0f), false, 0.0f);
 
     for (int tick = 0; tick < 2400; ++tick)
     {
@@ -228,17 +228,17 @@ public:
     // would be real narrow-phase cost on every pair every tick, for an object players fly through
     // on purpose (Design/Collision.md 18).
     Game::World world;
-    const Game::ShipId gate = world.SpawnShip(Game::WorldPos{0.0f, 0.0f}, 0.0f, static_cast<std::uint32_t>(Game::HullId::Stargate));
-    const Game::ShipId ship = world.SpawnShip(Game::WorldPos{0.0f, -400.0f}, 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor));
+    const Game::ShipId gate = world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Stargate));
+    const Game::ShipId ship = world.SpawnShip(Game::LocalPos(0.0f, -400.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor));
 
     const Game::ShipId order[] = {ship};
-    world.IssueMoveOrder(order, Game::WorldPos{0.0f, 400.0f}, false, 0.0f);
+    world.IssueMoveOrder(order, Game::LocalPos(0.0f, 400.0f), false, 0.0f);
     for (int tick = 0; tick < 3000 && world.Ship(ship).order != Game::OrderState::Idle; ++tick)
       world.Step();
 
     Assert::AreEqual(Game::OrderState::Idle, world.Ship(ship).order, L"a ship could not fly through a Stargate");
-    Assert::IsTrue(world.Ship(ship).posWorld.localZ > 380.0f, L"a ship was blocked by a Stargate on its way through");
-    Assert::AreEqual(0.0f, world.Ship(gate).posWorld.localZ, 0.0f, L"a Stargate moved");
+    Assert::IsTrue(WorldZ(world.Ship(ship).posWorld) > 380.0f, L"a ship was blocked by a Stargate on its way through");
+    Assert::AreEqual(0.0f, WorldZ(world.Ship(gate).posWorld), 0.0f, L"a Stargate moved");
   }
 };
 } // namespace GameLogicTests

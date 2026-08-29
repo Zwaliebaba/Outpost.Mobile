@@ -30,16 +30,22 @@ void PathGrid::Rebuild(std::span<const Obstacle> _obstacles)
   if (_obstacles.empty())
     return;
 
-  float minX = _obstacles[0].pos.localX;
-  float maxX = minX;
-  float minZ = _obstacles[0].pos.localZ;
-  float maxZ = minZ;
+  // The extent is swept as offsets from the first obstacle rather than as coordinates, so that a
+  // set of obstacles straddling a sector boundary gets a bounding box the width of the obstacles
+  // and not the width of a sector.
+  const WorldPos& reference = _obstacles[0].pos;
+  float minX = 0.0f;
+  float maxX = 0.0f;
+  float minZ = 0.0f;
+  float maxZ = 0.0f;
   for (const Obstacle& obstacle : _obstacles)
   {
-    minX = std::min(minX, obstacle.pos.localX - obstacle.radiusMetres);
-    maxX = std::max(maxX, obstacle.pos.localX + obstacle.radiusMetres);
-    minZ = std::min(minZ, obstacle.pos.localZ - obstacle.radiusMetres);
-    maxZ = std::max(maxZ, obstacle.pos.localZ + obstacle.radiusMetres);
+    const float offsetX = OffsetX(reference, obstacle.pos);
+    const float offsetZ = OffsetZ(reference, obstacle.pos);
+    minX = std::min(minX, offsetX - obstacle.radiusMetres);
+    maxX = std::max(maxX, offsetX + obstacle.radiusMetres);
+    minZ = std::min(minZ, offsetZ - obstacle.radiusMetres);
+    maxZ = std::max(maxZ, offsetZ + obstacle.radiusMetres);
   }
   minX -= PATH_GRID_MARGIN_METRES;
   maxX += PATH_GRID_MARGIN_METRES;
@@ -60,16 +66,16 @@ void PathGrid::Rebuild(std::span<const Obstacle> _obstacles)
 
   m_width = static_cast<std::uint32_t>(width);
   m_height = static_cast<std::uint32_t>(height);
-  m_originX = minX;
-  m_originZ = minZ;
+  m_origin = reference;
+  Translate(m_origin, minX, minZ);
   m_clearance.assign(static_cast<std::size_t>(m_width) * m_height, OPEN_CLEARANCE_METRES);
 
   for (std::uint32_t cellZ = 0; cellZ < m_height; ++cellZ)
   {
     for (std::uint32_t cellX = 0; cellX < m_width; ++cellX)
     {
-      const WorldPos centre{m_originX + static_cast<float>(cellX) * PATH_CELL_SIZE_METRES,
-                            m_originZ + static_cast<float>(cellZ) * PATH_CELL_SIZE_METRES};
+      WorldPos centre = m_origin;
+      Translate(centre, static_cast<float>(cellX) * PATH_CELL_SIZE_METRES, static_cast<float>(cellZ) * PATH_CELL_SIZE_METRES);
       float clearance = OPEN_CLEARANCE_METRES;
       for (const Obstacle& obstacle : _obstacles)
         clearance = std::min(clearance, Distance(centre, obstacle.pos) - obstacle.radiusMetres);
@@ -78,15 +84,15 @@ void PathGrid::Rebuild(std::span<const Obstacle> _obstacles)
   }
 }
 
-std::int32_t PathGrid::ClampedCellX(float _metres) const noexcept
+std::int32_t PathGrid::ClampedCellX(float _offsetMetres) const noexcept
 {
-  const std::int32_t cell = static_cast<std::int32_t>(std::floor((_metres - m_originX) / PATH_CELL_SIZE_METRES + 0.5f));
+  const std::int32_t cell = static_cast<std::int32_t>(std::floor(_offsetMetres / PATH_CELL_SIZE_METRES + 0.5f));
   return std::clamp(cell, 0, static_cast<std::int32_t>(m_width) - 1);
 }
 
-std::int32_t PathGrid::ClampedCellZ(float _metres) const noexcept
+std::int32_t PathGrid::ClampedCellZ(float _offsetMetres) const noexcept
 {
-  const std::int32_t cell = static_cast<std::int32_t>(std::floor((_metres - m_originZ) / PATH_CELL_SIZE_METRES + 0.5f));
+  const std::int32_t cell = static_cast<std::int32_t>(std::floor(_offsetMetres / PATH_CELL_SIZE_METRES + 0.5f));
   return std::clamp(cell, 0, static_cast<std::int32_t>(m_height) - 1);
 }
 
@@ -94,20 +100,23 @@ WorldPos PathGrid::CentreOf(std::uint32_t _cell) const noexcept
 {
   const std::uint32_t cellX = _cell % m_width;
   const std::uint32_t cellZ = _cell / m_width;
-  return WorldPos{m_originX + static_cast<float>(cellX) * PATH_CELL_SIZE_METRES,
-                  m_originZ + static_cast<float>(cellZ) * PATH_CELL_SIZE_METRES};
+  WorldPos centre = m_origin;
+  Translate(centre, static_cast<float>(cellX) * PATH_CELL_SIZE_METRES, static_cast<float>(cellZ) * PATH_CELL_SIZE_METRES);
+  return centre;
 }
 
 float PathGrid::ClearanceAt(const WorldPos& _pos) const noexcept
 {
   if (m_clearance.empty())
     return OPEN_CLEARANCE_METRES;
-  const float cellX = (_pos.localX - m_originX) / PATH_CELL_SIZE_METRES;
-  const float cellZ = (_pos.localZ - m_originZ) / PATH_CELL_SIZE_METRES;
+  const float offsetX = OffsetX(m_origin, _pos);
+  const float offsetZ = OffsetZ(m_origin, _pos);
+  const float cellX = offsetX / PATH_CELL_SIZE_METRES;
+  const float cellZ = offsetZ / PATH_CELL_SIZE_METRES;
   if (cellX < -0.5f || cellZ < -0.5f || cellX > static_cast<float>(m_width) - 0.5f || cellZ > static_cast<float>(m_height) - 0.5f)
     return OPEN_CLEARANCE_METRES;
-  const std::uint32_t x = static_cast<std::uint32_t>(ClampedCellX(_pos.localX));
-  const std::uint32_t z = static_cast<std::uint32_t>(ClampedCellZ(_pos.localZ));
+  const std::uint32_t x = static_cast<std::uint32_t>(ClampedCellX(offsetX));
+  const std::uint32_t z = static_cast<std::uint32_t>(ClampedCellZ(offsetZ));
   return m_clearance[static_cast<std::size_t>(z) * m_width + x];
 }
 
@@ -139,10 +148,10 @@ bool PathGrid::FindPath(const WorldPos& _from, const WorldPos& _to, float _requi
   }
 
   const std::uint32_t cells = static_cast<std::uint32_t>(m_clearance.size());
-  const std::uint32_t start =
-    static_cast<std::uint32_t>(ClampedCellZ(_from.localZ)) * m_width + static_cast<std::uint32_t>(ClampedCellX(_from.localX));
-  const std::uint32_t goal =
-    static_cast<std::uint32_t>(ClampedCellZ(_to.localZ)) * m_width + static_cast<std::uint32_t>(ClampedCellX(_to.localX));
+  const std::uint32_t start = static_cast<std::uint32_t>(ClampedCellZ(OffsetZ(m_origin, _from))) * m_width +
+                              static_cast<std::uint32_t>(ClampedCellX(OffsetX(m_origin, _from)));
+  const std::uint32_t goal = static_cast<std::uint32_t>(ClampedCellZ(OffsetZ(m_origin, _to))) * m_width +
+                             static_cast<std::uint32_t>(ClampedCellX(OffsetX(m_origin, _to)));
 
   m_travelled.assign(cells, OPEN_CLEARANCE_METRES);
   m_cameFrom.assign(cells, NO_CELL);

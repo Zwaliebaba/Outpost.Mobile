@@ -85,6 +85,29 @@ public:
   }
   void TriggerCameraShake() noexcept;
   [[nodiscard]] int SelectedCount() const noexcept;
+  // Simulation positions reach render space through these two and never by reading localX, which is
+  // an offset inside a sector and not a world coordinate. m_viewOrigin is the universe origin, so
+  // the result is a true world metre for any sector within float range. Moving the origin to follow
+  // the camera is what buys precision far from it; that is a rendering slice of its own and this is
+  // the seam it will change (Design/Collision-slice-8.md 2.7, 3).
+  [[nodiscard]] float ViewX(const Game::WorldPos& _pos) const noexcept
+  {
+    return Game::OffsetX(m_viewOrigin, _pos);
+  }
+
+  [[nodiscard]] float ViewZ(const Game::WorldPos& _pos) const noexcept
+  {
+    return Game::OffsetZ(m_viewOrigin, _pos);
+  }
+
+  // The inverse: a point picked in render space, back to the position the simulation will store.
+  [[nodiscard]] Game::WorldPos WorldPosAt(float _viewX, float _viewZ) const noexcept
+  {
+    Game::WorldPos pos = m_viewOrigin;
+    Game::Translate(pos, _viewX, _viewZ);
+    return pos;
+  }
+
   [[nodiscard]] bool IsSelected(size_t _index) const noexcept
   {
     return _index < m_ships.size() && m_ships[_index].selected;
@@ -129,6 +152,7 @@ private:
   void IssueMoveOrder(const DirectX::XMFLOAT3& _point, bool _hasFacing, float _facingRad);
   [[nodiscard]] float SimTimeSec() const noexcept;
 
+  Game::WorldPos m_viewOrigin;
   Game::World* m_world = nullptr;
   Neuron::Camera* m_camera = nullptr;
   const Neuron::MeshLibrary* m_meshes = nullptr;

@@ -40,9 +40,9 @@ public:
         for (int i = 0; i < count; ++i)
         {
           ships.push_back(
-            world.SpawnShip(Game::WorldPos{static_cast<float>(i) * radius * 4.0f, 0.0f}, 0.0f, static_cast<std::uint32_t>(hull)));
+            world.SpawnShip(Game::LocalPos(static_cast<float>(i) * radius * 4.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(hull)));
         }
-        world.IssueMoveOrder(ships, Game::WorldPos{0.0f, 4000.0f}, false, 0.0f);
+        world.IssueMoveOrder(ships, Game::LocalPos(0.0f, 4000.0f), false, 0.0f);
 
         // Slot separation against the group's actual hull radii, not against a bare metre.
         for (size_t a = 0; a < ships.size(); ++a)
@@ -66,10 +66,10 @@ public:
     // rather than the Carrier arriving into three fighters that were spaced for themselves.
     Game::World world;
     std::vector<Game::ShipId> group;
-    group.push_back(world.SpawnShip(Game::WorldPos{-300.0f, 0.0f}, 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor)));
-    group.push_back(world.SpawnShip(Game::WorldPos{0.0f, 0.0f}, 0.0f, static_cast<std::uint32_t>(Game::HullId::Carrier)));
-    group.push_back(world.SpawnShip(Game::WorldPos{300.0f, 0.0f}, 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor)));
-    world.IssueMoveOrder(group, Game::WorldPos{0.0f, 3000.0f}, false, 0.0f);
+    group.push_back(world.SpawnShip(Game::LocalPos(-300.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor)));
+    group.push_back(world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Carrier)));
+    group.push_back(world.SpawnShip(Game::LocalPos(300.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor)));
+    world.IssueMoveOrder(group, Game::LocalPos(0.0f, 3000.0f), false, 0.0f);
 
     const float carrierRadius = Game::HullSpecOf(Game::HullId::Carrier).BoundingRadiusMetres();
     for (size_t a = 0; a < group.size(); ++a)
@@ -94,10 +94,10 @@ public:
     std::vector<Game::ShipId> wing;
     for (int i = 0; i < 4; ++i)
     {
-      wing.push_back(world.SpawnShip(Game::WorldPos{static_cast<float>(i) * 400.0f - 600.0f, 0.0f}, 0.0f,
+      wing.push_back(world.SpawnShip(Game::LocalPos(static_cast<float>(i) * 400.0f - 600.0f, 0.0f), 0.0f,
                                      static_cast<std::uint32_t>(Game::HullId::Battleship)));
     }
-    world.IssueMoveOrder(wing, Game::WorldPos{0.0f, 2500.0f}, false, 0.0f);
+    world.IssueMoveOrder(wing, Game::LocalPos(0.0f, 2500.0f), false, 0.0f);
 
     int settled = 0;
     for (int tick = 0; tick < 12000 && settled < static_cast<int>(wing.size()); ++tick)

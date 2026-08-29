@@ -104,7 +104,7 @@ void OutpostApp::SpawnStartingFleet()
       continue; // a missing hull is a content diagnostic, not a reason to fail boot
 
     const float x = (static_cast<float>(i) - static_cast<float>(hullCount - 1) * 0.5f) * START_SPACING;
-    m_world.SpawnShip(Game::WorldPos{x, 0.0f}, 0.0f, static_cast<std::uint32_t>(STARTING_HULLS[i].hull));
+    m_world.SpawnShip(Game::LocalPos(x, 0.0f), 0.0f, static_cast<std::uint32_t>(STARTING_HULLS[i].hull));
     m_view.AddShip(mesh);
   }
 }

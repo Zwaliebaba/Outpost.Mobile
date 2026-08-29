@@ -18,11 +18,11 @@ constexpr std::uint32_t STRUCTURE = static_cast<std::uint32_t>(Game::HullId::Str
 void SpawnPocket(Game::World& _world)
 {
   for (const float x : {-800.0f, -400.0f, 0.0f, 400.0f, 800.0f})
-    _world.SpawnShip(Game::WorldPos{x, 500.0f}, 0.0f, STRUCTURE);
+    _world.SpawnShip(Game::LocalPos(x, 500.0f), 0.0f, STRUCTURE);
   for (const float z : {100.0f, -300.0f})
   {
-    _world.SpawnShip(Game::WorldPos{-800.0f, z}, 0.0f, STRUCTURE);
-    _world.SpawnShip(Game::WorldPos{800.0f, z}, 0.0f, STRUCTURE);
+    _world.SpawnShip(Game::LocalPos(-800.0f, z), 0.0f, STRUCTURE);
+    _world.SpawnShip(Game::LocalPos(800.0f, z), 0.0f, STRUCTURE);
   }
 }
 } // namespace
@@ -37,20 +37,20 @@ public:
     // different route (Design/Collision.md 12).
     const float clearance = Game::HullSpecOf(Game::HullId::Corvette).BoundingRadiusMetres() + Game::PATH_CLEARANCE_MARGIN_METRES;
     const std::vector<Game::PathGrid::Obstacle> obstacles = {
-      {Game::WorldPos{0.0f, 0.0f}, 251.77f}, {Game::WorldPos{560.0f, 120.0f}, 251.77f}, {Game::WorldPos{-400.0f, -300.0f}, 131.61f}};
+      {Game::LocalPos(0.0f, 0.0f), 251.77f}, {Game::LocalPos(560.0f, 120.0f), 251.77f}, {Game::LocalPos(-400.0f, -300.0f), 131.61f}};
 
     std::vector<Game::WorldPos> first;
     std::vector<Game::WorldPos> second;
     {
       Game::PathGrid grid;
       grid.Rebuild(obstacles);
-      Assert::IsTrue(grid.FindPath(Game::WorldPos{-900.0f, 0.0f}, Game::WorldPos{900.0f, 0.0f}, clearance, first),
+      Assert::IsTrue(grid.FindPath(Game::LocalPos(-900.0f, 0.0f), Game::LocalPos(900.0f, 0.0f), clearance, first),
                      L"no route was found at all");
     }
     {
       Game::PathGrid grid;
       grid.Rebuild(obstacles);
-      Assert::IsTrue(grid.FindPath(Game::WorldPos{-900.0f, 0.0f}, Game::WorldPos{900.0f, 0.0f}, clearance, second),
+      Assert::IsTrue(grid.FindPath(Game::LocalPos(-900.0f, 0.0f), Game::LocalPos(900.0f, 0.0f), clearance, second),
                      L"no route was found at all");
     }
 
@@ -58,8 +58,7 @@ public:
     Assert::AreEqual(first.size(), second.size(), L"the same endpoints produced routes of different lengths");
     for (size_t at = 0; at < first.size(); ++at)
     {
-      Assert::AreEqual(first[at].localX, second[at].localX, 0.0f, L"the same endpoints produced a different route");
-      Assert::AreEqual(first[at].localZ, second[at].localZ, 0.0f, L"the same endpoints produced a different route");
+      Assert::IsTrue(IsSamePosition(first[at], second[at]), L"the same endpoints produced a different route");
     }
   }
 
@@ -71,13 +70,13 @@ public:
     const float clearance = Game::HullSpecOf(Game::HullId::Frigate).BoundingRadiusMetres() + Game::PATH_CLEARANCE_MARGIN_METRES;
     // A named vector rather than a braced list: constructing a std::span straight from one is
     // C++26, and AGENTS.md 5 holds this tree to C++20 whatever /std:c++latest would let through.
-    const std::vector<Game::PathGrid::Obstacle> obstacles = {{Game::WorldPos{0.0f, 0.0f}, 251.77f}};
+    const std::vector<Game::PathGrid::Obstacle> obstacles = {{Game::LocalPos(0.0f, 0.0f), 251.77f}};
     Game::PathGrid grid;
     grid.Rebuild(obstacles);
 
     std::vector<Game::WorldPos> route;
-    const Game::WorldPos from{-800.0f, 0.0f};
-    Assert::IsTrue(grid.FindPath(from, Game::WorldPos{800.0f, 0.0f}, clearance, route), L"no route was found round a single Structure");
+    const Game::WorldPos from = Game::LocalPos(-800.0f, 0.0f);
+    Assert::IsTrue(grid.FindPath(from, Game::LocalPos(800.0f, 0.0f), clearance, route), L"no route was found round a single Structure");
 
     Game::WorldPos at = from;
     for (const Game::WorldPos& waypoint : route)
@@ -85,7 +84,7 @@ public:
       Assert::IsTrue(grid.IsClearBetween(at, waypoint, clearance), L"a leg of the route passes through a Structure");
       at = waypoint;
     }
-    Assert::AreEqual(800.0f, route.back().localX, 1e-3f, L"the route does not end at the destination");
+    Assert::AreEqual(800.0f, WorldX(route.back()), 1e-3f, L"the route does not end at the destination");
   }
 
   TEST_METHOD(ClearanceRespectsTheHull)
@@ -94,13 +93,13 @@ public:
     // gap an Interceptor threads. That is the property that makes a clearance field the right
     // structure rather than a per-hull occupancy map.
     const float gapHalf = 300.0f;
-    const std::vector<Game::PathGrid::Obstacle> obstacles = {{Game::WorldPos{0.0f, -gapHalf - 251.77f}, 251.77f},
-                                                             {Game::WorldPos{0.0f, gapHalf + 251.77f}, 251.77f}};
+    const std::vector<Game::PathGrid::Obstacle> obstacles = {{Game::LocalPos(0.0f, -gapHalf - 251.77f), 251.77f},
+                                                             {Game::LocalPos(0.0f, gapHalf + 251.77f), 251.77f}};
     Game::PathGrid grid;
     grid.Rebuild(obstacles);
 
-    const Game::WorldPos from{-900.0f, 0.0f};
-    const Game::WorldPos to{900.0f, 0.0f};
+    const Game::WorldPos from = Game::LocalPos(-900.0f, 0.0f);
+    const Game::WorldPos to = Game::LocalPos(900.0f, 0.0f);
 
     const float fighterClearance = Game::HullSpecOf(Game::HullId::Interceptor).BoundingRadiusMetres() + Game::PATH_CLEARANCE_MARGIN_METRES;
     std::vector<Game::WorldPos> throughTheGap;
@@ -124,31 +123,31 @@ public:
     // available locally at any tuning (Design/Collision.md 12, 16).
     Game::World world;
     SpawnPocket(world);
-    const Game::ShipId ship = world.SpawnShip(Game::WorldPos{0.0f, 0.0f}, 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+    const Game::ShipId ship = world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
 
     const Game::ShipId order[] = {ship};
-    world.IssueMoveOrder(order, Game::WorldPos{0.0f, 1400.0f}, false, 0.0f);
+    world.IssueMoveOrder(order, Game::LocalPos(0.0f, 1400.0f), false, 0.0f);
     Assert::IsTrue(world.RouteOf(ship).size() > 1, L"the planner produced a straight line out of a closed pocket");
 
     // It has to start by going the wrong way, which is the whole point of the case.
-    Assert::IsTrue(world.RouteOf(ship)[0].localZ < 0.0f, L"the first waypoint out of a south-facing pocket heads north");
+    Assert::IsTrue(WorldZ(world.RouteOf(ship)[0]) < 0.0f, L"the first waypoint out of a south-facing pocket heads north");
 
     for (int tick = 0; tick < 20000 && world.Ship(ship).order != Game::OrderState::Idle; ++tick)
       world.Step();
 
     Assert::AreEqual(Game::OrderState::Idle, world.Ship(ship).order, L"a ship ordered out of a concave pocket never got there");
-    Assert::IsTrue(world.Ship(ship).posWorld.localZ > 1200.0f, L"the ship stopped short of its destination");
+    Assert::IsTrue(WorldZ(world.Ship(ship).posWorld) > 1200.0f, L"the ship stopped short of its destination");
   }
 
   TEST_METHOD(AShipRoutesRoundAStructureRatherThanIntoIt)
   {
     // The everyday version: architecture between a ship and where it was sent.
     Game::World world;
-    const Game::ShipId structure = world.SpawnShip(Game::WorldPos{0.0f, 0.0f}, 0.0f, STRUCTURE);
-    const Game::ShipId ship = world.SpawnShip(Game::WorldPos{0.0f, -800.0f}, 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+    const Game::ShipId structure = world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, STRUCTURE);
+    const Game::ShipId ship = world.SpawnShip(Game::LocalPos(0.0f, -800.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
 
     const Game::ShipId order[] = {ship};
-    world.IssueMoveOrder(order, Game::WorldPos{0.0f, 800.0f}, false, 0.0f);
+    world.IssueMoveOrder(order, Game::LocalPos(0.0f, 800.0f), false, 0.0f);
     Assert::IsTrue(world.RouteOf(ship).size() > 1, L"a ship was sent straight through a Structure");
 
     float closest = 1e30f;
@@ -167,16 +166,16 @@ public:
     // Routes are planned once and not re-run per tick, so a route has to notice when the world it
     // was planned against stops being the world.
     Game::World world;
-    const Game::ShipId ship = world.SpawnShip(Game::WorldPos{0.0f, -1400.0f}, 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+    const Game::ShipId ship = world.SpawnShip(Game::LocalPos(0.0f, -1400.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
     const Game::ShipId order[] = {ship};
-    world.IssueMoveOrder(order, Game::WorldPos{0.0f, 1400.0f}, false, 0.0f);
+    world.IssueMoveOrder(order, Game::LocalPos(0.0f, 1400.0f), false, 0.0f);
     Assert::AreEqual(size_t{1}, world.RouteOf(ship).size(), L"an empty world produced a route with waypoints in it");
 
     for (int tick = 0; tick < 600; ++tick)
       world.Step();
 
     // Dropped across the run the ship is already making.
-    const Game::ShipId structure = world.SpawnShip(Game::WorldPos{0.0f, 200.0f}, 0.0f, STRUCTURE);
+    const Game::ShipId structure = world.SpawnShip(Game::LocalPos(0.0f, 200.0f), 0.0f, STRUCTURE);
     world.Step();
     Assert::IsTrue(world.RouteOf(ship).size() > 1, L"a Structure across the path did not force a re-plan");
 
@@ -205,10 +204,10 @@ public:
     Assert::IsFalse(grid.HasObstacles(), L"an unbuilt grid claims to hold obstacles");
 
     std::vector<Game::WorldPos> route;
-    Assert::IsTrue(grid.FindPath(Game::WorldPos{-500.0f, 0.0f}, Game::WorldPos{500.0f, 0.0f}, 100.0f, route),
+    Assert::IsTrue(grid.FindPath(Game::LocalPos(-500.0f, 0.0f), Game::LocalPos(500.0f, 0.0f), 100.0f, route),
                    L"an empty grid refused a route");
     Assert::AreEqual(size_t{1}, route.size(), L"an empty grid invented waypoints");
-    Assert::AreEqual(500.0f, route[0].localX, 0.0f, L"an empty grid did not hand back the destination");
+    Assert::AreEqual(500.0f, WorldX(route[0]), 0.0f, L"an empty grid did not hand back the destination");
   }
 };
 } // namespace GameLogicTests

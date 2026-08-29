@@ -48,7 +48,7 @@ std::vector<Game::SpatialIndex::Entry> RandomEntries(IndexRandom& _random, std::
     while (!Game::HULL_SPECS[hull].collidable)
       hull = (hull + 1) % Game::HULL_COUNT;
     entries.push_back({i,
-                       Game::WorldPos{_random.NextFloat(-_spreadMetres, _spreadMetres), _random.NextFloat(-_spreadMetres, _spreadMetres)},
+                       Game::LocalPos(_random.NextFloat(-_spreadMetres, _spreadMetres), _random.NextFloat(-_spreadMetres, _spreadMetres)),
                        Game::HULL_SPECS[hull].BoundingRadiusMetres()});
   }
   return entries;
@@ -92,7 +92,7 @@ public:
       std::vector<Game::ShipId> actual;
       for (int probe = 0; probe < 24; ++probe)
       {
-        const Game::WorldPos centre{random.NextFloat(-1600.0f, 1600.0f), random.NextFloat(-1600.0f, 1600.0f)};
+        const Game::WorldPos centre = Game::LocalPos(random.NextFloat(-1600.0f, 1600.0f), random.NextFloat(-1600.0f, 1600.0f));
         const float radius = random.NextFloat(1.0f, 700.0f);
         index.QueryCircle(centre, radius, actual);
 
@@ -122,7 +122,7 @@ public:
     std::vector<Game::ShipId> actual;
     for (const float radius : {60.0f, 200.0f, 650.0f, 1400.0f})
     {
-      const Game::WorldPos centre{random.NextFloat(-500.0f, 500.0f), random.NextFloat(-500.0f, 500.0f)};
+      const Game::WorldPos centre = Game::LocalPos(random.NextFloat(-500.0f, 500.0f), random.NextFloat(-500.0f, 500.0f));
       index.QueryCircle(centre, radius, actual);
 
       std::vector<Game::ShipId> expected = BruteForce(entries, centre, radius);
@@ -156,7 +156,7 @@ public:
     std::vector<Game::ShipId> fromFine;
     for (int probe = 0; probe < 40; ++probe)
     {
-      const Game::WorldPos centre{random.NextFloat(-2200.0f, 2200.0f), random.NextFloat(-2200.0f, 2200.0f)};
+      const Game::WorldPos centre = Game::LocalPos(random.NextFloat(-2200.0f, 2200.0f), random.NextFloat(-2200.0f, 2200.0f));
       const float radius = random.NextFloat(5.0f, 900.0f);
       coarse.QueryCircle(centre, radius, fromCoarse);
       fine.QueryCircle(centre, radius, fromFine);
@@ -174,8 +174,8 @@ public:
     const float structureRadius = Game::HullSpecOf(Game::HullId::Structure).BoundingRadiusMetres();
     // 260 m out with a 251.77 m bounding radius, so its skin reaches 8.23 m from the origin: inside
     // a 30 m query and outside a 5 m one. A query that only tested centres would fail both ways.
-    const std::vector<Game::SpatialIndex::Entry> statics = {{100, Game::WorldPos{260.0f, 0.0f}, structureRadius}};
-    const std::vector<Game::SpatialIndex::Entry> dynamics = {{7, Game::WorldPos{20.0f, 0.0f}, 3.51f}};
+    const std::vector<Game::SpatialIndex::Entry> statics = {{100, Game::LocalPos(260.0f, 0.0f), structureRadius}};
+    const std::vector<Game::SpatialIndex::Entry> dynamics = {{7, Game::LocalPos(20.0f, 0.0f), 3.51f}};
 
     Game::SpatialIndex index;
     index.Configure({});
@@ -183,16 +183,16 @@ public:
     index.RebuildDynamic(dynamics);
 
     std::vector<Game::ShipId> found;
-    index.QueryCircle(Game::WorldPos{0.0f, 0.0f}, 30.0f, found);
+    index.QueryCircle(Game::LocalPos(0.0f, 0.0f), 30.0f, found);
     Assert::AreEqual(size_t{2}, found.size(), L"a 30 m query missed either the fighter beside it or the Structure whose skin reaches it");
 
-    index.QueryCircle(Game::WorldPos{0.0f, 0.0f}, 5.0f, found);
+    index.QueryCircle(Game::LocalPos(0.0f, 0.0f), 5.0f, found);
     Assert::AreEqual(size_t{0}, found.size(), L"a query found something it does not reach");
 
     // A rebuild of one store must not disturb the other -- the whole reason they are separate is
     // that the static one is not touched sixty times a second.
     index.RebuildDynamic({});
-    index.QueryCircle(Game::WorldPos{260.0f, 0.0f}, 1.0f, found);
+    index.QueryCircle(Game::LocalPos(260.0f, 0.0f), 1.0f, found);
     Assert::AreEqual(size_t{1}, found.size(), L"rebuilding the dynamic store dropped the static one");
   }
 
@@ -232,7 +232,7 @@ public:
     std::vector<Game::ShipId> actual;
     for (int probe = 0; probe < 24; ++probe)
     {
-      const Game::WorldPos centre{random.NextFloat(-1300.0f, 1300.0f), random.NextFloat(-1300.0f, 1300.0f)};
+      const Game::WorldPos centre = Game::LocalPos(random.NextFloat(-1300.0f, 1300.0f), random.NextFloat(-1300.0f, 1300.0f));
       const float radius = random.NextFloat(1.0f, 700.0f);
       tiered.QueryCircle(centre, radius, actual);
       std::vector<Game::ShipId> expected = BruteForce(entries, centre, radius);
@@ -257,13 +257,13 @@ public:
       Game::SpatialIndex index;
       index.Configure({});
       index.RebuildDynamic(entries);
-      index.QueryCircle(Game::WorldPos{0.0f, 0.0f}, 600.0f, first);
+      index.QueryCircle(Game::LocalPos(0.0f, 0.0f), 600.0f, first);
     }
     {
       Game::SpatialIndex index;
       index.Configure({});
       index.RebuildDynamic(entries);
-      index.QueryCircle(Game::WorldPos{0.0f, 0.0f}, 600.0f, second);
+      index.QueryCircle(Game::LocalPos(0.0f, 0.0f), 600.0f, second);
     }
     Assert::IsTrue(first == second, L"two identically built indexes returned the same set in different orders");
   }

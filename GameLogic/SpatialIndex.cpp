@@ -17,9 +17,26 @@ namespace
   return hash;
 }
 
-[[nodiscard]] std::int32_t CellOf(float _metres, float _cellSizeMetres) noexcept
+// The cell a position falls in, counted from the universe origin rather than from any local frame,
+// so that two entries in different sectors near a shared boundary land in adjacent cells and not in
+// the same one. Both terms are exact: cells per sector is a whole number because a cell size is a
+// power of two no larger than a sector (SimTuning.h), and the local term is the same floor it always
+// was. int32 holds +/-67 million sectors at the base cell size, which is 5 * 10^11 m.
+[[nodiscard]] std::int32_t CellOfAxis(std::int64_t _sector, float _localMetres, float _cellSizeMetres) noexcept
 {
-  return static_cast<std::int32_t>(std::floor(_metres / _cellSizeMetres));
+  const std::int64_t cellsPerSector = static_cast<std::int64_t>(SECTOR_SIZE_METRES / _cellSizeMetres);
+  const std::int64_t local = static_cast<std::int64_t>(std::floor(_localMetres / _cellSizeMetres));
+  return static_cast<std::int32_t>(_sector * cellsPerSector + local);
+}
+
+[[nodiscard]] std::int32_t CellX(const WorldPos& _pos, float _cellSizeMetres) noexcept
+{
+  return CellOfAxis(_pos.sectorX, _pos.localX, _cellSizeMetres);
+}
+
+[[nodiscard]] std::int32_t CellZ(const WorldPos& _pos, float _cellSizeMetres) noexcept
+{
+  return CellOfAxis(_pos.sectorZ, _pos.localZ, _cellSizeMetres);
 }
 
 [[nodiscard]] std::uint32_t BucketCountFor(std::size_t _entryCount) noexcept
@@ -29,12 +46,27 @@ namespace
     buckets <<= 1;
   return buckets;
 }
+// A requested cell size rounded down to the next power of two no larger than a sector, because a
+// cell that straddles a sector boundary has no well-defined index. Rounding down rather than
+// substituting the default keeps a retune approximately honoured: ask for 300 m and get 256, not a
+// silent 256 that ignored the request entirely. Configure sanitises rather than rejects, as it
+// already did for a non-positive size.
+[[nodiscard]] float SectorAlignedCellSize(float _requestedMetres, float _fallbackMetres) noexcept
+{
+  if (!(_requestedMetres > 0.0f))
+    return _fallbackMetres;
+  float size = SECTOR_SIZE_METRES;
+  while (size > _requestedMetres)
+    size *= 0.5f;
+  return size;
+}
+
 } // namespace
 
 void SpatialIndex::Configure(const Desc& _desc)
 {
-  m_baseCellSizeMetres = (_desc.baseCellSizeMetres > 0.0f) ? _desc.baseCellSizeMetres : 256.0f;
-  m_staticCellSizeMetres = (_desc.staticCellSizeMetres > 0.0f) ? _desc.staticCellSizeMetres : 512.0f;
+  m_baseCellSizeMetres = SectorAlignedCellSize(_desc.baseCellSizeMetres, 256.0f);
+  m_staticCellSizeMetres = SectorAlignedCellSize(_desc.staticCellSizeMetres, 512.0f);
   m_dynamicLevelCount = (_desc.dynamicLevelCount > 0) ? _desc.dynamicLevelCount : 1;
   m_dynamic.assign(m_dynamicLevelCount, Grid{});
   for (std::uint32_t level = 0; level < m_dynamicLevelCount; ++level)
@@ -74,8 +106,8 @@ void SpatialIndex::Rebuild(Grid& _grid, std::span<const Entry> _entries, float _
   // property of the input rather than of the allocator.
   for (const Entry& entry : _entries)
   {
-    const std::int32_t cellX = CellOf(entry.pos.localX, _cellSizeMetres);
-    const std::int32_t cellZ = CellOf(entry.pos.localZ, _cellSizeMetres);
+    const std::int32_t cellX = CellX(entry.pos, _cellSizeMetres);
+    const std::int32_t cellZ = CellZ(entry.pos, _cellSizeMetres);
     ++_grid.bucketStart[(CellHash(cellX, cellZ) & _grid.bucketMask) + 1];
     if (entry.boundingRadiusMetres > _grid.maxBoundingRadiusMetres)
       _grid.maxBoundingRadiusMetres = entry.boundingRadiusMetres;
@@ -86,8 +118,8 @@ void SpatialIndex::Rebuild(Grid& _grid, std::span<const Entry> _entries, float _
   m_cursorScratch.assign(_grid.bucketStart.begin(), _grid.bucketStart.end() - 1);
   for (const Entry& entry : _entries)
   {
-    const std::int32_t cellX = CellOf(entry.pos.localX, _cellSizeMetres);
-    const std::int32_t cellZ = CellOf(entry.pos.localZ, _cellSizeMetres);
+    const std::int32_t cellX = CellX(entry.pos, _cellSizeMetres);
+    const std::int32_t cellZ = CellZ(entry.pos, _cellSizeMetres);
     const std::uint32_t bucket = CellHash(cellX, cellZ) & _grid.bucketMask;
     _grid.cells[m_cursorScratch[bucket]++] = Cell{entry.id, entry.pos, entry.boundingRadiusMetres, cellX, cellZ};
   }
@@ -129,8 +161,8 @@ void SpatialIndex::Gather(const Grid& _grid, const WorldPos& _centre, float _rad
   // as a tuning problem rather than as a bug. The brute-force agreement test is what catches it.
   const float reach = _radiusMetres + _grid.maxBoundingRadiusMetres;
   const std::int32_t ring = static_cast<std::int32_t>(std::ceil(reach / _grid.cellSizeMetres));
-  const std::int32_t centreX = CellOf(_centre.localX, _grid.cellSizeMetres);
-  const std::int32_t centreZ = CellOf(_centre.localZ, _grid.cellSizeMetres);
+  const std::int32_t centreX = CellX(_centre, _grid.cellSizeMetres);
+  const std::int32_t centreZ = CellZ(_centre, _grid.cellSizeMetres);
 
   for (std::int32_t offsetZ = -ring; offsetZ <= ring; ++offsetZ)
   {

@@ -13,9 +13,9 @@ public:
     // stored across the despawn would silently name a different ship -- and in a snapshot baseline
     // that is not a crash, it is one ship interpolating into another while a player watches.
     Game::World world;
-    const Game::ShipId first = world.SpawnShip(Game::WorldPos{0.0f, 0.0f}, 0.0f, 0);
-    const Game::ShipId middle = world.SpawnShip(Game::WorldPos{100.0f, 0.0f}, 0.0f, 0);
-    const Game::ShipId last = world.SpawnShip(Game::WorldPos{200.0f, 0.0f}, 0.0f, 0);
+    const Game::ShipId first = world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, 0);
+    const Game::ShipId middle = world.SpawnShip(Game::LocalPos(100.0f, 0.0f), 0.0f, 0);
+    const Game::ShipId last = world.SpawnShip(Game::LocalPos(200.0f, 0.0f), 0.0f, 0);
 
     const Game::ShipHandle middleHandle = world.HandleOf(middle);
     const Game::ShipHandle lastHandle = world.HandleOf(last);
@@ -28,20 +28,20 @@ public:
     // alive, so its handle must still find it -- at its new index.
     const Game::ShipId movedTo = world.Resolve(lastHandle);
     Assert::AreNotEqual(Game::INVALID_SHIP_ID, movedTo, L"the moved ship's handle stopped resolving");
-    Assert::AreEqual(200.0f, world.Ship(movedTo).posWorld.localX, 1e-4f, L"the moved ship's handle resolved to a stranger");
-    Assert::AreEqual(0.0f, world.Ship(world.Resolve(world.HandleOf(first))).posWorld.localX, 1e-4f, L"the untouched ship moved");
+    Assert::AreEqual(200.0f, WorldX(world.Ship(movedTo).posWorld), 1e-4f, L"the moved ship's handle resolved to a stranger");
+    Assert::AreEqual(0.0f, WorldX(world.Ship(world.Resolve(world.HandleOf(first))).posWorld), 1e-4f, L"the untouched ship moved");
   }
 
   TEST_METHOD(ADespawnedSlotIsReusedWithoutRevivingItsHandle)
   {
     Game::World world;
-    const Game::ShipId only = world.SpawnShip(Game::WorldPos{0.0f, 0.0f}, 0.0f, 0);
+    const Game::ShipId only = world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, 0);
     const Game::ShipHandle stale = world.HandleOf(only);
     Assert::IsTrue(world.DespawnShip(stale), L"despawning a live ship reported failure");
     Assert::IsFalse(world.DespawnShip(stale), L"despawning the same handle twice succeeded");
 
     // The next spawn takes the freed slot back. The generation is what keeps the old handle dead.
-    const Game::ShipId reused = world.SpawnShip(Game::WorldPos{50.0f, 0.0f}, 0.0f, 0);
+    const Game::ShipId reused = world.SpawnShip(Game::LocalPos(50.0f, 0.0f), 0.0f, 0);
     Assert::AreEqual(Game::INVALID_SHIP_ID, world.Resolve(stale), L"a reused slot revived a stale handle");
     Assert::AreEqual(reused, world.Resolve(world.HandleOf(reused)), L"the reusing ship's own handle does not resolve");
   }
@@ -71,7 +71,7 @@ public:
       // Drawn before the spawn loop so both orders lay the fleet out identically.
       std::vector<Game::WorldPos> layout;
       for (int i = 0; i < SHIPS; ++i)
-        layout.push_back(Game::WorldPos{(jitter() - 0.5f) * 40.0f, (jitter() - 0.5f) * 40.0f});
+        layout.push_back(Game::LocalPos((jitter() - 0.5f) * 40.0f, (jitter() - 0.5f) * 40.0f));
 
       Game::World world;
       std::vector<Game::ShipId> byPosition(SHIPS, Game::INVALID_SHIP_ID);
@@ -83,7 +83,7 @@ public:
         byPosition[static_cast<size_t>(at)] = world.SpawnShip(
           layout[static_cast<size_t>(at)], 0.0f, static_cast<std::uint32_t>(at % 2 ? Game::HullId::Corvette : Game::HullId::Interceptor));
       }
-      world.IssueMoveOrder(byPosition, Game::WorldPos{300.0f, 300.0f}, false, 0.0f);
+      world.IssueMoveOrder(byPosition, Game::LocalPos(300.0f, 300.0f), false, 0.0f);
       for (int tick = 0; tick < 400; ++tick)
       {
         world.Step();
@@ -100,15 +100,14 @@ public:
     Assert::AreEqual(forward.size(), reversed.size(), L"the two orders produced different numbers of samples");
     for (size_t i = 0; i < forward.size(); ++i)
     {
-      Assert::AreEqual(forward[i].localX, reversed[i].localX, 0.0f, L"x depends on the order ships were spawned in");
-      Assert::AreEqual(forward[i].localZ, reversed[i].localZ, 0.0f, L"z depends on the order ships were spawned in");
+      Assert::IsTrue(IsSamePosition(forward[i], reversed[i]), L"a position depends on the order ships were spawned in");
     }
   }
 
   TEST_METHOD(ADefaultHandleIsNull)
   {
     Game::World world;
-    world.SpawnShip(Game::WorldPos{0.0f, 0.0f}, 0.0f, 0);
+    world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, 0);
     Assert::AreEqual(Game::INVALID_SHIP_ID, world.Resolve(Game::ShipHandle{}), L"a default-constructed handle resolved to a ship");
   }
 };

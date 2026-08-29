@@ -205,28 +205,40 @@ struct WorldPos
 {
   std::int64_t sectorX = 0;   // which sector
   std::int64_t sectorZ = 0;
-  float localX = 0.0f;        // metres within it, [0, SECTOR_SIZE)
+  float localX = 0.0f;        // metres within it, [0, SECTOR_SIZE_METRES)
   float localZ = 0.0f;
 };
 ```
 
-With `SECTOR_SIZE = 8192.0f`, local precision is `8192 / 2^24 ≈ 0.5 mm` — **uniform in every
+The sector fields go first, and phase 8 found a reason this document did not have: with an integer
+in front, `WorldPos{x, z}` is ill-formed rather than merely wrong, so the compiler enumerated all 94
+two-argument constructions in the tree instead of leaving them to be found
+(`Design/Collision-slice-8.md` §5.1).
+
+With `SECTOR_SIZE_METRES = 8192.0f`, local precision is `8192 / 2^24 ≈ 0.5 mm` — **uniform in every
 sector, everywhere in a universe of ±10¹⁹ m**, which is comfortably past thousands of star systems.
-Everything in this document — the index, the narrow phase, avoidance, the pathfinding grid — runs
-in small local floats within a sector's frame and does not change. A cross-sector relative vector
-is `sectorDelta × SECTOR_SIZE + localDelta`, computed in float, and that is safe *because this
-design already made every interaction local*: §10 caps the query radius near 700 m, an order of
-magnitude under a sector. The renderer rebases camera-relative on its own side of the line, which
-it wants at these scales regardless.
+The value is a power of two and that is a correctness requirement, not a preference: the carry
+divides by it, and at 2^13 the division is an exponent adjustment and therefore exact on every
+machine. Everything in this document — the index, the narrow phase, avoidance, the pathfinding grid
+— runs in small local floats within a sector's frame and does not change. A cross-sector relative
+vector is `sectorDelta × SECTOR_SIZE_METRES + localDelta`, computed in float, and that is safe
+*because this design already made every interaction local*: §10 caps the query radius near 700 m, an
+order of magnitude under a sector. The renderer rebases camera-relative on its own side of the line,
+which it wants at these scales regardless — phase 8 put the seam in (`WorldView::ViewX`/`ViewZ`) and
+left the origin at the universe origin, which is correct everywhere in float range and precise near
+it.
 
 The same structure is the MMO's spatial currency. The sector is the natural unit of region sharding
 (§17 — shard by space), the ghost zone is a ring of cells along a sector border, and a snapshot
 position compresses to a sector id plus a quantised local offset.
 
-None of the machinery is built now. **Phase 0 wraps `posWorld` in the `WorldPos` name while it is
-still plain floats**, so position has one definition instead of being smeared across `ShipState`,
-orders, formations, snapshots and the index. The sector fields land in phase 8 as a mechanical
-change behind that name, and day-one content — near the origin, inside one sector — never notices.
+This landed in two steps, and the split was the point. **Phase 0 wrapped `posWorld` in the
+`WorldPos` name while it was still plain floats**, so position had one definition instead of being
+smeared across `ShipState`, orders, formations, snapshots and the index. **Phase 8 then grew the
+sector fields behind that name**, a mechanical change every caller was already correct for, and
+day-one content — near the origin, inside one sector — never noticed: the 56 tests that predated it
+pass unchanged. `SECTOR_SIZE_METRES` lives in `SimTuning.h` and is a power of two, which is what
+makes the carry exact (`Design/Collision-slice-8.md` §2.2).
 
 ---
 
@@ -943,7 +955,8 @@ line, so the split is worth writing down explicitly.
 - **The per-tick correction clamp** (§9), because it changes how deep overlap unwinds.
 - **Pathfinding grid cell size, clearance margin and A\* tie-break** (§12), once phase 7 lands,
   because they change which path is found.
-- **`SECTOR_SIZE`** (§3), once phase 8 lands, because every stored position is denominated in it.
+- **`SECTOR_SIZE_METRES`** (§3), landed in phase 8, because every stored position is denominated
+  in it.
 
 **Not in the contract** — free to retune at any time, including per region on a live server:
 
@@ -1041,17 +1054,25 @@ then, not here.
 
 ### The property worth protecting
 
-Phases 0, 1b and 2 change no behaviour, and 2b changes no behaviour a single-player build can see.
-Phase 8 is designed to join them: day-one content sits inside one sector, where sector-plus-local
-arithmetic is bit-identical to plain float — and the replay gate is what proves the design achieved
-it. The gate must be green across all five without a single tuning value moving. That is a real
-property, it is what makes each of them safe to land and review alone, and it is the argument for
-this ordering over the tempting one where separation lands first and everything else is retrofitted
-underneath it.
+Phases 0, 1b, 2 and 8 change no behaviour, and 2b will change none a single-player build can see.
+Four of those five have landed and the suite was green across each without a tuning value moving.
+Phase 8 was the one that had to prove it hardest, because sector-plus-local arithmetic only equals
+plain float while content stays inside one sector — day-one content does, so the 56 tests that
+predated it passed unchanged, and a new test plays the same encounter four sectors out and gets
+bit-identical relative motion. That property is what makes each of these safe to land and review
+alone, and it is the argument for this ordering over the tempting one where separation lands first
+and everything else is retrofitted underneath it.
 
-Phases 1a, 3, 4, 5 and 7 each change recorded outcomes, and each should say so in its commit.
-Knowing which five of the eleven invalidate replays — rather than discovering it when a replay
-fails — is most of what this table is for.
+Two different things are worth keeping apart here, because this section used to run them together.
+Phases 1a, 3, 4, 5 and 7 **change what the simulation does**, so a recorded match replays to a
+different outcome; each says so in its commit. Phase 8 changes nothing the simulation does but
+**re-denominates every stored position** in `SECTOR_SIZE_METRES`, so old recordings no longer mean
+what they say. Both invalidate recordings and only the first five are a behaviour change. Knowing
+which is which — rather than discovering it when a replay fails — is most of what this table is
+for.
+
+There is still no replay-equality test in the tree to gate any of it; the order-independence and
+two-identical-runs tests stand in for one, and writing the real one is a slice of its own.
 
 ---
 
@@ -1203,13 +1224,12 @@ main added it independently rather than this branch.
 tree is `PascalCase`; a lower-case exception here becomes the habit that makes the next one
 arguable. Done — the file was renamed when phase 0 landed.
 
-**7. The universe is sector + local float, committed now, built later.** The stated ambition is
-thousands of star systems with a small accessible area on day one. Raw `uint64` coordinates, a
-global fixed-point coordinate and `double` positions are all rejected (§3, §17); `WorldPos` —
-an `int64` sector pair plus a local float offset at `SECTOR_SIZE = 8192 m`, giving ~0.5 mm
-precision uniformly across ±10¹⁹ m — is the committed representation. The name lands in phase 0
-while it is still plain floats; the sector fields land in phase 8, behaviour-neutral for day-one
-content, with the replay gate as proof.
+**7. The universe is sector + local float.** The stated ambition is thousands of star systems with
+a small accessible area on day one. Raw `uint64` coordinates, a global fixed-point coordinate and
+`double` positions are all rejected (§3, §17); `WorldPos` — an `int64` sector pair plus a local
+float offset at `SECTOR_SIZE_METRES = 8192 m`, giving ~0.5 mm precision uniformly across ±10¹⁹ m —
+is the representation. Done — the name landed in phase 0 while it was still plain floats, and the
+sector fields in phase 8, behaviour-neutral for day-one content with the suite as proof.
 
 **8. Client and server stay in one `Outpost.exe` for every phase of this document.** The split at
 phase 2b is a code boundary — from there the client reaches the world only through the loopback
@@ -1262,16 +1282,22 @@ about two slices in one layer they cannot run in parallel with each other — th
 | 4 | `SolveOrder` / `AvoidNeighbours` / `IntegrateShip`; context steering (§10) | 3 | landed |
 | 5 | Formation spacing and arrival tolerance scale with the hull (§13) | 1a | landed |
 | 7 | Pathfinding: clearance grid, A\*, waypoint follower (§12) | 2, 4 | landed |
+| 8 | Sectors: `WorldPos` grows its `int64` pair (§3) | 0 | landed ([work order](Collision-slice-8.md)) |
 | 2b | Loopback `Transport`, full-fidelity snapshot, artificial latency (§2, §15) | 3 | **not started** |
 | 6 | Interest management on `QueryCircle`: subscription sets, deltas, priority (§1, §15) | 2b | **not started** |
-| 8 | Sectors: `WorldPos` grows its `int64` pair (§3) | 0 | **not started** |
 
-Three of those are not `GameLogic` alone and are the reason they are last rather than merely later.
+The two that remain are not `GameLogic` alone, which is why they are last rather than merely later.
 **2b** touches `NeuronCore`, `NeuronServer`, `NeuronClient` and the executable at once, which by the
 same parallelism rule means it wants the tree to itself. **6** is a slice of its own on top of 2b
-and is not small: §1 records what carries over from the index unchanged and what does not. **8** is
-mechanical behind the `WorldPos` name but every stored position is denominated in `SECTOR_SIZE`,
-so it invalidates recordings.
+and is not small: §1 records what carries over from the index unchanged and what does not.
+
+**8** was scheduled early among the leftovers for one reason: it is mechanical behind the `WorldPos`
+name, but every stored position is denominated in `SECTOR_SIZE_METRES`, so it invalidates
+recordings — cheap while nothing depends on recorded positions and steadily dearer afterwards. It
+landed against [its own work order](Collision-slice-8.md), and the claim that day-one content never
+notices is not an argument but a fact: all 56 tests that existed before it pass unchanged apart from
+a mechanical rename, and a fresh test plays the same encounter four sectors from the origin and gets
+bit-identical relative motion.
 
 Two open questions gate work rather than follow it, and both are named in §18: the **target server
 tick rate** was settled at 60 Hz for the slices above, and **minimum region size** follows
@@ -1289,3 +1315,4 @@ who finds the code disagreeing with the prose above knows which one is current:
 | The per-tick correction clamp caps the pair, then splits (§9) | [0004](decisions/0004-separation-clamp-caps-the-pair-not-the-ship.md) |
 | `ShipHandle` carries a stable slot, not the ship's index (§6) | [0005](decisions/0005-ship-handles-carry-a-slot-not-an-index.md) |
 | The separation solve runs several times per tick (§6) | [0006](decisions/0006-separation-solve-iterates-within-a-tick.md) |
+| The index stores a whole position rather than a compact offset (§7) | [0007](decisions/0007-the-index-stores-a-whole-position.md) |

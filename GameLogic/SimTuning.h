@@ -28,6 +28,41 @@ namespace Game
 inline constexpr float TICK_HZ = 60.0f;
 inline constexpr float TICK_DT = 1.0f / TICK_HZ;
 
+// --- the universe ------------------------------------------------------------------------------
+// The edge length of one sector, the unit every stored position is denominated in. In the contract
+// and near the top of it: change this and every recorded position means a different place.
+//
+// A power of two, and that is a correctness requirement rather than a preference. WorldPos::Translate
+// carries whole sectors out of the local offset by dividing by this value, and at 2^13 that division
+// is an exponent adjustment -- exact, on every machine, under /fp:precise. At 10000 it would round,
+// and two ships that reached the same point by different routes could end up in different sectors,
+// which is a replay divergence with no visible cause. The static_assert below is load-bearing.
+//
+// 8192 m gives 8192 / 2^24 = 0.49 mm of local precision, uniform in every sector rather than
+// decaying with distance from an origin, across a universe of +/-10^19 m (Design/Collision.md 3).
+inline constexpr float SECTOR_SIZE_METRES = 8192.0f;
+
+// Halving a power of two is exact, so a value is one exactly when repeated halving lands on 1.
+[[nodiscard]] constexpr bool IsPowerOfTwoMetres(float _metres) noexcept
+{
+  if (!(_metres > 0.0f))
+    return false;
+  float value = _metres;
+  while (value > 1.0f)
+    value *= 0.5f;
+  return value == 1.0f;
+}
+
+static_assert(IsPowerOfTwoMetres(SECTOR_SIZE_METRES), "SECTOR_SIZE_METRES must be a power of two so the sector carry is exact");
+
+// Cell sizes are powers of two no larger than a sector, so a cell never straddles a sector boundary
+// and its index stays a function of the position. PATH_CELL_SIZE_METRES is checked where it is
+// defined; the index's cell sizes are runtime knobs, so SpatialIndex::Configure checks those.
+[[nodiscard]] constexpr bool IsSectorAlignedCellSize(float _cellSizeMetres) noexcept
+{
+  return IsPowerOfTwoMetres(_cellSizeMetres) && _cellSizeMetres <= SECTOR_SIZE_METRES;
+}
+
 // --- motion ----------------------------------------------------------------------------------
 // Arrival tolerance as a fraction of the hull's own bounding radius, with a floor for the smallest
 // hulls. It cannot be one constant: 3.5 m is a sensible tolerance for a 3.5 m Interceptor and an
@@ -198,6 +233,8 @@ inline constexpr float IDLE_AVOIDANCE_AUTHORITY_SCALE = 4.0f;
 // in the contract. With the smallest obstacle in the table 250 m across, 32 m cells lose nothing
 // that matters.
 inline constexpr float PATH_CELL_SIZE_METRES = 32.0f;
+static_assert(IsSectorAlignedCellSize(PATH_CELL_SIZE_METRES),
+              "a path cell must not straddle a sector boundary (Design/Collision-slice-8.md 2.2)");
 inline constexpr float PATH_CLEARANCE_MARGIN_METRES = 8.0f;
 
 // How far off its planned leg a follower may drift before the route is re-planned. Never per tick:

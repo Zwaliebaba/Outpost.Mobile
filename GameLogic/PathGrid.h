@@ -70,15 +70,16 @@ public:
   }
 
 private:
-  [[nodiscard]] std::int32_t ClampedCellX(float _metres) const noexcept;
-  [[nodiscard]] std::int32_t ClampedCellZ(float _metres) const noexcept;
+  // Both take an offset from m_origin, not a coordinate. Positions reach them through
+  // OffsetX/OffsetZ so that a grid spanning a sector boundary indexes correctly.
+  [[nodiscard]] std::int32_t ClampedCellX(float _offsetMetres) const noexcept;
+  [[nodiscard]] std::int32_t ClampedCellZ(float _offsetMetres) const noexcept;
   [[nodiscard]] WorldPos CentreOf(std::uint32_t _cell) const noexcept;
 
   std::vector<float> m_clearance; // metres to the nearest obstacle surface, per cell
   std::uint32_t m_width = 0;
   std::uint32_t m_height = 0;
-  float m_originX = 0.0f; // the centre of cell (0, 0)
-  float m_originZ = 0.0f;
+  WorldPos m_origin; // the centre of cell (0, 0)
   std::uint32_t m_version = 0;
 
   // A* scratch, reused so a plan allocates nothing after the first one.
