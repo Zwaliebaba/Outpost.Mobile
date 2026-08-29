@@ -24,9 +24,10 @@ them route around architecture, give way to each other, and arrive without passi
 D3D12 renderer, WM_POINTER input covering mouse and touch, DDS bitmap font atlases for the HUD and
 for in-world text, OBJ/MTL hulls, FXC-compiled shaders.
 
-**Deliberately not here yet**, so nobody goes looking for it: no audio, no networking, no
-interest management, no combat, no save format, no content pipeline beyond OBJ and
-DDS, and no configuration file — tuning is `constexpr` in three headers (§5). `Transport` is declared and unimplemented (§2).
+**Deliberately not here yet**, so nobody goes looking for it: no audio, no networking, no interest
+management, no combat, no save format, no content pipeline beyond OBJ and DDS, and no configuration
+file — tuning is `constexpr` in `SimTuning.h`, `HullSpec.h` and `ViewTuning.h` (§5). `Transport` is
+declared and unimplemented (§2).
 
 ---
 
