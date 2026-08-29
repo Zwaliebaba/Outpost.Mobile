@@ -22,6 +22,7 @@
 
 #include <array>
 #include <cstdint>
+#include <vector>
 
 namespace Outpost
 {
@@ -94,9 +95,15 @@ private:
   Hud m_hud;
   Neuron::FrameClock m_clock;
 
-  // The eight ramps a class can ask for, indexed by BodyClass. One that fails to load leaves its
-  // class drawing the builder's fallback grey, which is a diagnostic and not a crash.
-  std::array<Neuron::ColourRamp, BODY_CLASS_COUNT> m_ramps;
+  // One ramp per class, indexed by BodyClass. A ramp that fails to load leaves its class drawing the
+  // builder's fallback grey, which is a diagnostic and not a crash.
+  //
+  // On the heap and not in a std::array, which is what this wants to be. A ColourRamp is a 64x64
+  // table of floats -- 48 KB -- and six of them are nearly 300 KB; OutpostApp is a local of
+  // wWinMain, and a default 1 MB stack reserve is not the place to put a third of a megabyte of
+  // content. Sized once in Init and never resized, so it is a fixed table that happens to live
+  // somewhere else.
+  std::vector<Neuron::ColourRamp> m_ramps;
 
   // Debug: 1, 2 and 3 slow, restore and speed up the simulation without touching the frame rate;
   // F1 shows the readout, F3 shakes the camera, F4 despawns the selection so the explosion has

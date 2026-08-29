@@ -31,11 +31,13 @@ public:
   // that record into the command list during initialisation.
   void WaitForGpu();
 
-  // Opens the command list for a batch of initialisation uploads. Every batch is bracketed by this
-  // and ExecuteAndWait, and outside those brackets the list is closed -- which is what lets a
-  // second thing upload at boot. It used to be left open by Init instead, and that quietly made
-  // exactly one uploader possible: the next one recorded into a closed list and D3D12 rejected
-  // every call.
+  // Opens the command list for a batch of uploads. Every batch is bracketed by this and
+  // ExecuteAndWait, and outside those brackets the list is closed -- which is what lets a second
+  // thing upload at boot. It used to be left open by Init instead, and that quietly made exactly
+  // one uploader possible: the next one recorded into a closed list and D3D12 rejected every call.
+  //
+  // It drains the GPU before it resets, so a batch opened between two frames -- F5 regenerating
+  // every body -- is as safe as one opened at boot.
   void BeginUploads();
 
   // Closes, submits and waits for whatever BeginUploads opened. Initialisation-only: it is how a

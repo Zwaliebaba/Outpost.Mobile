@@ -85,6 +85,7 @@ void OutpostApp::Init(HINSTANCE _instance)
   bodyDesc.outlineTexture = TEXTURE_DIR + L"TriangleOutline.dds";
   m_gpu.BeginUploads();
   m_bodyRenderer.Init(m_gpu, bodyDesc);
+  m_ramps.resize(BODY_CLASS_COUNT);
   for (std::uint32_t i = 0; i < BODY_CLASS_COUNT; ++i)
   {
     const wchar_t* const ramp = BODY_CLASSES[i].ramp;
