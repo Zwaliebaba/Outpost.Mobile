@@ -77,22 +77,6 @@ void OutpostApp::Init(HINSTANCE _instance)
   fxDesc.flashTexture = TEXTURE_DIR + L"Starburst.dds";
   m_fxRenderer.Init(m_gpu, fxDesc); // a second upload batch, bracketed the same way; order between the two is free
 
-  // The outline every body's second pass samples, and the eight ramps the classes are coloured
-  // from -- both content, both named here for the same reason the fonts are. The bodies themselves
-  // are generated further down, once the view exists to hold them, and their vertex copies share
-  // this object's upload bracket rather than opening a third one.
-  BodyRenderer::Desc bodyDesc;
-  bodyDesc.outlineTexture = TEXTURE_DIR + L"TriangleOutline.dds";
-  m_gpu.BeginUploads();
-  m_bodyRenderer.Init(m_gpu, bodyDesc);
-  m_ramps.resize(BODY_CLASS_COUNT);
-  for (std::uint32_t i = 0; i < BODY_CLASS_COUNT; ++i)
-  {
-    const wchar_t* const ramp = BODY_CLASSES[i].ramp;
-    if (ramp != nullptr && !ColourRamp::Load(TERRAIN_DIR + ramp, m_ramps[i]))
-      DebugTrace(L"body ramp {} did not load; that class draws in the fallback grey\n", ramp);
-  }
-
   Camera::Desc cameraDesc;
   cameraDesc.minZoom = CAMERA_MIN_ZOOM;
   cameraDesc.maxZoom = CAMERA_MAX_ZOOM;
@@ -142,9 +126,26 @@ void OutpostApp::Init(HINSTANCE _instance)
   SpawnStartingFleet();
   SpawnHostileBase();
 
-  // Every body's vertices go into the list BeginUploads opened above, and this is the one submission
-  // that carries them (BodyRenderer.h). Nothing is drawable until it has run, and the staging
-  // buffers must not be let go before it has.
+  // The bodies, last, and all in one bracket. The outline texture and every body's vertices are
+  // copies recorded into one command list and carried by one submission, which is what
+  // BodyRenderer.h asks for -- and the bracket is kept tight, with nothing between its two ends but
+  // the work it is for. Opened at the top of Init instead it would still work today and would break
+  // silently the day somebody adds a second uploader in the middle of it.
+  //
+  // The ramps are content, named here for the same reason the fonts are; one that fails to load
+  // leaves its class drawing the builder's fallback grey.
+  BodyRenderer::Desc bodyDesc;
+  bodyDesc.outlineTexture = TEXTURE_DIR + L"TriangleOutline.dds";
+
+  m_gpu.BeginUploads();
+  m_bodyRenderer.Init(m_gpu, bodyDesc);
+  m_ramps.resize(BODY_CLASS_COUNT);
+  for (std::uint32_t i = 0; i < BODY_CLASS_COUNT; ++i)
+  {
+    const wchar_t* const ramp = BODY_CLASSES[i].ramp;
+    if (ramp != nullptr && !ColourRamp::Load(TERRAIN_DIR + ramp, m_ramps[i]))
+      DebugTrace(L"body ramp {} did not load; that class draws in the fallback grey\n", ramp);
+  }
   SpawnStartingBodies(BODY_START_SEED);
   m_gpu.ExecuteAndWait();
   m_bodyRenderer.DiscardStaging();
