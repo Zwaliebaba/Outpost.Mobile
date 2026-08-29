@@ -175,6 +175,7 @@
     <ClInclude Include="SimTuning.h" />
     <ClInclude Include="WorldPos.h" />
     <ClInclude Include="WorldSnapshot.h" />
+    <ClInclude Include="InterestSet.h" />
     <ClInclude Include="ShipState.h" />
     <ClInclude Include="HullSpec.h" />
     <ClInclude Include="Formation.h" />
@@ -194,6 +195,7 @@
     <ClCompile Include="PathGrid.cpp" />
     <ClCompile Include="SpatialIndex.cpp" />
     <ClCompile Include="WorldSnapshot.cpp" />
+    <ClCompile Include="InterestSet.cpp" />
     <ClCompile Include="World.cpp" />
   </ItemGroup>
   <ItemGroup>

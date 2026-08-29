@@ -1,5 +1,6 @@
 #pragma once
 
+#include "InterestSet.h"
 #include "World.h"
 #include "WorldSnapshot.h"
 
@@ -38,8 +39,7 @@ public:
   {
     ApplyIncomingOrders();
     m_world.Step();
-    if (m_transport != nullptr)
-      (void)m_writer.Write(m_world, *m_transport);
+    PublishInterest();
   }
 
   [[nodiscard]] std::uint64_t Tick() const override
@@ -48,6 +48,51 @@ public:
   }
 
 private:
+  // What the subscriber can see, published on its own schedule rather than every tick. Design
+  // /Collision.md 1 asks for 5-20 Hz against a 60 Hz tick, and the rate is counted in ticks so a
+  // measurement reproduces.
+  void PublishInterest()
+  {
+    if (m_transport == nullptr || !m_interest.IsDueOn(m_world.Tick()))
+      return;
+
+    m_interest.Update(m_world, SubscriberCentre());
+
+    // Entered and refreshed go on the wire together: the receiver upserts either way and the
+    // distinction is the sender's, not the format's.
+    m_sendScratch.clear();
+    m_sendScratch.insert(m_sendScratch.end(), m_interest.Entered().begin(), m_interest.Entered().end());
+    m_sendScratch.insert(m_sendScratch.end(), m_interest.Refreshed().begin(), m_interest.Refreshed().end());
+    if (m_sendScratch.empty() && m_interest.Left().empty())
+      return; // nothing changed and nothing came due; an empty update is not information
+
+    (void)m_writer.WriteInterest(m_world, m_sendScratch, m_interest.Left(), *m_transport);
+  }
+
+  // Where the subscriber is looking. With one client every ship is its own, so this is the fleet's
+  // centroid; the day a real player has a camera on the wire, it comes from there instead
+  // (Design/Collision-slice-6.md 3.6).
+  //
+  // Accumulated as offsets from the first ship rather than by averaging fields, so a fleet
+  // straddling a sector boundary has a centre between its ships and not a sector away.
+  [[nodiscard]] Game::WorldPos SubscriberCentre() const
+  {
+    const std::span<const Game::ShipState> ships = m_world.Ships();
+    if (ships.empty())
+      return Game::WorldPos{};
+
+    Game::WorldPos centre = ships[0].posWorld;
+    float offsetX = 0.0f;
+    float offsetZ = 0.0f;
+    for (const Game::ShipState& ship : ships)
+    {
+      offsetX += Game::OffsetX(centre, ship.posWorld);
+      offsetZ += Game::OffsetZ(centre, ship.posWorld);
+    }
+    Game::Translate(centre, offsetX / static_cast<float>(ships.size()), offsetZ / static_cast<float>(ships.size()));
+    return centre;
+  }
+
   void ApplyIncomingOrders()
   {
     if (m_transport == nullptr)
@@ -84,6 +129,8 @@ private:
   Game::World& m_world;
   Neuron::Transport* m_transport = nullptr;
   Game::SnapshotWriter m_writer;
+  Game::InterestSet m_interest;
   std::vector<Game::ShipId> m_resolved;
+  std::vector<Game::ShipHandle> m_sendScratch;
 };
 } // namespace Outpost

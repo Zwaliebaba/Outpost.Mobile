@@ -68,20 +68,43 @@ struct MoveOrder
 [[nodiscard]] std::uint32_t ShipsPerSnapshotFragment() noexcept;
 [[nodiscard]] std::uint32_t MaxShipsPerOrder() noexcept;
 
-// Sends a world as one or more datagrams. Every entity, every time: no interest management and no
-// delta encoding, which is deliberate -- slice 6 measures itself against this.
+// Sends a world as one or more datagrams.
+//
+// Two shapes, and the difference is what slice 6 added. Write sends every entity every time, which
+// is what slice 2b built and what the benchmark measures against. WriteInterest sends one
+// subscriber's view: the entities that entered or came due, and the bare handles of those that left.
 //
 // Returns the number of fragments sent, or 0 if the transport refused the first one. A refusal
 // part-way through is not retried: the receiver drops an incomplete snapshot whole, and the next
-// tick brings another.
+// update brings another.
 class SnapshotWriter
 {
 public:
   std::uint32_t Write(const World& _world, Neuron::Transport& _transport);
 
+  // One subscriber's update. _sent are handles to carry in full -- entered and refreshed together,
+  // because the wire cannot tell them apart and the receiver upserts either way. _left are dropped.
+  std::uint32_t WriteInterest(const World& _world, std::span<const ShipHandle> _sent, std::span<const ShipHandle> _left,
+                              Neuron::Transport& _transport);
+
+  // Bytes the last Write or WriteInterest put on the wire, and how many ship records it carried.
+  // The benchmark in slice 6's acceptance is this pair against a growing world.
+  [[nodiscard]] std::uint32_t LastByteCount() const noexcept
+  {
+    return m_lastBytes;
+  }
+
+  [[nodiscard]] std::uint32_t LastRecordCount() const noexcept
+  {
+    return m_lastRecords;
+  }
+
 private:
   std::uint32_t m_nextSnapshotId = 1;
+  std::uint32_t m_lastBytes = 0;
+  std::uint32_t m_lastRecords = 0;
   std::vector<std::uint8_t> m_scratch;
+  std::vector<ShipId> m_resolvedScratch;
 };
 
 // Reassembles fragments into whole snapshots.
@@ -91,7 +114,13 @@ private:
 class SnapshotReceiver
 {
 public:
-  // Feeds one datagram. True when a complete, newer-than-current snapshot became available.
+  // Feeds one datagram. True when a complete, newer-than-current update became available.
+  //
+  // An update UPSERTS rather than replaces: a record for a handle already held updates it in place,
+  // one for a handle not held appends it, and a handle in the leave list removes it. That is what
+  // lets a datagram carry a change to a world rather than a whole world -- and it is also why an
+  // incomplete update is dropped entire, since unlike a full snapshot a delta stream cannot
+  // resynchronise by waiting for the next one (Design/Collision-slice-6.md 3.5).
   bool Accept(std::span<const std::uint8_t> _datagram);
 
   [[nodiscard]] const WorldSnapshot& Latest() const noexcept
@@ -112,10 +141,16 @@ public:
 
 private:
   void AbandonInProgress() noexcept;
+  void Apply();
 
-  WorldSnapshot m_building;
+  // What arrived in the update being assembled, held until every fragment is in. Applying as
+  // fragments land would leave the world half-updated if one never arrived.
+  std::vector<ShipSnapshot> m_pendingUpserts;
+  std::vector<ShipHandle> m_pendingLeaves;
   WorldSnapshot m_latest;
   std::uint32_t m_buildingId = 0;
+  std::uint64_t m_buildingTick = 0;
+  bool m_buildingComplete = false;
   std::uint32_t m_fragmentsSeen = 0;
   std::uint32_t m_fragmentCount = 0;
   std::uint32_t m_dropped = 0;

@@ -24,6 +24,7 @@
 #include "Collision.h"
 #include "PathGrid.h"
 #include "SpatialIndex.h"
+#include "InterestSet.h"
 #include "Formation.h"
 #include "Movement.h"
 #include "World.h"

@@ -17,6 +17,10 @@ namespace Game
 // has a ship at the centre. Get the query, its determinism and its sharding right and the algorithm
 // behind it is replaceable (Design/Collision.md 1, 7).
 //
+// That second customer has arrived: InterestSet is built entirely on QueryCircle and nothing in
+// this class changed to accommodate it, which is the claim Design/Collision.md 1 made and the
+// evidence that the signature was the right one.
+//
 // Three stores behind one query, walked in a fixed order:
 //
 //   static   -- Structures and anything else that never moves. A Structure spans thousands of fine
