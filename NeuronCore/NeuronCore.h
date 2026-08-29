@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // The NeuronCore umbrella. Every project's pch.h reaches the engine through one of these three
 // umbrella headers -- NeuronCore.h, NeuronClient.h, NeuronServer.h -- so the Windows headers are
@@ -73,6 +73,9 @@ using namespace winrt;
 #include "FrameClock.h"
 #include "Transport.h"
 #include "LoopbackTransport.h"
+#include "QuicApi.h"
+#include "QuicTransport.h"
+#include "QuicListener.h"
 
 using namespace Neuron;
 

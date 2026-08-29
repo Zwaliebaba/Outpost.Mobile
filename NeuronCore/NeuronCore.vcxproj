@@ -178,6 +178,10 @@
     <ClInclude Include="FrameClock.h" />
     <ClInclude Include="Transport.h" />
     <ClInclude Include="LoopbackTransport.h" />
+    <ClInclude Include="QuicApi.h" />
+    <ClInclude Include="DevCertificate.h" />
+    <ClInclude Include="QuicTransport.h" />
+    <ClInclude Include="QuicListener.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -186,6 +190,10 @@
     <ClCompile Include="FileSys.cpp" />
     <ClCompile Include="FrameClock.cpp" />
     <ClCompile Include="LoopbackTransport.cpp" />
+    <ClCompile Include="QuicApi.cpp" />
+    <ClCompile Include="DevCertificate.cpp" />
+    <ClCompile Include="QuicTransport.cpp" />
+    <ClCompile Include="QuicListener.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

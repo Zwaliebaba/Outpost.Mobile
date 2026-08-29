@@ -7,6 +7,9 @@
 #include "WorldView.h"
 
 #include "LoopbackTransport.h"
+#include "QuicApi.h"
+#include "QuicListener.h"
+#include "QuicTransport.h"
 
 #include "AppWindow.h"
 #include "BodyRenderer.h"
@@ -41,6 +44,11 @@ public:
   void Shutdown();
 
 private:
+  // Opens the QUIC link both halves will talk over: library, listener, client, and a bounded wait for
+  // the handshake. False means the game runs on the loopback instead, and the reason is already in
+  // the event log by the time it returns.
+  [[nodiscard]] bool OpenQuicLink();
+
   void LoadHullMeshes();
   void SpawnStartingFleet();
 
@@ -77,6 +85,12 @@ private:
   // snapshot on each tick and reads the orders that arrived, and the view reads the snapshot. This
   // is one executable and stays one for every phase of Design/Collision.md -- what the transport
   // changes is the code boundary, not the process boundary (Design/Collision.md 2).
+  //
+  // That transport is QUIC across 127.0.0.1 when it can be and the loopback when it cannot, and
+  // neither half can tell which it got: the seam is four virtual functions and the choice is made
+  // here and nowhere else (Design/QuicTransport.md 6). Booting on the real stack is the point --
+  // a path nobody runs is a path nobody notices breaking -- and the fallback is what keeps a taken
+  // port or a locked-down key store from being the reason the game did not start.
   Game::World m_world;
   WorldSimulation m_simulation{m_world};
 
@@ -86,8 +100,22 @@ private:
   Game::FactionId m_ownFaction = Game::FACTION_PLAYER;
 
   Neuron::ServerHost m_host;
+
+  // The fallback, and the instrument: tick-counted latency is the only reproducible kind, so the
+  // measurements Design/Collision.md 18 wants are still taken here whether or not QUIC is carrying
+  // the game (Design/Archive/Collision-slice-2b.md 2.1). Constructed either way; two unused rings
+  // cost 288 KB each and keeping them means the knob is still one line.
   Neuron::LoopbackTransport m_serverLink;
   Neuron::LoopbackTransport m_clientLink;
+
+  // Declared after the loopback pair and in this order on purpose: members are destroyed in reverse,
+  // so the client end goes before the listener and the listener before the library, which is the one
+  // order MsQuic accepts (a registration cannot close over a live connection).
+  Neuron::QuicApi m_quic;
+  Neuron::QuicListener m_listener;
+  Neuron::QuicTransport m_clientQuic;
+  Neuron::QuicTransport* m_serverQuic = nullptr; // the listener's, once accepted; null on the fallback
+  bool m_linkIsQuic = false;
 
   // Presentation.
   WorldView m_view;

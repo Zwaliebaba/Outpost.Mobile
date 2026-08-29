@@ -34,13 +34,19 @@ renderer, WM_POINTER input covering mouse and touch, a main-screen HUD drawn thr
 pipeline (bitmap font atlases, coverage-mask icons, untextured quads), textured FX pipelines for
 the explosion's fragments and sprites, a two-pass body pipeline, OBJ/MTL hulls, DXC-compiled
 shader model 6.7 shaders.
+`Transport` has a QUIC implementation over MsQuic, and the game boots on it: `Outpost.exe` listens
+and dials across `127.0.0.1`, so every frame of every run crosses a real network stack, and it falls
+back to the loopback with a logged reason when it cannot (`Design/QuicTransport.md`). The boot line
+in the event log says which one it got.
 
-**Deliberately not here yet**, so nobody goes looking for it: no audio, no networking, no combat, no
-economy, no damage model, no save format, no content pipeline beyond OBJ and DDS, and no
-configuration file — tuning is `constexpr` in `SimTuning.h`, `HullSpec.h` and `ViewTuning.h` (§5).
-The hostiles above have no weapons and no senses: the patrol is a metronome that never reacts to
-anything, and the station cannot be destroyed. `Transport` has a loopback implementation and no
-socket, and the client sees the world through it, filtered to what one subscriber can see (§2).
+**Deliberately not here yet**, so nobody goes looking for it: no audio, no combat, no economy, no
+damage model, no save format, no content pipeline beyond OBJ and DDS, and no configuration file —
+tuning is `constexpr` in `SimTuning.h`, `HullSpec.h` and `ViewTuning.h` (§5). The hostiles above
+have no weapons and no senses: the patrol is a metronome that never reacts to anything, and the
+station cannot be destroyed. The networking stops well short of a network: one client, one process,
+`127.0.0.1` only, a self-signed certificate the client does not validate, and no reliable lane on
+the wire — every message is a datagram and a lost one stays lost (`Design/QuicTransport.md` §11).
+The client sees the world through the seam, filtered to what one subscriber can see (§2).
 Where the HUD shows a number the simulation does not yet have, it is a placeholder supplied by the
 composition root, and it says so at the definition.
 
@@ -276,12 +282,17 @@ either one, because the alternatives were considered and the records say why the
 `Outpost.exe` runs both halves in one process, and it stays one process. What is no longer shared
 is memory: `WorldView` reads a snapshot that arrived over a `Transport` and sends move orders back
 up the same wire, and its header does not include `World.h`, so the seam is structural rather than
-a convention.
+a convention. Nor is the wire pretend any more — the two halves talk over QUIC across `127.0.0.1`,
+so the process boundary is the only one left to cross.
 
-`NeuronCore/Transport.h` declares the seam and `LoopbackTransport` implements it, with latency and
-loss you can configure — counted in ticks rather than seconds, so a measurement reproduces. What
-remains is a socket and a second process, and neither is scheduled: the code boundary is the part
-that had to land early, because it is what stops the two halves growing into each other. Do not
+`NeuronCore/Transport.h` declares the seam, and two implementations answer it. `LoopbackTransport`
+puts the far end in this process, with latency and loss you can configure — counted in ticks rather
+than seconds, so a measurement reproduces. `QuicTransport` puts it on one MsQuic connection, with
+the same datagrams and the same contract (`Design/Decisions/0021`); `QuicListener` beside it is the
+half a dedicated server would start. The composition root chooses between them at boot and
+nothing below it can tell which it got, so what remains is a second process, and it is not
+scheduled: the code boundary is the part that had to land early, because it is what
+stops the two halves growing into each other. Do not
 shortcut it: if you find yourself wanting the simulation to call into the renderer, or the renderer
 to reach into the world, that is the seam telling you the change belongs somewhere else.
 
@@ -446,11 +457,14 @@ macro of that shape appears.
   `packages.config` files, and C++/WinRT as above. If you believe a third-party library is
   justified, present the case and **stop** — do not assume approval.
 
-  What the tree does *not* use yet, whatever the package list suggests: there is no audio, no
-  networking, and no WinUI. Several Windows App SDK packages are restored because the executable
-  was generated from an MSIX template; none of them is referenced by code. MsQuic
-  (`Microsoft.Native.Quic.MsQuic.Schannel`) is restored and its build targets imported ahead of
-  the socket transport; no code references it yet either.
+  What the tree does *not* use yet, whatever the package list suggests: there is no audio and no
+  WinUI. Several Windows App SDK packages are restored because the executable was generated from an
+  MSIX template; none of them is referenced by code. MsQuic
+  (`Microsoft.Native.Quic.MsQuic.Schannel`) is no longer one of those: it is what
+  `NeuronCore/QuicTransport` is built on (`Design/Decisions/0021`), `NeuronCoreTests` drives a real
+  connection over `127.0.0.1` against it, `Outpost.exe` boots on it, and `msquic.dll` is copied
+  beside every executable that imports it by the package's own targets — nothing in this tree copies
+  it and nothing should start.
 
 ---
 
