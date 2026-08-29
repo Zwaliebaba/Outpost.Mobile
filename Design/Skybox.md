@@ -37,7 +37,7 @@ for, and it fixes the resolution at bake time.
 interesting decisions in device-free code that tests can pin, and it costs three draw calls.
 
 The one thing (C) has to get right is that the CPU must not rebuild the billboards every frame the
-way `SpriteParticles` does. That is `Design/Decisions/0021`.
+way `SpriteParticles` does. That is `Design/Decisions/0024`.
 
 ## 3. Shape
 

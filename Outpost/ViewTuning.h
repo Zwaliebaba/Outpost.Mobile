@@ -181,7 +181,7 @@ inline constexpr float SKY_TWINKLE_MAX_RATE_RAD_PER_SEC = 4.5f;
 // faintest stars out. It was three times this before the sky existed, when it was the whole sky.
 inline constexpr Neuron::Rgba SKY_COLOUR{0.014f, 0.017f, 0.024f, 1.0f};
 // There is no ground. The outpost is in open space and the sky wraps all the way round it, so the
-// scene pass draws no plane and has no grid to draw on one (Design/Decisions/0022). What is still
+// scene pass draws no plane and has no grid to draw on one (Design/Decisions/0025). What is still
 // flat is the *order* plane at y = 0: a move order lands on it, ships fly at SHIP_HOVER_HEIGHT above
 // it, and every ring and marker is a decal on it. That plane is arithmetic, not geometry.
 inline constexpr float LIGHT_DIR_X = -0.42f;

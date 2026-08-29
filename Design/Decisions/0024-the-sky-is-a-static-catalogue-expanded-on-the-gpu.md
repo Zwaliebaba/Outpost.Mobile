@@ -1,4 +1,4 @@
-# 0021 — The sky is a static catalogue expanded on the GPU
+# 0024 — The sky is a static catalogue expanded on the GPU
 
 Status: accepted
 Date: 2026-08-29

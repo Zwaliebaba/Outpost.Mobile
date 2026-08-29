@@ -36,6 +36,32 @@ const HullMesh HULL_MESHES[] = {{L"Bomber", Game::HullId::Bomber},
 
 const Game::HullId STARTING_FLEET[] = {Game::HullId::Bomber, Game::HullId::Corvette, Game::HullId::Frigate};
 
+// The port the in-process server listens on and the in-process client dials, on 127.0.0.1 only.
+// Arbitrary and unregistered. Here rather than in a configuration file because there is no
+// configuration file (AGENTS.md 5), beside the loopback's latency knob for the same reason: if the
+// port is taken, boot says so and runs on the loopback, so the number is never the reason the game
+// did not start.
+constexpr std::uint16_t OUTPOST_QUIC_PORT = 30081;
+
+// For the one log line that has to say what a connection was doing when it ran out of time.
+[[nodiscard]] const char* LinkStateName(Neuron::ConnectionState _state) noexcept
+{
+  switch (_state)
+  {
+  case Neuron::ConnectionState::Disconnected:
+    return "DISCONNECTED";
+  case Neuron::ConnectionState::Connecting:
+    return "CONNECTING";
+  case Neuron::ConnectionState::Connected:
+    return "CONNECTED";
+  case Neuron::ConnectionState::Draining:
+    return "DRAINING";
+  case Neuron::ConnectionState::Closed:
+    return "CLOSED";
+  }
+  return "?";
+}
+
 // What the HUD calls each hull, indexed by Game::HullId and covering the whole table rather than
 // only the three the starting fleet uses -- the id is a row in that table now, not a position in
 // the array above, so a name list of three would have called a Frigate a hull it is not.
@@ -105,16 +131,37 @@ void OutpostApp::Init(HINSTANCE _instance)
   hostDesc.tickHz = Game::TICK_HZ;
   m_host.Init(hostDesc, m_simulation);
 
-  // Zero latency is the single-player default and has to mean genuinely zero: a snapshot published
-  // this tick is readable this tick, or the game gains a frame of lag it never had. The knob is
-  // here rather than in a config file because there is no config file (AGENTS.md 5); the
-  // measurements Design/Collision.md 18 wants are taken by changing this line.
-  LoopbackTransport::Desc linkDesc;
-  linkDesc.latencyTicks = 0;
-  LoopbackTransport::Connect(m_serverLink, m_clientLink, linkDesc);
-  m_simulation.Connect(m_serverLink);
+  // The wire the two halves meet on. QUIC across 127.0.0.1 when it can be opened, which is every
+  // ordinary boot, so that every frame of every run crosses the real stack -- a path nobody runs is
+  // a path nobody notices breaking. The loopback when it cannot, because a taken port or a
+  // locked-down key store is a diagnostic and not a failed boot (AGENTS.md 5,
+  // Design/QuicTransport.md 6). Neither half is told which it got.
+  Neuron::Transport* serverEnd = nullptr;
+  Neuron::Transport* clientEnd = nullptr;
+  if (OpenQuicLink())
+  {
+    serverEnd = m_serverQuic;
+    clientEnd = &m_clientQuic;
+  }
+  else
+  {
+    // Zero latency is the single-player default and has to mean genuinely zero: a snapshot published
+    // this tick is readable this tick, or the game gains a frame of lag it never had. The knob is
+    // here rather than in a config file because there is no config file (AGENTS.md 5); the
+    // measurements Design/Collision.md 18 wants are taken by changing this line.
+    LoopbackTransport::Desc linkDesc;
+    linkDesc.latencyTicks = 0;
+    LoopbackTransport::Connect(m_serverLink, m_clientLink, linkDesc);
+    serverEnd = &m_serverLink;
+    clientEnd = &m_clientLink;
 
-  m_view.Init(m_clientLink, m_camera, m_meshes, m_sceneRenderer.UnitQuad());
+    // Amber rather than red: the game runs, and it runs identically. It is still something the
+    // player should notice, because it means the network stack under it is not the one being tested.
+    m_log.PushFormat(EventLog::Severity::Alert, 0.0f, "LINK | LOOPBACK");
+  }
+  m_simulation.Connect(*serverEnd);
+
+  m_view.Init(*clientEnd, m_camera, m_meshes, m_sceneRenderer.UnitQuad());
   m_view.SetTracker(m_pointers);
   m_view.SetEventLog(m_log);
   m_view.SetFxRenderer(m_fxRenderer);
@@ -171,6 +218,78 @@ void OutpostApp::Init(HINSTANCE _instance)
   m_log.PushFormat(EventLog::Severity::Friendly, 0.0f, "FLEET ONLINE | %u SHIPS", OwnShipCount());
 
   m_window.Show();
+}
+
+bool OutpostApp::OpenQuicLink()
+{
+  // The development placeholder, and the only site in the tree allowed to set it: the client is told
+  // to accept whatever certificate the server presents, because that certificate is one this process
+  // generated moments ago and there is no trust store to check it against. The connection is
+  // encrypted and it is not authenticated (Design/Decisions/0023).
+  QuicApi::Desc quicDesc;
+  quicDesc.allowUnvalidatedPeer = true;
+  if (!m_quic.Open(quicDesc))
+  {
+    m_log.PushFormat(EventLog::Severity::Alert, 0.0f, "LINK | QUIC UNAVAILABLE | %s", m_quic.Reason());
+    DebugTrace("QUIC unavailable: {}\n", m_quic.Reason()); // the event log row is 64 characters; this is the whole of it
+    return false;
+  }
+
+  if (!m_listener.Start(m_quic, OUTPOST_QUIC_PORT, {}))
+  {
+    m_log.PushFormat(EventLog::Severity::Alert, 0.0f, "LINK | PORT %u REFUSED | %s", static_cast<unsigned>(OUTPOST_QUIC_PORT),
+                     m_listener.Reason());
+    DebugTrace("QUIC listener: {}\n", m_listener.Reason());
+    m_quic.Close();
+    return false;
+  }
+
+  if (!m_clientQuic.Connect(m_quic, {"127.0.0.1", OUTPOST_QUIC_PORT}, {}))
+  {
+    m_log.PushFormat(EventLog::Severity::Alert, 0.0f, "LINK | DIAL REFUSED | %s", m_clientQuic.Reason());
+    DebugTrace("QUIC client: {}\n", m_clientQuic.Reason());
+    m_listener.Stop();
+    m_quic.Close();
+    return false;
+  }
+
+  // Boot is the one place in this program where waiting is acceptable, and it is bounded and logged.
+  // Both ends have to reach Connected -- which means the handshake completed AND the peer will take
+  // a datagram of MAX_DATAGRAM_BYTES, since a wire that would truncate one is worse than no wire.
+  // On localhost this costs a few milliseconds; anything near the timeout is a finding, not a pass.
+  const std::int64_t startQpc = m_clock.Now();
+  for (;;)
+  {
+    m_listener.Poll();
+    m_clientQuic.Poll();
+    const std::span<Neuron::QuicTransport* const> accepted = m_listener.Accepted();
+    if (!accepted.empty())
+      accepted[0]->Poll();
+
+    const float elapsedMs = m_clock.ElapsedMs(startQpc, m_clock.Now());
+    if (!accepted.empty() && m_clientQuic.State() == ConnectionState::Connected && accepted[0]->State() == ConnectionState::Connected)
+    {
+      m_serverQuic = accepted[0];
+      m_linkIsQuic = true;
+      m_log.PushFormat(EventLog::Severity::Friendly, 0.0f, "LINK | QUIC | 127.0.0.1:%u | %.1f MS", static_cast<unsigned>(OUTPOST_QUIC_PORT),
+                       elapsedMs);
+      return true;
+    }
+
+    if (elapsedMs >= static_cast<float>(QUIC_HANDSHAKE_TIMEOUT_MS))
+    {
+      m_log.PushFormat(EventLog::Severity::Alert, 0.0f, "LINK | HANDSHAKE TIMED OUT | %s %s", LinkStateName(m_clientQuic.State()),
+                       accepted.empty() ? "UNACCEPTED" : LinkStateName(accepted[0]->State()));
+      m_clientQuic.Close();
+      m_listener.Stop();
+      m_quic.Close();
+      return false;
+    }
+
+    // A millisecond back to the scheduler rather than a spin: MsQuic is doing the handshake on its
+    // own threads and this one has nothing to do until it has finished.
+    Sleep(1);
+  }
 }
 
 void OutpostApp::LoadHullMeshes()
@@ -528,6 +647,18 @@ void OutpostApp::Run()
 
 void OutpostApp::Shutdown()
 {
+  // In this order, and before the device goes away: a registration cannot close while a connection
+  // on it lives, so the client end closes first, then the listener with everything it accepted, then
+  // the library (Design/QuicTransport.md 6). Nothing is logged here -- a shutdown path does nothing
+  // rather than report (AGENTS.md 5).
+  if (m_linkIsQuic)
+  {
+    m_clientQuic.Close();
+    m_listener.Stop();
+    m_serverQuic = nullptr; // the listener owned it, and Stop has just closed it
+    m_quic.Close();
+  }
+
   m_gpu.Shutdown();
 }
 } // namespace Outpost

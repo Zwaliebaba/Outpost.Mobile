@@ -45,6 +45,18 @@
     <ClInclude Include="LoopbackTransport.h">
       <Filter>Net</Filter>
     </ClInclude>
+    <ClInclude Include="QuicApi.h">
+      <Filter>Net</Filter>
+    </ClInclude>
+    <ClInclude Include="DevCertificate.h">
+      <Filter>Net</Filter>
+    </ClInclude>
+    <ClInclude Include="QuicTransport.h">
+      <Filter>Net</Filter>
+    </ClInclude>
+    <ClInclude Include="QuicListener.h">
+      <Filter>Net</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -57,7 +69,19 @@
       <Filter>Foundation</Filter>
     </ClCompile>
     <ClCompile Include="LoopbackTransport.cpp">
-      <Filter>Foundation</Filter>
+      <Filter>Net</Filter>
+    </ClCompile>
+    <ClCompile Include="QuicApi.cpp">
+      <Filter>Net</Filter>
+    </ClCompile>
+    <ClCompile Include="DevCertificate.cpp">
+      <Filter>Net</Filter>
+    </ClCompile>
+    <ClCompile Include="QuicTransport.cpp">
+      <Filter>Net</Filter>
+    </ClCompile>
+    <ClCompile Include="QuicListener.cpp">
+      <Filter>Net</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

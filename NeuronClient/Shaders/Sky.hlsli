@@ -7,7 +7,7 @@
 // There is no world matrix and there are no world positions. A vertex carries a *direction* on the
 // celestial sphere and a corner index, and the quad is built here, against the camera's own right
 // and up: the sky is a static buffer that the CPU touches once ever, and turning the camera changes
-// nothing in it (SkyVertex.h, Design/Decisions/0021).
+// nothing in it (SkyVertex.h, Design/Decisions/0024).
 
 cbuffer VsConstants : register(b0)
 {

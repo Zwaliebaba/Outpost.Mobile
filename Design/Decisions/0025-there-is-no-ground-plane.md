@@ -1,4 +1,4 @@
-# 0022 — There is no ground plane, and the scene pass has no grid
+# 0025 — There is no ground plane, and the scene pass has no grid
 
 Status: accepted
 Date: 2026-08-29
@@ -12,7 +12,7 @@ grid drawn on it by `ScenePS` — spacing, line width and a distance fade, switc
 The plane did two jobs. It gave the eye something to read motion and scale against, and it hid
 everything below the horizon.
 
-The sky (`0021`, `Design/Skybox.md`) took over the first job and made the second one a cost. A star
+The sky (`0024`, `Design/Skybox.md`) took over the first job and made the second one a cost. A star
 field wraps the whole sphere, and the plane was occluding the lower half of it. With the plane gone
 the fleet sits in open space with the sky behind it in every direction, which is what the game is
 about; with it there, the game looks like it is happening in a hangar.

@@ -17,7 +17,7 @@ namespace Neuron
 // whole sky be one static buffer uploaded once: a star does not move when the camera turns, so
 // nothing about it changes per frame and the CPU has no per-frame work to do at all. Every other
 // billboard in this tree is built on the CPU (SpriteParticles::Build), because every other billboard
-// moves; this one is the case FxSpriteVS's comment anticipated (Design/Decisions/0021).
+// moves; this one is the case FxSpriteVS's comment anticipated (Design/Decisions/0024).
 //
 // **Packed, 28 bytes**, on the same terms FxVertex is (Design/Decisions/0019) and reusing its three
 // packing rules rather than restating them -- one rounding rule per format, in integer arithmetic,
