@@ -13,6 +13,9 @@
 
 #include "RenderTypes.h"
 #include "MeshData.h"
+#include "FxVertex.h"
+#include "MeshShatter.h"
+#include "SpriteParticles.h"
 #include "ObjParser.h"
 #include "DdsImage.h"
 #include "GpuHelpers.h"

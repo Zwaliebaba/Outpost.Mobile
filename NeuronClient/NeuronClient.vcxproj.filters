@@ -33,6 +33,15 @@
     <ClInclude Include="MeshData.h">
       <Filter>Render</Filter>
     </ClInclude>
+    <ClInclude Include="FxVertex.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="MeshShatter.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="SpriteParticles.h">
+      <Filter>Render</Filter>
+    </ClInclude>
     <ClInclude Include="ObjParser.h">
       <Filter>Render</Filter>
     </ClInclude>
@@ -78,6 +87,12 @@
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="ObjParser.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="MeshShatter.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="SpriteParticles.cpp">
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="GpuHelpers.cpp">
