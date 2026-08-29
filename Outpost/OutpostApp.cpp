@@ -55,7 +55,7 @@ void OutpostApp::Init(HINSTANCE _instance)
   // The rail's icons, in Hud::RailIcon order: that enum is the ImageId the HUD draws them by.
   textDesc.images = {TEXTURE_DIR + L"IconResearch.dds", TEXTURE_DIR + L"IconWallet.dds", TEXTURE_DIR + L"IconStorage.dds",
                      TEXTURE_DIR + L"IconUniverse.dds"};
-  m_textRenderer.Init(m_gpu, textDesc); // records the atlas uploads into the command list, so it goes last
+  m_textRenderer.Init(m_gpu, textDesc); // records the atlas uploads into the command list and flushes them
 
   // The explosion's three textures, named here for the same reason the fonts are: a library that
   // spelled the name of a file would be a library with content in it. Starburst is loaded and
@@ -64,7 +64,7 @@ void OutpostApp::Init(HINSTANCE _instance)
   fxDesc.fragmentTexture = TEXTURE_DIR + L"ShapeWireframe.dds";
   fxDesc.spriteTexture = TEXTURE_DIR + L"Particle.dds";
   fxDesc.flashTexture = TEXTURE_DIR + L"Starburst.dds";
-  m_fxRenderer.Init(m_gpu, fxDesc); // also records uploads and executes them, so it goes beside the atlases
+  m_fxRenderer.Init(m_gpu, fxDesc); // a second upload batch, bracketed the same way; order between the two is free
 
   Camera::Desc cameraDesc;
   cameraDesc.minZoom = CAMERA_MIN_ZOOM;

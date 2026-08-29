@@ -25,8 +25,10 @@ void TextRenderer::Init(GpuDevice& _gpu, const Desc& _desc)
 
   m_srvStride = _gpu.Device()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-  // Both atlases record into the device's command list and are submitted together: ExecuteAndWait
-  // closes the list, so there is one flush here and not one per font.
+  // Both atlases record into the device's command list and are submitted together: one flush here
+  // and not one per font. The pair of calls is the bracket every boot-time uploader uses, so this
+  // one no longer has to be the last thing that uploads.
+  _gpu.BeginUploads();
   LoadFont(_gpu, FontId::Ui, _desc.uiFont);
   LoadFont(_gpu, FontId::Scene, _desc.sceneFont);
   if (_desc.images.size() > MAX_IMAGES)
