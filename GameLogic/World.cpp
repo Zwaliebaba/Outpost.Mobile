@@ -461,21 +461,18 @@ float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _poi
     return _facingRad;
 
   // Point the formation along the ordered facing, or along the way the group is about to travel.
+  // The second case goes through FormationHeading rather than being spelled out here, because the
+  // client orients its order marker with the same function on the same inputs -- one definition is
+  // what stops the marker and the ships disagreeing about which way an order points now that the
+  // answer no longer travels back down the wire (Design/Collision-slice-2b.md 2.5).
   float heading = _facingRad;
   if (!_hasFacing)
   {
-    WorldPos centre = m_ships[chosen[0]].posWorld;
-    float centreX = 0.0f;
-    float centreZ = 0.0f;
+    m_headingScratch.clear();
+    m_headingScratch.reserve(chosen.size());
     for (const ShipId id : chosen)
-    {
-      centreX += OffsetX(centre, m_ships[id].posWorld);
-      centreZ += OffsetZ(centre, m_ships[id].posWorld);
-    }
-    Translate(centre, centreX / static_cast<float>(chosen.size()), centreZ / static_cast<float>(chosen.size()));
-    const float dx = OffsetX(centre, _point);
-    const float dz = OffsetZ(centre, _point);
-    heading = (dx * dx + dz * dz > 1e-4f) ? std::atan2(dx, dz) : m_ships[chosen[0]].headingRad;
+      m_headingScratch.push_back(m_ships[id].posWorld);
+    heading = FormationHeading(m_headingScratch, _point, m_ships[chosen[0]].headingRad);
   }
 
   // Hand out slots in the order the ships already lie across the formation, so they do not have to

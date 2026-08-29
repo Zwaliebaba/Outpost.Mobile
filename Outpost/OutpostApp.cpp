@@ -85,7 +85,16 @@ void OutpostApp::Init(HINSTANCE _instance)
   hostDesc.tickHz = Game::TICK_HZ;
   m_host.Init(hostDesc, m_simulation);
 
-  m_view.Init(m_world, m_camera, m_meshes, m_sceneRenderer.UnitQuad());
+  // Zero latency is the single-player default and has to mean genuinely zero: a snapshot published
+  // this tick is readable this tick, or the game gains a frame of lag it never had. The knob is
+  // here rather than in a config file because there is no config file (AGENTS.md 5); the
+  // measurements Design/Collision.md 18 wants are taken by changing this line.
+  LoopbackTransport::Desc linkDesc;
+  linkDesc.latencyTicks = 0;
+  LoopbackTransport::Connect(m_serverLink, m_clientLink, linkDesc);
+  m_simulation.Connect(m_serverLink);
+
+  m_view.Init(m_clientLink, m_camera, m_meshes, m_sceneRenderer.UnitQuad());
   m_view.SetTracker(m_pointers);
   m_view.SetEventLog(m_log);
   SpawnStartingFleet();
@@ -105,7 +114,10 @@ void OutpostApp::SpawnStartingFleet()
 
     const float x = (static_cast<float>(i) - static_cast<float>(hullCount - 1) * 0.5f) * START_SPACING;
     m_world.SpawnShip(Game::LocalPos(x, 0.0f), 0.0f, static_cast<std::uint32_t>(STARTING_HULLS[i].hull));
-    m_view.AddShip(mesh);
+
+    // The view is told which mesh a hull uses, not which mesh this ship uses: it learns that a ship
+    // exists from a snapshot, which carries a hullId and knows nothing about meshes.
+    m_view.RegisterHullMesh(STARTING_HULLS[i].hull, mesh);
   }
 }
 
@@ -176,7 +188,7 @@ void OutpostApp::Render()
   frame.stats.timeScale = m_timeScale;
   frame.showDebug = m_showDebug;
   frame.hullNames = HULL_NAMES;
-  m_hud.Draw(m_textRenderer, m_world, m_view, m_camera, m_log, frame, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
+  m_hud.Draw(m_textRenderer, m_view.Ships(), m_view, m_camera, m_log, frame, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
 
   m_textRenderer.Flush(m_gpu); // the overlay goes on last, before the frame is presented
   m_gpu.EndFrame();
@@ -197,9 +209,21 @@ void OutpostApp::Run()
 
     // The simulation runs at its own fixed rate; the render frame interpolates between its last two
     // ticks. Time scaling stretches the simulation only, so the display stays at the refresh rate.
+    // Both ends stand on the same tick, so a latency of N means N ticks either way. Advancing them
+    // before the host runs is what lets an order sent this frame be drained by this frame's tick.
+    m_serverLink.AdvanceTo(m_host.Tick());
+    m_clientLink.AdvanceTo(m_host.Tick());
+
     const int steps = m_host.Advance(dtSec * m_timeScale);
     for (int step = 0; step < steps; ++step)
+    {
+      m_serverLink.AdvanceTo(m_host.Tick());
+      m_clientLink.AdvanceTo(m_host.Tick());
+      m_view.PumpNetwork();
       m_view.SampleTrails();
+    }
+    if (steps == 0)
+      m_view.PumpNetwork(); // a frame with no tick still delivers what latency has made due
 
     // Feedback eases on real time rather than sim time, so it stays smooth however far the
     // swapchain runs ahead of the tick rate.

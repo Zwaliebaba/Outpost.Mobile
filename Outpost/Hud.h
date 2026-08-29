@@ -3,8 +3,6 @@
 #include "EventLog.h"
 #include "WorldView.h"
 
-#include "World.h"
-
 #include "Camera.h"
 #include "PointerEvent.h"
 #include "TextRenderer.h"
@@ -20,8 +18,8 @@ namespace Outpost
 // plus the debug readout it grew out of. Separate on purpose: it is the thing that grows every
 // week, and it should grow somewhere that is not the frame loop.
 //
-// It reads Game::World and WorldView and writes to neither except through WorldView's own
-// selection calls, so nothing here can feed back into a tick. Everything is laid out from
+// It reads the snapshot the client half received and WorldView, and writes to neither except
+// through WorldView's own selection calls, so nothing here can feed back into a tick. Everything is laid out from
 // ViewTuning.h constants, anchored to the corners and edges and scaled by DPI, and the draw path
 // allocates nothing: every string goes through a fixed buffer.
 class Hud
@@ -48,7 +46,7 @@ public:
   };
   static constexpr int RAIL_BUTTONS = 4;
 
-  // What the composition root knows and the HUD does not. The economy has no home in Game::World
+  // What the composition root knows and the HUD does not. The economy has no home in the world
   // yet, so its numbers arrive from here; the defaults are the mock's so the panel reads right
   // until it does. The same goes for hull and shield, which have no damage model to read.
   struct Frame
@@ -63,10 +61,10 @@ public:
     int contacts = 0;
     float hullFraction = 1.0f;
     float shieldFraction = 1.0f;
-    std::span<const char* const> hullNames; // indexed by ShipState::hullId; an id past the end is unnamed
+    std::span<const char* const> hullNames; // indexed by ShipSnapshot::hullId; an id past the end is unnamed
   };
 
-  void Draw(Neuron::TextRenderer& _text, const Game::World& _world, const WorldView& _view, const Neuron::Camera& _camera,
+  void Draw(Neuron::TextRenderer& _text, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view, const Neuron::Camera& _camera,
             const EventLog& _log, const Frame& _frame, float _dpiScale, std::uint32_t _widthPx, std::uint32_t _heightPx);
 
   // Reports true when the event landed on a panel and was used up, so a tap on the bottom bar can
@@ -114,11 +112,11 @@ private:
   void DrawScanlines(Neuron::TextRenderer& _text, const Rect& _rect, float _scale) const;
   void DrawResources(Neuron::TextRenderer& _text, const Layout& _layout, const Frame& _frame) const;
   void DrawDebug(Neuron::TextRenderer& _text, const Layout& _layout, const Frame& _frame, std::uint32_t _widthPx) const;
-  void DrawMinimap(Neuron::TextRenderer& _text, const Layout& _layout, const Game::World& _world, const WorldView& _view,
+  void DrawMinimap(Neuron::TextRenderer& _text, const Layout& _layout, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view,
                    const Neuron::Camera& _camera, const Frame& _frame, std::uint32_t _widthPx, std::uint32_t _heightPx) const;
   void DrawRail(Neuron::TextRenderer& _text, const Layout& _layout) const;
   void DrawEventLog(Neuron::TextRenderer& _text, const Layout& _layout, const EventLog& _log) const;
-  void DrawBottomBar(Neuron::TextRenderer& _text, const Layout& _layout, const Game::World& _world, const WorldView& _view,
+  void DrawBottomBar(Neuron::TextRenderer& _text, const Layout& _layout, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view,
                      const Frame& _frame) const;
 
   float m_cellPx = 16.0f; // the UI atlas cell, remembered from the last draw so a hit test can size the panels the same way

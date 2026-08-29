@@ -1,7 +1,7 @@
 # Collision and avoidance
 
-**Status: phases 0, 1a, 1b, 2, 3, 4, 5 and 7 of §15 are implemented and under test.**
-Phases 2b (loopback transport), 6 (interest management) and 8 (sectors) are not.
+**Status: phases 0, 1a, 1b, 2, 2b, 3, 4, 5, 7 and 8 of §15 are implemented and under test.**
+Phase 6 (interest management) is not.
 Decisions taken at review are recorded in §18. A second round the same day settled the process
 model (§2), universe coordinates (§3), and brought pathfinding into scope (§12, phase 7).
 
@@ -133,9 +133,9 @@ processes. **Every phase in §15 runs client and server together in one `Outpost
 how the tree already runs (`NeuronCore/Transport.h`), and stays how it runs until well after
 phase 6.
 
-What changes at phase 2b is the *code* boundary, not the process boundary: from 2b onward the
-client half touches the world only through a loopback `Transport` and the snapshots it carries,
-with artificial latency available in the loopback for the measurements this document needs. The
+What changed at phase 2b is the *code* boundary, not the process boundary: the client half now
+touches the world only through a loopback `Transport` and the snapshots it carries, with artificial
+latency available in the loopback for the measurements this document needs. The
 split into a separate server executable is then a transport swap plus a composition root, not a
 redesign — which is the entire point of paying for 2b early. Separation itself is a named later
 step, deliberately outside this document's scope, taken when there is an operational reason — a
@@ -1054,8 +1054,8 @@ then, not here.
 
 ### The property worth protecting
 
-Phases 0, 1b, 2 and 8 change no behaviour, and 2b will change none a single-player build can see.
-Four of those five have landed and the suite was green across each without a tuning value moving.
+Phases 0, 1b, 2, 2b and 8 change no behaviour a single-player build can see. All five have landed
+and the suite was green across each without a tuning value moving.
 Phase 8 was the one that had to prove it hardest, because sector-plus-local arithmetic only equals
 plain float while content stays inside one sector — day-one content does, so the 56 tests that
 predated it passed unchanged, and a new test plays the same encounter four sectors out and gets
@@ -1283,13 +1283,13 @@ about two slices in one layer they cannot run in parallel with each other — th
 | 5 | Formation spacing and arrival tolerance scale with the hull (§13) | 1a | landed |
 | 7 | Pathfinding: clearance grid, A\*, waypoint follower (§12) | 2, 4 | landed |
 | 8 | Sectors: `WorldPos` grows its `int64` pair (§3) | 0 | landed ([work order](Collision-slice-8.md)) |
-| 2b | Loopback `Transport`, full-fidelity snapshot, artificial latency (§2, §15) | 3 | **not started** |
+| 2b | Loopback `Transport`, full-fidelity snapshot, artificial latency (§2, §15) | 3 | landed ([work order](Collision-slice-2b.md)) |
 | 6 | Interest management on `QueryCircle`: subscription sets, deltas, priority (§1, §15) | 2b | **not started** |
 
-The two that remain are not `GameLogic` alone, which is why they are last rather than merely later.
-**2b** touches `NeuronCore`, `NeuronServer`, `NeuronClient` and the executable at once, which by the
-same parallelism rule means it wants the tree to itself. **6** is a slice of its own on top of 2b
-and is not small: §1 records what carries over from the index unchanged and what does not.
+**2b** touched `NeuronCore`, `GameLogic` and the executable at once, which by the same parallelism
+rule meant it wanted the tree to itself, and it did. **6** is the one that remains: a slice of its
+own on top of 2b, and not small, since §1 records what carries over from the index unchanged and
+what does not. It is now unblocked.
 
 **8** was scheduled early among the leftovers for one reason: it is mechanical behind the `WorldPos`
 name, but every stored position is denominated in `SECTOR_SIZE_METRES`, so it invalidates

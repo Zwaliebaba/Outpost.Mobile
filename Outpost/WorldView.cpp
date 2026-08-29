@@ -8,26 +8,102 @@ using namespace Neuron;
 
 namespace Outpost
 {
-void WorldView::Init(Game::World& _world, Camera& _camera, const MeshLibrary& _meshes, MeshHandle _quadMesh)
+void WorldView::Init(Neuron::Transport& _transport, Camera& _camera, const MeshLibrary& _meshes, MeshHandle _quadMesh)
 {
-  m_world = &_world;
+  m_transport = &_transport;
   m_camera = &_camera;
   m_meshes = &_meshes;
   m_quadMesh = _quadMesh;
 }
 
-void WorldView::AddShip(MeshHandle _mesh)
+void WorldView::RegisterHullMesh(Game::HullId _hull, MeshHandle _mesh)
 {
-  const MeshData& data = m_meshes->Data(_mesh);
+  const std::size_t row = static_cast<std::size_t>(_hull);
+  if (row < m_hullMeshes.size())
+    m_hullMeshes[row] = _mesh;
+}
 
-  ShipView view;
-  view.mesh = _mesh;
-  view.restY = data.RestY();
-  view.pickCentre = data.BoundsCentre();
-  view.halfExtents = data.HalfExtents();
-  view.thrusterLocals = data.attachPoints;
-  view.trail.assign(view.thrusterLocals.size() * TRAIL_SAMPLES, XMFLOAT3(0.0f, 0.0f, 0.0f));
-  m_ships.push_back(std::move(view));
+std::span<const Game::ShipSnapshot> WorldView::Ships() const noexcept
+{
+  return m_receiver.HasSnapshot() ? std::span<const Game::ShipSnapshot>(m_receiver.Latest().ships) : std::span<const Game::ShipSnapshot>();
+}
+
+void WorldView::PumpNetwork()
+{
+  if (m_transport == nullptr)
+    return;
+
+  m_transport->Poll();
+
+  // Drain everything waiting rather than one datagram per tick: a snapshot is several fragments and
+  // stopping part-way would strand the rest until the next tick, which is how a pipeline that works
+  // for three ships stops working for thirty.
+  std::array<std::uint8_t, Neuron::MAX_DATAGRAM_BYTES> datagram{};
+  bool arrived = false;
+  for (;;)
+  {
+    const std::uint32_t size = m_transport->Receive(datagram.data(), static_cast<std::uint32_t>(datagram.size()));
+    if (size == 0)
+      break;
+    arrived = m_receiver.Accept(std::span<const std::uint8_t>(datagram.data(), size)) || arrived;
+  }
+
+  if (arrived)
+    ApplySnapshot();
+}
+
+// Presentation state follows the ship, not the array slot it happened to occupy last tick.
+void WorldView::ApplySnapshot()
+{
+  const std::vector<Game::ShipSnapshot>& ships = m_receiver.Latest().ships;
+
+  m_carryScratch.clear();
+  m_carryHandles.clear();
+  m_carryScratch.swap(m_ships);
+  m_carryHandles.swap(m_handles);
+
+  m_ships.reserve(ships.size());
+  m_handles.reserve(ships.size());
+  for (const Game::ShipSnapshot& ship : ships)
+  {
+    // Linear: the carried set is the previous snapshot's ships, and at these counts a map would
+    // cost more than it saved. It is also the one lookup in this class, so if it ever matters it
+    // is one place to change.
+    std::size_t found = m_carryHandles.size();
+    for (std::size_t at = 0; at < m_carryHandles.size(); ++at)
+    {
+      if (m_carryHandles[at] == ship.handle)
+      {
+        found = at;
+        break;
+      }
+    }
+
+    if (found < m_carryScratch.size())
+    {
+      m_ships.push_back(std::move(m_carryScratch[found]));
+    }
+    else
+    {
+      // A ship this half has not seen before. Its mesh comes from the hull table rather than from
+      // whoever spawned it, because a snapshot carries a hullId and knows nothing about meshes.
+      const std::size_t row = static_cast<std::size_t>(ship.hullId);
+      const MeshHandle mesh = (row < m_hullMeshes.size()) ? m_hullMeshes[row] : INVALID_MESH;
+      ShipView view;
+      view.mesh = mesh;
+      if (mesh != INVALID_MESH)
+      {
+        const MeshData& data = m_meshes->Data(mesh);
+        view.restY = data.RestY();
+        view.pickCentre = data.BoundsCentre();
+        view.halfExtents = data.HalfExtents();
+        view.thrusterLocals = data.attachPoints;
+        view.trail.assign(view.thrusterLocals.size() * TRAIL_SAMPLES, XMFLOAT3(0.0f, 0.0f, 0.0f));
+      }
+      m_ships.push_back(std::move(view));
+    }
+    m_handles.push_back(ship.handle);
+  }
 }
 
 void WorldView::ClearSelection() noexcept
@@ -39,7 +115,7 @@ void WorldView::ClearSelection() noexcept
 
 float WorldView::SimTimeSec() const noexcept
 {
-  return static_cast<float>(m_world->Tick()) / Game::TICK_HZ;
+  return static_cast<float>(m_receiver.Latest().tick) / Game::TICK_HZ;
 }
 
 void WorldView::AssignGroup(int _group)
@@ -103,7 +179,7 @@ int WorldView::SelectedCount() const noexcept
 // One sample per nozzle per tick, so trail length means the same thing whatever the frame rate.
 void WorldView::SampleTrails()
 {
-  const std::span<const Game::ShipState> state = m_world->Ships();
+  const std::span<const Game::ShipSnapshot> state = Ships();
   const size_t count = std::min(m_ships.size(), state.size());
 
   for (size_t i = 0; i < count; ++i)
@@ -111,7 +187,7 @@ void WorldView::SampleTrails()
     ShipView& view = m_ships[i];
     if (view.thrusterLocals.empty())
       continue;
-    const Game::ShipState& ship = state[i];
+    const Game::ShipSnapshot& ship = state[i];
 
     const float cosH = std::cos(ship.headingRad);
     const float sinH = std::sin(ship.headingRad);
@@ -131,12 +207,12 @@ void WorldView::UpdateFeedback(float _dtSec)
 {
   const float dt = std::clamp(_dtSec, 0.0f, 0.1f);
   const float maxBank = XMConvertToRadians(BANK_MAX_ANGLE_DEG);
-  const std::span<const Game::ShipState> state = m_world->Ships();
+  const std::span<const Game::ShipSnapshot> state = Ships();
 
   for (int i = 0; i < static_cast<int>(m_ships.size()) && i < static_cast<int>(state.size()); ++i)
   {
     ShipView& view = m_ships[static_cast<size_t>(i)];
-    const Game::ShipState& ship = state[static_cast<size_t>(i)];
+    const Game::ShipSnapshot& ship = state[static_cast<size_t>(i)];
     // Bank and thruster flare are both fractions of what this hull can do, so both come from its
     // own row. Against one global value a Carrier would barely bank and would never light up.
     const Game::HullSpec& hull = Game::HullSpecOf(ship.hullId);
@@ -216,14 +292,14 @@ int WorldView::PickShip(float _xPx, float _yPx) const
   XMFLOAT3 origin;
   XMFLOAT3 direction;
   m_camera->ScreenRay(_xPx, _yPx, origin, direction);
-  const std::span<const Game::ShipState> state = m_world->Ships();
+  const std::span<const Game::ShipSnapshot> state = Ships();
 
   int best = -1;
   float bestT = 1e30f;
   for (int i = 0; i < static_cast<int>(m_ships.size()) && i < static_cast<int>(state.size()); ++i)
   {
     const ShipView& view = m_ships[static_cast<size_t>(i)];
-    const Game::ShipState& ship = state[static_cast<size_t>(i)];
+    const Game::ShipSnapshot& ship = state[static_cast<size_t>(i)];
     const float cosH = std::cos(ship.headingRad);
     const float sinH = std::sin(ship.headingRad);
 
@@ -270,19 +346,49 @@ int WorldView::PickShip(float _xPx, float _yPx) const
 
 void WorldView::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float _facingRad)
 {
-  std::vector<Game::ShipId> chosen;
-  chosen.reserve(m_ships.size());
-  for (size_t i = 0; i < m_ships.size(); ++i)
-  {
-    if (m_ships[i].selected)
-      chosen.push_back(static_cast<Game::ShipId>(i));
-  }
-  if (chosen.empty())
+  if (m_transport == nullptr)
     return;
 
-  // The world solves the formation and reports the heading it settled on, so the marker and the
-  // ships cannot disagree about which way the order points.
-  const float heading = m_world->IssueMoveOrder(chosen, WorldPosAt(_point.x, _point.z), _hasFacing, _facingRad);
+  // Handles, not indices. Between this click and the order reaching the other half a ship can die,
+  // and swap-and-pop would move a stranger into the index it left behind (ADR 0005).
+  const std::span<const Game::ShipSnapshot> state = Ships();
+  Game::MoveOrder order;
+  order.ships.reserve(m_ships.size());
+  m_orderPositions.clear();
+  float firstHeading = 0.0f;
+  for (size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
+  {
+    if (!m_ships[i].selected)
+      continue;
+    if (order.ships.empty())
+      firstHeading = state[i].headingRad;
+    order.ships.push_back(state[i].handle);
+    m_orderPositions.push_back(state[i].posWorld);
+  }
+  if (order.ships.empty())
+    return;
+
+  // One order is one datagram, so a selection larger than a datagram holds cannot be ordered as a
+  // unit. Say so rather than doing nothing: a click that vanishes reads as a broken game.
+  if (order.ships.size() > Game::MaxShipsPerOrder())
+  {
+    if (m_log)
+      m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "ORDER TOO LARGE | %d OF %d MAX", static_cast<int>(order.ships.size()),
+                        static_cast<int>(Game::MaxShipsPerOrder()));
+    return;
+  }
+
+  order.destination = WorldPosAt(_point.x, _point.z);
+  order.facingRad = _facingRad;
+  order.hasFacing = _hasFacing;
+  if (!Game::WriteMoveOrder(order, *m_transport))
+    return; // the send queue is full, which Transport.h calls normal: the click is dropped
+
+  // Nothing comes back down the wire to say which way the formation settled, so the marker is
+  // oriented here -- by the same function the other half uses, on the same positions, the same
+  // point and the same fallback. Not a prediction: the same arithmetic on the same inputs, so the
+  // marker and the ships cannot disagree about which way an order points (slice-2b 2.5).
+  const float heading = _hasFacing ? _facingRad : Game::FormationHeading(m_orderPositions, order.destination, firstHeading);
 
   OrderMarker marker;
   marker.posWorld = XMFLOAT3(_point.x, 0.0f, _point.z);
@@ -291,7 +397,7 @@ void WorldView::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float _f
   m_markers.push_back(marker);
 
   if (m_log)
-    m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "MOVE ORDER | %d SHIPS", static_cast<int>(chosen.size()));
+    m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "MOVE ORDER | %d SHIPS", static_cast<int>(order.ships.size()));
 }
 
 // --- pointer intent -----------------------------------------------------------------------------
@@ -332,7 +438,7 @@ void WorldView::OnBoxSelect(float _x0Px, float _y0Px, float _x1Px, float _y1Px, 
   if (!_additive)
     ClearSelection();
 
-  const std::span<const Game::ShipState> state = m_world->Ships();
+  const std::span<const Game::ShipSnapshot> state = Ships();
   for (size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
   {
     const XMFLOAT3 centre(ViewX(state[i].posWorld), m_ships[i].halfExtents.y * SHIP_SCALE, ViewZ(state[i].posWorld));
@@ -418,11 +524,11 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
   XMStoreFloat4x4(&world, XMMatrixScaling(GROUND_SIZE, 1.0f, GROUND_SIZE) * XMMatrixTranslation(target.x, 0.0f, target.z));
   _renderer.DrawMesh(_gpu, m_quadMesh, world, GROUND_COLOUR, 0.0f, true);
 
-  const std::span<const Game::ShipState> state = m_world->Ships();
+  const std::span<const Game::ShipSnapshot> state = Ships();
   for (size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
   {
     const ShipView& view = m_ships[i];
-    const Game::ShipState& ship = state[i];
+    const Game::ShipSnapshot& ship = state[i];
 
     const Game::WorldPos at = Game::Lerp(ship.prevPos, ship.posWorld, _alpha);
     const float x = ViewX(at);
@@ -473,14 +579,14 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, float _a
 {
   _renderer.BeginDecals(_gpu, m_camera->ViewProj(), m_camera->Eye());
 
-  const std::span<const Game::ShipState> state = m_world->Ships();
+  const std::span<const Game::ShipSnapshot> state = Ships();
   XMFLOAT4X4 world;
 
   // --- selection and hover rings ----------------------------------------------------------------
   for (size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
   {
     const ShipView& view = m_ships[i];
-    const Game::ShipState& ship = state[i];
+    const Game::ShipSnapshot& ship = state[i];
 
     const float hullRadius = std::max(view.halfExtents.x, view.halfExtents.z) * SHIP_SCALE;
     const Game::WorldPos at = Game::Lerp(ship.prevPos, ship.posWorld, _alpha);

@@ -2,7 +2,11 @@
 
 #include "EventLog.h"
 
-#include "World.h"
+#include "Formation.h"
+#include "HullSpec.h"
+#include "WorldSnapshot.h"
+
+#include "Transport.h"
 
 #include "Camera.h"
 #include "MeshLibrary.h"
@@ -10,6 +14,8 @@
 #include "SceneRenderer.h"
 #include "TextRenderer.h"
 
+#include <array>
+#include <span>
 #include <vector>
 
 namespace Outpost
@@ -18,16 +24,20 @@ namespace Outpost
 // selected, which one is under the pointer, how far a selection ring has sprung open, where the
 // order markers are in their life, and what all of that draws as.
 //
-// It reads Game::World and never writes to it except through World::IssueMoveOrder. That one-way
+// It reads the snapshots that arrive over a Transport and never writes to the simulation except by
+// sending a move order back up the same wire. It cannot do otherwise: this header no longer
+// includes World.h, so the seam is structural rather than a convention (slice-2b 2.6). That one-way
 // dependency is the whole design: the view can be rewritten, doubled for a second local player, or
-// replaced by a headless stub, and the simulation does not notice. When the halves separate, this
-// is the class that stops holding a World& and starts holding a snapshot buffer.
+// replaced by a headless stub, and the simulation does not notice. This is the class that used to
+// hold a World& and now holds a snapshot buffer; the day the transport becomes a socket, nothing
+// here changes at all.
 //
 // It is also the PointerListener: the tracker knows how contacts behave, this knows what they mean.
 class WorldView : public Neuron::PointerListener
 {
 public:
-  // One ship's presentation state, parallel to Game::World's ships and indexed the same way.
+  // One ship's presentation state, parallel to the latest snapshot's ships and indexed the same
+  // way. ApplySnapshot is what keeps that true across a snapshot in which ships changed places.
   struct ShipView
   {
     Neuron::MeshHandle mesh = Neuron::INVALID_MESH;
@@ -61,11 +71,20 @@ public:
     float ageSec = 0.0f;
   };
 
-  void Init(Game::World& _world, Neuron::Camera& _camera, const Neuron::MeshLibrary& _meshes, Neuron::MeshHandle _quadMesh);
+  void Init(Neuron::Transport& _transport, Neuron::Camera& _camera, const Neuron::MeshLibrary& _meshes, Neuron::MeshHandle _quadMesh);
 
-  // Adds the view state for a ship the world has just spawned. Indices stay in step with the
-  // world's, which is what lets the two be read together with no lookup.
-  void AddShip(Neuron::MeshHandle _mesh);
+  // Which mesh a hull is drawn with. The view no longer learns about a ship when the world spawns
+  // one -- it learns from a snapshot, which carries a hullId and not a mesh -- so the composition
+  // root registers the table up front and the view resolves against it as ships appear.
+  void RegisterHullMesh(Game::HullId _hull, Neuron::MeshHandle _mesh);
+
+  // Drains the transport and applies whatever snapshots arrived. Called once per tick from the
+  // composition root, before anything reads Ships().
+  void PumpNetwork();
+
+  // The world as this half is allowed to see it: the newest complete snapshot, or nothing before
+  // the first arrives. Presentation state in m_ships is kept parallel to it.
+  [[nodiscard]] std::span<const Game::ShipSnapshot> Ships() const noexcept;
 
   // Called once per simulation tick, from the composition root. Trail sampling has to happen on the
   // tick rather than on the frame, or trail length would mean something different at every frame
@@ -152,8 +171,24 @@ private:
   void IssueMoveOrder(const DirectX::XMFLOAT3& _point, bool _hasFacing, float _facingRad);
   [[nodiscard]] float SimTimeSec() const noexcept;
 
+  // Carries per-ship presentation state onto a new snapshot by handle, so a ship that changed array
+  // index -- which despawn does, by swap-and-pop -- keeps its selection, its rings and its trails
+  // instead of inheriting a stranger's (ADR 0005; Design/Collision-slice-2b.md 5.3).
+  void ApplySnapshot();
+
   Game::WorldPos m_viewOrigin;
-  Game::World* m_world = nullptr;
+  Neuron::Transport* m_transport = nullptr;
+  Game::SnapshotReceiver m_receiver;
+
+  // Parallel to the snapshot's ships, and to m_ships.
+  std::vector<Game::ShipHandle> m_handles;
+  std::vector<Game::WorldPos> m_orderPositions; // gathered for FormationHeading when an order is sent
+  std::vector<ShipView> m_carryScratch;
+  std::vector<Game::ShipHandle> m_carryHandles;
+
+  // Indexed by Game::HullId. A hull with no mesh registered simply is not drawn, which is the same
+  // diagnostic-not-a-crash treatment a missing mesh already got at boot.
+  std::array<Neuron::MeshHandle, Game::HULL_COUNT> m_hullMeshes{};
   Neuron::Camera* m_camera = nullptr;
   const Neuron::MeshLibrary* m_meshes = nullptr;
   Neuron::PointerTracker* m_tracker = nullptr;

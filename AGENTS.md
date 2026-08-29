@@ -28,7 +28,7 @@ hulls, FXC-compiled shaders.
 **Deliberately not here yet**, so nobody goes looking for it: no audio, no networking, no interest
 management, no combat, no economy, no damage model, no save format, no content pipeline beyond OBJ
 and DDS, and no configuration file — tuning is `constexpr` in `SimTuning.h`, `HullSpec.h` and
-`ViewTuning.h` (§5). `Transport` is declared and unimplemented (§2). Where the HUD shows a number
+`ViewTuning.h` (§5). `Transport` has a loopback implementation and no socket (§2). Where the HUD shows a number
 the simulation does not yet have, it is a placeholder supplied by the composition root, and it says
 so at the definition.
 
@@ -240,16 +240,17 @@ either one, because the alternatives were considered and the records say why the
 
 ### Where the client/server seam stands today
 
-`Outpost.exe` runs both halves in one process, and `WorldView` reads `Game::World` **directly**
-rather than through a snapshot. That is deliberate and current: this repository has established
-the one-way dependency, not the wire.
+`Outpost.exe` runs both halves in one process, and it stays one process. What is no longer shared
+is memory: `WorldView` reads a snapshot that arrived over a `Transport` and sends move orders back
+up the same wire, and its header does not include `World.h`, so the seam is structural rather than
+a convention.
 
-`NeuronCore/Transport.h` declares the seam and **nothing implements it**. It is there so the seam
-is a named thing with an owner rather than a plan. When the halves separate, `WorldView` stops
-holding a `World&` and starts holding a snapshot buffer; nothing else in the client changes, which
-is the whole point of the layering. Do not shortcut it in the meantime: if you find yourself
-wanting the simulation to call into the renderer, or the renderer to write to the world, that is
-the seam telling you the change belongs somewhere else.
+`NeuronCore/Transport.h` declares the seam and `LoopbackTransport` implements it, with latency and
+loss you can configure — counted in ticks rather than seconds, so a measurement reproduces. What
+remains is a socket and a second process, and neither is scheduled: the code boundary is the part
+that had to land early, because it is what stops the two halves growing into each other. Do not
+shortcut it: if you find yourself wanting the simulation to call into the renderer, or the renderer
+to reach into the world, that is the seam telling you the change belongs somewhere else.
 
 ---
 

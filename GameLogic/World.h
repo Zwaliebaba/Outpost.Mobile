@@ -169,6 +169,9 @@ private:
   std::vector<Neighbour> m_neighbours;         // flat, one run per ship
   std::vector<std::uint32_t> m_neighbourStart; // ship count + 1 offsets into it
   std::vector<std::uint32_t> m_neighbourCount; // how much of each run is filled
+  // Ship positions gathered for FormationHeading, kept so an order allocates nothing.
+  std::vector<WorldPos> m_headingScratch;
+
   std::vector<float> m_correctionX;
   std::vector<float> m_correctionZ;
   std::vector<float> m_appliedX; // this tick's running total, so k solver steps share one clamp
