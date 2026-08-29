@@ -226,6 +226,7 @@
     <ClInclude Include="GpuHelpers.h" />
     <ClInclude Include="GpuDevice.h" />
     <ClInclude Include="SceneRenderer.h" />
+    <ClInclude Include="FxRenderer.h" />
     <ClInclude Include="BitmapFont.h" />
     <ClInclude Include="ScreenImage.h" />
     <ClInclude Include="TextRenderer.h" />
@@ -246,6 +247,7 @@
     <ClCompile Include="GpuHelpers.cpp" />
     <ClCompile Include="GpuDevice.cpp" />
     <ClCompile Include="SceneRenderer.cpp" />
+    <ClCompile Include="FxRenderer.cpp" />
     <ClCompile Include="BitmapFont.cpp" />
     <ClCompile Include="ScreenImage.cpp" />
     <ClCompile Include="TextRenderer.cpp" />
@@ -288,6 +290,26 @@
       <HeaderFileOutput>CompiledShaders\TextPS.h</HeaderFileOutput>
       <VariableName>g_pTextPS</VariableName>
     </FxCompile>
+    <FxCompile Include="Shaders\FxFragmentVS.hlsl">
+      <ShaderType>Vertex</ShaderType>
+      <HeaderFileOutput>CompiledShaders\FxFragmentVS.h</HeaderFileOutput>
+      <VariableName>g_pFxFragmentVS</VariableName>
+    </FxCompile>
+    <FxCompile Include="Shaders\FxFragmentPS.hlsl">
+      <ShaderType>Pixel</ShaderType>
+      <HeaderFileOutput>CompiledShaders\FxFragmentPS.h</HeaderFileOutput>
+      <VariableName>g_pFxFragmentPS</VariableName>
+    </FxCompile>
+    <FxCompile Include="Shaders\FxSpriteVS.hlsl">
+      <ShaderType>Vertex</ShaderType>
+      <HeaderFileOutput>CompiledShaders\FxSpriteVS.h</HeaderFileOutput>
+      <VariableName>g_pFxSpriteVS</VariableName>
+    </FxCompile>
+    <FxCompile Include="Shaders\FxSpritePS.hlsl">
+      <ShaderType>Pixel</ShaderType>
+      <HeaderFileOutput>CompiledShaders\FxSpritePS.h</HeaderFileOutput>
+      <VariableName>g_pFxSpritePS</VariableName>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <!-- Included by the .hlsl files above rather than compiled on their own. FXC tracks
@@ -295,6 +317,7 @@
     <None Include="Shaders\Scene.hlsli" />
     <None Include="Shaders\Decal.hlsli" />
     <None Include="Shaders\Text.hlsli" />
+    <None Include="Shaders\Fx.hlsli" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\NeuronCore\NeuronCore.vcxproj">

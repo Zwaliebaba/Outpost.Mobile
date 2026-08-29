@@ -21,6 +21,7 @@
 #include "GpuHelpers.h"
 #include "GpuDevice.h"
 #include "SceneRenderer.h"
+#include "FxRenderer.h"
 #include "BitmapFont.h"
 #include "ScreenImage.h"
 #include "TextRenderer.h"
