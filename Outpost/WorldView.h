@@ -424,7 +424,18 @@ private:
   // A point authored on the hull, in mesh space, to where it is drawn. The plume's trail sampler
   // and the navigation lights both need it and must not drift apart, so it is written once. Out of
   // line because it scales by ViewTuning.h's constants, and this header has no business seeing them.
-  [[nodiscard]] DirectX::XMFLOAT3 HullPointToWorld(float _restY, const DisplayPose& _pose, const DirectX::XMFLOAT3& _local) const noexcept;
+  //
+  // It takes the ShipView and not only the pose because the hull is drawn through more than a
+  // heading: Render rolls it by bankRad about its own mid-height axis, and a point carried by the
+  // heading alone stays where the unbanked hull would have been -- which is where the running lights
+  // sat, a wing's width off the hull, through every turn. The one transform lives in HullMatrix.
+  [[nodiscard]] DirectX::XMFLOAT3 HullPointToWorld(const ShipView& _view, const DisplayPose& _pose,
+                                                   const DirectX::XMFLOAT3& _local) const noexcept;
+
+  // The matrix a hull is drawn with, from its presentation state and its displayed pose. Written
+  // once and used by Render and by HullPointToWorld, so the mesh and every point authored on it
+  // cannot disagree about where the hull is.
+  [[nodiscard]] DirectX::XMMATRIX HullMatrix(const ShipView& _view, const DisplayPose& _pose) const noexcept;
   void IssueMoveOrder(const DirectX::XMFLOAT3& _point, bool _hasFacing, float _facingRad);
   [[nodiscard]] float SimTimeSec() const noexcept;
 
