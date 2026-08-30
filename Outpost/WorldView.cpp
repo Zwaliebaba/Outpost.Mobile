@@ -132,6 +132,7 @@ void WorldView::ApplySnapshot()
         view.from = view.to;
         view.to = SampleOf(ship, tick);
       }
+      view.faction = ship.factionId;
       m_ships.push_back(std::move(view));
       // Struck off so the leftovers can be walked below. Generation 0 is never issued, so a null
       // handle can never match a live ship on a later pass either.
@@ -145,6 +146,7 @@ void WorldView::ApplySnapshot()
       const MeshHandle mesh = (row < m_hullMeshes.size()) ? m_hullMeshes[row] : INVALID_MESH;
       ShipView view;
       view.mesh = mesh;
+      view.faction = ship.factionId;
       view.to = SampleOf(ship, tick);
       view.from = view.to; // one sample: it is drawn there until the next one gives it somewhere to go
       if (mesh != INVALID_MESH)
@@ -206,6 +208,28 @@ void WorldView::ApplySnapshot()
 // once per ApplySnapshot, the whole of what the server said since the last one.
 void WorldView::ExplodeTheLost(std::uint64_t _tick)
 {
+  // Docked first, and through a loop of its own rather than a branch in the one below: a docked
+  // hull is removed with no ceremony -- no explosion, no shake, no SHIP LOST -- and the two lists
+  // arrive in the same message, so a consumer that treated the spans alike would look like a bug in
+  // the explosion rather than in the drain (Design/Stations.md 7.4, Stations-slice-plan.md 9). Only
+  // the player's own are counted for the line: a protector coming home is the station's business.
+  const std::span<const Game::ShipHandle> docked = m_receiver.Docked();
+  int ownDocked = 0;
+  for (std::size_t at = 0; at < m_carryHandles.size() && at < m_carryScratch.size(); ++at)
+  {
+    const Game::ShipHandle handle = m_carryHandles[at];
+    if (handle.generation == 0)
+      continue;
+    bool inside = false;
+    for (const Game::ShipHandle gone : docked)
+      inside = inside || gone == handle;
+    if (inside && m_carryScratch[at].faction == m_ownFaction)
+      ++ownDocked;
+  }
+  if (ownDocked > 0 && m_log != nullptr)
+    m_log->PushFormat(EventLog::Severity::Friendly, SimTimeSec(), "DOCKED | %d SHIPS", ownDocked);
+  m_receiver.ClearDocked();
+
   const std::span<const Game::ShipHandle> destroyed = m_receiver.Destroyed();
   for (std::size_t at = 0; at < m_carryHandles.size() && at < m_carryScratch.size(); ++at)
   {
@@ -593,9 +617,51 @@ int WorldView::RecallableIndex(Game::ShipHandle _handle) const noexcept
   return -1;
 }
 
-// Ray against each hull's oriented bounding box. A sphere would be far too loose on a hull three
+// Ray against a hull's oriented bounding box. A sphere would be far too loose on a hull three
 // times longer than it is wide.
-//
+float WorldView::RayHitDistance(std::size_t _index, const XMFLOAT3& _origin, const XMFLOAT3& _direction) const noexcept
+{
+  const ShipView& view = m_ships[_index];
+  // Against the hull as drawn: the latest record can be a hull-length ahead of it.
+  const DisplayPose pose = DisplayedPose(_index);
+  const float cosH = std::cos(pose.headingRad);
+  const float sinH = std::sin(pose.headingRad);
+
+  const XMFLOAT3 centre(ViewX(pose.pos) + (view.pickCentre.x * cosH + view.pickCentre.z * sinH) * SHIP_SCALE,
+                        (view.restY + view.pickCentre.y) * SHIP_SCALE,
+                        ViewZ(pose.pos) + (-view.pickCentre.x * sinH + view.pickCentre.z * cosH) * SHIP_SCALE);
+
+  // Into hull space: to the centre, undo the heading, undo the scale.
+  const float rx = _origin.x - centre.x;
+  const float rz = _origin.z - centre.z;
+  const float localOrigin[3] = {(rx * cosH - rz * sinH) / SHIP_SCALE, (_origin.y - centre.y) / SHIP_SCALE,
+                                (rx * sinH + rz * cosH) / SHIP_SCALE};
+  const float localDir[3] = {(_direction.x * cosH - _direction.z * sinH) / SHIP_SCALE, _direction.y / SHIP_SCALE,
+                             (_direction.x * sinH + _direction.z * cosH) / SHIP_SCALE};
+  const float extent[3] = {view.halfExtents.x * INPUT_PICK_PADDING, view.halfExtents.y * INPUT_PICK_PADDING,
+                           view.halfExtents.z * INPUT_PICK_PADDING};
+
+  float tMin = 0.0f;
+  float tMax = 1e30f;
+  bool hit = true;
+  for (int axis = 0; axis < 3 && hit; ++axis)
+  {
+    if (std::fabs(localDir[axis]) < 1e-8f)
+    {
+      hit = std::fabs(localOrigin[axis]) <= extent[axis];
+      continue;
+    }
+    float t1 = (-extent[axis] - localOrigin[axis]) / localDir[axis];
+    float t2 = (extent[axis] - localOrigin[axis]) / localDir[axis];
+    if (t1 > t2)
+      std::swap(t1, t2);
+    tMin = std::max(tMin, t1);
+    tMax = std::min(tMax, t2);
+    hit = tMax >= tMin;
+  }
+  return hit ? tMin : -1.0f;
+}
+
 // Somebody else's ship is not pickable at all, so no hover highlight, selection ring, tap, shift-tap
 // or double-tap can ever land on one. What a client cannot command it should not appear able to
 // (Design/Archive/Hostiles.md 7).
@@ -608,53 +674,40 @@ int WorldView::PickShip(float _xPx, float _yPx) const
 
   int best = -1;
   float bestT = 1e30f;
-  for (int i = 0; i < static_cast<int>(m_ships.size()) && i < static_cast<int>(state.size()); ++i)
+  for (std::size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
   {
-    if (!IsOwn(static_cast<size_t>(i)))
+    if (!IsOwn(i))
       continue;
-
-    const ShipView& view = m_ships[static_cast<size_t>(i)];
-    // Against the hull as drawn: the latest record can be a hull-length ahead of it.
-    const DisplayPose pose = DisplayedPose(static_cast<size_t>(i));
-    const float cosH = std::cos(pose.headingRad);
-    const float sinH = std::sin(pose.headingRad);
-
-    const XMFLOAT3 centre(ViewX(pose.pos) + (view.pickCentre.x * cosH + view.pickCentre.z * sinH) * SHIP_SCALE,
-                          (view.restY + view.pickCentre.y) * SHIP_SCALE,
-                          ViewZ(pose.pos) + (-view.pickCentre.x * sinH + view.pickCentre.z * cosH) * SHIP_SCALE);
-
-    // Into hull space: to the centre, undo the heading, undo the scale.
-    const float rx = origin.x - centre.x;
-    const float rz = origin.z - centre.z;
-    const float localOrigin[3] = {(rx * cosH - rz * sinH) / SHIP_SCALE, (origin.y - centre.y) / SHIP_SCALE,
-                                  (rx * sinH + rz * cosH) / SHIP_SCALE};
-    const float localDir[3] = {(direction.x * cosH - direction.z * sinH) / SHIP_SCALE, direction.y / SHIP_SCALE,
-                               (direction.x * sinH + direction.z * cosH) / SHIP_SCALE};
-    const float extent[3] = {view.halfExtents.x * INPUT_PICK_PADDING, view.halfExtents.y * INPUT_PICK_PADDING,
-                             view.halfExtents.z * INPUT_PICK_PADDING};
-
-    float tMin = 0.0f;
-    float tMax = 1e30f;
-    bool hit = true;
-    for (int axis = 0; axis < 3 && hit; ++axis)
+    const float t = RayHitDistance(i, origin, direction);
+    if (t >= 0.0f && t < bestT)
     {
-      if (std::fabs(localDir[axis]) < 1e-8f)
-      {
-        hit = std::fabs(localOrigin[axis]) <= extent[axis];
-        continue;
-      }
-      float t1 = (-extent[axis] - localOrigin[axis]) / localDir[axis];
-      float t2 = (extent[axis] - localOrigin[axis]) / localDir[axis];
-      if (t1 > t2)
-        std::swap(t1, t2);
-      tMin = std::max(tMin, t1);
-      tMax = std::min(tMax, t2);
-      hit = tMax >= tMin;
+      bestT = t;
+      best = static_cast<int>(i);
     }
-    if (hit && tMin < bestT)
+  }
+  return best;
+}
+
+int WorldView::PickStation(float _xPx, float _yPx) const
+{
+  XMFLOAT3 origin;
+  XMFLOAT3 direction;
+  m_camera->ScreenRay(_xPx, _yPx, origin, direction);
+  const std::span<const Game::ShipSnapshot> state = Ships();
+
+  int best = -1;
+  float bestT = 1e30f;
+  for (std::size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
+  {
+    // By the record's own flag, never by the hull table: the wire states what admits ships, and a
+    // client working it out from "immovable" would be the inference the flag exists to end.
+    if ((state[i].flags & Game::SHIP_FLAG_STATION) == 0)
+      continue;
+    const float t = RayHitDistance(i, origin, direction);
+    if (t >= 0.0f && t < bestT)
     {
-      bestT = tMin;
-      best = i;
+      bestT = t;
+      best = static_cast<int>(i);
     }
   }
   return best;
@@ -710,10 +763,63 @@ void WorldView::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float _f
   marker.posWorld = XMFLOAT3(_point.x, 0.0f, _point.z);
   marker.facingRad = heading;
   marker.hasFacing = _hasFacing;
+  marker.colour = MARKER_COLOUR;
   m_markers.push_back(marker);
 
   if (m_log)
     m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "MOVE ORDER | %d SHIPS", static_cast<int>(order.ships.size()));
+}
+
+void WorldView::IssueDockOrder(std::size_t _station)
+{
+  const std::span<const Game::ShipSnapshot> state = Ships();
+  if (m_transport == nullptr || _station >= state.size())
+    return;
+  const Game::FactionId owner = state[_station].factionId;
+
+  // The affordance tells the truth first: an owner that holds this client hostile refuses here,
+  // and nothing is sent. The simulation's gate still stands behind it, per the twice-on-purpose
+  // rule -- affordances tell the truth, and clients are not trusted (Design/Stations.md 9.2).
+  if (IsHostileToMe(owner))
+  {
+    if (m_log)
+    {
+      const char* name = (owner < m_factionNames.size()) ? m_factionNames[owner] : "UNKNOWN";
+      m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "DOCKING REFUSED | %s HOSTILE", name);
+    }
+    return;
+  }
+
+  Game::DockOrder order;
+  order.ships.reserve(m_ships.size());
+  for (std::size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
+  {
+    if (m_ships[i].selected)
+      order.ships.push_back(state[i].handle);
+  }
+  if (order.ships.empty())
+    return;
+  if (order.ships.size() > Game::MaxShipsPerOrder())
+  {
+    if (m_log)
+      m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "ORDER TOO LARGE | %d OF %d MAX", static_cast<int>(order.ships.size()),
+                        static_cast<int>(Game::MaxShipsPerOrder()));
+    return;
+  }
+  order.station = state[_station].handle;
+  if (!Game::WriteDockOrder(order, *m_transport))
+    return; // the send queue is full, which Transport.h calls normal: the tap is dropped
+
+  // The marker the tap earns, on the station and in its colour, so the tap visibly landed on the
+  // thing and not the ground beside it. No facing: a dock order has none.
+  const DisplayPose pose = DisplayedPose(_station);
+  OrderMarker marker;
+  marker.posWorld = XMFLOAT3(ViewX(pose.pos), 0.0f, ViewZ(pose.pos));
+  marker.colour = LiveryOf(owner, owner == m_ownFaction, false);
+  m_markers.push_back(marker);
+
+  if (m_log)
+    m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "DOCKING | %d SHIPS", static_cast<int>(order.ships.size()));
 }
 
 // --- pointer intent -----------------------------------------------------------------------------
@@ -803,6 +909,21 @@ void WorldView::OnTap(float _xPx, float _yPx, bool _shiftHeld, bool _doubleTap)
     if (m_tracker)
       m_tracker->ResetTapHistory(); // tapping a hull does not begin a double tap
     return;
+  }
+
+  // A station under the tap, with something selected, is a dock order. With nothing selected it is
+  // nothing at all: selection-for-inspection is the management menu's, which is the next phase
+  // (Design/Stations.md 9.1).
+  if (SelectedCount() > 0)
+  {
+    const int station = PickStation(_xPx, _yPx);
+    if (station >= 0)
+    {
+      IssueDockOrder(static_cast<std::size_t>(station));
+      if (m_tracker)
+        m_tracker->ResetTapHistory();
+      return;
+    }
   }
 
   // Double tapping empty ground is how a selection is dropped, since a single tap with a selection
@@ -1123,10 +1244,10 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const Sc
     }
 
     const float radius = MARKER_RADIUS * eased * (1.0f + beat * MARKER_PULSE_SCALE);
-    const float alpha = MARKER_COLOUR.a * fade * (0.72f + beat * 0.28f);
+    const float alpha = marker.colour.a * fade * (0.72f + beat * 0.28f);
     XMStoreFloat4x4(&world, XMMatrixScaling(radius * 2.0f, 1.0f, radius * 2.0f) *
                               XMMatrixTranslation(marker.posWorld.x, DECAL_LIFT_Y, marker.posWorld.z));
-    _renderer.DrawDecal(_gpu, m_quadMesh, world, Rgba{MARKER_COLOUR.r, MARKER_COLOUR.g, MARKER_COLOUR.b, alpha}, MARKER_THICKNESS, 0.10f);
+    _renderer.DrawDecal(_gpu, m_quadMesh, world, Rgba{marker.colour.r, marker.colour.g, marker.colour.b, alpha}, MARKER_THICKNESS, 0.10f);
 
     // Each pulse also throws a ripple outwards, which is what makes the count readable.
     if (beat > 0.0f)
@@ -1136,7 +1257,7 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const Sc
       XMStoreFloat4x4(&world, XMMatrixScaling(rippleRadius * 2.0f, 1.0f, rippleRadius * 2.0f) *
                                 XMMatrixTranslation(marker.posWorld.x, DECAL_LIFT_Y, marker.posWorld.z));
       _renderer.DrawDecal(_gpu, m_quadMesh, world,
-                          Rgba{MARKER_COLOUR.r, MARKER_COLOUR.g, MARKER_COLOUR.b, alpha * (1.0f - withinPulse) * 0.7f},
+                          Rgba{marker.colour.r, marker.colour.g, marker.colour.b, alpha * (1.0f - withinPulse) * 0.7f},
                           MARKER_THICKNESS * 0.6f, 0.0f);
     }
 
@@ -1147,7 +1268,7 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const Sc
       const float outX = marker.posWorld.x + std::sin(marker.facingRad) * radius * 1.5f;
       const float outZ = marker.posWorld.z + std::cos(marker.facingRad) * radius * 1.5f;
       XMStoreFloat4x4(&world, XMMatrixScaling(pip * 2.0f, 1.0f, pip * 2.0f) * XMMatrixTranslation(outX, DECAL_LIFT_Y, outZ));
-      _renderer.DrawDecal(_gpu, m_quadMesh, world, Rgba{MARKER_COLOUR.r, MARKER_COLOUR.g, MARKER_COLOUR.b, alpha}, 1.0f, 1.0f);
+      _renderer.DrawDecal(_gpu, m_quadMesh, world, Rgba{marker.colour.r, marker.colour.g, marker.colour.b, alpha}, 1.0f, 1.0f);
     }
   }
 

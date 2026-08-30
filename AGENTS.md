@@ -37,9 +37,13 @@ Command, azure in the scene and a hollow diamond on the minimap from the first f
 inside the 4 km half-range, a farther one clamped to the map's edge, because a mark is static
 content and not a record. A
 station is a Structure with a row in `World`'s station table (ADR 0038); the Vandal base is a row
-in the same table. The simulation can dock ships at one and scramble its garrison, and the client
-cannot yet ask it to: the tap, the refusal line and the debug key that provokes the Vanguard are
-Stations slice 6. `CONTACTS` counts the records whose faction holds the player hostile by the
+in the same table. Select ships and tap a station and they fly to it and dock — they leave the
+world and the log says so, and there is no undocking yet, which is the station management menu's
+(the next phase). A station whose owner holds the player hostile refuses the order before it is
+sent, the Vandal base from the first frame. F6 declares a selected ship an aggressor against the
+nearest Vanguard station: the law turns red across the map, the station launches its Corvette
+garrison one every 1.5 s, and they shadow the aggressor until it dies -- which nothing can make it
+do, since there is still no combat (ADR 0041). `CONTACTS` counts the records whose faction holds the player hostile by the
 update header's mask (ADR 0039), which at boot is the Vandal four and never a Vanguard station.
 There is still no combat. Three worlds and six asteroids share the sky with the fleet, and they are
 made two different ways (`Design/Decisions/0026`): a world is a smooth sphere wearing an authored

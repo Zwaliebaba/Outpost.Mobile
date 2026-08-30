@@ -82,7 +82,14 @@ private:
   //
   // Accumulated as offsets from the first own ship rather than by averaging fields, so a fleet
   // straddling a sector boundary has a center between its ships and not a sector away.
-  [[nodiscard]] Game::WorldPos SubscriberCentre() const
+  //
+  // With no own ship at all -- every hull docked, which Stations made an ordinary way for a fleet
+  // to leave the world -- the centre holds where it last was. It used to fall back to a default
+  // WorldPos, the universe origin, and the moment the last ship docked the interest set jumped
+  // 3.5 km away: the station the player had just flown into left the client's view and, on
+  // screen, vanished. A player looking at a station keeps looking at it; the day undocking exists
+  // the ship comes out under a centre that never moved (Design/Stations-slice-6.md 5).
+  [[nodiscard]] Game::WorldPos SubscriberCentre()
   {
     const std::span<const Game::ShipState> ships = m_world.Ships();
     Game::WorldPos centre;
@@ -103,8 +110,10 @@ private:
       sumZ += Game::OffsetZ(centre, ship.posWorld);
       ++count;
     }
-    if (count > 0)
-      Game::Translate(centre, sumX / static_cast<float>(count), sumZ / static_cast<float>(count));
+    if (count == 0)
+      return m_lastCentre;
+    Game::Translate(centre, sumX / static_cast<float>(count), sumZ / static_cast<float>(count));
+    m_lastCentre = centre;
     return centre;
   }
 
@@ -115,5 +124,8 @@ private:
   // Whose orders this subscriber may give. One subscriber today, so it is the player's; the day a
   // login exists it arrives with the session and only Connect changes.
   Game::FactionId m_subscriberFaction = Game::FACTION_PLAYER;
+
+  // Where the subscriber last had a fleet to look from (SubscriberCentre).
+  Game::WorldPos m_lastCentre;
 };
 } // namespace Outpost

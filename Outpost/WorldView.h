@@ -154,6 +154,10 @@ public:
     Neuron::Rgba lastLivery{1.0f, 1.0f, 1.0f, 1.0f}; // so the debris wears the paint the hull did
     bool drawn = false;                              // false until the first Render; a ship that vanishes before one does not explode
 
+    // Whose the record was, kept past the record: a hull that docked is counted for the log only
+    // when it was the player's, and by then the snapshot no longer holds it.
+    Game::FactionId faction = Game::FACTION_PLAYER;
+
     bool selected = false;
     float ringFade = 0.0f;  // 0..1 alpha ramp on select and deselect
     float ringScale = 0.0f; // chases the selected state through a spring, so it overshoots
@@ -173,13 +177,16 @@ public:
     Game::FactionId faction = Game::FACTION_VANGUARD;
   };
 
-  // One per move order, at the point that was tapped rather than one per ship.
+  // One per order, at the point that was tapped rather than one per ship. A move order's is the
+  // marker colour; a dock order's flashes in the station's faction colour, so the tap visibly landed
+  // on the thing and not the ground beside it (Design/Stations.md 9.2).
   struct OrderMarker
   {
     DirectX::XMFLOAT3 posWorld{0.0f, 0.0f, 0.0f};
     float facingRad = 0.0f;
     bool hasFacing = false;
     float ageSec = 0.0f;
+    Neuron::Rgba colour{1.0f, 1.0f, 1.0f, 1.0f};
   };
 
   void Init(Neuron::Transport& _transport, Neuron::Camera& _camera, const Neuron::MeshLibrary& _meshes, Neuron::MeshHandle _quadMesh);
@@ -292,6 +299,13 @@ public:
     m_log = &_log;
   }
 
+  // What a faction is called, indexed by FactionId, for the refusal line. Content, so the
+  // composition root supplies it as it supplies the HUD's; a faction past the end is unnamed.
+  void SetFactionNames(std::span<const char* const> _names) noexcept
+  {
+    m_factionNames = _names;
+  }
+
   // The explosion's draw path. Optional, like the log: with no renderer the effect is simulated and
   // never drawn, which is what a boot with a missing texture leaves.
   void SetFxRenderer(Neuron::FxRenderer& _fx) noexcept
@@ -397,7 +411,24 @@ private:
   // FxRenderer::Begin wants the lighting the scene was drawn under. The decals themselves do not
   // need it -- they are shaped entirely in the pixel shader from root constants.
   void DrawFeedback(Neuron::SceneRenderer& _renderer, Neuron::GpuDevice& _gpu, const Neuron::SceneFrame& _frame);
+
+  // Where a screen ray meets record _index's hull, as a distance along the ray, or a negative
+  // number for a miss. Against the oriented box of the hull as drawn. The two pickers below are two
+  // filters over it and nothing else, so they cannot disagree about what a hull is.
+  [[nodiscard]] float RayHitDistance(std::size_t _index, const DirectX::XMFLOAT3& _origin,
+                                     const DirectX::XMFLOAT3& _direction) const noexcept;
+
+  // Own hulls only: what may be selected, and therefore ordered.
   [[nodiscard]] int PickShip(float _xPx, float _yPx) const;
+
+  // Records whose flag says station, of any faction. Consulted from exactly one place -- a tap with
+  // a non-empty selection -- because a station is a place to send ships and not a thing to hold
+  // (Design/Stations.md 9.1).
+  [[nodiscard]] int PickStation(float _xPx, float _yPx) const;
+
+  // Sends the selection to dock at record _station, or refuses before sending: the affordance
+  // tells the truth first, and the simulation's gate stands behind it (Design/Stations.md 9.2).
+  void IssueDockOrder(std::size_t _station);
 
   // Whether record _index is one this client may take hold of. Every selection path goes through it:
   // PickShip for taps and hovers, OnBoxSelect for a band, and RecallableIndex for a control group.
@@ -541,6 +572,7 @@ private:
   std::vector<Game::ShipHandle> m_groups[CONTROL_GROUPS];
   int m_activeGroup = -1;
   EventLog* m_log = nullptr;
+  std::span<const char* const> m_factionNames;
 
   int m_hoverShip = -1;
   bool m_boxActive = false;

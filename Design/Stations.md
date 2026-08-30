@@ -1,8 +1,8 @@
 # Stations — Core Vanguard Command, docking, and the protector response
 
 **Status: in progress. Slices 1-4 -- the whole `GameLogic` half -- merged on 2026-08-30 (pull
-request #22) and their work orders are in `Archive/`. Slice 5, the Vanguard scene, is written and
-in review; slice 6 is next.** Four decisions were
+request #22), slice 5 -- the Vanguard scene -- on the same day (#24), and their work orders are in
+`Archive/`. Slice 6, the last, is written and in review.** Four decisions were
 put to the owner on 2026-08-30 and taken (§15); each was the recommended option. §16 lists the
 slices and the dependencies between them, and
 [`Stations-slice-plan.md`](Stations-slice-plan.md) grounds that list against the tree.
@@ -919,8 +919,8 @@ shape; work orders are written per slice when it is picked up.
 | 2 | **Who is who**: `FACTION_VANGUARD`, the `FACTION_HOSTILE` → `FACTION_VANDAL` rename at every caller (§4.1), `Standing` + `DEFAULT_STANDINGS` + the table in `World`, the standing half of `RecordAggression`, the station table + `MakeStation` + `StationDesc`, the record's flags byte, the update header's `hostileMask`, their tests — *landed*, [work order](Archive/Stations-slice-2.md) | `GameLogic` (+ the rename's `Outpost` call sites) | — | [stations are ships with a side table](Decisions/0038-stations-are-ships-with-a-side-table.md); [standings are simulation state stated per subscriber](Decisions/0039-standings-are-simulation-state-stated-per-subscriber.md) |
 | 3 | **Docking**: `DespawnCause` + the docked list on the wire, `DockOrder` write/read, `IssueDockOrder` + gates, `m_dockings` + the dock pass + capture + ledger, `DOCK_CAPTURE_METRES` + `DockRangeMetres`, move-order cancellation, despawn repair, their tests — *landed*, [work order](Archive/Stations-slice-3.md) | `GameLogic` | 2 | [a departure carries a cause on the wire](Decisions/0040-a-departure-carries-a-cause.md) |
 | 4 | **The response**: target lists + the launch metronome, `m_protectors` + the pursuit pass + `PURSUIT_REPLAN_METRES`, stand-down-and-dock-home, the full `RecordAggression`, the replay test over the whole scene — *landed*, [work order](Archive/Stations-slice-4.md) | `GameLogic` | 2, 3 | [the protector response reacts to stated acts, not senses](Decisions/0041-the-protector-response-reacts-to-stated-acts.md) |
-| 5 | **The Vanguard scene**: root calls `LayOutSystem` + spawns the stations + registers the Vandal base, planet visuals follow the sites (F5 reseeds looks only), `VANGUARD_*`/`HUD_VANGUARD_BLUE` colors + the faction-tint table, `FACTION_NAMES` beside `HULL_NAMES`, minimap station dots + hollow marks + edge clamping, `hostileMask` consumption, `CONTACTS` by mask, `STATIONS ONLINE` boot line, AGENTS.md's what-is-here sentences, screenshots at two sizes — *in review*, [work order](Stations-slice-5.md) | `Outpost` | 1, 2 | — |
-| 6 | **Docking and the response, on screen**: `PickStation` + the tap order + refusal affordance + marker flash, docked-list consumption (silent removal, `DOCKED` line), F6 + `VANGUARD PROVOKED`, log lines, screenshots of a dock and of a scramble at two sizes | `Outpost` | 3, 4, 5 | — |
+| 5 | **The Vanguard scene**: root calls `LayOutSystem` + spawns the stations + registers the Vandal base, planet visuals follow the sites (F5 reseeds looks only), `VANGUARD_*`/`HUD_VANGUARD_BLUE` colors + the faction-tint table, `FACTION_NAMES` beside `HULL_NAMES`, minimap station dots + hollow marks + edge clamping, `hostileMask` consumption, `CONTACTS` by mask, `STATIONS ONLINE` boot line, AGENTS.md's what-is-here sentences, screenshots at two sizes — *landed*, [work order](Archive/Stations-slice-5.md) | `Outpost` | 1, 2 | — |
+| 6 | **Docking and the response, on screen**: `PickStation` + the tap order + refusal affordance + marker flash, docked-list consumption (silent removal, `DOCKED` line), F6 + `VANGUARD PROVOKED`, log lines, screenshots of a dock and of a scramble at two sizes — *in review*, [work order](Stations-slice-6.md) | `Outpost` | 3, 4, 5 | — |
 
 Slices 1–4 are decided by their tests and by the existing suites staying green — slice 2's claim
 that a station-less world ticks bit-identically is exactly `GameLogicTests` passing unchanged.

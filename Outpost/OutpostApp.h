@@ -151,8 +151,9 @@ private:
 
   // Debug: 1, 2 and 3 slow, restore and speed up the simulation without touching the frame rate;
   // F1 shows the readout, F3 shakes the camera, F4 despawns the selection so the explosion has
-  // something to consume, and **F5 reseeds every body's look and the sky with them** -- never the
-  // sites, which are the layout's (m_layout). F5 does not release the buffers the last
+  // something to consume, F6 declares the first selected ship an aggressor against the nearest
+  // Vanguard station so the response can be watched, and **F5 reseeds every body's look and the sky
+  // with them** -- never the sites, which are the layout's (m_layout). F5 does not release the buffers the last
   // scene's bodies are in -- BodyRenderer keeps every handle for the run -- so each press costs the
   // memory of the scene it replaced. That is acceptable for a tuning key and is not acceptable for
   // anything a player does; a ReleaseBody is a slice of its own the day a body has to go away.
