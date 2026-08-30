@@ -79,3 +79,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0042](0042-the-wires-sector-index-is-32-bits.md) | The wire's sector index is 32 bits, and a position rides a 0.125 m lattice | accepted |
 | [0043](0043-the-tick-rate-is-fixed-at-60-hz.md) | The tick rate is fixed at 60 Hz, and capacity is bought elsewhere | accepted |
 | [0044](0044-identity-is-a-shard-scoped-serial.md) | Identity is a shard-scoped serial, carried for life; the handle stays in-process | accepted |
+| [0045](0045-a-server-is-told-what-to-be-by-a-file.md) | A server is told what to be by a file the composition root reads | accepted |

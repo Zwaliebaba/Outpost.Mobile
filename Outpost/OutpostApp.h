@@ -3,6 +3,7 @@
 #include "BodyCatalogue.h"
 #include "EventLog.h"
 #include "Hud.h"
+#include "ServerConfig.h"
 #include "WorldSimulation.h"
 #include "WorldView.h"
 
@@ -43,6 +44,15 @@ public:
   void Shutdown();
 
 private:
+  // Reads Assets/Server.cfg into m_config, or leaves it at the values this executable compiles in.
+  //
+  // A missing file is not a failure -- the defaults are what the game booted on before there was a
+  // file at all. A malformed one is: the parser applies nothing and names the line, and this root
+  // logs that and boots on the defaults, because a typo in a tuning file should not be a black
+  // screen. A headless root would print the same message and exit non-zero, which is why the
+  // parser decides nothing and this function does (ADR 0045).
+  void LoadServerConfig();
+
   // Opens the QUIC link both halves will talk over: library, listener, client, and a bounded wait for
   // the handshake. False means the game runs on the loopback instead, and the reason is already in
   // the event log by the time it returns.
@@ -98,6 +108,11 @@ private:
   // here and nowhere else (Design/Archive/QuicTransport.md 6). Booting on the real stack is the point --
   // a path nobody runs is a path nobody notices breaking -- and the fallback is what keeps a taken
   // port or a locked-down key store from being the reason the game did not start.
+  // What this root was told to be, read once at boot and a value from then on. It is the only thing
+  // in the executable that came out of a file rather than out of a header, which is AGENTS.md 5's
+  // rule about where configuration is allowed to enter (ADR 0045).
+  ServerConfig m_config;
+
   Game::World m_world;
   WorldSimulation m_simulation{m_world};
 
