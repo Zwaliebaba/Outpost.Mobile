@@ -1,6 +1,6 @@
 # The MMO scalability plan — the review as slices
 
-**Status: fourteen of the twenty-four slices have landed.** The seam: 2 (the despawn log is
+**Status: fifteen of the twenty-four slices have landed.** The seam: 2 (the despawn log is
 cursored), 3 with 4 folded into it (the publisher), 5 and 6 (the reliable lane, and departures and
 orders on it, which retires finding E1), 7 (listener slots recycled), and the loopback fallback is
 gone (ADR 0028). The view: 8 (trail and glow batching), 9 (frustum culling), 10 (hull instancing).
@@ -9,7 +9,8 @@ slices of its own design, so architecture is islands on a world-fixed lattice an
 is gone. The tree: 21 (the guards widened) and 22 (the dead helper deleted). Slice 12 was decided
 rather than built: 60 Hz stays. Slice 18 opens the client track's second half -- a copy queue and
 render handles that can be freed -- built and run on Windows on arrival, which the branch it came
-from could not do. **What is left is phase 3 — slices 15 through 17, 19 and 20 — plus 23 and 24.**
+from could not do. Slice 23 has taken its first project. **What is left is phase 3 — slices 15
+through 17, 19 and 20 — plus 24 and slice 23's promotion commit.**
 This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
 (tree at `de12b6d`) into an ordered slice plan in the shape `Design/README.md` defines: one slice,
 one branch, one pull request. The review is the evidence; this document is the work. Where a slice
@@ -160,7 +161,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 20 | Body LOD and culling completion | `NeuronClient` | M | 9 | G5 |  |  |
 | 21 | Guard widening and the docs re-trued | `Build/`+prose | S | — | C2 C3 C4 |  | landed |
 | 22 | Legacy helper cleanup | `NeuronCore` | S | — | C1 |  | landed |
-| 23 | clang-tidy widens a project | `.github/` | S | — | C2 |  |  |
+| 23 | clang-tidy widens a project | `.github/` | S | — | C2 |  | landed: NeuronServer, advisory |
 | 24 | The server configuration file | `Outpost` | M | — | — | ADR | cuttable since §4.3 |
 
 **Quick wins:** slices 1, 7, 13, 21 and 22 are each a sitting, depend on nothing, and retire real
@@ -723,6 +724,25 @@ AGENTS.md §6 as the only way a linter should start gating. Repeat per project a
 sitting each; NeuronCore follows slice 22 so the sweep meets a clean file.
 **Acceptance.** Two green runs, then the promotion commit; AGENTS.md §6's scope sentence updated
 in the same commit.
+
+**As landed**, NeuronServer joined the step **advisory**: the exit code is GameLogic's count alone,
+so a finding in NeuronServer is printed and the job stays green. The promotion commit is owed and is
+one line — `exit $counts['GameLogic']` grows a `+ $counts['NeuronServer']` — after two runs on the
+runner come back clean.
+
+The step now walks a list of projects rather than one directory, so the third joins as one entry
+rather than as a second copy of the loop. Its file list is still read off disk, for the reason the
+test-suite list is: a file a later slice adds is checked the day it lands.
+
+**Measured before landing, not asserted**: `clang-tidy 18` on Linux over `ServerHost.cpp` — which
+reaches `ServerHost.h` and `Simulation.h` through the header filter — reports nothing at all. That
+is why NeuronServer was the project to take next, along with being the smallest, headless, and one
+of only two that do not reach the D3D12 headers. It is *not* why it gates: the runner ships the
+VS-bundled LLVM 22, and `.clang-tidy`'s own status block records that the newer one has already seen
+a defect the older one did not. "Clean" is always clean under something, and the something that
+counts is the runner.
+
+NeuronCore is next, and slice 22 swept its one header for exactly this.
 
 #### Slice 24 — the server configuration file (`Outpost`, M + ADR)
 
