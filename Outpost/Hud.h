@@ -73,10 +73,11 @@ public:
   // until it does. The same goes for hull and shield, which have no damage model to read.
   //
   // Three of these are real. The sector is the position under the camera target, of which the
-  // minimap names the sector pair. contacts is the count of records this client holds that are not
-  // its own -- the subscription, not the map rectangle, so a contact past the map edge is counted
-  // and clipped. ownFaction is session identity: the HUD colors by allegiance and cannot know whose
-  // side it is on without being told.
+  // minimap names the sector pair. contacts is the count of records this client holds whose faction
+  // holds it hostile, by the update header's mask -- the subscription, not the map rectangle, so a
+  // contact past the map edge is counted and clipped, and not "not mine", so a Vanguard station in
+  // view is not one (Design/Stations.md 9.4). ownFaction is session identity: the HUD colors by
+  // allegiance and cannot know whose side it is on without being told.
   struct Frame
   {
     Stats stats;
@@ -91,6 +92,9 @@ public:
     float hullFraction = 1.0f;
     float shieldFraction = 1.0f;
     std::span<const char* const> hullNames; // indexed by ShipSnapshot::hullId; an id past the end is unnamed
+    // Indexed by FactionId, on the same terms. Plumbed here for the docking refusal line, which is
+    // the first thing to print one and arrives with Stations slice 6; nothing reads it yet.
+    std::span<const char* const> factionNames;
   };
 
   void Draw(Neuron::TextRenderer& _text, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view, const Neuron::Camera& _camera,

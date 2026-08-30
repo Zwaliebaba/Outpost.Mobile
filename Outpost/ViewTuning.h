@@ -3,7 +3,9 @@
 #include "BodyRenderer.h"
 #include "RenderTypes.h"
 
+#include "HullSpec.h"
 #include "SimTuning.h"
+#include "UniverseLayout.h"
 
 #include <cstddef>
 
@@ -365,6 +367,23 @@ inline constexpr float BODY_START_PLANET_DISTANCE_METRES = 3500.0f;
 inline constexpr float BODY_START_PLANET_DEPTH_METRES = 3300.0f; // below the fleet's plane
 inline constexpr int BODY_START_ASTEROIDS = 6;
 
+// **Where the worlds sit is the layout's now, not this file's.** The two numbers above are still
+// the framing they always were, and they reach the scene as the pin on the starting system's first
+// planet: LayOutSystem draws the other sites, and planet 0 takes this bearing and orbit verbatim so
+// the worked camera framing survives as content instead of being superseded by a die roll
+// (Design/Stations.md 5.3). Every other SystemDesc field keeps its default on purpose -- the
+// defaults are the shipped numbers, and GameLogicTests proves the grid-ceiling bound against them,
+// so a root that overrode the orbit band would be running a system the test never saw
+// (UniverseLayout.h). The star anchor is the universe origin; nothing draws a star.
+//
+// Its own seed beside BODY_START_SEED, because F5 must not reach it: a reroll changes what the
+// worlds look like and never where they are, since a station stands on every site and a debug key
+// that moved simulation content would be a debug key changing the world.
+inline constexpr std::uint64_t UNIVERSE_LAYOUT_SEED = 0x53797331ull; // "Sys1"
+inline constexpr Game::SystemDesc STARTING_SYSTEM{.pinFirstPlanet = true,
+                                                  .firstPlanetBearingRad = BODY_START_PLANET_BEARING_DEG * (DirectX::XM_PI / 180.0f),
+                                                  .firstPlanetOrbitMetres = BODY_START_PLANET_DISTANCE_METRES};
+
 // **The world wears a picture rather than a generated surface.** BodyMeshBuilder::BuildSphere makes
 // a smooth sphere and PlanetPS samples Terrain\Planet1.dds off the direction, so neither the height
 // field, the colour ramp nor the wire-frame outline runs for it. Everything that decides what a
@@ -397,6 +416,16 @@ inline constexpr float HOSTILE_PATROL_RING_METRES = 400.0f;
 inline constexpr float HOSTILE_PATROL_CRUISE_MPS = 10.0f; // 29 % of an Interceptor's maximum: a lap in about 4.2 minutes
 inline constexpr int HOSTILE_PATROL_COUNT = 3;
 
+// The Vanguard's garrison: what every station of the starting system launches when it is attacked,
+// and how (Design/Stations.md 8.2). Content, passed to MakeStation by the composition root the way
+// the patrol numbers above are passed to AssignPatrol -- not a tuning constant, because what the
+// root spawns is content. Nothing in the running game attacks a station until slice 6's debug key,
+// so these are exercised by GameLogicTests and by nothing else yet.
+inline constexpr Game::HullId VANGUARD_PROTECTOR_HULL = Game::HullId::Corvette;
+inline constexpr std::uint32_t VANGUARD_PROTECTOR_COMPLEMENT = 3;
+inline constexpr std::uint32_t VANGUARD_LAUNCH_EVERY_TICKS = 90;
+inline constexpr std::uint32_t VANGUARD_TARGET_CAP = 4;
+
 // --- HUD ---------------------------------------------------------------------------------------
 // Flat and square-cornered: no blur, no glow, no gradients. Sizes are in px at 96 DPI and scale
 // with the window DPI; the layout is anchored to corners and edges, so no width is assumed.
@@ -416,6 +445,11 @@ inline constexpr Neuron::Rgba HUD_ACCENT_AMBER{MARKER_COLOUR.r, MARKER_COLOUR.g,
 // picks a red-ish livery must not turn their own dots into the colour the HUD uses for hostiles, so
 // nothing on the HUD reads SELECTABLE_LIVERIES except the player's own hull bar.
 inline constexpr Neuron::Rgba HUD_ALERT_RED{LIVERY_VANDAL.r, LIVERY_VANDAL.g, LIVERY_VANDAL.b, 1.0f}; // hostile, and alerts
+// Derived the same way, for the same reason: the blue a Vanguard record draws in on the map is the
+// azure the Vanguard flies in the scene. Only while the mask says they are not hostile -- the day
+// the law turns on the player, every Vanguard dot goes HUD_ALERT_RED with the hulls
+// (Design/Stations.md 9.3).
+inline constexpr Neuron::Rgba HUD_VANGUARD_BLUE{LIVERY_VANGUARD.r, LIVERY_VANGUARD.g, LIVERY_VANGUARD.b, 1.0f};
 inline constexpr Neuron::Rgba HUD_INFO_GREY{0.45f, 0.50f, 0.56f, 1.0f};
 inline constexpr Neuron::Rgba HUD_BAR_TRACK{1.0f, 1.0f, 1.0f, 0.07f};
 inline constexpr float HUD_ACTIVE_OUTLINE_ALPHA = 0.7f; // a pressed or active button, in the accent
@@ -444,6 +478,12 @@ inline constexpr float HUD_MINIMAP_DOT_PX = 4.0f;
 // 25 px, a quarter of the map for one base. Iconography beats cartography at 0.05 px per metre.
 inline constexpr float HUD_MINIMAP_STRUCTURE_DOT_PX = 8.0f;
 inline constexpr float HUD_MINIMAP_HALF_RANGE = 1400.0f; // metres from the camera target to the map's edge; wider than CAMERA_MAX_ZOOM sees
+// A station mark: a hollow diamond at a station of the layout, drawn from static content rather than
+// from a record, so it is there from the first frame however far away the station is. One past the
+// map's edge is clamped to the edge and dimmed rather than clipped like a dot -- direction honest,
+// distance saturated (Design/Stations.md 9.3).
+inline constexpr float HUD_MINIMAP_MARK_PX = 10.0f;
+inline constexpr float HUD_MINIMAP_MARK_CLAMPED_ALPHA = 0.5f;
 
 inline constexpr float HUD_RAIL_BUTTON_PX = 60.0f; // a hit target, so never below 44
 inline constexpr float HUD_RAIL_GAP_PX = 10.0f;

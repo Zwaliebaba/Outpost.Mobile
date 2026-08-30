@@ -27,6 +27,21 @@ Rgba WithAlpha(Rgba _colour, float _alpha) noexcept
   return Rgba{_colour.r, _colour.g, _colour.b, _alpha};
 }
 
+// The overview column of Design/Stations.md 9.3: what a faction is to the viewer, as a map colour.
+// The mask row outranks the Vanguard row for the reason WorldView::LiveryOf gives -- turn criminal
+// and the law turns red, dots and hulls together. A faction with no row is red, because a stranger
+// drawn as a friend is the one mistake this table must not make.
+Rgba OverviewColourOf(Game::FactionId _faction, bool _own, bool _hostileToMe) noexcept
+{
+  if (_own)
+    return HUD_ACCENT_GREEN;
+  if (_hostileToMe)
+    return HUD_ALERT_RED;
+  if (_faction == Game::FACTION_VANGUARD)
+    return HUD_VANGUARD_BLUE;
+  return HUD_ALERT_RED;
+}
+
 // "12,480": thousands separated, the way the mock writes a resource total.
 void FormatThousands(char* _out, size_t _size, int _value) noexcept
 {
@@ -366,27 +381,57 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
     }
   }
 
+  // Marks: every station of the layout, as a hollow diamond in its owner's colour, from static
+  // content rather than from a record -- so it is there from the first frame however far off the
+  // station is. A second draw path beside the dots and deliberately not a parameter on it: a dot
+  // past the edge is clipped, a mark is clamped to the edge at reduced alpha, direction honest and
+  // distance saturated, because a mark's whole job is to say which way to fly. Drawn before the
+  // dots, so a live record at the same spot draws its filled dot over the hollow mark
+  // (Design/Stations.md 9.3).
+  {
+    const float half = HUD_MINIMAP_MARK_PX * 0.5f * s;
+    const float line1 = std::max(1.0f, std::floor(s));
+    for (const WorldView::StationMark& mark : _view.StationMarks())
+    {
+      const float rawX = toMapX(_view.ViewX(mark.posWorld));
+      const float rawY = toMapY(_view.ViewZ(mark.posWorld));
+      const float x = std::clamp(rawX, map.x0 + half, map.x1 - half);
+      const float y = std::clamp(rawY, map.y0 + half, map.y1 - half);
+      const bool clamped = x != rawX || y != rawY;
+
+      const bool own = mark.faction == _frame.ownFaction;
+      Rgba colour = OverviewColourOf(mark.faction, own, _view.IsHostileToMe(mark.faction));
+      if (clamped)
+        colour = WithAlpha(colour, colour.a * HUD_MINIMAP_MARK_CLAMPED_ALPHA);
+      _text.DrawScreenLine(x, y - half, x + half, y, line1, colour);
+      _text.DrawScreenLine(x + half, y, x, y + half, line1, colour);
+      _text.DrawScreenLine(x, y + half, x - half, y, line1, colour);
+      _text.DrawScreenLine(x - half, y, x, y - half, line1, colour);
+    }
+  }
+
   // Blips, colored by allegiance. The server states whose a ship is and this is where the client
-  // turns that identity into a relation: anything that is not the viewer's own draws red, and an
-  // immovable hull draws at the larger dot so a base reads bigger than a fighter without pretending
-  // to scale (Design/Archive/Hostiles.md 7). The hull table is how a station is told from a ship, so no wire
-  // field had to be invented for it.
+  // turns that identity into a relation, through the update header's mask rather than by inference
+  // (OverviewColourOf). A station draws at the larger dot so a base reads bigger than a fighter
+  // without pretending to scale (Design/Archive/Hostiles.md 7) -- by the record's own flag, because
+  // "immovable hull of another faction" is the client working out server state, which is the thing
+  // the flag exists to stop (Design/Stations.md 6.2).
   {
     const std::span<const Game::ShipSnapshot>& ships = _ships;
     for (size_t i = 0; i < ships.size(); ++i)
     {
       const bool own = ships[i].factionId == _frame.ownFaction;
-      const bool structure = Game::HullSpecOf(ships[i].hullId).immovable;
-      const float dot = (!own && structure) ? HUD_MINIMAP_STRUCTURE_DOT_PX * s : HUD_MINIMAP_DOT_PX * s;
+      const bool station = (ships[i].flags & Game::SHIP_FLAG_STATION) != 0;
+      const float dot = station ? HUD_MINIMAP_STRUCTURE_DOT_PX * s : HUD_MINIMAP_DOT_PX * s;
       const float x = toMapX(_view.ViewX(ships[i].posWorld));
       const float y = toMapY(_view.ViewZ(ships[i].posWorld));
       // Clipped against the dot's own size, so the bigger square does not hang over the edge.
       if (x < map.x0 + dot || x > map.x1 - dot || y < map.y0 + dot || y > map.y1 - dot)
         continue;
 
-      Rgba colour = HUD_ALERT_RED;
-      if (own)
-        colour = _view.IsSelected(i) ? HUD_ACCENT_GREEN : WithAlpha(HUD_ACCENT_GREEN, 0.7f);
+      Rgba colour = OverviewColourOf(ships[i].factionId, own, _view.IsHostileToMe(ships[i].factionId));
+      if (own && !_view.IsSelected(i))
+        colour = WithAlpha(colour, 0.7f);
       _text.DrawScreenRect(x - dot * 0.5f, y - dot * 0.5f, x + dot * 0.5f, y + dot * 0.5f, colour);
     }
   }

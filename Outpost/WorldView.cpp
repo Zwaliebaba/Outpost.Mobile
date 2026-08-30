@@ -559,8 +559,7 @@ Rgba WorldView::LiveryOf(Game::FactionId _faction, bool _own, bool _hostileToMe)
 {
   // The hostile row outranks the faction rows (Design/Stations.md 9.3): a Vanguard ship whose
   // faction holds this client hostile paints the Vandals' red, because the law turning on you is the
-  // thing the player must see. FACTION_VANGUARD exists in GameLogic and nothing spawns one yet; the
-  // row is written now so that the day Stations lands, no client code changes.
+  // thing the player must see.
   if (_own)
     return SELECTABLE_LIVERIES[PLAYER_LIVERY_INDEX];
   if (_hostileToMe)
@@ -911,10 +910,11 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     // take it; the plating and the glass are the model's own whoever is flying
     // (Design/Archive/NmoFormat.md 5.5).
     //
-    // hostileMask arrives with Design/Stations.md; until it does, "hostile to me" is the existing
-    // "not my faction" test, and it is a parameter so that swapping the source is one call site.
+    // "Hostile to me" is the server's word, from the update header's mask, and never inferred from
+    // the faction: a Vanguard hull is azure until the law turns on the player, and then it is red
+    // with the Vandals' (Design/Stations.md 4.3, 9.3).
     const bool own = IsOwn(i);
-    const Rgba livery = LiveryOf(state[i].factionId, own, !own);
+    const Rgba livery = LiveryOf(state[i].factionId, own, IsHostileToMe(state[i].factionId));
     view.lastLivery = livery;
 
     // Selection is a brightness now, not a hue: a mint-green selected hull would read as a different

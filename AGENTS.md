@@ -31,14 +31,23 @@ ring around it, wearing the Vandal Collective's red on the minimap and on the pa
 hull declares as livery -- the plating and the canopy are the model's own paint whoever is flying
 (ADR 0036) -- and counted as contacts, and they cannot
 be selected or ordered — the simulation refuses an order from the wrong faction and the client does
-not offer one.
-There is still no combat. One world and six asteroids share the sky with the fleet, and they are
-made two different ways (`Design/Decisions/0026`): the world is a smooth sphere wearing an authored
+not offer one. The government is here too: the starting solar system is laid out from a seed
+(`Game::LayOutSystem`, ADR 0037), and at each of its three planets stands a station of Core Vanguard
+Command, azure in the scene and a hollow diamond on the minimap from the first frame — clamped to
+the map's edge while it is out of range, because a mark is static content and not a record. A
+station is a Structure with a row in `World`'s station table (ADR 0038); the Vandal base is a row
+in the same table. The simulation can dock ships at one and scramble its garrison, and the client
+cannot yet ask it to: the tap, the refusal line and the debug key that provokes the Vanguard are
+Stations slice 6. `CONTACTS` counts the records whose faction holds the player hostile by the
+update header's mask (ADR 0039), which at boot is the Vandal four and never a Vanguard station.
+There is still no combat. Three worlds and six asteroids share the sky with the fleet, and they are
+made two different ways (`Design/Decisions/0026`): a world is a smooth sphere wearing an authored
 equirectangular map, sampled per pixel off the direction so it has no seam, while a rock is still a
 seeded low-poly heightfield on a cube-sphere with one flat colour per triangle from a colour ramp and
 a wire-frame outline over the top. Behind them is a procedurally generated star field: a seeded
 catalogue of stars, dust clouds and a galactic band, uploaded once and expanded into billboards in
-the vertex shader (`Design/Archive/Skybox.md`). F5 reseeds the lot, sky included; all of it is
+the vertex shader (`Design/Archive/Skybox.md`). F5 reseeds the rocks and the sky; the worlds hold still, because they
+stand where the layout put a station. All of it is
 presentation only and a ship flies straight through a rock (`Design/Decisions/0016`). There is no
 ground: the scene pass draws no plane and has no grid
 (`Design/Decisions/0025`), and the flat y = 0 plane a move order lands on is arithmetic in `Camera`
@@ -57,8 +66,10 @@ purpose.
 **Deliberately not here yet**, so nobody goes looking for it: no audio, no combat, no economy, no
 damage model, no save format, no content pipeline beyond NMO and DDS, and no configuration file —
 tuning is `constexpr` in `SimTuning.h`, `HullSpec.h` and `ViewTuning.h` (§5). The hostiles above
-have no weapons and no senses: the patrol is a metronome that never reacts to anything, and the
-station cannot be destroyed. The networking stops well short of a network: one client, one process,
+have no weapons and no senses: the patrol is a metronome that never reacts to anything, and no
+station can be destroyed. The Vanguard's protectors react, but only to a stated act -- nothing in
+the running game states one yet, and a protector has no weapon either (ADR 0041). The networking
+stops well short of a network: one client, one process,
 `127.0.0.1` only, and a self-signed certificate the client does not validate. The wire has two lanes
 and the format chooses by asking whether a later message makes a lost one right (`ADR 0029`):
 positions are datagrams and heal themselves, while departures and move orders take the reliable

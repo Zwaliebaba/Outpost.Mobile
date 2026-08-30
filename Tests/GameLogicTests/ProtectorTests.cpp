@@ -270,7 +270,7 @@ public:
   }
 
   // A protector on its way home picks a new target up and turns round, rather than docking and
-  // being relaunched a tick later (Design/Stations-slice-4.md 2.4).
+  // being relaunched a tick later (Design/Archive/Stations-slice-4.md 2.4).
   TEST_METHOD(AHomewardProtectorTurnsRound)
   {
     Game::World world;

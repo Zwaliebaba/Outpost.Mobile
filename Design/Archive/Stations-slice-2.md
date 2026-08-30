@@ -1,6 +1,6 @@
 # Work order — Stations slice 2: who is who
 
-Implements slice 2 of [`Stations.md`](Stations.md) §16: the third faction and its name, standing as
+Implements slice 2 of [`Stations.md`](../Stations.md) §16: the third faction and its name, standing as
 simulation state, the station side table, and the two fields the wire needs so a client can tell a
 station from a hull and knows who holds it hostile (design §4, §6).
 

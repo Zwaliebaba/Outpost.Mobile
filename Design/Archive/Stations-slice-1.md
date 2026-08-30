@@ -1,6 +1,6 @@
 # Work order — Stations slice 1: the layout
 
-Implements slice 1 of [`Stations.md`](Stations.md) §16: `LayOutSystem`, a pure seeded function in
+Implements slice 1 of [`Stations.md`](../Stations.md) §16: `LayOutSystem`, a pure seeded function in
 `GameLogic` that lays out the starting solar system — a star anchor and a few planets at real
 positions on the plane — so that both halves of the game can read the same universe from the same
 seed (design §5).

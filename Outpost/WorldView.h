@@ -163,6 +163,16 @@ public:
     float thrusterIntensity = 0.0f;
   };
 
+  // A station of the layout, for the minimap: where it is and whose it is. Static content handed in
+  // at boot the way body placements are, not a record -- it exists from the first frame however far
+  // away the station is, which is what "static so can be marked" bought, and nothing on the wire
+  // carries one (Design/Stations.md 9.3).
+  struct StationMark
+  {
+    Game::WorldPos posWorld;
+    Game::FactionId faction = Game::FACTION_VANGUARD;
+  };
+
   // One per move order, at the point that was tapped rather than one per ship.
   struct OrderMarker
   {
@@ -319,6 +329,26 @@ public:
   [[nodiscard]] std::size_t BodyCount() const noexcept
   {
     return m_bodies.size();
+  }
+
+  // The marks, from the composition root at boot. Nothing removes one: stations do not despawn this
+  // phase, and a mark is content rather than state.
+  void AddStationMark(const StationMark& _mark)
+  {
+    m_stationMarks.push_back(_mark);
+  }
+
+  [[nodiscard]] std::span<const StationMark> StationMarks() const noexcept
+  {
+    return m_stationMarks;
+  }
+
+  // Whether _faction holds this client hostile, as of the last update header that arrived. The one
+  // reading of the mask in the executable: the livery table, the overview and the contact count all
+  // ask this rather than inferring a relation from an identity (Design/Stations.md 4.3).
+  [[nodiscard]] bool IsHostileToMe(Game::FactionId _faction) const noexcept
+  {
+    return m_receiver.IsHostileToMe(_faction);
   }
 
   // For the F1 readout: what the bodies on screen cost.
@@ -505,6 +535,8 @@ private:
   std::vector<BodyView> m_bodies;
   std::vector<DirectX::XMFLOAT4X4> m_bodyWorlds;
   std::uint32_t m_bodyTriangles = 0;
+
+  std::vector<StationMark> m_stationMarks;
 
   std::vector<Game::ShipHandle> m_groups[CONTROL_GROUPS];
   int m_activeGroup = -1;

@@ -6,6 +6,8 @@
 #include "WorldSimulation.h"
 #include "WorldView.h"
 
+#include "UniverseLayout.h"
+
 #include "QuicApi.h"
 #include "QuicListener.h"
 #include "QuicTransport.h"
@@ -64,6 +66,10 @@ private:
   void BuildSky(std::uint64_t _seed);
   void ReseedBodies();
   void SpawnHostileBase();
+
+  // One Vanguard station at every planet site of the starting system: the structure ship, then the
+  // row that makes it a station (Design/Stations.md 5.3, 6.1).
+  void SpawnVanguardStations();
   [[nodiscard]] std::uint32_t OwnShipCount() const noexcept;
   void Update();
   void Render();
@@ -100,6 +106,12 @@ private:
   // port or a locked-down key store from being the reason the game did not start.
   Game::World m_world;
   WorldSimulation m_simulation{m_world};
+
+  // The starting system, laid out once at boot and read by three consumers: the station spawns,
+  // the body placements and the minimap's marks. Static content, not simulation state -- the world
+  // is handed the sites as spawn positions and never sees the generator (Design/Stations.md 5, 10).
+  // F5 rebuilds the bodies from it and never re-rolls it, so a debug key cannot move a station.
+  Game::SystemLayout m_layout;
 
   // Which faction this client is. Session identity, which nothing below the composition root can
   // know: it decides what the overview colors green, what may be selected, and what counts as a
@@ -139,7 +151,8 @@ private:
 
   // Debug: 1, 2 and 3 slow, restore and speed up the simulation without touching the frame rate;
   // F1 shows the readout, F3 shakes the camera, F4 despawns the selection so the explosion has
-  // something to consume, and **F5 reseeds every body and the sky with them**. F5 does not release the buffers the last
+  // something to consume, and **F5 reseeds every body's look and the sky with them** -- never the
+  // sites, which are the layout's (m_layout). F5 does not release the buffers the last
   // scene's bodies are in -- BodyRenderer keeps every handle for the run -- so each press costs the
   // memory of the scene it replaced. That is acceptable for a tuning key and is not acceptable for
   // anything a player does; a ReleaseBody is a slice of its own the day a body has to go away.

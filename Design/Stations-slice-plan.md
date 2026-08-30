@@ -170,7 +170,7 @@ against the same header, which is the conflict the serial rule exists to avoid.
 
 ## 4. Slice 1 — the layout
 
-**Written, in review** — work order [`Stations-slice-1.md`](Stations-slice-1.md), decision record
+**Landed** on 2026-08-30 in pull request #22 — work order [`Stations-slice-1.md`](Archive/Stations-slice-1.md), decision record
 [0037](Decisions/0037-the-universe-layout-is-static-content-in-gamelogic.md). What follows is what
 was planned; the work order is what was built, and the two agree except that the draw order gained
 a fourth item (the bearing jitter, which design §5.2 asks for in prose and leaves off its list).
@@ -228,7 +228,7 @@ side because what a planet *wears* is nobody's business but the client's. Next f
 
 ## 5. Slice 2 — who is who
 
-**Written, in review** — work order [`Stations-slice-2.md`](Stations-slice-2.md), decision records
+**Landed** on 2026-08-30 in pull request #22 — work order [`Stations-slice-2.md`](Archive/Stations-slice-2.md), decision records
 [0038](Decisions/0038-stations-are-ships-with-a-side-table.md) and
 [0039](Decisions/0039-standings-are-simulation-state-stated-per-subscriber.md). Built as planned; the
 three §2.2 decisions about the mask byte were taken as recommended, and `DEFAULT_STANDINGS` is a
@@ -287,7 +287,7 @@ Debug|x64 builds; the game plays exactly as before, because nothing calls `MakeS
 
 ## 6. Slice 3 — docking
 
-**Written, in review** — work order [`Stations-slice-3.md`](Stations-slice-3.md), decision record
+**Landed** on 2026-08-30 in pull request #22 — work order [`Stations-slice-3.md`](Archive/Stations-slice-3.md), decision record
 [0040](Decisions/0040-a-departure-carries-a-cause.md). Built as planned, with one thing the plan
 did not foresee and implementation did: the capture range and the approach destination cannot be
 the same number, or a ship parks a few metres outside the boundary for ever. Design §7.3 gained an
@@ -344,7 +344,7 @@ order-state that would leave ghost entries in every pass and every index. Next f
 
 ## 7. Slice 4 — the response
 
-**Written, in review** — work order [`Stations-slice-4.md`](Stations-slice-4.md), decision record
+**Landed** on 2026-08-30 in pull request #22 — work order [`Stations-slice-4.md`](Archive/Stations-slice-4.md), decision record
 [0041](Decisions/0041-the-protector-response-reacts-to-stated-acts.md). Both recommendations below
 were taken: the launched count is derived, and the dock pass owns the garrison branch. A third
 adjustment the plan did not foresee: a duty stays *active* while its ship flies home, which design
@@ -397,6 +397,12 @@ radius, no threat scan, no proximity trigger; the NPC reads exactly two things i
 ---
 
 ## 8. Slice 5 — the Vanguard scene
+
+**Written, in review** — work order [`Stations-slice-5.md`](Stations-slice-5.md), no decision
+record. Built as planned, with two things the plan did not spell out: the asteroid field draws
+different numbers from `BODY_START_SEED` once the worlds stop drawing from it, so the rocks move
+under this slice while the worlds and the stations do not; and `STATIONS ONLINE` counts every
+station row, the Vandal base included, so it reads 4.
 
 **Layer:** `Outpost`. **Depends on:** 1, 2. **Blocks:** 6.
 
