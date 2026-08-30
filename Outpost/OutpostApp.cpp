@@ -81,6 +81,15 @@ constexpr std::uint16_t OUTPOST_QUIC_PORT = 30081;
 const char* const HULL_NAMES[] = {"INTERCEPTOR", "BOMBER",     "CORVETTE", "MINER",    "FRIGATE",
                                   "HAULER",      "BATTLESHIP", "CARRIER",  "STARGATE", "STRUCTURE"};
 static_assert(std::size(HULL_NAMES) == Game::HULL_COUNT, "the HUD's hull names have drifted from the hull table");
+
+// What the HUD calls each faction, indexed by Game::FactionId. Design/Archive/Hostiles.md 12 deferred
+// this table "until something displays it"; the docking refusal line is the something, and it
+// arrives with slice 6 -- this slice plumbs the table to the HUD so that line has it to read. Sized
+// to the factions that exist rather than to FACTION_LIMIT, because a name for a faction nobody has
+// authored would be a lie the day one is.
+const char* const FACTION_NAMES[] = {"PLAYER", "VANDAL", "VANGUARD"};
+static_assert(std::size(FACTION_NAMES) == Game::FACTION_VANGUARD + 1, "the HUD's faction names have drifted from the faction ids");
+static_assert(std::size(FACTION_NAMES) <= Game::FACTION_LIMIT, "more faction names than the standing table has rows");
 } // namespace
 
 void OutpostApp::Init(HINSTANCE _instance)
@@ -174,7 +183,14 @@ void OutpostApp::Init(HINSTANCE _instance)
   LoadHullMeshes();
   m_gpu.ExecuteAndWait();
   m_sceneRenderer.DiscardStaging();
+
+  // The places, before anything is put at them. One call, at boot, and the result is then ordinary
+  // spawn input: the station spawns, the body placements and the minimap's marks all read m_layout
+  // and none of them re-rolls it (Design/Stations.md 5.3). The fleet keeps the ids it has by being
+  // spawned first; the stations follow, then the base.
+  m_layout = Game::LayOutSystem(UNIVERSE_LAYOUT_SEED, Game::WorldPos{}, STARTING_SYSTEM);
   SpawnStartingFleet();
+  SpawnVanguardStations();
   SpawnHostileBase();
 
   // The bodies, last, and all in one bracket. The outline texture and every body's vertices are
@@ -213,6 +229,9 @@ void OutpostApp::Init(HINSTANCE _instance)
   m_bodyRenderer.DiscardStaging();
   m_skyRenderer.DiscardStaging();
   m_log.PushFormat(EventLog::Severity::Friendly, 0.0f, "FLEET ONLINE | %u SHIPS", OwnShipCount());
+  // Every station row, the Vandal base included: the line says the grid spawned what the layout
+  // described, and the base is a row in the same table (Design/Stations.md 6.1, 9.4).
+  m_log.PushFormat(EventLog::Severity::Info, 0.0f, "STATIONS ONLINE | %u", m_world.StationCount());
 
   m_window.Show();
 }
@@ -297,25 +316,25 @@ void OutpostApp::LoadHullMeshes()
   }
 }
 
-// The neighbourhood: one terran world on the north-east horizon, a barren moon north-west, and six
-// rocks among the fleet. Everything about it comes out of _seed, so the pull request's screenshot
-// reproduces and F5 is a different scene rather than an unrepeatable one.
+// The neighbourhood: a world at every planet site of the starting system, and six rocks among the
+// fleet. The worlds are the layout's -- their positions, radii and seeds come from m_layout, so they
+// sit where the stations are and hold still under F5 -- and the rocks are _seed's, so a reroll is a
+// different field of rocks rather than an unrepeatable one (Design/Stations.md 5.3).
 void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
 {
   const std::int64_t startQpc = m_clock.Now();
   Pcg32 rng(_seed);
 
-  // A body of a class, at a bearing and a distance. The seed each body is generated from is drawn
-  // from this scene's generator, so the whole scene follows from one number and no body has to be
-  // told where in the stream it sits.
+  // A body of a class, at a bearing and a distance, from a seed. A rock's seed is drawn from this
+  // scene's generator, so the field follows from one number and no rock has to be told where in the
+  // stream it sits; a world's is the layout's, which is what keeps it the same world after F5.
   // _centreY is the height of the body's centre, so a caller says where a world sits rather than
   // deriving it from a radius the seed chose. A rock passes its own radius and so rests on the
   // fleet's plane; a world passes a depth well below it (ViewTuning.h).
-  const auto place =
-    [&](BodyClass bodyClass, float _radiusMetres, float _bearingRad, float _distanceMetres, float _centreY, bool _asteroid, bool _textured)
+  const auto place = [&](BodyClass bodyClass, std::uint64_t _bodySeed, float _radiusMetres, float _bearingRad, float _distanceMetres,
+                         float _centreY, bool _asteroid, bool _textured)
   {
-    const std::uint64_t bodySeed = (static_cast<std::uint64_t>(rng.Next()) << 32) | rng.Next();
-    const BodyDesc desc = RandomBody(bodySeed, _radiusMetres);
+    const BodyDesc desc = RandomBody(_bodySeed, _radiusMetres);
     const ColourRamp& ramp = m_ramps[static_cast<std::size_t>(bodyClass)];
 
     BodyBuildStats stats;
@@ -395,12 +414,15 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
     DebugTrace("body: {} triangles, maximum height {} m, radius {} m\n", stats.trianglesEmitted, stats.maxHeightMetres, _radiusMetres);
   };
 
-  const float planetRadius =
-    BODY_PLANET_RADIUS_MIN_METRES + rng.Float01() * (BODY_PLANET_RADIUS_MAX_METRES - BODY_PLANET_RADIUS_MIN_METRES);
-  // The world. Its class is the only one left and it is not read on this path anyway -- a textured
-  // body takes none of the ramp, the tiles or the craters a class describes.
-  place(BodyClass::Asteroid, planetRadius, XMConvertToRadians(BODY_START_PLANET_BEARING_DEG), BODY_START_PLANET_DISTANCE_METRES,
-        -BODY_START_PLANET_DEPTH_METRES, false, BODY_PLANET_TEXTURED);
+  // The worlds, one per site, wearing the one picture there is (Design/Stations.md 14). The class
+  // is the only one left and it is not read on this path anyway -- a textured body takes none of
+  // the ramp, the tiles or the craters a class describes. The depth is still the framing device it
+  // was: a world sits high on the screen by being far below the fleet in the world.
+  for (const Game::PlanetSite& site : m_layout.planets)
+  {
+    place(BodyClass::Asteroid, site.bodySeed, site.radiusMetres, site.bearingRad, Game::Distance(m_layout.starPos, site.posWorld),
+          -BODY_START_PLANET_DEPTH_METRES, false, BODY_PLANET_TEXTURED);
+  }
 
   for (int i = 0; i < BODY_START_ASTEROIDS; ++i)
   {
@@ -409,7 +431,11 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
     const float bearing = rng.Float01() * XM_2PI;
     const float distance =
       BODY_START_ASTEROID_RING_MIN_METRES + rng.Float01() * (BODY_START_ASTEROID_RING_MAX_METRES - BODY_START_ASTEROID_RING_MIN_METRES);
-    place(BodyClass::Asteroid, radius, bearing, distance, radius, true, false);
+    // Named draws, not arguments: the order a compiler evaluates arguments in is unspecified and
+    // this is seeded.
+    const std::uint64_t high = rng.Next();
+    const std::uint64_t low = rng.Next();
+    place(BodyClass::Asteroid, (high << 32) | low, radius, bearing, distance, radius, true, false);
   }
 
   m_bodyGenerationMs = m_clock.ElapsedMs(startQpc, m_clock.Now());
@@ -440,7 +466,9 @@ void OutpostApp::BuildSky(std::uint64_t _seed)
 //
 // The sky is reseeded with the bodies rather than separately, because what F5 rerolls is the
 // neighborhood and the sky is the far half of it. A second key for it would be a second thing to
-// remember for no second question it answers.
+// remember for no second question it answers. What it does not reroll is the layout: the worlds
+// are rebuilt from m_layout and stay where the stations are, because a debug key that moved
+// simulation content would be a debug key changing the world (Design/Stations.md 5.3).
 void OutpostApp::ReseedBodies()
 {
   m_view.ClearBodies();
@@ -464,13 +492,47 @@ void OutpostApp::SpawnStartingFleet()
   }
 }
 
+// The government's presence: a station at every planet of the starting system, in the Vanguard's
+// faction, with the garrison ViewTuning.h authors. The structure is an ordinary ship and the row is
+// what makes it a station (Design/Stations.md 6.1); the heading is 0 because nothing reads a
+// structure's facing, and the day one matters the bearing from the star is on the site.
+//
+// The nearest is 3.5 km out -- past the interest radius, so it is a mark on the minimap and not a
+// record until a ship gets near it, which is what "static so can be marked" bought
+// (Design/Stations.md 9.3). The mark is handed to the view here, beside the spawn it stands for.
+void OutpostApp::SpawnVanguardStations()
+{
+  Game::World::StationDesc desc;
+  desc.ownerFaction = Game::FACTION_VANGUARD;
+  desc.protectorHullId = static_cast<std::uint32_t>(VANGUARD_PROTECTOR_HULL);
+  desc.protectorComplement = VANGUARD_PROTECTOR_COMPLEMENT;
+  desc.launchEveryTicks = VANGUARD_LAUNCH_EVERY_TICKS;
+  desc.targetCap = VANGUARD_TARGET_CAP;
+
+  for (const Game::PlanetSite& site : m_layout.planets)
+  {
+    const Game::ShipId structure =
+      m_world.SpawnShip(site.posWorld, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+    m_world.MakeStation(structure, desc);
+    m_view.AddStationMark({site.posWorld, Game::FACTION_VANGUARD});
+  }
+}
+
 // Somebody else lives here: a station northeast of the fleet, and three Interceptors walking a ring
 // around it at a third of their top speed. They do nothing else -- no combat, no reaction to the
 // player -- and the ring is a metronome by the owner's brief (Design/Archive/Hostiles.md 6).
+//
+// The base is a station row too, with no garrison: its patrol is not a garrison and does not
+// change, and what the row buys is one answer path for "may I dock here" -- the player is refused
+// by standing rather than by a special case (Design/Stations.md 6.1, 15 decision 4).
 void OutpostApp::SpawnHostileBase()
 {
   const Game::ShipId station = m_world.SpawnShip(Game::LocalPos(HOSTILE_BASE_EAST_METRES, HOSTILE_BASE_NORTH_METRES), 0.0f,
                                                  static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANDAL);
+  Game::World::StationDesc base;
+  base.ownerFaction = Game::FACTION_VANDAL;
+  base.protectorComplement = 0;
+  m_world.MakeStation(station, base);
   const Game::WorldPos anchor = Game::LocalPos(HOSTILE_BASE_EAST_METRES, HOSTILE_BASE_NORTH_METRES);
 
   for (int at = 0; at < HOSTILE_PATROL_COUNT; ++at)
@@ -604,13 +666,17 @@ void OutpostApp::Render()
   frame.showDebug = m_showDebug;
   frame.sector = m_view.WorldPosAt(m_camera.Target().x, m_camera.Target().z);
   frame.hullNames = HULL_NAMES;
+  frame.factionNames = FACTION_NAMES;
   frame.ownFaction = m_ownFaction;
   // What this client currently knows about, counted off the snapshot rather than off the world: a
   // contact is a hostile *record*, which is the only reading that stays honest over a real wire. The
-  // station counts, so the base reads as four.
+  // station counts, so the base reads as four. Hostile by the header's mask, not by "not mine": a
+  // Vanguard station in view is not a contact until the law turns on the player, and then every
+  // Vanguard record joins the count, which is the HUD saying what just happened without a new
+  // widget (Design/Stations.md 9.4).
   frame.contacts = 0;
   for (const Game::ShipSnapshot& ship : m_view.Ships())
-    frame.contacts += (ship.factionId != m_ownFaction) ? 1 : 0;
+    frame.contacts += m_view.IsHostileToMe(ship.factionId) ? 1 : 0;
   m_hud.Draw(m_textRenderer, m_view.Ships(), m_view, m_camera, m_log, frame, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
 
   m_textRenderer.Flush(m_gpu); // the overlay goes on last, before the frame is presented
