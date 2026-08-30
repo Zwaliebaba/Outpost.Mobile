@@ -153,8 +153,35 @@ void WorldView::ApplySnapshot()
         view.restY = data.RestY();
         view.pickCentre = data.BoundsCentre();
         view.halfExtents = data.HalfExtents();
-        view.thrusterLocals = data.attachPoints;
-        view.trail.assign(view.thrusterLocals.size() * TRAIL_SAMPLES, XMFLOAT3(0.0f, 0.0f, 0.0f));
+        // One walk of the authored markers. Gun, Point and Unknown are carried by the file and
+        // consumed by nobody here, exactly as Design/NmoFormat.md 9 says.
+        for (const MeshMarker& marker : data.markers)
+        {
+          if (marker.kind == MarkerKind::Exhaust)
+          {
+            view.exhausts.push_back(ExhaustView{.local = marker.position,
+                                                .colour = Rgba{marker.colour.x, marker.colour.y, marker.colour.z, marker.colour.w},
+                                                .radiusMetres = marker.scale,
+                                                .raceTinted = marker.raceTinted});
+          }
+          else if (marker.kind == MarkerKind::NavLight)
+          {
+            // A period past the clamp is a content mistake, not a bad file: the light still draws,
+            // and the trace says which hull to look at.
+            float periodSec = std::max(0.0f, marker.param0);
+            if (periodSec > NAV_LIGHT_MAX_PERIOD_SEC)
+            {
+              DebugTrace(L"nav light blink period {} exceeds the clamp; using {}\n", periodSec, NAV_LIGHT_MAX_PERIOD_SEC);
+              periodSec = NAV_LIGHT_MAX_PERIOD_SEC;
+            }
+            view.navLights.push_back(NavLightView{.local = marker.position,
+                                                  .colour = Rgba{marker.colour.x, marker.colour.y, marker.colour.z, marker.colour.w},
+                                                  .radiusMetres = marker.scale,
+                                                  .periodSec = periodSec,
+                                                  .phase = marker.param1});
+          }
+        }
+        view.trail.assign(view.exhausts.size() * TRAIL_SAMPLES, XMFLOAT3(0.0f, 0.0f, 0.0f));
       }
       m_ships.push_back(std::move(view));
     }
@@ -356,6 +383,14 @@ int WorldView::SelectedCount() const noexcept
   return count;
 }
 
+XMFLOAT3 WorldView::HullPointToWorld(float _restY, const DisplayPose& _pose, const XMFLOAT3& _local) const noexcept
+{
+  const float cosH = std::cos(_pose.headingRad);
+  const float sinH = std::sin(_pose.headingRad);
+  return XMFLOAT3(ViewX(_pose.pos) + (_local.x * cosH + _local.z * sinH) * SHIP_SCALE, SHIP_HOVER_HEIGHT + (_restY + _local.y) * SHIP_SCALE,
+                  ViewZ(_pose.pos) + (-_local.x * sinH + _local.z * cosH) * SHIP_SCALE);
+}
+
 // One sample per nozzle per tick, so trail length means the same thing whatever the frame rate.
 void WorldView::SampleTrails()
 {
@@ -365,21 +400,17 @@ void WorldView::SampleTrails()
   for (size_t i = 0; i < count; ++i)
   {
     ShipView& view = m_ships[i];
-    if (view.thrusterLocals.empty())
+    if (view.exhausts.empty())
       continue;
     // Sampled where the ship is drawn, not where the latest record puts it, or the trail would step
     // once an update while the hull glides.
     const DisplayPose pose = DisplayedPose(i);
 
-    const float cosH = std::cos(pose.headingRad);
-    const float sinH = std::sin(pose.headingRad);
     view.trailHead = (view.trailHead + 1) % TRAIL_SAMPLES;
-    for (size_t nozzle = 0; nozzle < view.thrusterLocals.size(); ++nozzle)
+    for (size_t nozzle = 0; nozzle < view.exhausts.size(); ++nozzle)
     {
-      const XMFLOAT3& local = view.thrusterLocals[nozzle];
       view.trail[nozzle * TRAIL_SAMPLES + static_cast<size_t>(view.trailHead)] =
-        XMFLOAT3(ViewX(pose.pos) + (local.x * cosH + local.z * sinH) * SHIP_SCALE, SHIP_HOVER_HEIGHT + (view.restY + local.y) * SHIP_SCALE,
-                 ViewZ(pose.pos) + (-local.x * sinH + local.z * cosH) * SHIP_SCALE);
+        HullPointToWorld(view.restY, pose, view.exhausts[nozzle].local);
     }
     view.trailCount = std::min(view.trailCount + 1, TRAIL_SAMPLES);
   }
@@ -401,6 +432,18 @@ void WorldView::UpdateFeedback(float _dtSec)
   const float skyWrapSec = 255.0f * XM_2PI / std::max(m_skyTuning.twinkleMaxRateRadPerSec, 1e-3f);
   if (m_skyTimeSec > skyWrapSec)
     m_skyTimeSec -= skyWrapSec;
+
+  // The nav lights' clock, wrapped for the reason above: precision. The sky's wrap is seamless
+  // because every rate up there divides it; this one is not, because a marker may carry any period
+  // at all -- a light whose period does not divide the wrap loses or gains at most one beat every
+  // NAV_LIGHT_MAX_PERIOD_SEC. That is invisible on a free-running beacon and is the whole price of a
+  // clock that never goes imprecise, which a frozen blink after two hours is not.
+  //
+  // Real time, so a light drifts against the simulation and against a recording. That is what a
+  // running light does.
+  m_navTimeSec += dt;
+  if (m_navTimeSec > NAV_LIGHT_MAX_PERIOD_SEC)
+    m_navTimeSec -= NAV_LIGHT_MAX_PERIOD_SEC;
 
   // Bodies turn on real time, like every other feedback here, so the debug keys that slow the
   // simulation do not slow a planet: what 1/2/3 change is how fast the world is simulated, and a
@@ -1123,7 +1166,6 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const Sc
   // -- only how many times the frame is asked to draw one.
   if (m_fx != nullptr && m_fx->RingReady() && !m_ships.empty())
   {
-    const float glowRadius = std::max(0.1f, THRUSTER_GLOW_RADIUS) * SHIP_SCALE;
     const float trailLength = std::max(0.0f, THRUSTER_TRAIL_LENGTH);
     const float trailFade = std::max(0.01f, THRUSTER_TRAIL_FADE);
 
@@ -1131,20 +1173,52 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const Sc
     for (size_t i = 0; i < m_ships.size(); ++i)
     {
       const ShipView& view = m_ships[i];
-      // A hull the frustum rejected has no plume worth building. The trail streams behind the ship
-      // rather than around it, which is why CULL_RADIUS_PAD_METRES is a trail length: the sphere
-      // that decided this has to have covered the ribbon, not just the hull.
-      if (!view.visible || view.thrusterLocals.empty() || view.thrusterIntensity <= 0.002f)
+      // A hull the frustum rejected has no plume and no running lights worth building. The trail
+      // streams behind the ship rather than around it, which is why CULL_RADIUS_PAD_METRES is a
+      // trail length: the sphere that decided this has to have covered the ribbon, not just the hull.
+      if (!view.visible)
         continue;
 
-      // Hoisted out of the nozzle loop: one lookup per ship rather than one per billboard, and the
-      // whole plume of a hostile is one color rather than being decided sample by sample.
-      const Rgba accent = IsOwn(i) ? SELECTED_COLOUR : HOSTILE_ACCENT_COLOUR;
+      // Navigation lights burn whether or not the ship is under way, so they come before the thrust
+      // test. Blink is free-running real time, so two ships of one hull blink together and only a
+      // different authored phase separates them -- which is what an author controls with param1.
+      if (!view.navLights.empty())
+      {
+        const DisplayPose pose = DisplayedPose(i);
+        for (const NavLightView& light : view.navLights)
+        {
+          float blink = 1.0f; // a zero period is a steady light, and most of them are
+          if (light.periodSec > 0.0f)
+          {
+            const float cycles = m_navTimeSec / light.periodSec + light.phase;
+            const float phase01 = cycles - std::floor(cycles);
+            blink = (phase01 < NAV_LIGHT_DUTY) ? 1.0f : NAV_LIGHT_OFF_LEVEL;
+          }
+          // The marker's alpha is an intensity (Design/NmoFormat.md 5.10): every shipped light has
+          // 1, so nothing visible changes, and an author who dims one gets what they asked for.
+          const float alpha = NAV_LIGHT_INTENSITY * blink * light.colour.a;
+          if (alpha <= 0.002f)
+            continue;
+          const float radius = std::max(0.1f, light.radiusMetres * NAV_LIGHT_GLOW_SCALE) * SHIP_SCALE;
+          m_glowSamples.push_back(Neuron::GlowSample{.posWorld = HullPointToWorld(view.restY, pose, light.local),
+                                                     .radiusMetres = radius,
+                                                     .colour = Rgba{light.colour.r, light.colour.g, light.colour.b, alpha}});
+        }
+      }
+
+      if (view.exhausts.empty() || view.thrusterIntensity <= 0.002f)
+        continue;
 
       // Every exhaust gets its own glow and its own trail: a bomber flying with three nozzles lays
       // down three ribbons, and they fan apart through a turn because the outboard ones sweep wider.
-      for (size_t nozzle = 0; nozzle < view.thrusterLocals.size(); ++nozzle)
+      for (size_t nozzle = 0; nozzle < view.exhausts.size(); ++nozzle)
       {
+        // Hoisted out of the step loop, which is what the hoist this replaced was protecting: one
+        // lookup per ribbon rather than one per billboard. The colour is the marker's now, so a
+        // friend and a foe flying the same hull burn the same plume -- faction stays readable
+        // through the selection ring, the minimap and the contact count (Design/NmoFormat.md 9).
+        const ExhaustView& exhaust = view.exhausts[nozzle];
+        const float glowRadius = std::max(0.1f, exhaust.radiusMetres * THRUSTER_GLOW_SCALE) * SHIP_SCALE;
         const XMFLOAT3* const samples = view.trail.data() + nozzle * TRAIL_SAMPLES;
 
         // Newest sample first, walking back along the path until trailLength runs out. The trail
@@ -1166,12 +1240,12 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const Sc
           const float along = (trailLength > 0.0f) ? travelled / trailLength : 1.0f;
           const float taper = std::pow(std::max(0.0f, 1.0f - along), trailFade);
           const float radius = glowRadius * (step == 0 ? 1.0f : taper * 0.8f);
-          const float alpha = view.thrusterIntensity * (step == 0 ? 1.0f : taper * 0.55f);
+          const float alpha = view.thrusterIntensity * (step == 0 ? 1.0f : taper * 0.55f) * exhaust.colour.a;
           if (alpha <= 0.002f || radius <= 0.001f)
             continue;
 
-          m_glowSamples.push_back(
-            Neuron::GlowSample{.posWorld = point, .radiusMetres = radius, .colour = Rgba{accent.r, accent.g, accent.b, alpha}});
+          m_glowSamples.push_back(Neuron::GlowSample{
+            .posWorld = point, .radiusMetres = radius, .colour = Rgba{exhaust.colour.r, exhaust.colour.g, exhaust.colour.b, alpha}});
 
           if (trailLength <= 0.0f)
             break;

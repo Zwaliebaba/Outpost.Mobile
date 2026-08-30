@@ -130,9 +130,27 @@ inline constexpr float THRUSTER_MAX_INTENSITY = 1.0f;
 inline constexpr float THRUSTER_RESPONSE_HALF_LIFE = 0.1f;
 inline constexpr float THRUSTER_TRAIL_LENGTH = 18.0f;
 inline constexpr float THRUSTER_TRAIL_FADE = 0.55f;
-inline constexpr float THRUSTER_GLOW_RADIUS = 6.0f;
+// The nozzle's size is content now -- an Exhaust marker's scale, in metres, authored per hull
+// (Design/NmoFormat.md 5.10) -- so what stays tunable is how loudly it is drawn.
+inline constexpr float THRUSTER_GLOW_SCALE = 6.0f;
 inline constexpr float THRUSTER_GLOW_FALLOFF = 2.2f;
 inline constexpr int TRAIL_SAMPLES = 32; // half a second of history at the tick rate
+
+// --- navigation lights ---------------------------------------------------------------------------
+// One glow pip per NavLight marker, coloured by the marker and blinking on its own period and phase
+// (Design/NmoFormat.md 5.10). Port red and starboard green are a convention older than any faction
+// here, so a nav light is never liveried -- see the marker's flags, and 5.10 for why.
+// The light's size is content, exactly as the nozzle's is: a NavLight marker's scale, in metres
+// (Design/NmoFormat.md 5.10), so this is how loudly it is drawn and not how big it is. It has to be
+// the marker's -- a station authors approach rings at 3.5 m and berth pads at 4.5, and one flat
+// radius would draw a 500 m structure's running lights at a corvette's size.
+inline constexpr float NAV_LIGHT_GLOW_SCALE = 1.0f;
+inline constexpr float NAV_LIGHT_INTENSITY = 0.85f; // alpha at full on
+inline constexpr float NAV_LIGHT_DUTY = 0.35f;      // fraction of the period a blinking light is lit
+inline constexpr float NAV_LIGHT_OFF_LEVEL = 0.12f; // alpha between blinks -- a beacon dims, it does not vanish
+// The clamp on an authored period, and the whole multiple the nav clock wraps at, so the wrap is
+// seamless for every period a marker may legally carry.
+inline constexpr float NAV_LIGHT_MAX_PERIOD_SEC = 30.0f;
 
 // --- frustum culling ----------------------------------------------------------------------------
 // What is not on screen is not submitted (Design/MmoScalabilityReview.md G2). Both numbers below

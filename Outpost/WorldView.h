@@ -16,6 +16,7 @@
 #include "GlowBillboards.h"
 #include "MeshLibrary.h"
 #include "PointerTracker.h"
+#include "RenderTypes.h"
 #include "SceneRenderer.h"
 #include "SkyRenderer.h"
 #include "SpriteParticles.h"
@@ -94,6 +95,27 @@ public:
     float boundingRadiusMetres = 0.0f;
   };
 
+  // One authored exhaust nozzle: where it is on the hull, what colour it burns and how wide.
+  struct ExhaustView
+  {
+    DirectX::XMFLOAT3 local{0.0f, 0.0f, 0.0f}; // nozzle position in mesh space
+    Neuron::Rgba colour{1.0f, 1.0f, 1.0f, 1.0f};
+    float radiusMetres = 0.0f; // the marker's scale, already in metres
+    // The plume is livery where its author said so (Design/NmoFormat.md 5.10). Carried here so the
+    // livery slice is one multiply rather than a second walk of the markers.
+    bool raceTinted = false;
+  };
+
+  // One authored running light. periodSec of 0 is a steady light, which is what most of them are.
+  struct NavLightView
+  {
+    DirectX::XMFLOAT3 local{0.0f, 0.0f, 0.0f};
+    Neuron::Rgba colour{1.0f, 1.0f, 1.0f, 1.0f};
+    float radiusMetres = 0.0f; // the marker's scale, already in metres
+    float periodSec = 0.0f;    // the marker's param0, clamped at load
+    float phase = 0.0f;        // the marker's param1, a fraction of the period
+  };
+
   // One ship's presentation state, parallel to the latest snapshot's ships and indexed the same
   // way. ApplySnapshot is what keeps that true across a snapshot in which ships changed places.
   struct ShipView
@@ -111,7 +133,11 @@ public:
     // Whether the last Render submitted this hull. Set by the frustum test there and read by the
     // plume, so a trail is not built for a ship nobody can see.
     bool visible = true;
-    std::vector<DirectX::XMFLOAT3> thrusterLocals; // one point per exhaust nozzle
+    // One entry per Exhaust marker on the hull, copied out of MeshData here rather than looked up
+    // in MeshLibrary per frame: the draw loop runs per billboard, and restY, pickCentre and
+    // halfExtents above are copied for exactly the same reason.
+    std::vector<ExhaustView> exhausts;
+    std::vector<NavLightView> navLights;
 
     // One ring buffer per exhaust, nozzle-major: nozzle n owns [n * TRAIL_SAMPLES, (n + 1) *
     // TRAIL_SAMPLES), newest at trailHead. Every nozzle is sampled on the same tick, so the head
@@ -357,6 +383,11 @@ private:
   // map to keep in step with two parallel arrays.
   [[nodiscard]] int RecallableIndex(Game::ShipHandle _handle) const noexcept;
   [[nodiscard]] static MotionSample SampleOf(const Game::ShipSnapshot& _ship, std::uint64_t _tick) noexcept;
+
+  // A point authored on the hull, in mesh space, to where it is drawn. The plume's trail sampler
+  // and the navigation lights both need it and must not drift apart, so it is written once. Out of
+  // line because it scales by ViewTuning.h's constants, and this header has no business seeing them.
+  [[nodiscard]] DirectX::XMFLOAT3 HullPointToWorld(float _restY, const DisplayPose& _pose, const DirectX::XMFLOAT3& _local) const noexcept;
   void IssueMoveOrder(const DirectX::XMFLOAT3& _point, bool _hasFacing, float _facingRad);
   [[nodiscard]] float SimTimeSec() const noexcept;
 
@@ -451,6 +482,14 @@ private:
   Neuron::SkyRenderer* m_sky = nullptr;
   Neuron::SkyRenderer::Frame m_skyTuning;
   float m_skyTimeSec = 0.0f;
+
+  // The navigation lights' clock, wrapped for the reason m_skyTimeSec's comment gives: a float
+  // second counter left running loses enough precision after a few hours that consecutive frames
+  // land on the same argument and every beacon freezes. It wraps at the longest period a marker may
+  // legally carry, so the number an author could break is a named constant; what that costs is one
+  // mistimed beat per wrap on a light whose period does not divide it (UpdateFeedback says why that
+  // is the right trade).
+  float m_navTimeSec = 0.0f;
 
   // The bodies. Presentation only: nothing in GameLogic knows one exists and nothing on the wire
   // carries one (Design/Decisions/0016). m_bodyWorlds is a scratch vector rather than a local so

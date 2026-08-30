@@ -69,12 +69,6 @@ struct MeshData
   // Every marker the file carried, in submesh then file order, whatever its kind.
   std::vector<MeshMarker> markers;
 
-  // Temporary, and allowed to look it: the position of every Exhaust marker, in file order. It is
-  // the bridge that lets the loader switch to NMO without WorldView changing at all -- the thruster
-  // glow keeps working, from data that is now authored instead of clustered. Slice 4 of
-  // Design/NmoFormat.md replaces its one consumer with markers above and deletes this field.
-  std::vector<DirectX::XMFLOAT3> attachPoints;
-
   [[nodiscard]] DirectX::XMFLOAT3 BoundsCentre() const noexcept
   {
     return DirectX::XMFLOAT3((boundsMin.x + boundsMax.x) * 0.5f, (boundsMin.y + boundsMax.y) * 0.5f, (boundsMin.z + boundsMax.z) * 0.5f);

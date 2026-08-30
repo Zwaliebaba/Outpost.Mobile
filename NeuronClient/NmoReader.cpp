@@ -841,8 +841,6 @@ bool Expand(const Cursor& _cursor, const MeshView& _mesh, MeshData& _outMesh)
       marker.raceTinted = (view.record.flags & static_cast<std::uint32_t>(NmoMarkerFlags::RaceTinted)) != 0;
       _outMesh.markers.push_back(marker);
       names.push_back(view.name);
-      if (marker.kind == MarkerKind::Exhaust)
-        _outMesh.attachPoints.push_back(marker.position);
     }
   }
 

@@ -22,7 +22,10 @@ changes in the same commit.
 **Built and tested.** Five projects and four test suites, Debug|x64, gating in CI (§6). The game
 is a fleet of three hulls in open space: select them, order them somewhere in formation, watch
 them route around architecture, give way to each other, and arrive without passing through
-anything — and F4 shatters a selected hull into tumbling debris, a fireball and smoke. Not every
+anything — and F4 shatters a selected hull into tumbling debris, a fireball and smoke. Every hull
+burns the exhaust colour and nozzle radius its author gave it and carries running lights that blink
+on periods authored per light, all of it read from the mesh file's markers rather than recovered or
+hard-coded. Not every
 ship is the player's: an enemy station sits 1.2 km northeast with three Interceptors patrolling a
 ring around it, drawn red in the scene and on the minimap and counted as contacts, and they cannot
 be selected or ordered — the simulation refuses an order from the wrong faction and the client does
@@ -269,7 +272,7 @@ does not have.
 |---|---|
 | `NeuronCore/` | Engine primitives shared by every layer — zero game semantics, no graphics API, headless (below). Diagnostics, file IO, framerate-independent easing, the frame clock, the seeded `Pcg32` (ADR 0012), and the seam: `Transport`, with `LoopbackTransport` behind it for the tests and the MsQuic implementation the game runs on — `QuicApi`, `QuicTransport`, `QuicListener` and the self-signed `DevCertificate` (ADRs 0021, 0023). No content readers: those live with their consumer (below). |
 | `GameLogic/` | The deterministic simulation, namespace `Game`. `World`, `ShipState`, `WorldPos`, `HullSpec`, `Movement`, `Collision`, `SpatialIndex`, `PathGrid`, `Formation`, `Patrol`, `SimTuning`, `InterestSet`, `PathIslands` (the architecture partitioned into islands, one `PathGrid` over each, ADR 0033), `WorldSnapshot` (the wire format, ADR 0008) and `Publisher` (the fan-out to N subscribers, ADR 0030). Depends on NeuronCore only. |
-| `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, the explosion's `FxRenderer`/`MeshShatter`/`SpriteParticles` and the `GlowBillboards` the thruster plume is built with, `ViewCulling` (the camera's frustum and the sphere test everything drawn is gated on), the planet pipeline (`CubeSphere`, `Noise3`, `BodyDesc`/`BodyParams`/`BodyField`, `BodyMeshBuilder`, `BodyRenderer`, `ColourRamp` — see [`Design/Archive/PlanetRenderer.md`](Design/Archive/PlanetRenderer.md)), the star field (`SkyField`, `SkyRenderer`, `SkyVertex` — [`Design/Archive/Skybox.md`](Design/Archive/Skybox.md)), and the content readers `DdsImage`, `ObjParser`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
+| `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, the explosion's `FxRenderer`/`MeshShatter`/`SpriteParticles` and the `GlowBillboards` the thruster plume is built with, `ViewCulling` (the camera's frustum and the sphere test everything drawn is gated on), the planet pipeline (`CubeSphere`, `Noise3`, `BodyDesc`/`BodyParams`/`BodyField`, `BodyMeshBuilder`, `BodyRenderer`, `ColourRamp` — see [`Design/Archive/PlanetRenderer.md`](Design/Archive/PlanetRenderer.md)), the star field (`SkyField`, `SkyRenderer`, `SkyVertex` — [`Design/Archive/Skybox.md`](Design/Archive/Skybox.md)), and the content readers `DdsImage`, `NmoFile`/`NmoReader`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
 | `Outpost/` | The executable: composition root, presentation state, the HUD and its event log, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |

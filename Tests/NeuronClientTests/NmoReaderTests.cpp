@@ -442,14 +442,14 @@ public:
     Assert::AreEqual((140.0f / 255.0f) * 0.66f, mesh.verts[0].b, 1e-4f, L"blue");
   }
 
-  TEST_METHOD(AttachPointsHoldOneEntryPerExhaustInFileOrder)
+  TEST_METHOD(ExhaustMarkersArriveInFileOrder)
   {
-    // The bridge that lets the loader switch without WorldView changing. Slice 4 deletes it.
+    // The view walks the markers in this order and fans a bomber's ribbons off it, so the order is
+    // part of what the reader promises rather than an accident of how it was written.
     Neuron::MeshData mesh;
     Assert::IsTrue(Neuron::NmoReader::Load(L"", FIXTURE_NAME, mesh), L"the fixture did not load");
-    Assert::AreEqual(static_cast<std::size_t>(2), mesh.attachPoints.size(), L"one attach point per Exhaust marker");
-    Assert::AreEqual(-1.0f, mesh.attachPoints[0].x, 1e-5f, L"the port nozzle comes first");
-    Assert::AreEqual(1.0f, mesh.attachPoints[1].x, 1e-5f, L"the starboard nozzle comes second");
+    Assert::AreEqual(-1.0f, mesh.markers[0].position.x, 1e-5f, L"the port nozzle comes first");
+    Assert::AreEqual(1.0f, mesh.markers[1].position.x, 1e-5f, L"the starboard nozzle comes second");
   }
 
   // --- clause 1: identification -----------------------------------------------------------------

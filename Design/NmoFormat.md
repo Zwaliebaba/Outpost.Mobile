@@ -853,10 +853,12 @@ brightness its thrusters should burn, and every other liveried surface falls out
    C++ malformed-file tests over the shared fixture bytes; registered in the project files; no
    caller yet. Its work order is
    [Archive/NmoFormat-slice-2.md](Archive/NmoFormat-slice-2.md).
-3. **Marker consumers** *(Outpost)* — `MeshLibrary` loads `.nmo` when present (OBJ fallback
-   stays); `ShipView` takes exhaust positions/colours from `Exhaust` markers; nav-light pips with
-   blink; screenshots at two window sizes. **Landed fourth**, as
-   [Archive/NmoFormat-slice-4.md](Archive/NmoFormat-slice-4.md).
+3. **Marker consumers** *(Outpost)* — **landed fourth.** `MeshLibrary` loads `.nmo` when present
+   (OBJ fallback stays); `ShipView` takes exhaust positions/colours from `Exhaust` markers;
+   nav-light pips with blink; screenshots at two window sizes. No fallback was written — the
+   content swap came first, which
+   [ADR 0035](Decisions/0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md) records. Its
+   work order is [Archive/NmoFormat-slice-4.md](Archive/NmoFormat-slice-4.md).
 4. **Content swap** *(Assets)* — **landed third.** Hulls re-exported per §13 with authored markers;
    OBJ files and `ObjParser`'s clustering retire (parser itself may stay for dev import); the
    `SpaceshipExplosion` and picking paths re-verified over the new loader's soup. What actually
