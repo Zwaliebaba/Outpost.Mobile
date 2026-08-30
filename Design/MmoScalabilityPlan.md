@@ -565,12 +565,13 @@ CPU-side; ten F5 reseeds hold the store count flat; frame-time across a mid-sess
 and stated in the pull request.
 **ADR.** GpuDevice gains the copy queue — a library gains a responsibility.
 
-**As landed**, and the first thing to say about it: **this slice has never been compiled.** It was
-written where there is no Windows, no D3D12 and no GPU, so what is measured is the half that could
-be — `HandleStore`'s bookkeeping, by eleven test rows and by seven mutations — and what is *read*
-is every line of D3D12 in it. A Windows build is the next step and it should be assumed to find
-something. That is why the remaining client slices were not stacked on this one (owner's call,
-2026-08-30).
+**As landed**, it was written where there is no Windows, no D3D12 and no GPU, so on its first branch
+what was measured was the half that could be — `HandleStore`'s bookkeeping, by eleven test rows and
+by seven mutations — and every line of D3D12 in it was read rather than run. That is why the
+remaining client slices were not stacked on it (owner's call, 2026-08-30). **Re-landed on its own
+branch the same day, it was built and run on Windows before merging:** Debug|x64 compiles clean on
+the first attempt, the game boots over the copy queue (hulls, bodies, sky), two F5 reseeds exercise
+the mid-session path, and every suite passes with `HandleStoreTests` in it.
 
 ADR 0044. The scope divided into two halves that turn out to be the same shape twice — nothing
 could say a resource was finished with, on either side.
