@@ -107,6 +107,47 @@ struct ShipHandle
   return _a.slot == _b.slot && _a.generation == _b.generation;
 }
 
+// Who a ship is, as against where it is. This is the one thing about an entity that never changes.
+//
+// A ShipHandle is a reference into one World and is allocated by it: a ship handed from one region
+// server to another gets a fresh slot and generation at the destination, so a wire that named
+// handles could not say "same ship, new region" -- a client keyed on them would see a destroy and an
+// enter, which is exactly the continuity ADR 0005 exists to provide, lost at the shard boundary
+// (Design/MmoScalabilityReview.md U3). So the wire names an EntityId and the process names a handle,
+// and the publisher is where the two meet.
+//
+// Sixteen bits of shard and forty-eight of serial. The shard says who minted it and never who holds
+// it; the serial is a per-shard counter that is issued once and never reused, which is why there is
+// no generation here and why an id is not derivable from a handle. Both properties are deliberate
+// and argued in ADR 0044: a slot-and-generation id looks derivable and stops being so the moment the
+// entity moves, and a 24-bit generation reissues a live id after 16.7 million reuses of one slot --
+// a weekend of churn. Forty-eight bits is 281 trillion, which is 8.9 million years at a million
+// spawns a second.
+using EntityId = std::uint64_t;
+using ShardId = std::uint16_t;
+
+// Never issued: every shard's serial starts at 1, so no shard mints zero. A default-constructed id
+// is therefore null the way a default ShipHandle is.
+inline constexpr EntityId INVALID_ENTITY_ID = 0;
+
+inline constexpr int ENTITY_SERIAL_BITS = 48;
+inline constexpr EntityId ENTITY_SERIAL_MASK = (EntityId{1} << ENTITY_SERIAL_BITS) - 1;
+
+[[nodiscard]] constexpr EntityId MakeEntityId(ShardId _shard, std::uint64_t _serial) noexcept
+{
+  return (static_cast<EntityId>(_shard) << ENTITY_SERIAL_BITS) | (_serial & ENTITY_SERIAL_MASK);
+}
+
+[[nodiscard]] constexpr ShardId EntityShardOf(EntityId _entity) noexcept
+{
+  return static_cast<ShardId>(_entity >> ENTITY_SERIAL_BITS);
+}
+
+[[nodiscard]] constexpr std::uint64_t EntitySerialOf(EntityId _entity) noexcept
+{
+  return _entity & ENTITY_SERIAL_MASK;
+}
+
 enum class OrderState : std::uint8_t
 {
   Idle,

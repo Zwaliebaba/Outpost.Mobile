@@ -64,7 +64,10 @@ constexpr std::uint32_t LEAVE_HEADER_BYTES = 1 + 8 + 4 + 4 + 4;
 constexpr std::uint32_t SHIP_RECORD_BYTES = 8 + 8 + 4 + 4 + 4 + 12 + 1 + 1 + 1 + 4;
 // kind, orderId, hasFacing, facingRad, destination, handleCount
 constexpr std::uint32_t ORDER_HEADER_BYTES = 1 + 4 + 1 + 4 + 24 + 4;
-constexpr std::uint32_t HANDLE_BYTES = 8;
+// An EntityId is a u64, which is exactly what a {slot, generation} pair cost. So identity became
+// global for no bytes at all: the ship record stays 47, a fragment stays 23 ships, and the order cap
+// stays 139 (ADR 0044).
+constexpr std::uint32_t ENTITY_ID_BYTES = 8;
 
 // The wire's position lattice: 0.125 m a step.
 //
@@ -250,10 +253,9 @@ public:
     F32(_pos.localZ);
   }
 
-  void Handle(ShipHandle _handle)
+  void Entity(EntityId _entity)
   {
-    U32(_handle.slot);
-    U32(_handle.generation);
+    U64(_entity);
   }
 
 private:
@@ -348,12 +350,9 @@ public:
     return pos;
   }
 
-  ShipHandle Handle()
+  EntityId Entity()
   {
-    ShipHandle handle;
-    handle.slot = U32();
-    handle.generation = U32();
-    return handle;
+    return U64();
   }
 
 private:
@@ -389,7 +388,7 @@ std::uint32_t ShipsPerSnapshotFragment() noexcept
 // an unbounded amount of pathfinding.
 std::uint32_t MaxShipsPerOrder() noexcept
 {
-  return (Neuron::MAX_DATAGRAM_BYTES - ORDER_HEADER_BYTES) / HANDLE_BYTES;
+  return (Neuron::MAX_DATAGRAM_BYTES - ORDER_HEADER_BYTES) / ENTITY_ID_BYTES;
 }
 
 namespace
@@ -403,7 +402,7 @@ void WriteShipRecord(ByteWriter& _out, const World& _world, ShipId _id)
   const LatticePos pos = ToLattice(ship.posWorld);
   const LatticePos prev = ToLattice(ship.prevPos);
 
-  _out.Handle(_world.HandleOf(_id));
+  _out.Entity(_world.EntityIdOf(_id));
   _out.I32(ToWireSector(pos.sectorX));
   _out.I32(ToWireSector(pos.sectorZ));
   _out.U16(pos.stepX);
@@ -464,8 +463,8 @@ std::uint32_t SnapshotWriter::Write(const World& _world, Neuron::Transport& _tra
   return sent;
 }
 
-bool SnapshotWriter::WriteLeaves(std::uint64_t _tick, std::span<const ShipHandle> _left, std::span<const ShipHandle> _destroyed,
-                                 std::span<const ShipHandle> _docked, Neuron::Transport& _transport)
+bool SnapshotWriter::WriteLeaves(std::uint64_t _tick, std::span<const EntityId> _left, std::span<const EntityId> _destroyed,
+                                 std::span<const EntityId> _docked, Neuron::Transport& _transport)
 {
   if (_left.empty() && _destroyed.empty() && _docked.empty())
     return true; // nothing to state is not a failure to state it
@@ -478,7 +477,7 @@ bool SnapshotWriter::WriteLeaves(std::uint64_t _tick, std::span<const ShipHandle
   // is 1021 departures in one update -- far past what an interest set can shed at 10 Hz, and the
   // day it is not, the answer is a second message and not a silent truncation. The third run costs
   // the bound nothing: 8192 less a 21-byte header is still 1021 handles.
-  if (LEAVE_HEADER_BYTES + (leaveCount + destroyedCount + dockedCount) * HANDLE_BYTES > Neuron::MAX_RELIABLE_BYTES)
+  if (LEAVE_HEADER_BYTES + (leaveCount + destroyedCount + dockedCount) * ENTITY_ID_BYTES > Neuron::MAX_RELIABLE_BYTES)
     return false;
 
   m_leaveScratch.clear();
@@ -488,18 +487,18 @@ bool SnapshotWriter::WriteLeaves(std::uint64_t _tick, std::span<const ShipHandle
   out.U32(leaveCount);
   out.U32(destroyedCount);
   out.U32(dockedCount);
-  for (const ShipHandle handle : _left)
-    out.Handle(handle);
-  for (const ShipHandle handle : _destroyed)
-    out.Handle(handle);
-  for (const ShipHandle handle : _docked)
-    out.Handle(handle);
+  for (const EntityId entity : _left)
+    out.Entity(entity);
+  for (const EntityId entity : _destroyed)
+    out.Entity(entity);
+  for (const EntityId entity : _docked)
+    out.Entity(entity);
 
   return _transport.SendReliable(m_leaveScratch.data(), static_cast<std::uint32_t>(m_leaveScratch.size()));
 }
 
-std::uint32_t SnapshotWriter::WriteInterest(const World& _world, std::span<const ShipHandle> _sent, std::span<const ShipHandle> _left,
-                                            std::span<const ShipHandle> _destroyed, std::span<const ShipHandle> _docked,
+std::uint32_t SnapshotWriter::WriteInterest(const World& _world, std::span<const ShipHandle> _sent, std::span<const EntityId> _left,
+                                            std::span<const EntityId> _destroyed, std::span<const EntityId> _docked,
                                             Neuron::Transport& _transport, FactionId _viewer)
 {
   m_lastBytes = 0;
@@ -627,7 +626,7 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
   for (std::uint32_t at = 0; at < count; ++at)
   {
     ShipSnapshot ship;
-    ship.handle = in.Handle();
+    ship.entity = in.Entity();
     const std::int32_t sectorX = in.I32();
     const std::int32_t sectorZ = in.I32();
     const std::uint16_t stepX = in.U16();
@@ -676,11 +675,11 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
 
 // Removes a handle from the held set, whether it left or died: the two differ in what they *say*,
 // not in what they do to the set, and only the client's effects care which (Design/Archive/Hostiles.md 4.4).
-void SnapshotReceiver::Remove(ShipHandle _gone)
+void SnapshotReceiver::Remove(EntityId _gone)
 {
   for (std::size_t at = 0; at < m_latest.ships.size(); ++at)
   {
-    if (m_latest.ships[at].handle == _gone)
+    if (m_latest.ships[at].entity == _gone)
     {
       // Swap-and-pop. The client's order is its own -- it is a set, not the world's array -- and
       // WorldView carries presentation state across by handle rather than by position.
@@ -717,21 +716,21 @@ bool SnapshotReceiver::AcceptLeaves(std::span<const std::uint8_t> _message)
   m_destroyedScratch.clear();
   m_dockedScratch.clear();
   for (std::uint32_t at = 0; at < leaveCount; ++at)
-    m_leaveScratch.push_back(in.Handle());
+    m_leaveScratch.push_back(in.Entity());
   for (std::uint32_t at = 0; at < destroyedCount; ++at)
-    m_destroyedScratch.push_back(in.Handle());
+    m_destroyedScratch.push_back(in.Entity());
   for (std::uint32_t at = 0; at < dockedCount; ++at)
-    m_dockedScratch.push_back(in.Handle());
+    m_dockedScratch.push_back(in.Entity());
   if (!in.Ok())
     return false;
 
   // All three leave the held set the same way. The lists differ in what they *say*, not in what they
   // do to the set, and only the client's effects care which.
-  for (const ShipHandle gone : m_leaveScratch)
+  for (const EntityId gone : m_leaveScratch)
     Remove(gone);
-  for (const ShipHandle dead : m_destroyedScratch)
+  for (const EntityId dead : m_destroyedScratch)
     Remove(dead);
-  for (const ShipHandle docked : m_dockedScratch)
+  for (const EntityId docked : m_dockedScratch)
     Remove(docked);
 
   // Appended, not assigned: several of these can arrive in one drain, and every death in them is one
@@ -765,7 +764,7 @@ void SnapshotReceiver::Apply()
     bool found = false;
     for (ShipSnapshot& held : m_latest.ships)
     {
-      if (held.handle == ship.handle)
+      if (held.entity == ship.entity)
       {
         held = ship;
         found = true;
@@ -790,8 +789,8 @@ bool WriteMoveOrder(const MoveOrder& _order, Neuron::Transport& _transport)
   out.F32(_order.facingRad);
   out.Pos(_order.destination);
   out.U32(static_cast<std::uint32_t>(_order.ships.size()));
-  for (const ShipHandle handle : _order.ships)
-    out.Handle(handle);
+  for (const EntityId entity : _order.ships)
+    out.Entity(entity);
 
   // On the reliable lane: a dropped order is a click the player made and the game ignored, which is
   // the one failure mode no amount of interpolation covers up (Design/Archive/QuicTransport.md 8).
@@ -809,13 +808,13 @@ bool ReadMoveOrder(std::span<const std::uint8_t> _datagram, MoveOrder& _outOrder
   const float facingRad = in.F32();
   const WorldPos destination = in.Pos();
   const std::uint32_t count = in.U32();
-  if (!in.Ok() || count == 0 || count > MaxShipsPerOrder() || in.Remaining() < count * HANDLE_BYTES)
+  if (!in.Ok() || count == 0 || count > MaxShipsPerOrder() || in.Remaining() < count * ENTITY_ID_BYTES)
     return false;
 
   _outOrder.ships.clear();
   _outOrder.ships.reserve(count);
   for (std::uint32_t at = 0; at < count; ++at)
-    _outOrder.ships.push_back(in.Handle());
+    _outOrder.ships.push_back(in.Entity());
   if (!in.Ok())
     return false;
 
@@ -839,10 +838,10 @@ bool WriteDockOrder(const DockOrder& _order, Neuron::Transport& _transport)
   ByteWriter out(bytes);
   out.U8(KIND_DOCK_ORDER);
   out.U32(0); // order id, reserved: nothing acknowledges an order yet
-  out.Handle(_order.station);
+  out.Entity(_order.station);
   out.U32(static_cast<std::uint32_t>(_order.ships.size()));
-  for (const ShipHandle handle : _order.ships)
-    out.Handle(handle);
+  for (const EntityId entity : _order.ships)
+    out.Entity(entity);
 
   // The reliable lane, for the move order's reason: a dropped order is a click the player made and
   // the game ignored (ADR 0029).
@@ -856,15 +855,15 @@ bool ReadDockOrder(std::span<const std::uint8_t> _datagram, DockOrder& _outOrder
     return false;
 
   (void)in.U32(); // order id
-  const ShipHandle station = in.Handle();
+  const EntityId station = in.Entity();
   const std::uint32_t count = in.U32();
-  if (!in.Ok() || count == 0 || count > MaxShipsPerOrder() || in.Remaining() < count * HANDLE_BYTES)
+  if (!in.Ok() || count == 0 || count > MaxShipsPerOrder() || in.Remaining() < count * ENTITY_ID_BYTES)
     return false;
 
   _outOrder.ships.clear();
   _outOrder.ships.reserve(count);
   for (std::uint32_t at = 0; at < count; ++at)
-    _outOrder.ships.push_back(in.Handle());
+    _outOrder.ships.push_back(in.Entity());
   if (!in.Ok())
     return false;
 

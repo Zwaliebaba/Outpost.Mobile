@@ -1,6 +1,6 @@
 # The MMO scalability plan — the review as slices
 
-**Status: fourteen of the twenty-four slices have landed.** The seam: 2 (the despawn log is
+**Status: sixteen of the twenty-four slices have landed.** The seam: 2 (the despawn log is
 cursored), 3 with 4 folded into it (the publisher), 5 and 6 (the reliable lane, and departures and
 orders on it, which retires finding E1), 7 (listener slots recycled), and the loopback fallback is
 gone (ADR 0028). The view: 8 (trail and glow batching), 9 (frustum culling), 10 (hull instancing).
@@ -8,8 +8,9 @@ The simulation: 11 (a localized gather radius), 13 (churn-gated static rebuilds)
 slices of its own design, so architecture is islands on a world-fixed lattice and the 16.4 km cliff
 is gone. The tree: 21 (the guards widened) and 22 (the dead helper deleted). Slice 12 was decided
 rather than built — 60 Hz stays — and its record is written at last (ADR 0043). Phase 3 has opened
-with 15: the ship record is 47 bytes and a fragment carries 23 of them instead of 13.
-**What is left is slices 16 through 20, plus 23 and 24.**
+with 15 and 16: the ship record is 47 bytes and a fragment carries 23 of them instead of 13, and an
+entity has an identity that outlives the World that minted it. **What is left is slices 17 through
+20, plus 23 and 24.**
 
 This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
 (tree at `de12b6d`) into an ordered slice plan in the shape `Design/README.md` defines: one slice,
@@ -154,7 +155,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 13 | Churn-gated static rebuilds | `GameLogic` | S | — | U4 |  | landed |
 | 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR | landed, all four slices of [its design](Archive/RegionalPathfinding.md) |
 | 15 | The quantized wire | `GameLogic` | M | 6 | E5 | ADR | [landed](Archive/QuantizedWire-work-order.md) |
-| 16 | Global entity identity | `GameLogic` | M | 15 | U3 | ADR |  |
+| 16 | Global entity identity | `GameLogic` | M | 15 | U3 | ADR | [landed](Archive/EntityIdentity-work-order.md) |
 | 17 | The state codec and the replay gate | `GameLogic` | M | 16 | U3 |  |  |
 | 18 | Copy-queue uploader, store eviction | `NeuronClient` | M | 10 | G3 | ADR |  |
 | 19 | Compressed textures, descriptor allocator | `NeuronClient` | M | 18 | G4 |  |  |
@@ -577,6 +578,38 @@ carried on the wire where `ShipHandle` goes today; handles stay the in-process r
 **Acceptance.** A test with two `World`s: an entity despawned in one and spawned in the other under
 the same global id is the same entity to a receiver (no destroy+enter); existing handle tests
 unchanged.
+
+**As landed**, the id is `{shard:16, serial:48}` and **not** the `{shard:16, slot:24,
+generation:24}` this table proposed. The record decides the shape, as the scope said, and it decided
+against the candidate for two reasons ADR 0044 carries: a slot-and-generation id *looks* derivable
+from a handle and stops being so the moment the entity moves, which invites code that derives it;
+and a 24-bit generation reissues a live id after 16.7 million reuses of one slot, which is a weekend
+of churn. A 48-bit serial is never reused — 281 trillion ids, 8.9 million years at a million spawns
+a second. Work order: [`EntityIdentity-work-order.md`](Archive/EntityIdentity-work-order.md).
+
+**It cost no wire bytes.** An `EntityId` is 8 bytes where `{slot, generation}` was 8 bytes, so
+slice 15's arithmetic is untouched: 47-byte record, 23 ships a fragment, 139 ships an order.
+
+Three things worth carrying forward:
+
+- **The reverse index is a sorted vector, not a map**, because `World.h`'s own rule is "no maps" and
+  ADR 0010 already chose this shape for interest sets. Measured: 13 compares for a lookup at
+  N = 5,000, O(1) amortized for a spawn (locally minted serials increase, so a row appends), and a
+  60 kB memmove for a despawn. The last is the number to remember if churn ever makes it matter.
+- **`Publisher::SplitTheLost` got simpler.** A `set_union` of two sorted handle lists followed by a
+  `set_difference` collapsed to one sorted list and a walk, because the departure causes no longer
+  have to be sorted in the currency they are sent in. The despawn log carries the id, which is where
+  a record of a departure should have been able to say what departed all along.
+- **`FactionId` stays u8**, which answers §4 decision 4. Widening the id alone buys nothing while
+  `FACTION_LIMIT` is 8, the standings table is quadratic in it and the wire's `hostileMask` is a
+  byte. The premise was "if player corporations become factions", and ADR 0044 says they should not:
+  a faction is an identity every client maps to a relation (ADR 0013), a corporation is a
+  membership, and making one the other puts ten thousand rows into a quadratic table.
+
+The client followed mechanically — `WorldView`'s carried set, control groups and `RecallableIndex`
+key on ids, and the F4 debug despawn goes through `HandleOfEntity`. One thing improved by accident:
+the explosion seed used to be a slot shifted over a generation, which is the same 64 bits assembled
+by hand and would have made a ship shatter differently after a shard handed it on.
 
 #### Slice 17 — the state codec and the replay gate (`GameLogic`, M)
 

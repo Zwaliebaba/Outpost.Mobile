@@ -267,7 +267,9 @@ public:
     link.sent.clear();
     link.sentReliable.clear();
     world.Step();
-    const Game::ShipHandle leaving[] = {world.HandleOf(second)};
+    // Ids, not handles: the departure runs on the wire name ships that may already be gone, so the
+    // wire's currency is identity (ADR 0044). The sent list two lines up is still handles.
+    const Game::EntityId leaving[] = {world.EntityIdOf(second)};
     Assert::IsTrue(writer.WriteInterest(world, {}, leaving, {}, {}, link) > 0, L"the leave did not send");
     Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"the leave did not take the reliable lane");
     for (const std::vector<std::uint8_t>& message : link.sentReliable)
@@ -275,7 +277,7 @@ public:
     for (const std::vector<std::uint8_t>& datagram : link.sent)
       (void)receiver.Accept(datagram);
     Assert::AreEqual(static_cast<std::size_t>(1), receiver.Latest().ships.size(), L"a leave did not remove a ship");
-    Assert::IsTrue(receiver.Latest().ships[0].handle == world.HandleOf(first), L"a leave removed the wrong ship");
+    Assert::IsTrue(receiver.Latest().ships[0].entity == world.EntityIdOf(first), L"a leave removed the wrong ship");
   }
 
   TEST_METHOD(AFullSnapshotStillDropsWhatIsGone)

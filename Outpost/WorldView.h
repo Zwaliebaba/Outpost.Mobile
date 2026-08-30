@@ -256,7 +256,7 @@ public:
   // the group. The active group is the one the current selection was last taken from, and it stops
   // being active the moment the selection is changed by any other means.
   //
-  // A group remembers ShipHandles, not positions in the snapshot. A position is only meaningful
+  // A group remembers EntityIds, not positions in the snapshot. A position is only meaningful
   // within the snapshot it came from -- SnapshotReceiver::Apply swap-and-pops on a leave and appends
   // on an enter, so a record's index changes whenever anything enters or leaves this client's
   // interest set -- and a group outlives any number of those. That is the same reference-across-a-
@@ -388,7 +388,7 @@ private:
   // records held, and the HUD asks for it five times a frame: free at the counts this game has, and
   // if a fleet ever makes it matter the answer is a recount when the snapshot changes rather than a
   // map to keep in step with two parallel arrays.
-  [[nodiscard]] int RecallableIndex(Game::ShipHandle _handle) const noexcept;
+  [[nodiscard]] int RecallableIndex(Game::EntityId _entity) const noexcept;
   [[nodiscard]] static MotionSample SampleOf(const Game::ShipSnapshot& _ship, std::uint64_t _tick) noexcept;
 
   // A point authored on the hull, in mesh space, to where it is drawn. The plume's trail sampler
@@ -413,8 +413,9 @@ private:
   Game::SnapshotReceiver m_receiver;
   float m_displayTick = 0.0f; // host tick time less INTERP_DELAY_TICKS
 
-  // Parallel to the snapshot's ships, and to m_ships.
-  std::vector<Game::ShipHandle> m_handles;
+  // Parallel to the snapshot's ships, and to m_ships. Identities rather than handles since ADR 0044:
+  // a handle is a reference into one World and this half has never held one.
+  std::vector<Game::EntityId> m_entities;
   std::vector<Game::WorldPos> m_orderPositions; // gathered for FormationHeading when an order is sent
   std::vector<ShipView> m_carryScratch;
 
@@ -422,7 +423,7 @@ private:
   // at Init, because MAX_RELIABLE_BYTES is eight kilobytes and a view that never sees a departure
   // should not carry it.
   std::vector<std::uint8_t> m_reliableScratch;
-  std::vector<Game::ShipHandle> m_carryHandles;
+  std::vector<Game::EntityId> m_carryEntities;
 
   // Indexed by Game::HullId. A hull with no mesh registered simply is not drawn, which is the same
   // diagnostic-not-a-crash treatment a missing mesh already got at boot.
@@ -506,7 +507,7 @@ private:
   std::vector<DirectX::XMFLOAT4X4> m_bodyWorlds;
   std::uint32_t m_bodyTriangles = 0;
 
-  std::vector<Game::ShipHandle> m_groups[CONTROL_GROUPS];
+  std::vector<Game::EntityId> m_groups[CONTROL_GROUPS];
   int m_activeGroup = -1;
   EventLog* m_log = nullptr;
 

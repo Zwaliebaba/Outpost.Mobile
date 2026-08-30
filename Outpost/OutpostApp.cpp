@@ -456,6 +456,12 @@ void OutpostApp::ReseedBodies()
 
 void OutpostApp::SpawnStartingFleet()
 {
+  // Which shard this world mints identities for, told to it by the composition root before anything
+  // spawns -- AGENTS.md 5's rule, and the same shape as ConfigureIndex. Zero because there is one
+  // world and one process; a dedicated server would read its own out of the configuration file
+  // slice 24 cuts, and nothing else in the tree would change (ADR 0044).
+  m_world.ConfigureShard(0);
+
   constexpr int hullCount = static_cast<int>(std::size(STARTING_FLEET));
   for (int i = 0; i < hullCount; ++i)
   {
@@ -526,18 +532,22 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
     // composition root calls World directly. It is the one place allowed to, and this design must
     // not invent a despawn order on the wire for a tuning aid (Design/Archive/SpaceshipExplosion.md 9).
     //
-    // The handles are collected before the first despawn: Ships() is a span over the last snapshot
-    // rather than over the world, so the walk itself is safe, and taking the handles first keeps it
+    // The ids are collected before the first despawn: Ships() is a span over the last snapshot
+    // rather than over the world, so the walk itself is safe, and taking the ids first keeps it
     // that way if it ever stops being.
-    std::vector<Game::ShipHandle> doomed;
+    //
+    // The snapshot names entities and World despawns handles, so this is the one place in the
+    // executable that crosses back the way the publisher crosses forward -- which the composition
+    // root is entitled to do, being the only thing that holds both halves (ADR 0044).
+    std::vector<Game::EntityId> doomed;
     const std::span<const Game::ShipSnapshot> ships = m_view.Ships();
     for (std::size_t i = 0; i < ships.size(); ++i)
     {
       if (m_view.IsSelected(i))
-        doomed.push_back(ships[i].handle);
+        doomed.push_back(ships[i].entity);
     }
-    for (const Game::ShipHandle handle : doomed)
-      m_world.DespawnShip(handle);
+    for (const Game::EntityId entity : doomed)
+      m_world.DespawnShip(m_world.HandleOfEntity(entity));
     break;
   }
   case VK_F5:

@@ -14,6 +14,18 @@ namespace Game
 {
 ShipId World::SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint32_t _hullId, FactionId _factionId)
 {
+  // The serial is taken here rather than inside SpawnShipAs so that there is exactly one place that
+  // mints, and it is the one place that can be sure the id is not already here.
+  return SpawnShipAs(MakeEntityId(m_shard, m_nextEntitySerial), _posWorld, _headingRad, _hullId, _factionId);
+}
+
+ShipId World::SpawnShipAs(EntityId _entity, const WorldPos& _posWorld, float _headingRad, std::uint32_t _hullId, FactionId _factionId)
+{
+  // An entity existing twice in one world is the failure the whole mechanism exists to make
+  // impossible, so a duplicate is refused rather than resolved to whichever copy is found first.
+  if (_entity == INVALID_ENTITY_ID || ResolveEntity(_entity) != INVALID_SHIP_ID)
+    return INVALID_SHIP_ID;
+
   ShipState ship;
   ship.posWorld = _posWorld;
   ship.prevPos = _posWorld;
@@ -40,6 +52,14 @@ ShipId World::SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint3
   // Generation 0 is the null handle, so a slot's first issue is 1 and a wrap skips back past it.
   if (m_slots[slot].generation == 0)
     m_slots[slot].generation = 1;
+  m_slots[slot].entity = _entity;
+  InsertEntityRow(_entity, slot);
+
+  // Past any local id handed in, so a reloaded world cannot go on to mint one its own file already
+  // used. A foreign id says nothing about this shard's counter and moves it not at all.
+  if (EntityShardOf(_entity) == m_shard && EntitySerialOf(_entity) >= m_nextEntitySerial)
+    m_nextEntitySerial = EntitySerialOf(_entity) + 1;
+
   m_shipSlot.push_back(slot);
   m_routes.emplace_back();
   m_patrols.emplace_back();
@@ -67,7 +87,7 @@ bool World::DespawnShip(ShipHandle _handle, DespawnCause _cause)
   // despawn no subscriber held is dropped where the publisher intersects it with what that
   // subscriber knew: you cannot be told of the death of something you never knew about
   // (Design/Archive/Hostiles.md 4.4).
-  m_despawnLog.push_back(DespawnRecord{_handle, _cause});
+  m_despawnLog.push_back(DespawnRecord{_handle, m_slots[_handle.slot].entity, _cause});
 
   // Read before anything moves. Two ships can change the static set here: the one being removed, and
   // the one swap-and-pop moves into its place -- because the static store holds ShipIds, and the
@@ -99,7 +119,11 @@ bool World::DespawnShip(ShipHandle _handle, DespawnCause _cause)
   m_shipSlot.pop_back();
 
   Slot& freed = m_slots[_handle.slot];
+  EraseEntityRow(freed.entity);
   freed.ship = INVALID_SHIP_ID;
+  // Cleared, not kept: a slot that still named its last occupant would answer EntityIdOf for a ship
+  // that no longer exists, and the generation bump below is what makes every handle to it null.
+  freed.entity = INVALID_ENTITY_ID;
   ++freed.generation;
   if (freed.generation == 0)
     freed.generation = 1;
@@ -254,6 +278,70 @@ ShipId World::Resolve(ShipHandle _handle) const noexcept
     return INVALID_SHIP_ID;
   const Slot& slot = m_slots[_handle.slot];
   return (slot.generation == _handle.generation) ? slot.ship : INVALID_SHIP_ID;
+}
+
+void World::ConfigureShard(ShardId _shard) noexcept
+{
+  m_shard = _shard;
+}
+
+EntityId World::EntityIdOf(ShipId _id) const noexcept
+{
+  return (_id < m_ships.size()) ? m_slots[m_shipSlot[_id]].entity : INVALID_ENTITY_ID;
+}
+
+EntityId World::EntityIdOf(ShipHandle _handle) const noexcept
+{
+  if (_handle.generation == 0 || _handle.slot >= m_slots.size())
+    return INVALID_ENTITY_ID;
+  const Slot& slot = m_slots[_handle.slot];
+  return (slot.generation == _handle.generation) ? slot.entity : INVALID_ENTITY_ID;
+}
+
+// The index is sorted by id, so this is a binary search returning the row that holds _entity, or
+// m_entityRows.size() when nothing does. One function for all three operations below, because a
+// lookup and an insertion point are the same question asked twice.
+std::uint32_t World::FindEntityRow(EntityId _entity) const noexcept
+{
+  const auto at = std::lower_bound(m_entityRows.begin(), m_entityRows.end(), _entity,
+                                   [](const EntityRow& _row, EntityId _key) { return _row.entity < _key; });
+  return static_cast<std::uint32_t>(at - m_entityRows.begin());
+}
+
+void World::InsertEntityRow(EntityId _entity, std::uint32_t _slot)
+{
+  // Append when it belongs at the end, which is every spawn this world mints for itself: serials
+  // increase, so the new id is greater than every id already here. Only an id issued elsewhere --
+  // a handoff, or a reload out of order -- pays for the insert.
+  if (m_entityRows.empty() || m_entityRows.back().entity < _entity)
+  {
+    m_entityRows.push_back(EntityRow{_entity, _slot});
+    return;
+  }
+  m_entityRows.insert(m_entityRows.begin() + FindEntityRow(_entity), EntityRow{_entity, _slot});
+}
+
+void World::EraseEntityRow(EntityId _entity) noexcept
+{
+  const std::uint32_t at = FindEntityRow(_entity);
+  if (at < m_entityRows.size() && m_entityRows[at].entity == _entity)
+    m_entityRows.erase(m_entityRows.begin() + at);
+}
+
+ShipId World::ResolveEntity(EntityId _entity) const noexcept
+{
+  if (_entity == INVALID_ENTITY_ID)
+    return INVALID_SHIP_ID;
+  const std::uint32_t at = FindEntityRow(_entity);
+  if (at >= m_entityRows.size() || m_entityRows[at].entity != _entity)
+    return INVALID_SHIP_ID;
+  return m_slots[m_entityRows[at].slot].ship;
+}
+
+ShipHandle World::HandleOfEntity(EntityId _entity) const noexcept
+{
+  const ShipId id = ResolveEntity(_entity);
+  return (id != INVALID_SHIP_ID) ? HandleOf(id) : ShipHandle{};
 }
 
 void World::ConfigureIndex(const SpatialIndex::Desc& _desc)

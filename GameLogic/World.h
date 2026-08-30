@@ -29,6 +29,12 @@ enum class DespawnCause : std::uint8_t
 struct DespawnRecord
 {
   ShipHandle handle;
+
+  // Who departed, as against which slot it was in. The three departure runs on the wire name ships
+  // that are already gone, so the publisher cannot ask the world for their ids -- and the record of
+  // a departure is the right place to keep one anyway (ADR 0044).
+  EntityId entity = INVALID_ENTITY_ID;
+
   DespawnCause cause = DespawnCause::Destroyed;
 };
 
@@ -148,6 +154,17 @@ public:
   // papering over them. A caller that means someone else has to say so (Design/Archive/Hostiles.md 11).
   ShipId SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint32_t _hullId, FactionId _factionId = FACTION_PLAYER);
 
+  // Spawns under an identity issued somewhere else: a handoff from another shard, or a saved world
+  // being reloaded. Returns INVALID_SHIP_ID if the id is null or already here, because an entity
+  // existing twice in one world is the failure this whole mechanism exists to make impossible.
+  //
+  // It also advances this world's serial counter past any *local* id it is handed, so a reload
+  // cannot go on to mint an id the file already used. That is one line written for a slice that
+  // does not exist yet, and it is here because it is one line now and a corruption bug later
+  // (Design/Archive/EntityIdentity-work-order.md 3.4).
+  ShipId SpawnShipAs(EntityId _entity, const WorldPos& _posWorld, float _headingRad, std::uint32_t _hullId,
+                     FactionId _factionId = FACTION_PLAYER);
+
   // Removes a ship, moving the last one into its slot. False means the handle was already stale.
   //
   // Every stored reference to the removed ship stops resolving; every stored reference to the ship
@@ -195,6 +212,32 @@ public:
 
   // The ship a handle names, or INVALID_SHIP_ID if it has been despawned.
   [[nodiscard]] ShipId Resolve(ShipHandle _handle) const noexcept;
+
+  // --- identity ------------------------------------------------------------------------------------
+
+  // Which shard this world mints ids for. Configured by the composition root before anything spawns,
+  // beside ConfigureIndex and for AGENTS.md 5's reason: a library takes a plain value from the root
+  // and never reads a file or an environment. Ids already issued keep the shard they were issued
+  // under, so calling this after a spawn changes nothing that exists.
+  void ConfigureShard(ShardId _shard) noexcept;
+
+  [[nodiscard]] ShardId Shard() const noexcept
+  {
+    return m_shard;
+  }
+
+  // Who a live ship is. INVALID_ENTITY_ID for an id or a handle that is not one.
+  [[nodiscard]] EntityId EntityIdOf(ShipId _id) const noexcept;
+  [[nodiscard]] EntityId EntityIdOf(ShipHandle _handle) const noexcept;
+
+  // The other direction, for the two places that hold an id rather than a handle: the publisher
+  // reading an order off the wire, and the composition root's debug despawn. O(log N) over a sorted
+  // vector rather than O(1) over a map, because World holds no maps and ADR 0010 already chose this
+  // shape for the same reason.
+  // Named rather than overloaded, deliberately: ShipId is a u32 and EntityId a u64, so Resolve(id)
+  // with a ShipId in hand would compile and silently mean the other thing.
+  [[nodiscard]] ShipId ResolveEntity(EntityId _entity) const noexcept;
+  [[nodiscard]] ShipHandle HandleOfEntity(EntityId _entity) const noexcept;
 
   // Assigns _ship to walk the ring around _anchorStation for as long as the anchor lives.
   //
@@ -479,15 +522,42 @@ private:
   {
     ShipId ship = INVALID_SHIP_ID;
     std::uint32_t generation = 0;
+
+    // The identity, kept here rather than in an array parallel to m_ships: the slot is already the
+    // indirection that survives swap-and-pop, so this is one fewer table for despawn to keep in
+    // step. Exactly 16 bytes with the two above it.
+    EntityId entity = INVALID_ENTITY_ID;
   };
+
+  // An id to the slot that holds it, sorted by id so that a lookup is a binary search.
+  //
+  // Not a map: World.h's own rule at the top of this class, and ADR 0010's answer for interest sets.
+  // Locally minted serials increase, so a spawn appends and is O(1); only an id issued elsewhere
+  // inserts in the middle. A despawn is a memmove of the tail -- 60 kB at five thousand ships, which
+  // is the number to remember if churn ever makes it matter (ADR 0044).
+  struct EntityRow
+  {
+    EntityId entity = INVALID_ENTITY_ID;
+    std::uint32_t slot = 0;
+  };
+
+  [[nodiscard]] std::uint32_t FindEntityRow(EntityId _entity) const noexcept;
+  void InsertEntityRow(EntityId _entity, std::uint32_t _slot);
+  void EraseEntityRow(EntityId _entity) noexcept;
 
   std::vector<ShipState> m_ships;
   std::vector<std::uint32_t> m_shipSlot; // parallel to m_ships: which slot each ship owns
   std::vector<Slot> m_slots;
+  std::vector<EntityRow> m_entityRows;     // sorted by entity id; one row per live ship
   std::vector<std::uint32_t> m_freeSlots;  // reused last-in-first-out, so reuse is reproducible
   std::vector<DespawnRecord> m_despawnLog; // read by cursor, trimmed by the publisher, never by Step
   std::uint64_t m_despawnBase = 0;         // the sequence of m_despawnLog[0]; rises with every trim
   std::uint64_t m_tick = 0;
+
+  // Issued once each and never reused, which is what makes an id an identity rather than a
+  // reference. Starts at 1 so that no shard ever mints INVALID_ENTITY_ID.
+  std::uint64_t m_nextEntitySerial = 1;
+  ShardId m_shard = 0;
 
   SpatialIndex m_index;
   PathIslands m_pathIslands;
