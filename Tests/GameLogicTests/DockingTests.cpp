@@ -244,6 +244,47 @@ public:
     Assert::AreEqual(static_cast<std::size_t>(1), world.StationOf(station).docked.size(), L"the moved ship docked as somebody else");
   }
 
+  // The fourth table, on the same terms. A protector whose duty did not move with it would hunt
+  // whatever swap-and-pop put in its place, or stop being a protector at all.
+  TEST_METHOD(ADespawnRepairsTheProtectorTable)
+  {
+    Game::World world;
+    const Game::ShipId structure =
+      world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+    Game::World::StationDesc desc;
+    desc.ownerFaction = Game::FACTION_VANGUARD;
+    desc.protectorHullId = static_cast<std::uint32_t>(Game::HullId::Corvette);
+    desc.protectorComplement = 2;
+    desc.launchEveryTicks = 30;
+    const Game::World::StationId station = world.MakeStation(structure, desc);
+
+    const Game::ShipId raider = world.SpawnShip(Game::LocalPos(1500.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
+    world.RecordAggression(world.HandleOf(raider), station);
+    for (int tick = 0; tick < 200; ++tick)
+      world.Step();
+    Assert::AreEqual(static_cast<std::uint32_t>(2), world.LaunchedProtectorCount(station), L"the garrison did not launch");
+
+    // Take the *first* protector, so swap-and-pop moves the second one down over its slot.
+    Game::ShipId first = Game::INVALID_SHIP_ID;
+    Game::ShipHandle survivor;
+    for (Game::ShipId id = 0; id < world.ShipCount(); ++id)
+    {
+      if (!world.ProtectorOf(id).active)
+        continue;
+      if (first == Game::INVALID_SHIP_ID)
+        first = id;
+      else
+        survivor = world.HandleOf(id);
+    }
+    Assert::IsTrue(world.DespawnShip(world.HandleOf(first)), L"the despawn failed");
+
+    const Game::ShipId moved = world.Resolve(survivor);
+    Assert::AreNotEqual(Game::INVALID_SHIP_ID, moved, L"the surviving protector stopped resolving");
+    Assert::IsTrue(world.ProtectorOf(moved).active, L"the moved protector lost its duty");
+    Assert::IsTrue(world.ProtectorOf(moved).home == station, L"the moved protector forgot which station it belongs to");
+    Assert::IsTrue(world.ProtectorOf(moved).target == world.HandleOf(raider), L"the moved protector forgot its target");
+  }
+
   // A station that stops being one -- or whose structure dies -- ends the approach where it stands,
   // rather than flying ships at an index that now means something else.
   TEST_METHOD(ADeadStationStandsItsVisitorsDown)

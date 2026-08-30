@@ -195,6 +195,7 @@
     <ClCompile Include="PatrolTests.cpp" />
     <ClCompile Include="StationTests.cpp" />
     <ClCompile Include="DockingTests.cpp" />
+    <ClCompile Include="ProtectorTests.cpp" />
     <ClCompile Include="UniverseLayoutTests.cpp" />
     <ClCompile Include="PublisherTests.cpp" />
     <ClCompile Include="SeparationTests.cpp" />

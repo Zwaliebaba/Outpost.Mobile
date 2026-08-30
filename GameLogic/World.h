@@ -110,7 +110,34 @@ public:
     std::uint32_t protectorComplement = 0;
     std::uint32_t launchEveryTicks = 90;
     std::uint32_t targetCap = 4;
+
+    // Who this station's protectors are hunting, capped at targetCap and pruned of stale handles as
+    // it is read, so it stays dense and in arrival order. A full list drops the *newest*: the
+    // standing flip has already happened, which is the part that matters.
+    std::vector<ShipHandle> targets;
+
+    // Ticks until the next protector may launch. Reset while there is nobody to hunt, so a station
+    // at peace is not running a metronome.
+    std::uint32_t launchCooldownTicks = 0;
+
     std::vector<DockedShip> docked; // the ledger: who is inside. Filled by the dock pass.
+  };
+
+  // What one protector is for.
+  //
+  // active means "this ship is a garrison ship of home, and it is in space" -- not "it is hunting".
+  // The distinction is load-bearing: a protector flying home is still out, still counts against the
+  // complement, and still has to be told apart from a visitor when it reaches the door. A stale
+  // target with nothing to replace it is what standing down means; the duty ends when the ship
+  // docks, and it ends by being swap-and-popped away with it.
+  //
+  // It also means a protector already on its way home picks up a new target and turns round rather
+  // than docking and being relaunched a tick later (Design/Stations-slice-4.md 2.4).
+  struct ProtectorDuty
+  {
+    StationId home = INVALID_STATION_ID;
+    ShipHandle target;
+    bool active = false;
   };
 
   // Adds a ship at rest. Returns its id, which is its index for as long as nothing is despawned.
@@ -257,6 +284,18 @@ public:
   // snapshot exists to withhold. Exposed for tests and for a debug overlay.
   [[nodiscard]] const Docking& DockingOf(ShipId _id) const noexcept;
 
+  // A ship's protector duty, on the same terms.
+  [[nodiscard]] const ProtectorDuty& ProtectorOf(ShipId _id) const noexcept;
+
+  // How many of _station's protectors are currently in space.
+  //
+  // Counted rather than stored, and Design/Stations.md 8.2 keeps a field for it. Storing it would
+  // need a repair path nobody would remember: a protector that *dies* has to decrement it too, or
+  // losses are never replaced -- and DespawnShip has no business knowing what a protector is.
+  // Counting removes that path, removes a counter from the replay contract's shadow, and cannot
+  // drift from the truth because it is the truth (Design/Stations-slice-4.md 2.3).
+  [[nodiscard]] std::uint32_t LaunchedProtectorCount(StationId _station) const noexcept;
+
   // The station a ship is, or INVALID_STATION_ID if it is not one. A linear scan of a vector with
   // single digits of rows, which is free at this scale and becomes an index the day there are
   // hundreds (Design/Stations.md 6.1, 13).
@@ -400,6 +439,14 @@ private:
 
   void StepPatrols();
 
+  // The protector response, last in the standing-intent slot.
+  //
+  // Three steps in order: the duty pass re-targets and pursues, the launch pass tops up each
+  // station's garrison on its metronome, and the launches are applied after both -- because a spawn
+  // appends to the very tables the pass is walking, which is the dock pass's argument for its
+  // captures from the other direction (Design/Stations.md 10).
+  void StepProtectors();
+
   void SnapshotPreviousTick() noexcept;
   void RebuildStaticIfDirty();
   void RebuildIndex();
@@ -485,8 +532,27 @@ private:
     StationId station = INVALID_STATION_ID;
     std::uint32_t hullId = 0;
     FactionId factionId = FACTION_PLAYER;
+
+    // A garrison ship coming home writes no ledger row: a garrison is not a guest, and the hull
+    // returns to the complement by simply no longer being counted (Design/Stations.md 8.3).
+    bool isGarrison = false;
   };
   std::vector<Capture> m_captureScratch;
+
+  // A protector's duty, parallel to m_ships and swap-and-popped with them exactly as m_routes,
+  // m_patrols and m_dockings are. The fourth table the despawn repair covers.
+  std::vector<ProtectorDuty> m_protectors;
+
+  // What the launch pass decided this tick, applied after it for the reason captures are.
+  struct Launch
+  {
+    StationId home = INVALID_STATION_ID;
+    WorldPos posWorld;
+    float headingRad = 0.0f;
+    std::uint32_t hullId = 0;
+    FactionId factionId = FACTION_VANGUARD;
+  };
+  std::vector<Launch> m_launchScratch;
 
   // The stations. Indexed by StationId and *not* parallel to m_ships, which is the difference worth
   // seeing: a patrol belongs to a ship, a station is a thing a ship happens to be. Nothing removes

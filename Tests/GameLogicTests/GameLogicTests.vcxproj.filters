@@ -50,6 +50,9 @@
     <ClCompile Include="DockingTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="ProtectorTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="UniverseLayoutTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

@@ -1,7 +1,7 @@
 # Stations — Core Vanguard Command, docking, and the protector response
 
-**Status: in progress. No slice has merged. Slices 1-3 are written and in review; the branch
-carrying them builds green.** Four decisions were
+**Status: in progress. No slice has merged. Slices 1-4 -- the whole `GameLogic` half -- are written
+and in review; the branch carrying them builds green. Slices 5 and 6 are `Outpost` and are next.** Four decisions were
 put to the owner on 2026-08-30 and taken (§15); each was the recommended option. §16 lists the
 slices and the dependencies between them, and
 [`Stations-slice-plan.md`](Stations-slice-plan.md) grounds that list against the tree.
@@ -561,6 +561,15 @@ outward — in the station owner's faction, entered into the protector table bel
 replaced by the same metronome for as long as a target lives: the station is the law and its
 reserve is bottomless, which is safe precisely because of §8.6 — there is nothing to farm.
 
+> **Amendment, 2026-08-30 (slice 4).** `launchedCount` is a *derived* quantity in the code, not a
+> stored field: the launch pass counts the active protector duties whose home is this station. Storing
+> it needs a decrement when a protector **dies** as well as when one docks home -- otherwise "losses
+> are replaced by the same metronome" never fires -- and `DespawnShip` has no business knowing what a
+> protector is. Counting removes that repair path and a counter from the replay contract's shadow, and
+> cannot drift from the truth because it is the truth
+> ([ADR 0041](Decisions/0041-the-protector-response-reacts-to-stated-acts.md),
+> [slice 4](Stations-slice-4.md) §2.3).
+
 Launches happen inside the tick, so every number that shapes them is either per-station content
 (hull, complement, cadence, cap — passed to `MakeStation` by the root, the patrol-ring precedent)
 or already contract. The Vanguard's content this phase: **Corvette** protectors, complement **3**,
@@ -591,6 +600,16 @@ The protector pass, last in the standing-intent slot (§10), per active duty in 
   (64 m, `SimTuning.h` — the same figure and the same reasoning as `PATH_REPLAN_DEVIATION_METRES`)
   from the point last steered at: issue a move order at the target's current position, full speed,
   no facing, `PlanRoute` as any order does. Between re-aims, the tested machinery flies the leg.
+
+> **Amendment, 2026-08-30 (slice 4).** "The duty ends and the ship goes home" is one word too strong
+> and the code keeps the duty *active* until the ship actually docks. `ProtectorDuty::active` means
+> "this ship is a garrison ship of `home`, and it is in space", not "it is hunting"; a null target
+> with nothing to replace it is what standing down means. Three things need that distinction: a
+> protector flying home still counts against the complement, so the station does not relaunch behind
+> it; it still has to be told from a visitor at the door, or it writes a ledger row; and a *new*
+> aggression turns it round rather than letting it dock and be relaunched a tick later. The duty ends
+> by being swap-and-popped away with the ship it belonged to
+> ([slice 4](Stations-slice-4.md) §2.4).
 
 That is a chase built entirely out of standing parts: the reaction is *choosing the point*, and
 everything after the choice is the same code a player's click exercises. The pursuit never gives
@@ -898,7 +917,7 @@ shape; work orders are written per slice when it is picked up.
 | 1 | **The layout**: `UniverseLayout.h/.cpp`, `LayOutSystem`, the three layout tests — *in review*, [work order](Stations-slice-1.md) | `GameLogic` | — | the layout is static content in `GameLogic` ([ADR 0037](Decisions/0037-the-universe-layout-is-static-content-in-gamelogic.md)) |
 | 2 | **Who is who**: `FACTION_VANGUARD`, the `FACTION_HOSTILE` → `FACTION_VANDAL` rename at every caller (§4.1), `Standing` + `DEFAULT_STANDINGS` + the table in `World`, the standing half of `RecordAggression`, the station table + `MakeStation` + `StationDesc`, the record's flags byte, the update header's `hostileMask`, their tests — *in review*, [work order](Stations-slice-2.md) | `GameLogic` (+ the rename's `Outpost` call sites) | — | [stations are ships with a side table](Decisions/0038-stations-are-ships-with-a-side-table.md); [standings are simulation state stated per subscriber](Decisions/0039-standings-are-simulation-state-stated-per-subscriber.md) |
 | 3 | **Docking**: `DespawnCause` + the docked list on the wire, `DockOrder` write/read, `IssueDockOrder` + gates, `m_dockings` + the dock pass + capture + ledger, `DOCK_CAPTURE_METRES` + `DockRangeMetres`, move-order cancellation, despawn repair, their tests — *in review*, [work order](Stations-slice-3.md) | `GameLogic` | 2 | [a departure carries a cause on the wire](Decisions/0040-a-departure-carries-a-cause.md) |
-| 4 | **The response**: target lists + the launch metronome, `m_protectors` + the pursuit pass + `PURSUIT_REPLAN_METRES`, stand-down-and-dock-home, the full `RecordAggression`, the replay test over the whole scene | `GameLogic` | 2, 3 | the protector response reacts to stated acts, not senses |
+| 4 | **The response**: target lists + the launch metronome, `m_protectors` + the pursuit pass + `PURSUIT_REPLAN_METRES`, stand-down-and-dock-home, the full `RecordAggression`, the replay test over the whole scene — *in review*, [work order](Stations-slice-4.md) | `GameLogic` | 2, 3 | [the protector response reacts to stated acts, not senses](Decisions/0041-the-protector-response-reacts-to-stated-acts.md) |
 | 5 | **The Vanguard scene**: root calls `LayOutSystem` + spawns the stations + registers the Vandal base, planet visuals follow the sites (F5 reseeds looks only), `VANGUARD_*`/`HUD_VANGUARD_BLUE` colors + the faction-tint table, `FACTION_NAMES` beside `HULL_NAMES`, minimap station dots + hollow marks + edge clamping, `hostileMask` consumption, `CONTACTS` by mask, `STATIONS ONLINE` boot line, AGENTS.md's what-is-here sentences, screenshots at two sizes | `Outpost` | 1, 2 | — |
 | 6 | **Docking and the response, on screen**: `PickStation` + the tap order + refusal affordance + marker flash, docked-list consumption (silent removal, `DOCKED` line), F6 + `VANGUARD PROVOKED`, log lines, screenshots of a dock and of a scramble at two sizes | `Outpost` | 3, 4, 5 | — |
 

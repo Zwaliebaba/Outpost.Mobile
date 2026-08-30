@@ -312,6 +312,17 @@ inline constexpr std::uint32_t PATROL_RING_WAYPOINTS = 12;
 // instead of in the station's own obstacle footprint (Design/Stations.md 7.3).
 inline constexpr float DOCK_CAPTURE_METRES = 60.0f;
 
+// How far a pursued target may move from the point its hunter last aimed at before the hunter
+// re-aims. In the contract: it changes which point a protector steers at.
+//
+// PATH_REPLAN_DEVIATION_METRES's figure and its reasoning -- two path cells, and never per tick,
+// because a plan is a pure function of the static set and the two endpoints and re-running it every
+// tick would cost everything and change nothing. Its own constant rather than a share of that one
+// because the two measure different things: that is a follower drifting off its leg, this is a
+// target moving, and the day either is retuned the other should not move with it
+// (Design/Stations.md 8.3).
+inline constexpr float PURSUIT_REPLAN_METRES = 64.0f;
+
 // --- interest management -----------------------------------------------------------------------
 // Not in the replay contract, and that is worth saying because everything around it is: these change
 // what is *sent*, never what is *simulated*. A recording made at one radius replays identically at

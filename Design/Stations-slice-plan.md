@@ -344,6 +344,12 @@ order-state that would leave ghost entries in every pass and every index. Next f
 
 ## 7. Slice 4 — the response
 
+**Written, in review** — work order [`Stations-slice-4.md`](Stations-slice-4.md), decision record
+[0041](Decisions/0041-the-protector-response-reacts-to-stated-acts.md). Both recommendations below
+were taken: the launched count is derived, and the dock pass owns the garrison branch. A third
+adjustment the plan did not foresee: a duty stays *active* while its ship flies home, which design
+§8.3 words as ending — three behaviours need the distinction, and §8.3 has an amendment note.
+
 **Layer:** `GameLogic`, `GameLogicTests`. **Depends on:** 2, 3. **Blocks:** 6.
 
 | File | What happens to it |
@@ -479,13 +485,13 @@ the change it explains, and the index in `Design/Decisions/README.md` lists it.
 
 ## 11. What is not decided
 
-The first is answered; the rest are the implementer's and are recommended above.
+All four are answered. Slices 1-4 are written; what is left is the two `Outpost` slices, whose
+acceptance is screenshots rather than tests.
 
 1. ~~**NMO slice 5 before Stations slice 5?**~~ Resolved at `66ac880`: NMO slice 5 landed first,
    which is what was recommended, and slice 5 is smaller for it (§2.3).
 2. ~~**§7.4 is one sentence out of date**~~ Done in slice 3: §7.4 keeps its prose and carries a dated
    amendment note, per Design/README.md. §7.3 gained one too, for the capture range (above).
-3. **`launchedCount` derived rather than stored** (§7). Recommended: it removes a repair path and a
-   counter from the replay contract's shadow.
+3. ~~**`launchedCount` derived rather than stored**~~ Done in slice 4, with §8.2 amended to say so.
 4. ~~**One order cap, not two**~~ Done in slice 3: `WriteDockOrder` reuses `MaxShipsPerOrder()`, with
    the reason at the declaration.

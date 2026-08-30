@@ -44,6 +44,7 @@ ShipId World::SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint3
   m_routes.emplace_back();
   m_patrols.emplace_back();
   m_dockings.emplace_back();
+  m_protectors.emplace_back();
 
   // Only an immovable can change the static set. A spawn appends, so no existing id moves and
   // nothing already in the store is disturbed -- which is why this needs no id-shift caveat and the
@@ -86,6 +87,7 @@ bool World::DespawnShip(ShipHandle _handle, DespawnCause _cause)
     m_routes[id] = m_routes[last];
     m_patrols[id] = m_patrols[last];
     m_dockings[id] = m_dockings[last];
+    m_protectors[id] = m_protectors[last];
     m_shipSlot[id] = m_shipSlot[last];
     m_slots[m_shipSlot[id]].ship = id; // the moved ship keeps its slot, and its handles keep working
   }
@@ -93,6 +95,7 @@ bool World::DespawnShip(ShipHandle _handle, DespawnCause _cause)
   m_routes.pop_back();
   m_patrols.pop_back();
   m_dockings.pop_back();
+  m_protectors.pop_back();
   m_shipSlot.pop_back();
 
   Slot& freed = m_slots[_handle.slot];
@@ -142,6 +145,34 @@ void World::RecordAggression(ShipHandle _attacker, StationId _station)
   // criminal" and "you are criminal" are the same sentence. The day two players share a faction this
   // widens to per-player rows exactly as ADR 0014's authority gate does (Design/Stations.md 4.2, 12).
   m_standings.rows[owner][attackerFaction] = Standing::Hostile;
+
+  // Standing is imperial and the response is local: the flip above is the whole government's, and
+  // the list below is one station's. A second aggression against a second station scrambles that
+  // one too (Design/Stations.md 8.1).
+  Station& station = m_stations[_station];
+  for (const ShipHandle known : station.targets)
+  {
+    if (known == _attacker)
+      return; // already being hunted; attacking twice does not queue two protectors
+  }
+
+  // A full list drops the newest, deterministically. The standing flip already happened, which is
+  // the part that matters -- a criminal the garrison is too busy to chase is still a criminal.
+  if (station.targets.size() < station.targetCap)
+    station.targets.push_back(_attacker);
+}
+
+const World::ProtectorDuty& World::ProtectorOf(ShipId _id) const noexcept
+{
+  return m_protectors[_id];
+}
+
+std::uint32_t World::LaunchedProtectorCount(StationId _station) const noexcept
+{
+  std::uint32_t launched = 0;
+  for (const ProtectorDuty& duty : m_protectors)
+    launched += (duty.active && duty.home == _station) ? 1u : 0u;
+  return launched;
 }
 
 World::StationId World::MakeStation(ShipId _structure, const StationDesc& _desc)
@@ -384,7 +415,10 @@ void World::StepDockings()
       // Hull and faction are the whole of what a ship is today, so they are the whole ledger row --
       // when undocking arrives it spawns a fresh ship from it, with a fresh handle
       // (Design/Stations.md 7.3).
-      m_captureScratch.push_back(Capture{HandleOf(id), station, ship.hullId, ship.factionId});
+      // A garrison ship coming home is not a guest: no ledger row, and the hull returns to the
+      // complement by simply stopping being counted (Design/Stations.md 8.3).
+      const bool garrison = m_protectors[id].active && m_protectors[id].home == station;
+      m_captureScratch.push_back(Capture{HandleOf(id), station, ship.hullId, ship.factionId, garrison});
       continue;
     }
 
@@ -405,7 +439,8 @@ void World::StepDockings()
   // parallel tables. A station id stays valid across this loop: stations do not despawn.
   for (const Capture& capture : m_captureScratch)
   {
-    m_stations[capture.station].docked.push_back(DockedShip{capture.hullId, capture.factionId});
+    if (!capture.isGarrison)
+      m_stations[capture.station].docked.push_back(DockedShip{capture.hullId, capture.factionId});
     (void)DespawnShip(capture.ship, DespawnCause::Docked);
   }
   m_captureScratch.clear();
@@ -442,6 +477,143 @@ void World::StepPatrols()
     const WorldPos waypoint = PatrolRingPoint(m_ships[anchor].posWorld, patrol.waypointIndex, patrol.ringRadiusMetres);
     PlanRoute(id, waypoint, HullSpecOf(ship.hullId).BoundingRadiusMetres() + PATH_CLEARANCE_MARGIN_METRES);
   }
+}
+
+void World::StepProtectors()
+{
+  // A launch spawns a ship and a pursuit issues an order, and both plan routes, so the islands have
+  // to be current here for the reason StepPatrols rebuilds them.
+  RebuildStaticIfDirty();
+
+  // 1. The duty pass. Re-target what has lost its quarry, pursue what has one.
+  for (ShipId id = 0; id < ShipCount(); ++id)
+  {
+    ProtectorDuty& duty = m_protectors[id];
+    if (!duty.active)
+      continue;
+    if (duty.home >= m_stations.size())
+    {
+      duty.active = false; // its station is not one any more; nothing to be a garrison of
+      continue;
+    }
+
+    ShipId target = Resolve(duty.target);
+    if (target == INVALID_SHIP_ID)
+    {
+      // Dead or docked -- a stale handle either way, and the difference is not this pass's business.
+      // The home station's list is pruned as it is read, so it stays dense and in arrival order.
+      Station& home = m_stations[duty.home];
+      std::size_t live = 0;
+      for (std::size_t at = 0; at < home.targets.size(); ++at)
+      {
+        if (Resolve(home.targets[at]) != INVALID_SHIP_ID)
+          home.targets[live++] = home.targets[at];
+      }
+      home.targets.resize(live);
+
+      if (home.targets.empty())
+      {
+        // Nothing left to hunt: go home and dock, through the same table a player's dock order
+        // writes. Standing down is one intent write rather than a return-behavior of its own, which
+        // is the reuse the docking table exists for (Design/Stations.md 8.3, 13).
+        duty.target = ShipHandle{};
+        const ShipId structure = Resolve(m_stations[duty.home].structure);
+        if (structure != INVALID_SHIP_ID && !m_dockings[id].active)
+        {
+          m_dockings[id].station = m_stations[duty.home].structure;
+          m_dockings[id].active = true;
+          m_ships[id].order = OrderState::Idle; // let the dock pass issue the approach on its terms
+        }
+        continue;
+      }
+
+      duty.target = home.targets.front();
+      target = Resolve(duty.target);
+
+      // It may have been on its way home. It has somewhere to be again.
+      m_dockings[id].active = false;
+      m_ships[id].order = OrderState::Idle; // re-aim below rather than finish the leg home
+    }
+
+    // Pursue. Re-aim when the ship has nothing to do, or when the target has walked far enough from
+    // the point last aimed at to be worth a new plan -- never every tick, which would cost
+    // everything and change nothing.
+    ShipState& ship = m_ships[id];
+    const WorldPos& targetPos = m_ships[target].posWorld;
+    const bool drifted = Distance(m_routes[id].destination, targetPos) > PURSUIT_REPLAN_METRES;
+    if (ship.order != OrderState::Idle && !drifted)
+      continue;
+
+    ship.order = OrderState::Moving;
+    ship.orderHasFacing = false;
+    ship.orderSpeedCapMetresPerSec = 0.0f; // the law does not cruise
+    m_patrols[id].active = false;
+    PlanRoute(id, targetPos, HullSpecOf(ship.hullId).BoundingRadiusMetres() + PATH_CLEARANCE_MARGIN_METRES);
+  }
+
+  // 2. The launch pass. Per station in index order, which is the only order there is.
+  m_launchScratch.clear();
+  for (StationId station = 0; station < m_stations.size(); ++station)
+  {
+    Station& home = m_stations[station];
+
+    std::size_t live = 0;
+    for (std::size_t at = 0; at < home.targets.size(); ++at)
+    {
+      if (Resolve(home.targets[at]) != INVALID_SHIP_ID)
+        home.targets[live++] = home.targets[at];
+    }
+    home.targets.resize(live);
+
+    if (home.targets.empty() || home.protectorComplement == 0)
+    {
+      // A station at peace does not run a metronome, and one that reset its cooldown launches its
+      // first protector on the tick it is provoked rather than up to launchEveryTicks later.
+      home.launchCooldownTicks = 0;
+      continue;
+    }
+
+    if (home.launchCooldownTicks > 0)
+    {
+      --home.launchCooldownTicks;
+      continue;
+    }
+    if (LaunchedProtectorCount(station) >= home.protectorComplement)
+      continue;
+
+    const ShipId structure = Resolve(home.structure);
+    const ShipId target = Resolve(home.targets.front());
+    if (structure == INVALID_SHIP_ID || target == INVALID_SHIP_ID)
+      continue;
+
+    // At the skin, on the bearing toward the first live target, heading outward. Clear of the
+    // station by AVOID_MARGIN_METRES so a protector does not appear inside its own home's
+    // separation band and spend its first seconds being shoved out of it.
+    const float dx = OffsetX(m_ships[structure].posWorld, m_ships[target].posWorld);
+    const float dz = OffsetZ(m_ships[structure].posWorld, m_ships[target].posWorld);
+    const float distance = std::sqrt(dx * dx + dz * dz);
+    const float bearingRad = (distance > 0.0001f) ? std::atan2(dx, dz) : 0.0f;
+
+    const float standoff = HullSpecOf(m_ships[structure].hullId).BoundingRadiusMetres() +
+                           HullSpecOf(home.protectorHullId).BoundingRadiusMetres() + AVOID_MARGIN_METRES;
+    WorldPos posWorld = m_ships[structure].posWorld;
+    Translate(posWorld, std::sin(bearingRad) * standoff, std::cos(bearingRad) * standoff);
+
+    m_launchScratch.push_back(Launch{station, posWorld, bearingRad, home.protectorHullId, home.ownerFaction});
+    home.launchCooldownTicks = home.launchEveryTicks;
+  }
+
+  // 3. Apply. After the passes, because a spawn appends to the very tables they walk -- and a ship
+  // spawned here enters pass 0 with prevPos == posWorld and participates from its first tick,
+  // exactly as a boot spawn does (Design/Stations.md 10).
+  for (const Launch& launch : m_launchScratch)
+  {
+    const ShipId id = SpawnShip(launch.posWorld, launch.headingRad, launch.hullId, launch.factionId);
+    m_protectors[id].home = launch.home;
+    m_protectors[id].target = m_stations[launch.home].targets.empty() ? ShipHandle{} : m_stations[launch.home].targets.front();
+    m_protectors[id].active = true;
+  }
+  m_launchScratch.clear();
 }
 
 void World::PlanRoute(ShipId _id, const WorldPos& _destination, float _requiredClearanceMetres)
@@ -793,6 +965,7 @@ void World::Step()
 {
   StepDockings();
   StepPatrols();
+  StepProtectors();
   SnapshotPreviousTick();
   RebuildIndex();
   GatherNeighbours();
