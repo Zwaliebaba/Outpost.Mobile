@@ -1,6 +1,7 @@
 # Stations — Core Vanguard Command, docking, and the protector response
 
-**Status: in progress. No slice has merged; slices 1 and 2 are written and in review.** Four decisions were
+**Status: in progress. No slice has merged. Slices 1-3 are written and in review; the branch
+carrying them builds green.** Four decisions were
 put to the owner on 2026-08-30 and taken (§15); each was the recommended option. §16 lists the
 slices and the dependencies between them, and
 [`Stations-slice-plan.md`](Stations-slice-plan.md) grounds that list against the tree.
@@ -464,6 +465,19 @@ after the loop, in collection order:
   append {hullId, factionId} to the station's ledger; despawn the ship with cause Docked (§7.4)
 ```
 
+> **Amendment, 2026-08-30 (slice 3).** The capture range above and the approach destination cannot be
+> the same number, and the code no longer makes them one. A ship is declared *arrived* when it is
+> within `ArrivalRadiusMetres` of its destination **in any direction**, so a ship sent to a point
+> exactly on the capture boundary can settle just outside it, go Idle, be re-aimed at the point it is
+> already standing on, and stay there for ever. Measured before the split existed: a Corvette parked
+> at 328.66 m against a 324.88 m boundary and never docked. So `DockApproachRangeMetres` is this
+> section's formula — 60 m clear of the two skins, which is what the no-go-band argument below
+> checked — and `DockRangeMetres` is that plus the ship's own arrival radius, which makes *arriving*
+> and *docking* the same event by construction rather than by luck. No fixed margin inside the
+> boundary could have done it: a Carrier's 37 m tolerance is more than half the 60 m slack. The
+> argument of this section stands; only the knife-edge is gone
+> ([slice 3](Stations-slice-3.md) §2.2).
+
 The approach is re-issued whenever the ship goes Idle short of range — shoved off by traffic,
 replanned, blocked — so docking is patient the way patrols are, with no arrival logic of its own.
 Captures are collected during the walk and applied after it, because `DespawnShip` swap-and-pops
@@ -498,6 +512,15 @@ format's field-by-field design intends. `SnapshotReceiver` exposes `Docked()` be
 `Destroyed()`. On the client, `ExplodeTheLost` consumes destroyed exactly as today;
 a docked handle removes the hull **silently** — no explosion, no camera shake, no SHIP LOST — and
 pushes the log line instead (§9.4). A plain leave stays a plain leave.
+
+> **Amendment, 2026-08-30 (slice 3).** `destroyedCount` is no longer in the snapshot header, so the
+> paragraph above names a place that has moved: departures became their own message on the reliable
+> lane with [ADR 0029](Decisions/0029-departures-and-orders-take-the-reliable-lane.md). The
+> conclusion is unchanged and the reason is the same one — a docking is stated once and a lost one is
+> a ghost ship for the rest of the match — so `dockedCount` joins `LEAVE_HEADER_BYTES` (17 → 21) and
+> the docked handles are a third run there. What does **not** follow is `ShipsPerSnapshotFragment`,
+> which derives from `SNAPSHOT_HEADER_BYTES` and which a docking never touches
+> ([ADR 0040](Decisions/0040-a-departure-carries-a-cause.md), [slice 3](Stations-slice-3.md) §2.1).
 
 The interpolation story needs no work: a docked ship's last record simply stops being refreshed
 and the removal arrives within one update interval (≤ 6 ticks, ~100 ms), inside what the
@@ -874,7 +897,7 @@ shape; work orders are written per slice when it is picked up.
 |---|---|---|---|---|
 | 1 | **The layout**: `UniverseLayout.h/.cpp`, `LayOutSystem`, the three layout tests — *in review*, [work order](Stations-slice-1.md) | `GameLogic` | — | the layout is static content in `GameLogic` ([ADR 0037](Decisions/0037-the-universe-layout-is-static-content-in-gamelogic.md)) |
 | 2 | **Who is who**: `FACTION_VANGUARD`, the `FACTION_HOSTILE` → `FACTION_VANDAL` rename at every caller (§4.1), `Standing` + `DEFAULT_STANDINGS` + the table in `World`, the standing half of `RecordAggression`, the station table + `MakeStation` + `StationDesc`, the record's flags byte, the update header's `hostileMask`, their tests — *in review*, [work order](Stations-slice-2.md) | `GameLogic` (+ the rename's `Outpost` call sites) | — | [stations are ships with a side table](Decisions/0038-stations-are-ships-with-a-side-table.md); [standings are simulation state stated per subscriber](Decisions/0039-standings-are-simulation-state-stated-per-subscriber.md) |
-| 3 | **Docking**: `DespawnCause` + the docked list on the wire, `DockOrder` write/read, `IssueDockOrder` + gates, `m_dockings` + the dock pass + capture + ledger, `DOCK_CAPTURE_METRES` + `DockRangeMetres`, move-order cancellation, despawn repair, their tests | `GameLogic` | 2 | a departure carries a cause on the wire |
+| 3 | **Docking**: `DespawnCause` + the docked list on the wire, `DockOrder` write/read, `IssueDockOrder` + gates, `m_dockings` + the dock pass + capture + ledger, `DOCK_CAPTURE_METRES` + `DockRangeMetres`, move-order cancellation, despawn repair, their tests — *in review*, [work order](Stations-slice-3.md) | `GameLogic` | 2 | [a departure carries a cause on the wire](Decisions/0040-a-departure-carries-a-cause.md) |
 | 4 | **The response**: target lists + the launch metronome, `m_protectors` + the pursuit pass + `PURSUIT_REPLAN_METRES`, stand-down-and-dock-home, the full `RecordAggression`, the replay test over the whole scene | `GameLogic` | 2, 3 | the protector response reacts to stated acts, not senses |
 | 5 | **The Vanguard scene**: root calls `LayOutSystem` + spawns the stations + registers the Vandal base, planet visuals follow the sites (F5 reseeds looks only), `VANGUARD_*`/`HUD_VANGUARD_BLUE` colors + the faction-tint table, `FACTION_NAMES` beside `HULL_NAMES`, minimap station dots + hollow marks + edge clamping, `hostileMask` consumption, `CONTACTS` by mask, `STATIONS ONLINE` boot line, AGENTS.md's what-is-here sentences, screenshots at two sizes | `Outpost` | 1, 2 | — |
 | 6 | **Docking and the response, on screen**: `PickStation` + the tap order + refusal affordance + marker flash, docked-list consumption (silent removal, `DOCKED` line), F6 + `VANGUARD PROVOKED`, log lines, screenshots of a dock and of a scramble at two sizes | `Outpost` | 3, 4, 5 | — |

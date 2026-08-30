@@ -26,6 +26,11 @@ constexpr std::uint8_t KIND_MOVE_ORDER = 2;
 // reason about, and the unreliable copy would still be the one that arrived first.
 constexpr std::uint8_t KIND_LEAVE = 3;
 
+// The dock order, beside the move order. A second kind rather than a flag on the first, because the
+// two carry different payloads -- a station handle against a destination and a facing -- and a
+// discriminated kind is what the format already uses to say so.
+constexpr std::uint8_t KIND_DOCK_ORDER = 4;
+
 // kind, complete, snapshotId, fragmentIndex, fragmentCount, tick, recordCount, hostileMask
 //
 // The mask is appended rather than inserted, so every field a reader already knew stays where it
@@ -34,8 +39,15 @@ constexpr std::uint8_t KIND_LEAVE = 3;
 // and one byte per update is the cheapest idempotence there is (Design/Stations.md 4.3).
 constexpr std::uint32_t SNAPSHOT_HEADER_BYTES = 1 + 1 + 4 + 4 + 4 + 8 + 4 + 1;
 
-// kind, tick, leaveCount, destroyedCount
-constexpr std::uint32_t LEAVE_HEADER_BYTES = 1 + 8 + 4 + 4;
+// kind, tick, leaveCount, destroyedCount, dockedCount
+//
+// The docked handles ride this message and not the snapshot header, and Design/Stations.md 7.4 says
+// otherwise only because it predates ADR 0029 moving departures onto the reliable lane. That ADR's
+// argument covers a docking exactly: a snapshot is superseded by the next one and heals itself, a
+// departure is stated once, and a lost "it docked" is a ghost ship for the rest of the match. So
+// ShipsPerSnapshotFragment does *not* follow this header -- it derives from SNAPSHOT_HEADER_BYTES,
+// which a docking never touches (Design/Stations-slice-3.md 2.1, ADR 0040).
+constexpr std::uint32_t LEAVE_HEADER_BYTES = 1 + 8 + 4 + 4 + 4;
 // handle, posWorld, prevPos, five floats, order, faction, flags, hullId
 constexpr std::uint32_t SHIP_RECORD_BYTES = 8 + 24 + 24 + 20 + 1 + 1 + 1 + 4;
 // kind, orderId, hasFacing, facingRad, destination, handleCount
@@ -272,18 +284,20 @@ std::uint32_t SnapshotWriter::Write(const World& _world, Neuron::Transport& _tra
 }
 
 bool SnapshotWriter::WriteLeaves(std::uint64_t _tick, std::span<const ShipHandle> _left, std::span<const ShipHandle> _destroyed,
-                                 Neuron::Transport& _transport)
+                                 std::span<const ShipHandle> _docked, Neuron::Transport& _transport)
 {
-  if (_left.empty() && _destroyed.empty())
+  if (_left.empty() && _destroyed.empty() && _docked.empty())
     return true; // nothing to state is not a failure to state it
 
   const std::uint32_t leaveCount = static_cast<std::uint32_t>(_left.size());
   const std::uint32_t destroyedCount = static_cast<std::uint32_t>(_destroyed.size());
+  const std::uint32_t dockedCount = static_cast<std::uint32_t>(_docked.size());
 
   // One message, not fragmented. The lane's bound is what caps it, and at eight bytes a handle that
   // is 1021 departures in one update -- far past what an interest set can shed at 10 Hz, and the
-  // day it is not, the answer is a second message and not a silent truncation.
-  if (LEAVE_HEADER_BYTES + (leaveCount + destroyedCount) * HANDLE_BYTES > Neuron::MAX_RELIABLE_BYTES)
+  // day it is not, the answer is a second message and not a silent truncation. The third run costs
+  // the bound nothing: 8192 less a 21-byte header is still 1021 handles.
+  if (LEAVE_HEADER_BYTES + (leaveCount + destroyedCount + dockedCount) * HANDLE_BYTES > Neuron::MAX_RELIABLE_BYTES)
     return false;
 
   m_leaveScratch.clear();
@@ -292,16 +306,20 @@ bool SnapshotWriter::WriteLeaves(std::uint64_t _tick, std::span<const ShipHandle
   out.U64(_tick);
   out.U32(leaveCount);
   out.U32(destroyedCount);
+  out.U32(dockedCount);
   for (const ShipHandle handle : _left)
     out.Handle(handle);
   for (const ShipHandle handle : _destroyed)
+    out.Handle(handle);
+  for (const ShipHandle handle : _docked)
     out.Handle(handle);
 
   return _transport.SendReliable(m_leaveScratch.data(), static_cast<std::uint32_t>(m_leaveScratch.size()));
 }
 
 std::uint32_t SnapshotWriter::WriteInterest(const World& _world, std::span<const ShipHandle> _sent, std::span<const ShipHandle> _left,
-                                            std::span<const ShipHandle> _destroyed, Neuron::Transport& _transport, FactionId _viewer)
+                                            std::span<const ShipHandle> _destroyed, std::span<const ShipHandle> _docked,
+                                            Neuron::Transport& _transport, FactionId _viewer)
 {
   m_lastBytes = 0;
   m_lastRecords = 0;
@@ -314,7 +332,7 @@ std::uint32_t SnapshotWriter::WriteInterest(const World& _world, std::span<const
   // handle the receiver does not hold is a no-op -- while an upsert that overtakes its own leave
   // would put a dead ship back. The two lanes have no ordering between them, so the order that is
   // safe under either is the one to send in.
-  if (!WriteLeaves(_world.Tick(), _left, _destroyed, _transport))
+  if (!WriteLeaves(_world.Tick(), _left, _destroyed, _docked, _transport))
   {
     // The lane refused: it is full, or not up yet. Nothing is retried and the update goes on --
     // the next one carries these handles again only if the interest set states them again, which
@@ -495,6 +513,7 @@ bool SnapshotReceiver::AcceptLeaves(std::span<const std::uint8_t> _message)
   const std::uint64_t tick = in.U64();
   const std::uint32_t leaveCount = in.U32();
   const std::uint32_t destroyedCount = in.U32();
+  const std::uint32_t dockedCount = in.U32();
   if (!in.Ok())
     return false;
 
@@ -502,21 +521,29 @@ bool SnapshotReceiver::AcceptLeaves(std::span<const std::uint8_t> _message)
   // remove half of what it names.
   m_leaveScratch.clear();
   m_destroyedScratch.clear();
+  m_dockedScratch.clear();
   for (std::uint32_t at = 0; at < leaveCount; ++at)
     m_leaveScratch.push_back(in.Handle());
   for (std::uint32_t at = 0; at < destroyedCount; ++at)
     m_destroyedScratch.push_back(in.Handle());
+  for (std::uint32_t at = 0; at < dockedCount; ++at)
+    m_dockedScratch.push_back(in.Handle());
   if (!in.Ok())
     return false;
 
+  // All three leave the held set the same way. The lists differ in what they *say*, not in what they
+  // do to the set, and only the client's effects care which.
   for (const ShipHandle gone : m_leaveScratch)
     Remove(gone);
   for (const ShipHandle dead : m_destroyedScratch)
     Remove(dead);
+  for (const ShipHandle docked : m_dockedScratch)
+    Remove(docked);
 
   // Appended, not assigned: several of these can arrive in one drain, and every death in them is one
   // the client owes an explosion. The consumer clears it when it has drawn them.
   m_destroyed.insert(m_destroyed.end(), m_destroyedScratch.begin(), m_destroyedScratch.end());
+  m_docked.insert(m_docked.end(), m_dockedScratch.begin(), m_dockedScratch.end());
 
   // The lane is ordered, so a later message cannot be overtaken by an earlier one; the tick is
   // carried for diagnostics and for the day a subscriber wants to know how stale a departure is.
@@ -601,6 +628,53 @@ bool ReadMoveOrder(std::span<const std::uint8_t> _datagram, MoveOrder& _outOrder
   _outOrder.destination = destination;
   _outOrder.facingRad = facingRad;
   _outOrder.hasFacing = hasFacing;
+  return true;
+}
+
+// kind, orderId, station handle, handleCount -- 17 bytes, against the move order's 38.
+bool WriteDockOrder(const DockOrder& _order, Neuron::Transport& _transport)
+{
+  // MaxShipsPerOrder, not a cap of its own. This header is smaller than a move order's, so its own
+  // arithmetic would admit two more ships -- and two caps differing by two is a fact nobody would
+  // remember and no test would pin. One number, which the client's selection logic already agrees
+  // on (Design/Stations-slice-3.md 2.6).
+  if (_order.ships.empty() || _order.ships.size() > MaxShipsPerOrder())
+    return false;
+
+  std::vector<std::uint8_t> bytes;
+  ByteWriter out(bytes);
+  out.U8(KIND_DOCK_ORDER);
+  out.U32(0); // order id, reserved: nothing acknowledges an order yet
+  out.Handle(_order.station);
+  out.U32(static_cast<std::uint32_t>(_order.ships.size()));
+  for (const ShipHandle handle : _order.ships)
+    out.Handle(handle);
+
+  // The reliable lane, for the move order's reason: a dropped order is a click the player made and
+  // the game ignored (ADR 0029).
+  return _transport.SendReliable(bytes.data(), static_cast<std::uint32_t>(bytes.size()));
+}
+
+bool ReadDockOrder(std::span<const std::uint8_t> _datagram, DockOrder& _outOrder)
+{
+  ByteReader in(_datagram);
+  if (in.U8() != KIND_DOCK_ORDER)
+    return false;
+
+  (void)in.U32(); // order id
+  const ShipHandle station = in.Handle();
+  const std::uint32_t count = in.U32();
+  if (!in.Ok() || count == 0 || count > MaxShipsPerOrder() || in.Remaining() < count * HANDLE_BYTES)
+    return false;
+
+  _outOrder.ships.clear();
+  _outOrder.ships.reserve(count);
+  for (std::uint32_t at = 0; at < count; ++at)
+    _outOrder.ships.push_back(in.Handle());
+  if (!in.Ok())
+    return false;
+
+  _outOrder.station = station;
   return true;
 }
 } // namespace Game

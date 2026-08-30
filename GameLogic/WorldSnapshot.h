@@ -85,6 +85,14 @@ struct MoveOrder
   bool hasFacing = false;
 };
 
+// What one dock order carries up the wire. A second instance of the move order's shape: a datagram
+// kind, a write/read pair, handles resolved in the adapter and a faction gate in World (ADR 0014).
+struct DockOrder
+{
+  std::vector<ShipHandle> ships;
+  ShipHandle station; // the station's structure
+};
+
 // How many ships fit in one datagram of each kind. Derived from MAX_DATAGRAM_BYTES rather than
 // chosen, so the day the record grows these follow it.
 [[nodiscard]] std::uint32_t ShipsPerSnapshotFragment() noexcept;
@@ -116,14 +124,15 @@ public:
   // death from an absence (Design/Archive/Hostiles.md 4.4). A handle belongs in one list, never both; the
   // caller decides which and the writer does not check.
   std::uint32_t WriteInterest(const World& _world, std::span<const ShipHandle> _sent, std::span<const ShipHandle> _left,
-                              std::span<const ShipHandle> _destroyed, Neuron::Transport& _transport, FactionId _viewer = FACTION_PLAYER);
+                              std::span<const ShipHandle> _destroyed, std::span<const ShipHandle> _docked, Neuron::Transport& _transport,
+                              FactionId _viewer = FACTION_PLAYER);
 
   // The leave and destroyed lists, as one message on the reliable lane. Public because a caller
   // that is not sending an interest update -- a subscriber leaving, a world shutting down -- still
   // has departures to state. Returns false when the lane refused it, which is a full lane or one
   // that is not up yet, and never a partial send.
   bool WriteLeaves(std::uint64_t _tick, std::span<const ShipHandle> _left, std::span<const ShipHandle> _destroyed,
-                   Neuron::Transport& _transport);
+                   std::span<const ShipHandle> _docked, Neuron::Transport& _transport);
 
   // How many leave messages the lane has refused. Nothing repeats a refused one, so this is the
   // count of departures a subscriber was never told about -- a number that should be zero, and a
@@ -218,6 +227,19 @@ public:
     m_destroyed.clear();
   }
 
+  // The handles the last applied departure message said had docked: gone from the world, but not
+  // dead. The client removes the hull silently -- no explosion, no shake, no SHIP LOST -- which is
+  // the entire reason a departure carries a cause (ADR 0040).
+  [[nodiscard]] std::span<const ShipHandle> Docked() const noexcept
+  {
+    return m_docked;
+  }
+
+  void ClearDocked() noexcept
+  {
+    m_docked.clear();
+  }
+
   // The tick the last departure message was written on. Diagnostics: how stale a departure was.
   [[nodiscard]] std::uint64_t LastLeaveTick() const noexcept
   {
@@ -241,7 +263,9 @@ private:
   std::vector<ShipSnapshot> m_pendingUpserts;
   std::vector<ShipHandle> m_leaveScratch;     // one departure message, read before any of it applies
   std::vector<ShipHandle> m_destroyedScratch; // the same, for the deaths in it
+  std::vector<ShipHandle> m_dockedScratch;    // and for the dockings
   std::vector<ShipHandle> m_destroyed;        // deaths since the consumer last cleared them
+  std::vector<ShipHandle> m_docked;           // dockings since the consumer last cleared them
   std::uint64_t m_lastLeaveTick = 0;
   std::uint8_t m_hostileMask = 0;
   WorldSnapshot m_latest;
@@ -257,4 +281,11 @@ private:
 // Orders travel the other way. Written by the client half, read and applied by the server half.
 [[nodiscard]] bool WriteMoveOrder(const MoveOrder& _order, Neuron::Transport& _transport);
 [[nodiscard]] bool ReadMoveOrder(std::span<const std::uint8_t> _datagram, MoveOrder& _outOrder);
+
+// A dock order's own header is smaller than a move order's -- a station handle in place of a
+// destination and a facing -- so it would admit two more ships. It deliberately does not: the cap
+// stays MaxShipsPerOrder(), because the client's selection logic already agrees on one number and
+// two caps differing by two is a fact nobody will remember and no test would pin.
+[[nodiscard]] bool WriteDockOrder(const DockOrder& _order, Neuron::Transport& _transport);
+[[nodiscard]] bool ReadDockOrder(std::span<const std::uint8_t> _datagram, DockOrder& _outOrder);
 } // namespace Game

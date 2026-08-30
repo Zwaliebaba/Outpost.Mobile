@@ -143,9 +143,10 @@ private:
   // messages. Everything WorldSimulation used to do for its single subscriber, per entry.
   void PublishOne(const World& _world, Subscriber& _subscriber);
 
-  // The departures in _subscriber's Left() that were deaths. The world's despawn log intersected
-  // with what this subscriber was holding -- so a death nobody could see is told to nobody, and a
-  // ship that merely flew out of range is not reported destroyed (Design/Archive/Hostiles.md 4.4).
+  // Splits _subscriber's Left() three ways: the deaths, the dockings, and the ships that merely flew
+  // out of range. The world's despawn log intersected with what this subscriber was holding -- so a
+  // departure nobody could see is told to nobody, and a ship that left the radius is reported
+  // neither dead nor docked (Design/Archive/Hostiles.md 4.4, ADR 0040).
   void SplitTheLost(const World& _world, Subscriber& _subscriber);
 
   // Dense, because iteration order is array order and nothing here may depend on a pointer or a
@@ -160,6 +161,8 @@ private:
   std::vector<ShipHandle> m_sendScratch;
   std::vector<ShipHandle> m_leftScratch;
   std::vector<ShipHandle> m_destroyedScratch;
+  std::vector<ShipHandle> m_dockedScratch;
+  std::vector<ShipHandle> m_statedScratch; // destroyed and docked merged, to subtract from Left()
   std::vector<ShipId> m_resolvedScratch;
   std::vector<std::uint8_t> m_messageScratch;
 };

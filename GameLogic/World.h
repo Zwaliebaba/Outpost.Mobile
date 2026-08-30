@@ -14,6 +14,24 @@
 
 namespace Game
 {
+// Why a ship stopped existing.
+//
+// Hostiles 4.4 opened this door "the width of one list and no wider" so that a client could stop
+// inferring a death from an absence; docking is the second cause through the same door rather than
+// a parallel mechanism beside it. Jump-out, wreck-and-salvage and capture are each one more
+// (Design/Stations.md 7.4, ADR 0040).
+enum class DespawnCause : std::uint8_t
+{
+  Destroyed,
+  Docked
+};
+
+struct DespawnRecord
+{
+  ShipHandle handle;
+  DespawnCause cause = DespawnCause::Destroyed;
+};
+
 // The authoritative world. One dense array per entity kind, indexed by id -- no maps, no pointers
 // between entities, no iteration order that is not array order, because all three are how a
 // simulation stops reproducing itself.
@@ -33,6 +51,15 @@ public:
     float ringRadiusMetres = 0.0f;
     float cruiseSpeedMetresPerSec = 0.0f;
     std::uint32_t waypointIndex = 0; // the ring point last issued
+    bool active = false;
+  };
+
+  // A ship's intent to dock somewhere. A handle rather than a station id, so a station whose
+  // structure died ends the approach instead of sending a ship at an index that now means something
+  // else -- the same reason Patrol anchors on one (ADR 0005).
+  struct Docking
+  {
+    ShipHandle station;
     bool active = false;
   };
 
@@ -98,7 +125,11 @@ public:
   //
   // Every stored reference to the removed ship stops resolving; every stored reference to the ship
   // that moved keeps resolving, to the same ship. That second half is the reason handles exist.
-  bool DespawnShip(ShipHandle _handle);
+  //
+  // The cause is defaulted because every caller that existed before docking meant Destroyed, and a
+  // default states what those call sites already mean rather than papering over them -- the same
+  // argument SpawnShip's faction default makes.
+  bool DespawnShip(ShipHandle _handle, DespawnCause _cause = DespawnCause::Destroyed);
 
   // The despawn log, read by sequence rather than drained.
   //
@@ -125,7 +156,7 @@ public:
   // gap. That is the over-report direction on purpose: the publisher intersects these with the
   // subscriber's own interest set, so a handle it never knew about is dropped there, while a death
   // silently skipped here would be a ship that never dies on one client's screen.
-  [[nodiscard]] std::span<const ShipHandle> DespawnsSince(std::uint64_t _cursor) const noexcept;
+  [[nodiscard]] std::span<const DespawnRecord> DespawnsSince(std::uint64_t _cursor) const noexcept;
 
   // Drops every death before _cursor. The publisher passes the minimum cursor across its
   // subscribers, so what remains is exactly what at least one of them has still to hear -- which is
@@ -196,6 +227,35 @@ public:
   //
   // Naming a ship that is not live returns INVALID_STATION_ID and makes no row.
   StationId MakeStation(ShipId _structure, const StationDesc& _desc);
+
+  // --- docking -----------------------------------------------------------------------------------
+
+  // What happened to a dock order. Returned for the local host's log and for tests; nothing returns
+  // over the wire, because an order datagram is fire-and-forget and the client's affordance already
+  // knew (Design/Stations.md 7.1, 9.2).
+  enum class DockOrderResult : std::uint8_t
+  {
+    Ordered,
+    NotAStation,
+    RefusedStanding
+  };
+
+  // Sends the given ships to dock at _station. Three gates, here and not in the adapter, for
+  // ADR 0014's reason -- the simulation refusing is a property, an adapter refusing is a convention:
+  //
+  //   1. _station must be a live station row, or the order is a no-op;
+  //   2. ships that are not _issuerFaction's are dropped, exactly as the move gate drops them;
+  //   3. an issuer the station's owner holds hostile is refused entirely -- an aggressor is not
+  //      allowed to dock, and refused means nothing changes at all.
+  //
+  // An accepted order clears each ship's patrol (an explicit order outranks a standing behavior) and
+  // issues the first approach leg immediately, so an order feels like an order rather than like a
+  // next-tick suggestion.
+  DockOrderResult IssueDockOrder(std::span<const ShipId> _ships, ShipId _station, FactionId _issuerFaction);
+
+  // A ship's docking intent. Server-side only, like a route and like a patrol: an intent is what the
+  // snapshot exists to withhold. Exposed for tests and for a debug overlay.
+  [[nodiscard]] const Docking& DockingOf(ShipId _id) const noexcept;
 
   // The station a ship is, or INVALID_STATION_ID if it is not one. A linear scan of a vector with
   // single digits of rows, which is free at this scale and becomes an index the day there are
@@ -327,6 +387,17 @@ private:
   // order, and it writes only the ship it is visiting. It draws no randomness, reads no other ship,
   // and reacts to nothing; the first behavior that responds to what it sees is a different design
   // with senses and thresholds (Design/Archive/Hostiles.md 5.5, 8).
+  // The dock pass, first in the standing-intent slot and therefore before StepPatrols.
+  //
+  // First because it is the pass that despawns: applying its captures before the others run means
+  // they iterate the repaired arrays, exactly as if the despawn had arrived from outside between
+  // ticks, which is a case every table already survives.
+  //
+  // Captures are collected during the walk and applied after it. DespawnShip swap-and-pops four
+  // parallel tables, so removing mid-iteration would make the visit order depend on who docked;
+  // collection order is array order, which is deterministic (Design/Stations.md 10).
+  void StepDockings();
+
   void StepPatrols();
 
   void SnapshotPreviousTick() noexcept;
@@ -366,9 +437,9 @@ private:
   std::vector<ShipState> m_ships;
   std::vector<std::uint32_t> m_shipSlot; // parallel to m_ships: which slot each ship owns
   std::vector<Slot> m_slots;
-  std::vector<std::uint32_t> m_freeSlots; // reused last-in-first-out, so reuse is reproducible
-  std::vector<ShipHandle> m_despawnLog;   // read by cursor, trimmed by the publisher, never by Step
-  std::uint64_t m_despawnBase = 0;        // the sequence of m_despawnLog[0]; rises with every trim
+  std::vector<std::uint32_t> m_freeSlots;  // reused last-in-first-out, so reuse is reproducible
+  std::vector<DespawnRecord> m_despawnLog; // read by cursor, trimmed by the publisher, never by Step
+  std::uint64_t m_despawnBase = 0;         // the sequence of m_despawnLog[0]; rises with every trim
   std::uint64_t m_tick = 0;
 
   SpatialIndex m_index;
@@ -395,6 +466,27 @@ private:
   // not a field on ShipState, deliberately: that struct promises nothing in it a snapshot could not
   // carry, and an assignment is the kind of intent the snapshot exists to withhold.
   std::vector<Patrol> m_patrols;
+
+  // A ship's docking intent, parallel to m_ships and swap-and-popped with them exactly as m_routes
+  // and m_patrols are. Not a field on ShipState for the sentence that struct makes about itself:
+  // nothing in it that a snapshot could not carry, and an intent is what the snapshot withholds.
+  std::vector<Docking> m_dockings;
+
+  // What the dock pass decided this tick, applied after its walk rather than during it.
+  //
+  // Everything needed to complete a capture is taken while the ship is still there -- its handle,
+  // its station, and the two fields the ledger row is -- so applying them needs no lookup at all.
+  // Ids would not do: each despawn swap-and-pops, so an id collected during the walk names a
+  // different ship by the time the one before it has been applied. Reused, so a tick that docks
+  // nobody allocates nothing.
+  struct Capture
+  {
+    ShipHandle ship;
+    StationId station = INVALID_STATION_ID;
+    std::uint32_t hullId = 0;
+    FactionId factionId = FACTION_PLAYER;
+  };
+  std::vector<Capture> m_captureScratch;
 
   // The stations. Indexed by StationId and *not* parallel to m_ships, which is the difference worth
   // seeing: a patrol belongs to a ship, a station is a thing a ship happens to be. Nothing removes

@@ -79,6 +79,20 @@ Game::ShipId SpawnAt(Game::World& _world, float _x, float _z, Game::HullId _hull
   return false;
 }
 
+// The same question of the despawn log, which carries a cause per entry now. The cause is matched
+// too rather than ignored: a test asking "did this one die" should not be answered yes by a
+// docking (ADR 0040).
+[[nodiscard]] bool Holds(std::span<const Game::DespawnRecord> _log, Game::ShipHandle _handle,
+                         Game::DespawnCause _cause = Game::DespawnCause::Destroyed)
+{
+  for (const Game::DespawnRecord& record : _log)
+  {
+    if (record.handle == _handle && record.cause == _cause)
+      return true;
+  }
+  return false;
+}
+
 // A faction id is one byte, and a byte is a character to anything that prints one -- so a failure
 // would report an unprintable glyph rather than "1". Widened for the assertion, never for the wire.
 [[nodiscard]] std::uint32_t Faction(Game::FactionId _faction)
@@ -174,7 +188,7 @@ public:
     world.Step();
     CaptureTransport update;
     const Game::ShipHandle both[] = {ourHandle, theirHandle};
-    Assert::IsTrue(writer.WriteInterest(world, both, {}, {}, update) > 0, L"the interest update did not send");
+    Assert::IsTrue(writer.WriteInterest(world, both, {}, {}, {}, update) > 0, L"the interest update did not send");
     Game::SnapshotReceiver fromUpdate;
     for (const std::vector<std::uint8_t>& datagram : update.sent)
       (void)fromUpdate.Accept(datagram);
@@ -222,7 +236,7 @@ public:
     world.Step();
     CaptureTransport update;
     const Game::ShipHandle all[] = {shipHandle, sceneryHandle, postHandle};
-    Assert::IsTrue(writer.WriteInterest(world, all, {}, {}, update) > 0, L"the interest update did not send");
+    Assert::IsTrue(writer.WriteInterest(world, all, {}, {}, {}, update) > 0, L"the interest update did not send");
     Game::SnapshotReceiver fromUpdate;
     for (const std::vector<std::uint8_t>& datagram : update.sent)
       (void)fromUpdate.Accept(datagram);
@@ -263,7 +277,7 @@ public:
     Assert::IsFalse(fromWhole.IsHostileToMe(Game::FACTION_VANGUARD), L"Write reported the Vanguard hostile before it was");
 
     CaptureTransport atBoot;
-    Assert::IsTrue(writer.WriteInterest(world, held, {}, {}, atBoot, Game::FACTION_PLAYER) > 0, L"the update did not send");
+    Assert::IsTrue(writer.WriteInterest(world, held, {}, {}, {}, atBoot, Game::FACTION_PLAYER) > 0, L"the update did not send");
     Game::SnapshotReceiver player;
     for (const std::vector<std::uint8_t>& datagram : atBoot.sent)
       (void)player.Accept(datagram);
@@ -275,7 +289,7 @@ public:
     world.Step();
 
     CaptureTransport afterwards;
-    Assert::IsTrue(writer.WriteInterest(world, held, {}, {}, afterwards, Game::FACTION_PLAYER) > 0, L"the second update did not send");
+    Assert::IsTrue(writer.WriteInterest(world, held, {}, {}, {}, afterwards, Game::FACTION_PLAYER) > 0, L"the second update did not send");
     for (const std::vector<std::uint8_t>& datagram : afterwards.sent)
       (void)player.Accept(datagram);
     Assert::IsTrue(player.IsHostileToMe(Game::FACTION_VANGUARD), L"the client was never told the law had turned on it");
@@ -284,12 +298,114 @@ public:
     // about the player, not about itself. One row of the table, never the table.
     world.Step();
     CaptureTransport vandalLink;
-    Assert::IsTrue(writer.WriteInterest(world, held, {}, {}, vandalLink, Game::FACTION_VANDAL) > 0, L"the Vandal update did not send");
+    Assert::IsTrue(writer.WriteInterest(world, held, {}, {}, {}, vandalLink, Game::FACTION_VANDAL) > 0, L"the Vandal update did not send");
     Game::SnapshotReceiver vandal;
     for (const std::vector<std::uint8_t>& datagram : vandalLink.sent)
       (void)vandal.Accept(datagram);
     Assert::IsTrue(vandal.IsHostileToMe(Game::FACTION_PLAYER), L"the Vandals were not told the player is hostile to them");
     Assert::IsFalse(vandal.IsHostileToMe(Game::FACTION_VANDAL), L"the Vandals were told they are hostile to themselves");
+  }
+
+  // The three ways a ship can leave a client's view, told apart. Hostiles opened this door "the
+  // width of one list"; docking is the second cause through it, and the client's explosion is what
+  // hangs on the difference (ADR 0040).
+  TEST_METHOD(ADockAndADeathDifferOnTheWire)
+  {
+    Game::World world;
+    const Game::ShipId post = SpawnAt(world, 900.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+    Game::World::StationDesc desc;
+    desc.ownerFaction = Game::FACTION_VANGUARD;
+    (void)world.MakeStation(post, desc);
+
+    const Game::ShipId doomed = SpawnAt(world, 0.0f, 0.0f);
+    const Game::ShipId visitor = SpawnAt(world, 20.0f, 0.0f);
+    const Game::ShipId leaver = SpawnAt(world, 40.0f, 0.0f);
+    world.Step();
+
+    const Game::ShipHandle doomedHandle = world.HandleOf(doomed);
+    const Game::ShipHandle visitorHandle = world.HandleOf(visitor);
+    const Game::ShipHandle leaverHandle = world.HandleOf(leaver);
+
+    Assert::IsTrue(world.DespawnShip(doomedHandle), L"the despawn failed");
+    Assert::IsTrue(world.DespawnShip(visitorHandle, Game::DespawnCause::Docked), L"the docking despawn failed");
+
+    // The publisher's split is what the writer is handed; here the test plays that part, so the
+    // format is what is under test rather than the split.
+    const Game::ShipHandle left[] = {leaverHandle};
+    const Game::ShipHandle destroyed[] = {doomedHandle};
+    const Game::ShipHandle docked[] = {visitorHandle};
+
+    CaptureTransport link;
+    Game::SnapshotWriter writer;
+    Assert::IsTrue(writer.WriteInterest(world, {}, left, destroyed, docked, link) > 0, L"the update did not send");
+
+    Game::SnapshotReceiver receiver;
+    FeedBothLanes(receiver, link);
+
+    Assert::AreEqual(static_cast<std::size_t>(1), receiver.Destroyed().size(), L"the destroyed list is the wrong size");
+    Assert::IsTrue(receiver.Destroyed()[0] == doomedHandle, L"the wrong ship was reported destroyed");
+    Assert::AreEqual(static_cast<std::size_t>(1), receiver.Docked().size(), L"the docked list is the wrong size");
+    Assert::IsTrue(receiver.Docked()[0] == visitorHandle, L"the wrong ship was reported docked");
+
+    // A range-leaver is in neither. That is what a leave has always meant and what the causes exist
+    // to stop it being read as.
+    Assert::IsFalse(Holds(receiver.Destroyed(), leaverHandle), L"a ship that flew out of range was reported destroyed");
+    Assert::IsFalse(Holds(receiver.Docked(), leaverHandle), L"a ship that flew out of range was reported docked");
+    Assert::IsFalse(Holds(receiver.Docked(), doomedHandle), L"a death was reported as a docking");
+    Assert::IsFalse(Holds(receiver.Destroyed(), visitorHandle), L"a docking was reported as a death");
+
+    // All three left the held set, whatever they were told to be.
+    Assert::IsTrue(Find(receiver.Latest(), doomedHandle) == nullptr, L"the destroyed ship is still held");
+    Assert::IsTrue(Find(receiver.Latest(), visitorHandle) == nullptr, L"the docked ship is still held");
+    Assert::IsTrue(Find(receiver.Latest(), leaverHandle) == nullptr, L"the departed ship is still held");
+
+    // Cleared independently, so a consumer that has drawn its explosions has not thereby forgotten
+    // the dockings it still owes a log line.
+    receiver.ClearDestroyed();
+    Assert::IsTrue(receiver.Destroyed().empty(), L"clearing the deaths did not clear them");
+    Assert::AreEqual(static_cast<std::size_t>(1), receiver.Docked().size(), L"clearing the deaths cleared the dockings too");
+    receiver.ClearDocked();
+    Assert::IsTrue(receiver.Docked().empty(), L"clearing the dockings did not clear them");
+  }
+
+  TEST_METHOD(ADockOrderRoundTrips)
+  {
+    Game::World world;
+    const Game::ShipId post = SpawnAt(world, 900.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+    const Game::ShipId first = SpawnAt(world, 0.0f, 0.0f);
+    const Game::ShipId second = SpawnAt(world, 40.0f, 0.0f);
+
+    Game::DockOrder sent;
+    sent.station = world.HandleOf(post);
+    sent.ships = {world.HandleOf(first), world.HandleOf(second)};
+
+    CaptureTransport link;
+    Assert::IsTrue(Game::WriteDockOrder(sent, link), L"the dock order did not send");
+    Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"a dock order did not take the reliable lane");
+
+    Game::DockOrder read;
+    Assert::IsTrue(Game::ReadDockOrder(link.sentReliable[0], read), L"the dock order did not decode");
+    Assert::IsTrue(read.station == sent.station, L"the station did not survive the wire");
+    Assert::AreEqual(sent.ships.size(), read.ships.size(), L"the ship list changed size");
+    for (std::size_t at = 0; at < sent.ships.size(); ++at)
+      Assert::IsTrue(read.ships[at] == sent.ships[at], L"a handle did not survive the wire");
+
+    // A move order reader must decline a dock order and the other way round, or the adapter's
+    // "try one, then the other" would apply the wrong one.
+    Game::MoveOrder asMove;
+    Assert::IsFalse(Game::ReadMoveOrder(link.sentReliable[0], asMove), L"a dock order decoded as a move order");
+
+    // One cap for both kinds, deliberately: this order's own header would admit two more.
+    Game::DockOrder oversized;
+    oversized.station = sent.station;
+    oversized.ships.assign(Game::MaxShipsPerOrder() + 1, world.HandleOf(first));
+    CaptureTransport refused;
+    Assert::IsFalse(Game::WriteDockOrder(oversized, refused), L"an oversized dock order was sent");
+    Assert::IsTrue(refused.sentReliable.empty(), L"an oversized dock order put bytes on the wire");
+
+    Game::DockOrder empty;
+    empty.station = sent.station;
+    Assert::IsFalse(Game::WriteDockOrder(empty, refused), L"an empty dock order was sent");
   }
 
   TEST_METHOD(ADeathAndADepartureDifferOnTheWire)
@@ -315,7 +431,7 @@ public:
     Game::SnapshotReceiver receiver;
     CaptureTransport link;
     const Game::ShipHandle both[] = {doomedHandle, departingHandle};
-    Assert::IsTrue(writer.WriteInterest(world, both, {}, {}, link) > 0, L"the first update did not send");
+    Assert::IsTrue(writer.WriteInterest(world, both, {}, {}, {}, link) > 0, L"the first update did not send");
     FeedBothLanes(receiver, link);
     Assert::AreEqual(static_cast<std::size_t>(2), receiver.Latest().ships.size(), L"the client did not take both ships");
     Assert::IsTrue(receiver.Destroyed().empty(), L"an update that killed nothing reported a death");
@@ -342,7 +458,7 @@ public:
 
     link.sent.clear();
     link.sentReliable.clear();
-    Assert::IsTrue(writer.WriteInterest(world, {}, left, destroyed, link) > 0, L"the second update did not send");
+    Assert::IsTrue(writer.WriteInterest(world, {}, left, destroyed, {}, link) > 0, L"the second update did not send");
     Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"the departures did not take the reliable lane");
     FeedBothLanes(receiver, link);
 
@@ -565,7 +681,7 @@ public:
     Game::SnapshotWriter writer;
     const std::array<Game::ShipHandle, 1> left{leavingHandle};
     const std::array<Game::ShipHandle, 1> destroyed{dyingHandle};
-    (void)writer.WriteInterest(world, {}, left, destroyed, server);
+    (void)writer.WriteInterest(world, {}, left, destroyed, {}, server);
     Assert::AreEqual(0u, writer.RefusedLeaveCount(), L"the lane refused the departure message");
 
     server.Poll();
@@ -629,7 +745,7 @@ public:
     CaptureTransport link;
     Game::SnapshotWriter writer;
     const std::array<Game::ShipHandle, 1> left{handle};
-    (void)writer.WriteInterest(world, {}, left, {}, link);
+    (void)writer.WriteInterest(world, {}, left, {}, {}, link);
     Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"the departure did not go on the reliable lane");
 
     Game::SnapshotReceiver receiver;
@@ -649,11 +765,11 @@ public:
     CaptureTransport withDepartures;
     Game::SnapshotWriter a;
     const std::array<Game::ShipHandle, 1> left{gone};
-    (void)a.WriteInterest(world, {}, left, {}, withDepartures);
+    (void)a.WriteInterest(world, {}, left, {}, {}, withDepartures);
 
     CaptureTransport withNone;
     Game::SnapshotWriter b;
-    (void)b.WriteInterest(world, {}, {}, {}, withNone);
+    (void)b.WriteInterest(world, {}, {}, {}, {}, withNone);
 
     Assert::AreEqual(withNone.sent.size(), withDepartures.sent.size(), L"a departure changed how many datagrams an update took");
     Assert::AreEqual(withNone.sent[0].size(), withDepartures.sent[0].size(), L"a departure changed the size of a snapshot fragment");
@@ -674,7 +790,7 @@ public:
 
     Game::SnapshotWriter writer;
     const std::array<Game::ShipHandle, 1> left{handle};
-    (void)writer.WriteInterest(world, {}, left, {}, link);
+    (void)writer.WriteInterest(world, {}, left, {}, {}, link);
     Assert::AreEqual(1u, writer.RefusedLeaveCount(), L"a refused departure was not counted");
     Assert::IsTrue(link.sentReliable.empty(), L"a refused lane still captured a message");
   }

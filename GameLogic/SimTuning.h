@@ -298,6 +298,20 @@ inline constexpr int FORMATION_SHAPE = 1; // FormationShape::Wedge
 // not contract.
 inline constexpr std::uint32_t PATROL_RING_WAYPOINTS = 12;
 
+// --- docking -------------------------------------------------------------------------------------
+// The slack a docking ship is captured within, over and above the two hulls' bounding radii. In the
+// contract, and near the top of it: it decides on which tick a ship stops existing in space.
+//
+// A slack rather than a range, because a flat number cannot serve this hull table. A flat 300 m is
+// inside a Carrier's no-go band -- where separation is already shoving and a route may not end --
+// and a canyon for an Interceptor. Derived per pair (HullSpec.h, DockRangeMetres) it is 315 m for an
+// Interceptor and 419 m for a Carrier, both outside that band.
+//
+// 60 m is chosen against the path grid's quantization rather than by feel: at PATH_CELL_SIZE_METRES
+// of 32 it is nearly two cells of margin, so the approach destination lands in unblocked cells
+// instead of in the station's own obstacle footprint (Design/Stations.md 7.3).
+inline constexpr float DOCK_CAPTURE_METRES = 60.0f;
+
 // --- interest management -----------------------------------------------------------------------
 // Not in the replay contract, and that is worth saying because everything around it is: these change
 // what is *sent*, never what is *simulated*. A recording made at one radius replays identically at

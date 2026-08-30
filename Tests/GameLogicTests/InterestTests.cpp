@@ -249,7 +249,7 @@ public:
     CaptureLink link;
 
     const Game::ShipHandle handles[] = {world.HandleOf(first), world.HandleOf(second)};
-    Assert::IsTrue(writer.WriteInterest(world, handles, {}, {}, link) > 0, L"the first update did not send");
+    Assert::IsTrue(writer.WriteInterest(world, handles, {}, {}, {}, link) > 0, L"the first update did not send");
     for (const std::vector<std::uint8_t>& datagram : link.sent)
       (void)receiver.Accept(datagram);
     Assert::AreEqual(static_cast<std::size_t>(2), receiver.Latest().ships.size(), L"the client did not take both ships");
@@ -258,7 +258,7 @@ public:
     link.sent.clear();
     world.Step();
     const Game::ShipHandle justFirst[] = {world.HandleOf(first)};
-    Assert::IsTrue(writer.WriteInterest(world, justFirst, {}, {}, link) > 0, L"the refresh did not send");
+    Assert::IsTrue(writer.WriteInterest(world, justFirst, {}, {}, {}, link) > 0, L"the refresh did not send");
     for (const std::vector<std::uint8_t>& datagram : link.sent)
       (void)receiver.Accept(datagram);
     Assert::AreEqual(static_cast<std::size_t>(2), receiver.Latest().ships.size(), L"a refresh appended instead of updating in place");
@@ -268,7 +268,7 @@ public:
     link.sentReliable.clear();
     world.Step();
     const Game::ShipHandle leaving[] = {world.HandleOf(second)};
-    Assert::IsTrue(writer.WriteInterest(world, {}, leaving, {}, link) > 0, L"the leave did not send");
+    Assert::IsTrue(writer.WriteInterest(world, {}, leaving, {}, {}, link) > 0, L"the leave did not send");
     Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"the leave did not take the reliable lane");
     for (const std::vector<std::uint8_t>& message : link.sentReliable)
       (void)receiver.Accept(message);
@@ -325,7 +325,7 @@ public:
     Game::SnapshotWriter writer;
     Game::SnapshotReceiver receiver;
     CaptureLink link;
-    Assert::IsTrue(writer.WriteInterest(world, all, {}, {}, link) > 2, L"40 ships did not need three fragments");
+    Assert::IsTrue(writer.WriteInterest(world, all, {}, {}, {}, link) > 2, L"40 ships did not need three fragments");
 
     for (std::size_t at = 0; at < link.sent.size(); ++at)
     {
@@ -369,7 +369,7 @@ public:
 
       Game::SnapshotWriter scoped;
       CaptureLink scopedLink;
-      (void)scoped.WriteInterest(world, sent, {}, {}, scopedLink);
+      (void)scoped.WriteInterest(world, sent, {}, {}, {}, scopedLink);
 
       Game::SnapshotWriter whole;
       CaptureLink wholeLink;

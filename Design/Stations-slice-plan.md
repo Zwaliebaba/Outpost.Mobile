@@ -287,6 +287,12 @@ Debug|x64 builds; the game plays exactly as before, because nothing calls `MakeS
 
 ## 6. Slice 3 — docking
 
+**Written, in review** — work order [`Stations-slice-3.md`](Stations-slice-3.md), decision record
+[0040](Decisions/0040-a-departure-carries-a-cause.md). Built as planned, with one thing the plan
+did not foresee and implementation did: the capture range and the approach destination cannot be
+the same number, or a ship parks a few metres outside the boundary for ever. Design §7.3 gained an
+amendment note and `DockRangeMetres` gained the ship's arrival radius (§2.2 of the work order).
+
 **Layer:** `GameLogic`, `GameLogicTests`. **Depends on:** 2. **Blocks:** 4, 6.
 
 | File | What happens to it |
@@ -477,10 +483,9 @@ The first is answered; the rest are the implementer's and are recommended above.
 
 1. ~~**NMO slice 5 before Stations slice 5?**~~ Resolved at `66ac880`: NMO slice 5 landed first,
    which is what was recommended, and slice 5 is smaller for it (§2.3).
-2. **§7.4 is one sentence out of date** (§2.1). The docked list belongs on the reliable lane beside
-   the destroyed one, and `ShipsPerSnapshotFragment` does not follow. Recommend an amendment note
-   in the design rather than a rewrite — the argument is intact, the byte layout moved underneath
-   it, and Design/README.md is explicit that a design is never rewritten to match what was built.
+2. ~~**§7.4 is one sentence out of date**~~ Done in slice 3: §7.4 keeps its prose and carries a dated
+   amendment note, per Design/README.md. §7.3 gained one too, for the capture range (above).
 3. **`launchedCount` derived rather than stored** (§7). Recommended: it removes a repair path and a
    counter from the replay contract's shadow.
-4. **One order cap, not two** (§6). Recommended: reuse `MaxShipsPerOrder()` for dock orders.
+4. ~~**One order cap, not two**~~ Done in slice 3: `WriteDockOrder` reuses `MaxShipsPerOrder()`, with
+   the reason at the declaration.

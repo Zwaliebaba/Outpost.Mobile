@@ -74,3 +74,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0037](0037-the-universe-layout-is-static-content-in-gamelogic.md) | The universe layout is static content in GameLogic | accepted |
 | [0038](0038-stations-are-ships-with-a-side-table.md) | Stations are ships with a side table | accepted |
 | [0039](0039-standings-are-simulation-state-stated-per-subscriber.md) | Standings are simulation state, stated per subscriber | accepted |
+| [0040](0040-a-departure-carries-a-cause.md) | A departure carries a cause on the wire | accepted |

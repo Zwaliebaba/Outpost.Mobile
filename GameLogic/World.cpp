@@ -43,6 +43,7 @@ ShipId World::SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint3
   m_shipSlot.push_back(slot);
   m_routes.emplace_back();
   m_patrols.emplace_back();
+  m_dockings.emplace_back();
 
   // Only an immovable can change the static set. A spawn appends, so no existing id moves and
   // nothing already in the store is disturbed -- which is why this needs no id-shift caveat and the
@@ -55,7 +56,7 @@ ShipId World::SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint3
   return id;
 }
 
-bool World::DespawnShip(ShipHandle _handle)
+bool World::DespawnShip(ShipHandle _handle, DespawnCause _cause)
 {
   const ShipId id = Resolve(_handle);
   if (id == INVALID_SHIP_ID)
@@ -65,7 +66,7 @@ bool World::DespawnShip(ShipHandle _handle)
   // despawn no subscriber held is dropped where the publisher intersects it with what that
   // subscriber knew: you cannot be told of the death of something you never knew about
   // (Design/Archive/Hostiles.md 4.4).
-  m_despawnLog.push_back(_handle);
+  m_despawnLog.push_back(DespawnRecord{_handle, _cause});
 
   // Read before anything moves. Two ships can change the static set here: the one being removed, and
   // the one swap-and-pop moves into its place -- because the static store holds ShipIds, and the
@@ -84,12 +85,14 @@ bool World::DespawnShip(ShipHandle _handle)
     m_ships[id] = m_ships[last];
     m_routes[id] = m_routes[last];
     m_patrols[id] = m_patrols[last];
+    m_dockings[id] = m_dockings[last];
     m_shipSlot[id] = m_shipSlot[last];
     m_slots[m_shipSlot[id]].ship = id; // the moved ship keeps its slot, and its handles keep working
   }
   m_ships.pop_back();
   m_routes.pop_back();
   m_patrols.pop_back();
+  m_dockings.pop_back();
   m_shipSlot.pop_back();
 
   Slot& freed = m_slots[_handle.slot];
@@ -179,14 +182,14 @@ const World::Station& World::StationOf(StationId _id) const noexcept
   return m_stations[_id];
 }
 
-std::span<const ShipHandle> World::DespawnsSince(std::uint64_t _cursor) const noexcept
+std::span<const DespawnRecord> World::DespawnsSince(std::uint64_t _cursor) const noexcept
 {
   if (_cursor <= m_despawnBase)
     return m_despawnLog;
   const std::uint64_t offset = _cursor - m_despawnBase;
   if (offset >= m_despawnLog.size())
     return {};
-  return std::span<const ShipHandle>(m_despawnLog).subspan(static_cast<std::size_t>(offset));
+  return std::span<const DespawnRecord>(m_despawnLog).subspan(static_cast<std::size_t>(offset));
 }
 
 void World::TrimDespawnsBefore(std::uint64_t _cursor) noexcept
@@ -263,6 +266,149 @@ const World::Patrol& World::PatrolOf(ShipId _id) const noexcept
 {
   static constexpr Patrol NONE;
   return (_id < m_patrols.size()) ? m_patrols[_id] : NONE;
+}
+
+namespace
+{
+// Where a docking ship is sent: the point on its current bearing from the station, at exactly its
+// own dock range.
+//
+// Its current bearing rather than a fixed approach lane, because there is no bay geometry this
+// phase and a lane would be a promise the station cannot keep -- a hull captured at the skin,
+// without ceremony, is what docking is until stations have an inside (Design/Stations.md 14). Its
+// *own* range rather than a shared one, so a Carrier is not asked to fly to an Interceptor's
+// doorstep and shove its way there against the separation pass.
+[[nodiscard]] WorldPos DockApproachPoint(const WorldPos& _station, const WorldPos& _ship, float _dockRangeMetres) noexcept
+{
+  const float dx = OffsetX(_station, _ship);
+  const float dz = OffsetZ(_station, _ship);
+  const float distance = std::sqrt(dx * dx + dz * dz);
+
+  WorldPos point = _station;
+  if (distance <= 0.0001f)
+  {
+    // Concentric with the station, which cannot happen with a hull in the way but is not worth a
+    // divide by zero. Due north is as good as any bearing and is the one PatrolRingPoint calls 0.
+    Translate(point, 0.0f, _dockRangeMetres);
+    return point;
+  }
+  Translate(point, dx / distance * _dockRangeMetres, dz / distance * _dockRangeMetres);
+  return point;
+}
+} // namespace
+
+const World::Docking& World::DockingOf(ShipId _id) const noexcept
+{
+  return m_dockings[_id];
+}
+
+World::DockOrderResult World::IssueDockOrder(std::span<const ShipId> _ships, ShipId _station, FactionId _issuerFaction)
+{
+  const StationId station = StationAt(_station);
+  if (station == INVALID_STATION_ID)
+    return DockOrderResult::NotAStation;
+
+  // The owner's opinion of the issuer, and the whole order stands or falls on it: an aggressor is
+  // not allowed to dock. Refused means nothing changes -- no ship diverts, no intent is set -- and
+  // the client's affordance said so before sending, so the silent wire costs nothing.
+  if (StandingOf(m_stations[station].ownerFaction, _issuerFaction) == Standing::Hostile)
+    return DockOrderResult::RefusedStanding;
+
+  // An order plans a route, so the islands have to be current here for the same reason
+  // IssueMoveOrder rebuilds them.
+  RebuildStaticIfDirty();
+
+  const ShipHandle stationHandle = m_stations[station].structure;
+  const HullSpec& stationHull = HullSpecOf(m_ships[_station].hullId);
+
+  for (const ShipId id : _ships)
+  {
+    // Somebody else's ship is dropped the way a stale id already is, and the rest of the list still
+    // goes (Design/Archive/Hostiles.md 4.3).
+    if (id >= m_ships.size() || m_ships[id].factionId != _issuerFaction)
+      continue;
+    if (id == _station)
+      continue; // a station does not dock at itself
+
+    ShipState& ship = m_ships[id];
+    m_dockings[id].station = stationHandle;
+    m_dockings[id].active = true;
+
+    // An explicit order outranks a standing behavior, the line IssueMoveOrder already has.
+    m_patrols[id].active = false;
+
+    ship.order = OrderState::Moving;
+    ship.orderHasFacing = false;
+    ship.orderSpeedCapMetresPerSec = 0.0f;
+
+    const float approachRange = DockApproachRangeMetres(stationHull, HullSpecOf(ship.hullId));
+    const WorldPos approach = DockApproachPoint(m_ships[_station].posWorld, ship.posWorld, approachRange);
+    PlanRoute(id, approach, HullSpecOf(ship.hullId).BoundingRadiusMetres() + PATH_CLEARANCE_MARGIN_METRES);
+  }
+  return DockOrderResult::Ordered;
+}
+
+void World::StepDockings()
+{
+  RebuildStaticIfDirty();
+
+  m_captureScratch.clear();
+  for (ShipId id = 0; id < ShipCount(); ++id)
+  {
+    Docking& docking = m_dockings[id];
+    if (!docking.active)
+      continue;
+
+    const ShipId structure = Resolve(docking.station);
+    const StationId station = (structure == INVALID_SHIP_ID) ? INVALID_STATION_ID : StationAt(structure);
+    if (station == INVALID_STATION_ID)
+    {
+      docking.active = false; // the station is gone, or is no longer one: stand down where you are
+      continue;
+    }
+
+    ShipState& ship = m_ships[id];
+    const HullSpec& stationHull = HullSpecOf(m_ships[structure].hullId);
+    const HullSpec& shipHull = HullSpecOf(ship.hullId);
+    if (Distance(m_ships[structure].posWorld, ship.posWorld) <= DockRangeMetres(stationHull, shipHull))
+    {
+      // Checked again here, and not only at order time. This closes the window between an accepted
+      // order and an aggression recorded during the flight: the door is guarded, not just the
+      // doorbell (Design/Stations.md 7.3).
+      if (StandingOf(m_stations[station].ownerFaction, ship.factionId) == Standing::Hostile)
+      {
+        docking.active = false;
+        continue;
+      }
+      // Everything the capture needs, taken now: after the walk this ship's id may name another.
+      // Hull and faction are the whole of what a ship is today, so they are the whole ledger row --
+      // when undocking arrives it spawns a fresh ship from it, with a fresh handle
+      // (Design/Stations.md 7.3).
+      m_captureScratch.push_back(Capture{HandleOf(id), station, ship.hullId, ship.factionId});
+      continue;
+    }
+
+    if (ship.order != OrderState::Idle)
+      continue; // still flying the last leg; arrival is the order machinery's, not this pass's
+
+    // Re-issued whenever the ship goes Idle short of range -- shoved off by traffic, replanned,
+    // blocked -- so docking is patient the way a patrol is, with no arrival logic of its own.
+    ship.order = OrderState::Moving;
+    ship.orderHasFacing = false;
+    ship.orderSpeedCapMetresPerSec = 0.0f;
+    const WorldPos approach = DockApproachPoint(m_ships[structure].posWorld, ship.posWorld, DockApproachRangeMetres(stationHull, shipHull));
+    PlanRoute(id, approach, shipHull.BoundingRadiusMetres() + PATH_CLEARANCE_MARGIN_METRES);
+  }
+
+  // After the walk, in collection order -- which is array order, which is deterministic. During it
+  // would make the visit order depend on who docked, because DespawnShip swap-and-pops four
+  // parallel tables. A station id stays valid across this loop: stations do not despawn.
+  for (const Capture& capture : m_captureScratch)
+  {
+    m_stations[capture.station].docked.push_back(DockedShip{capture.hullId, capture.factionId});
+    (void)DespawnShip(capture.ship, DespawnCause::Docked);
+  }
+  m_captureScratch.clear();
 }
 
 void World::StepPatrols()
@@ -645,6 +791,7 @@ void World::ApplyBlocking()
 
 void World::Step()
 {
+  StepDockings();
   StepPatrols();
   SnapshotPreviousTick();
   RebuildIndex();
@@ -743,6 +890,12 @@ float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _poi
     // finished (Design/Archive/Hostiles.md 5.1).
     ship.orderSpeedCapMetresPerSec = 0.0f;
     m_patrols[id].active = false;
+
+    // A later move order is a change of mind: before capture a docking ship is just a ship flying
+    // somewhere, and nothing about it should survive being told to go elsewhere. There is no undock
+    // and no cancel-into-hold -- cleared intent leaves the ship doing whatever it was last told
+    // (Design/Stations.md 7.1).
+    m_dockings[id].active = false;
 
     WorldPos destination = _point;
     Translate(destination, local.x * cosH + local.y * sinH, -local.x * sinH + local.y * cosH);
