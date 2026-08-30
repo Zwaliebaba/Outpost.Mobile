@@ -8,6 +8,10 @@ one branch, one pull request. The review is the evidence; this document is the w
 already has a design in the tree — the reliable lane lives in [`QuicTransport.md`](QuicTransport.md)
 §14 — this plan schedules it and does not restate it.
 
+**On this branch:** the review, the plan and slices 2, 3, 5, 6 and 7 land as one pull request rather
+than one per slice (owner's call, 2026-08-30). The commits are ordered and each stands alone, so the
+history still reads slice by slice; the convention resumes for whatever is cut next.
+
 Work orders are cut from §6 one slice at a time, when a slice is actually next — not in advance,
 because every slice that lands changes the ground the next order stands on. Each order carries the
 scope, out-of-scope, build-on and acceptance seeded here, expanded to the day's tree.
@@ -82,14 +86,18 @@ Named here so no slice takes them silently:
 1. ~~**Schedule the reliable lane now**~~ — **taken 2026-08-30: scheduled.** The wait in
    QuicTransport.md §12 decision 4 is lifted there, and the two work orders
    ([3a](ReliableLane-work-order.md), [3b](ReliableFormat-work-order.md)) are written.
-2. **The tick rate** (slice 12): keep 60 Hz and pay it per region, or lower it and pay collision
-   substepping in GameLogic. The tunneling suite is already parameterized to name the hulls that
-   break; the decision record writes itself either way, but only the owner can weigh server cost
-   against simulation feel.
-3. **How a dedicated server is told what to be.** AGENTS.md §5 bans argv and environment reads;
-   configuration is the composition root's. A headless root therefore needs a decided config shape
-   before it can exist. Out of this plan's slices; flagged because slices 3–4 build the machinery
-   that root will use, and QuicTransport.md §10 already names the debt.
+2. ~~**The tick rate**~~ — **taken 2026-08-30: 60 Hz stays.** Capacity is bought by putting fewer
+   entities in a shard, not fewer ticks in a second. Slice 12 therefore has no code in it: it is the
+   decision record, stating that the rate is fixed, that the tunneling margin in `SimTuning.h` is
+   what a future change would have to re-earn, and that the per-shard multiplier is now a sizing
+   input rather than an open question. Substepping stays un-built and un-needed.
+3. ~~**How a dedicated server is told what to be**~~ — **taken 2026-08-30: a configuration file, read
+   by the composition root alone.** This does not bend AGENTS.md §5: that rule bans `argv` and the
+   environment, and says configuration is loaded by the composition root, which is exactly what a
+   file read there is. Libraries keep receiving plain `Desc` structs and still never read a file
+   themselves. It needs a format, a hand-written parser (§1 R7 — no generators), the fail-closed
+   rule §5 already requires of anything parsing content, and a decision record. It is a slice of its
+   own, not yet cut, and it is what gates a second process.
 4. **`FactionId` stays u8 for now** (256 factions). Fine while factions are identities; revisit in
    slice 16's record if player corporations are to become factions, because that is the last cheap
    moment to widen it.
@@ -97,8 +105,10 @@ Named here so no slice takes them silently:
 ## 5. Deliberately left out
 
 The same fences the review drew. No combat, economy, or content systems — this plan makes the
-engine able to carry them, not build them. No second-process migration (the seam is ready; the
-process split waits on decision 3 above). No 3D simulation: the plane is a product decision
+engine able to carry them, not build them. No second-process migration. The seam and the
+machinery are ready and §4 decision 3 is now taken, so slice 24 cuts the configuration file a
+headless root would read — but the second process itself, and whatever runs it, stays out of this
+plan. No 3D simulation: the plane is a product decision
 (ADR 0016, `WorldPos.h`), and nothing here spends effort for or against it. No audio. Release CI
 and the R11 documentation pass stay where AGENTS.md already tracks them.
 
@@ -106,7 +116,7 @@ and the R11 documentation pass stay where AGENTS.md already tracks them.
 
 ## 6. Slices
 
-Twenty-three, in four phases. Sizes: **S** is a sitting, **M** is a normal work order, **L** needs
+Twenty-four, in four phases. Sizes: **S** is a sitting, **M** is a normal work order, **L** needs
 its own design before it can be ordered. "ADR" marks a decision record due in the slice's commit.
 Findings reference `MmoScalabilityReview.md`.
 
@@ -123,7 +133,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 9 | Frustum culling | `NeuronClient`+`Outpost` | S | — | G2 |  |  |
 | 10 | Hull instancing | `NeuronClient`+`Outpost` | M | 9 | G2 |  |  |
 | 11 | Localized gather radius, threat pre-filter | `GameLogic` | M | — | U2 |  |  |
-| 12 | The tick-rate decision | `GameLogic` | M | 11 | E7 | ADR |  |
+| 12 | The tick-rate decision | `GameLogic` | S | — | E7 | ADR | decided: 60 Hz stays |
 | 13 | Churn-gated static rebuilds | `GameLogic` | S | — | U4 |  |  |
 | 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR |  |
 | 15 | The quantized wire | `GameLogic` | M | 6 | E5 |  |  |
@@ -135,6 +145,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 21 | Guard widening and the docs re-trued | `Build/`+prose | S | — | C2 C3 C4 |  |  |
 | 22 | Legacy helper cleanup | `NeuronCore` | S | — | C1 |  |  |
 | 23 | clang-tidy widens a project | `.github/` | S | — | C2 |  |  |
+| 24 | The server configuration file | `Outpost` | M | — | — | ADR | cuttable since §4.3 |
 
 **Quick wins:** slices 1, 7, 13, 21 and 22 are each a sitting, depend on nothing, and retire real
 findings; any idle track starts with its nearest one.
@@ -287,12 +298,14 @@ day it comes, per ADR 0022's confinement rule).
 benchmark row asserting gathered-candidate count tracks local density, with the N=5,000 sweep
 number in the pull request beside ADR 0007's baseline.
 
-#### Slice 12 — the tick-rate decision (`GameLogic`, M + ADR)
+#### Slice 12 — the tick-rate decision (`GameLogic`, now S + ADR)
 
-**Scope.** §4 decision 2, taken and recorded. If 60 Hz stays: the record says why, and shard sizing
-inherits the number. If it drops: collision substepping inside `World::Step` (N fixed substeps for
-the movement/collision passes, tick contract unchanged), retuned against the tunneling suite,
-which is already parameterized to name the hulls that break.
+**Decided 2026-08-30: 60 Hz stays**, so this slice shrank from a substepping change to a record.
+
+**Scope.** The decision record only: why the rate is fixed, what the tunneling margin is that a
+future change would have to re-earn (`TUNNEL_HEADROOM`, and the 1.70 m against 1.115 m that 20 Hz
+would produce), and that the per-shard cost multiplier is a sizing input now rather than an open
+question. No code, and `SimTuning.h` is untouched.
 **Out of scope.** Variable timestep, ever; per-region tick rates (a later record if wanted).
 **Build on.** `SimTuning.h:22-29`, the tunneling test, `ServerHost` untouched (its `tickHz` is a
 `Desc` field already).
@@ -439,6 +452,21 @@ AGENTS.md §6 as the only way a linter should start gating. Repeat per project a
 sitting each; NeuronCore follows slice 22 so the sweep meets a clean file.
 **Acceptance.** Two green runs, then the promotion commit; AGENTS.md §6's scope sentence updated
 in the same commit.
+
+#### Slice 24 — the server configuration file (`Outpost`, M + ADR)
+
+**Scope.** The shape a headless composition root reads its port, backlog, world seed and subscriber
+limits from, and a hand-written parser for it in `Outpost` — not in a library, and not a generator
+(§1 R7). Libraries keep taking plain `Desc` structs; the root is still the only thing that reads
+configuration, which is what AGENTS.md §5 has always said.
+
+**Out of scope.** The headless executable itself, argv, the environment, and any live reload. A file
+read once at boot is the whole of it.
+
+**Acceptance.** A malformed file reports what was wrong and fails closed rather than throwing or
+asserting (§5's rule for anything parsing content); every value the current `Outpost.exe` hard-codes
+can be expressed; the existing boot is unchanged when no file is present. A decision record for the
+format and for why a file does not bend §5.
 
 ---
 
