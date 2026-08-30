@@ -279,6 +279,161 @@ public:
     Assert::AreNotEqual(second, grid.Version(), L"a radius change alone did not bump the version");
   }
 
+  TEST_METHOD(TwoStationsTwentyKilometresApartBothRoute)
+  {
+    // The headline failure, and the reason islands exist. One grid sweeps a single bounding box over
+    // every obstacle in the universe, so two stations 20 km apart ask for a grid past
+    // PATH_GRID_MAX_CELLS_PER_AXIS, it declines to build, and A* goes off for *every ship in the
+    // world* rather than for the space between them. Run against that grid, neither ship below
+    // arrives at all: each flies its straight line, hugs its station at 265 m and orbits until the
+    // tick budget runs out (Design/RegionalPathfinding.md 1.1).
+    for (const float station : {0.0f, 20000.0f})
+    {
+      Game::World world;
+      (void)world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, STRUCTURE);
+      (void)world.SpawnShip(Game::LocalPos(20000.0f, 0.0f), 0.0f, STRUCTURE);
+      const Game::ShipId ship = world.SpawnShip(Game::LocalPos(station, -800.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+
+      const Game::ShipId order[] = {ship};
+      world.IssueMoveOrder(order, Game::LocalPos(station, 800.0f), false, 0.0f);
+      Assert::IsTrue(world.RouteOf(ship).size() > 1,
+                     std::format(L"the station at {:.0f} m did not force a route round it", station).c_str());
+
+      float closest = 1e30f;
+      for (int tick = 0; tick < 20000 && world.Ship(ship).order != Game::OrderState::Idle; ++tick)
+      {
+        world.Step();
+        closest = std::min(closest, Game::Distance(world.Ship(ship).posWorld, Game::LocalPos(station, 0.0f)));
+      }
+      Assert::AreEqual(Game::OrderState::Idle, world.Ship(ship).order,
+                       std::format(L"the ship at the station at {:.0f} m never arrived", station).c_str());
+      Assert::IsTrue(closest > Game::HullSpecOf(Game::HullId::Structure).capsuleRadiusMetres,
+                     std::format(L"the ship came within {:.1f} m of the station's centre", closest).c_str());
+    }
+  }
+
+  TEST_METHOD(ArchitectureIsOneIslandExactlyWhenNoHullFitsBetween)
+  {
+    // The partition rule, at its own boundary. A gap wider than IslandGapMetres is one the
+    // straight-line test flies through with no plan at all, so the two are separate problems; a
+    // narrower one is a wall A* has to find its way around, so they are one
+    // (Design/RegionalPathfinding.md 3.2).
+    //
+    // The threshold is derived rather than chosen: twice the widest mobile hull's bounding radius
+    // plus its clearance margin, because a ship's centre has to stay that far clear of each surface
+    // to pass between them. Read off the hull table here too, so the day a wider hull lands the test
+    // moves with it.
+    const float radius = Game::HullSpecOf(Game::HullId::Structure).BoundingRadiusMetres();
+    const float gap = Game::IslandGapMetres();
+    Assert::IsTrue(gap > 0.0f, L"the island gap came out at nothing, so every pair would be one island");
+
+    Game::PathIslands islands;
+    const std::vector<Game::PathGrid::Obstacle> tooTight = {{Game::LocalPos(0.0f, 0.0f), radius},
+                                                            {Game::LocalPos(2.0f * radius + gap - 32.0f, 0.0f), radius}};
+    islands.Rebuild(tooTight);
+    Assert::AreEqual(size_t{1}, islands.IslandCount(), L"a gap no hull fits through was split into two islands");
+
+    const std::vector<Game::PathGrid::Obstacle> roomToPass = {{Game::LocalPos(0.0f, 0.0f), radius},
+                                                              {Game::LocalPos(2.0f * radius + gap + 32.0f, 0.0f), radius}};
+    islands.Rebuild(roomToPass);
+    Assert::AreEqual(size_t{2}, islands.IslandCount(), L"a gap the widest hull passes through was kept as one island");
+
+    // And the grids are the islands': each holds its own station and not the other's, which is what
+    // makes a hundred scattered Structures a hundred small grids rather than one that declines.
+    for (size_t at = 0; at < islands.IslandCount(); ++at)
+      Assert::IsTrue(islands.Island(at).HasObstacles(), L"an island built no grid at all");
+  }
+
+  TEST_METHOD(TheIslandOrderDoesNotFollowShipIds)
+  {
+    // The partition is a function of the obstacle set, but the obstacles arrive in ShipId order and
+    // ShipIds move under swap-and-pop (ADR 0005) -- so the order the islands are *found* in would
+    // follow the ids if it were left to the walk. It is not: they are sorted by the lowest path cell
+    // any member sits in, which is a world coordinate (Design/RegionalPathfinding.md 3.2, 5).
+    //
+    // Said twice. First directly, because the order is what the rule is about: the same two stations
+    // in opposite array orders must come back as the same island in the same slot. Then end to end,
+    // because a rule the router does not actually follow is not a rule.
+    const float radius = Game::HullSpecOf(Game::HullId::Structure).BoundingRadiusMetres();
+    const std::vector<Game::PathGrid::Obstacle> westFirst = {{Game::LocalPos(0.0f, 0.0f), radius}, {Game::LocalPos(4000.0f, 0.0f), radius}};
+    const std::vector<Game::PathGrid::Obstacle> eastFirst = {{Game::LocalPos(4000.0f, 0.0f), radius}, {Game::LocalPos(0.0f, 0.0f), radius}};
+    Game::PathIslands asStored;
+    Game::PathIslands asPermuted;
+    asStored.Rebuild(westFirst);
+    asPermuted.Rebuild(eastFirst);
+    Assert::AreEqual(size_t{2}, asStored.IslandCount(), L"two stations 4 km apart were not two islands");
+    Assert::AreEqual(size_t{2}, asPermuted.IslandCount(), L"two stations 4 km apart were not two islands");
+
+    // Both stations sit at z = 0, so the key comes down to the cell on x and island 0 is the
+    // westerly one whichever way the array ran. Read through the clearance each island's own grid
+    // reports beside that station: near it if the island holds it, and "far" if it does not.
+    const Game::WorldPos besideTheWesterly = Game::LocalPos(600.0f, 0.0f);
+    const float stored = asStored.Island(0).ClearanceAt(besideTheWesterly);
+    const float permuted = asPermuted.Island(0).ClearanceAt(besideTheWesterly);
+    Assert::IsTrue(stored < 1000.0f, L"island 0 is not the station the world-fixed order puts first");
+    Assert::AreEqual(stored, permuted, 0.0f, L"permuting the obstacle array reordered the islands");
+
+    std::vector<Game::WorldPos> first;
+    std::vector<Game::WorldPos> second;
+    for (int flipped = 0; flipped < 2; ++flipped)
+    {
+      Game::World world;
+      const float spawnedFirst = (flipped == 0) ? 0.0f : 4000.0f;
+      const float spawnedSecond = (flipped == 0) ? 4000.0f : 0.0f;
+      Game::World& into = world;
+      (void)into.SpawnShip(Game::LocalPos(spawnedFirst, 0.0f), 0.0f, STRUCTURE);
+      (void)into.SpawnShip(Game::LocalPos(spawnedSecond, 0.0f), 0.0f, STRUCTURE);
+      const Game::ShipId ship = world.SpawnShip(Game::LocalPos(0.0f, -800.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+
+      const Game::ShipId order[] = {ship};
+      world.IssueMoveOrder(order, Game::LocalPos(0.0f, 800.0f), false, 0.0f);
+      const std::span<const Game::WorldPos> route = world.RouteOf(ship);
+      std::vector<Game::WorldPos>& kept = (flipped == 0) ? first : second;
+      kept.assign(route.begin(), route.end());
+    }
+
+    Assert::IsTrue(first.size() > 1, L"the station did not force a route round it, so there is nothing to compare");
+    Assert::AreEqual(first.size(), second.size(), L"the spawn order changed how many waypoints the route had");
+    for (size_t at = 0; at < first.size(); ++at)
+      Assert::IsTrue(IsSamePosition(first[at], second[at]), L"the spawn order changed the route");
+  }
+
+  TEST_METHOD(ARouteAcrossTwoIslandsIsStitched)
+  {
+    // The third case: the run meets more than one island, and no single island's grid can plan it,
+    // because the first one cannot see the second. The first island plans as far as its own far
+    // side and the route reports itself unfinished, which is what makes World::AdvanceRoute come
+    // back for the rest on arrival -- the same rule that already handled a route too long for one
+    // waypoint list (Design/RegionalPathfinding.md 3.4).
+    Game::World world;
+    (void)world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, STRUCTURE);
+    (void)world.SpawnShip(Game::LocalPos(0.0f, 3000.0f), 0.0f, STRUCTURE);
+    const Game::ShipId ship = world.SpawnShip(Game::LocalPos(0.0f, -1500.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+    const Game::WorldPos destination = Game::LocalPos(0.0f, 4500.0f);
+
+    const Game::ShipId order[] = {ship};
+    world.IssueMoveOrder(order, destination, false, 0.0f);
+
+    // The first plan stops on the near side of the far station rather than steering through it.
+    const std::span<const Game::WorldPos> planned = world.RouteOf(ship);
+    Assert::IsTrue(planned.size() >= 1, L"a route across two islands produced no waypoints at all");
+    Assert::IsFalse(IsSamePosition(planned.back(), destination), L"a route across two islands aimed its last waypoint past the second one");
+
+    float nearer = 1e30f;
+    float further = 1e30f;
+    for (int tick = 0; tick < 40000 && world.Ship(ship).order != Game::OrderState::Idle; ++tick)
+    {
+      world.Step();
+      nearer = std::min(nearer, Game::Distance(world.Ship(ship).posWorld, Game::LocalPos(0.0f, 0.0f)));
+      further = std::min(further, Game::Distance(world.Ship(ship).posWorld, Game::LocalPos(0.0f, 3000.0f)));
+    }
+
+    Assert::AreEqual(Game::OrderState::Idle, world.Ship(ship).order, L"a ship crossing two islands never arrived");
+    const float wall = Game::HullSpecOf(Game::HullId::Structure).capsuleRadiusMetres;
+    Assert::IsTrue(nearer > wall, std::format(L"the ship came within {:.1f} m of the first station", nearer).c_str());
+    Assert::IsTrue(further > wall, std::format(L"the ship came within {:.1f} m of the second station", further).c_str());
+  }
+
   TEST_METHOD(ADistantObstacleDoesNotMoveTheCells)
   {
     // The lattice is the world's, not the grid's. Before this, a grid's origin was the corner of the

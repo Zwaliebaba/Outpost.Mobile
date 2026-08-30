@@ -68,3 +68,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0031](0031-listener-slots-are-recycled.md) | Listener slots are recycled, so backlog means concurrency | accepted |
 | [0032](0032-the-dialing-end-owns-the-lanes-stream.md) | The dialing end owns the reliable lane's stream | accepted |
 | [0033](0033-pathfinding-is-islands-on-a-world-fixed-lattice.md) | Pathfinding is islands of architecture, on a lattice fixed to the world | accepted |
+| [0034](0034-a-routes-version-is-the-whole-worlds.md) | A route's version is the whole world's, not its island's | accepted |

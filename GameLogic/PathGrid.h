@@ -71,6 +71,12 @@ public:
   // both the fast path -- most orders need no plan at all -- and what the string-pull is built on.
   [[nodiscard]] bool IsClearBetween(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres) const;
 
+  // How far along that run the clearance first fails, as a fraction of it, and greater than one when
+  // it never does. IsClearBetween is this compared with one; the fraction itself is what tells a
+  // caller holding several grids which of them the run meets *first*, which is the question a route
+  // across more than one island turns on (Design/RegionalPathfinding.md 3.4).
+  [[nodiscard]] float FirstBlockedFraction(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres) const;
+
   // A route as a short waypoint list. True when the last waypoint is _to itself; false when the
   // route ran out of list before it got there, in which case the last waypoint is the furthest safe
   // point along it and the follower re-plans from there.
@@ -127,4 +133,14 @@ private:
   std::vector<Open> m_open;
   std::vector<std::uint32_t> m_cellPath;
 };
+
+// Whether two obstacle sets are the same obstacles in the same order. Order counts because a set
+// comes out of the static store in array order, and a set that has been permuted is a set whose ids
+// have moved -- which is a change a router has to hear about. All five fields, compared exactly: two
+// positions a whole sector apart share their local offsets, so comparing those alone would call them
+// equal, and the question here is "did this change" rather than "is this close".
+//
+// Public because both PathGrid and PathIslands gate a rebuild on it, at their own level: the outer
+// one decides whether the world changed at all, the inner whether this island did.
+[[nodiscard]] bool SameObstacles(std::span<const PathGrid::Obstacle> _a, std::span<const PathGrid::Obstacle> _b) noexcept;
 } // namespace Game

@@ -61,16 +61,7 @@ bool PathGrid::Worse(const Open& _a, const Open& _b) noexcept
   return _a.cell > _b.cell;
 }
 
-namespace
-{
-// Two obstacle sets are the same when they are the same obstacles in the same order. Order counts
-// because the set comes out of the static store in array order, and a set that has been permuted is
-// a set whose ids have moved -- which is a change a router has to hear about.
-//
-// All four fields, compared exactly. Two positions a whole sector apart share their local offsets,
-// so comparing those alone would call them equal; and exact is what is wanted here rather than a
-// tolerance, because the question is "did this change" and not "is this close".
-[[nodiscard]] bool SameObstacles(std::span<const PathGrid::Obstacle> _a, std::span<const PathGrid::Obstacle> _b) noexcept
+bool SameObstacles(std::span<const PathGrid::Obstacle> _a, std::span<const PathGrid::Obstacle> _b) noexcept
 {
   if (_a.size() != _b.size())
     return false;
@@ -84,7 +75,6 @@ namespace
   }
   return true;
 }
-} // namespace
 
 void PathGrid::Rebuild(std::span<const Obstacle> _obstacles)
 {
@@ -193,8 +183,17 @@ float PathGrid::ClearanceAt(const WorldPos& _pos) const noexcept
 
 bool PathGrid::IsClearBetween(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres) const
 {
+  return FirstBlockedFraction(_from, _to, _requiredClearanceMetres) > 1.0f;
+}
+
+float PathGrid::FirstBlockedFraction(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres) const
+{
+  // Greater than one, rather than any particular value: a caller compares it against one to ask
+  // "clear?" and against another grid's answer to ask "which first?", and both work as long as a
+  // clear run sorts after every blocked one.
+  constexpr float NEVER = 2.0f;
   if (m_clearance.empty())
-    return true;
+    return NEVER;
 
   // Half a cell per step, so nothing can be stepped over: the clearance field varies over a cell,
   // and sampling at cell spacing would walk straight through the corner of a Structure.
@@ -202,11 +201,11 @@ bool PathGrid::IsClearBetween(const WorldPos& _from, const WorldPos& _to, float 
   const int steps = std::max(1, static_cast<int>(span / (PATH_CELL_SIZE_METRES * 0.5f)) + 1);
   for (int step = 0; step <= steps; ++step)
   {
-    const WorldPos at = Lerp(_from, _to, static_cast<float>(step) / static_cast<float>(steps));
-    if (ClearanceAt(at) < _requiredClearanceMetres)
-      return false;
+    const float along = static_cast<float>(step) / static_cast<float>(steps);
+    if (ClearanceAt(Lerp(_from, _to, along)) < _requiredClearanceMetres)
+      return along;
   }
-  return true;
+  return NEVER;
 }
 
 bool PathGrid::FindPath(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres, std::vector<WorldPos>& _outWaypoints)

@@ -135,7 +135,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 11 | Localized gather radius, threat pre-filter | `GameLogic` | M | — | U2 |  | landed |
 | 12 | The tick-rate decision | `GameLogic` | S | — | E7 | ADR | decided: 60 Hz stays |
 | 13 | Churn-gated static rebuilds | `GameLogic` | S | — | U4 |  | landed |
-| 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR | [designed](RegionalPathfinding.md); its slice 1 landed |
+| 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR | [designed](RegionalPathfinding.md); slices 1-2 landed |
 | 15 | The quantized wire | `GameLogic` | M | 6 | E5 |  |  |
 | 16 | Global entity identity | `GameLogic` | M | 15 | U3 | ADR |  |
 | 17 | The state codec and the replay gate | `GameLogic` | M | 16 | U3 |  |  |

@@ -2,7 +2,7 @@
 
 #include "Formation.h"
 #include "Movement.h"
-#include "PathGrid.h"
+#include "PathIslands.h"
 #include "Patrol.h"
 #include "ShipState.h"
 #include "SpatialIndex.h"
@@ -245,7 +245,7 @@ private:
   std::uint64_t m_tick = 0;
 
   SpatialIndex m_index;
-  PathGrid m_pathGrid;
+  PathIslands m_pathIslands;
   bool m_staticIndexDirty = true;
 
   // A ship's route, parallel to m_ships and swap-and-popped with them. Fixed capacity rather than a

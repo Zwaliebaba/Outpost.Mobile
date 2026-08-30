@@ -110,10 +110,10 @@ Two obstacles belong to the same island when the gap between their surfaces is n
 widest hull that might need to pass, plus its clearance margin:
 
 ```
-sameIsland(a, b)  ⟺  distance(a.pos, b.pos) - a.radius - b.radius  <  ISLAND_GAP_METRES
+sameIsland(a, b)  ⟺  distance(a.pos, b.pos) - a.radius - b.radius  <  IslandGapMetres()
 ```
 
-with `ISLAND_GAP_METRES` derived, not invented: it is
+with `IslandGapMetres()` derived, not invented: it is
 `2 × (largest hull bounding radius + PATH_CLEARANCE_MARGIN_METRES)`, because a gap wider than that
 is a gap a ship can be routed through by the straight-line test alone, and one narrower is a wall
 that A\* has to find its way around.
@@ -185,8 +185,9 @@ leaves it, or moves — which is the cadence slice 13 already established for th
    index, so it cannot follow a `ShipId` (§3.2).
 3. A\* keeps its total `(f, g, cellIndex)` tie-break, with `cellIndex` now the global lattice index
    rather than a per-grid one — which is what makes it total *across* grids as well as within one.
-4. `PATH_CELL_SIZE_METRES`, `PATH_CLEARANCE_MARGIN_METRES` and the new `ISLAND_GAP_METRES` are all in
-   the replay contract, and `SimTuning.h` says so where they are defined.
+4. `PATH_CELL_SIZE_METRES` and `PATH_CLEARANCE_MARGIN_METRES` are in the replay contract and
+   `SimTuning.h` says so where they are defined; `IslandGapMetres()` is too, and lives in `HullSpec.h`
+   because it is read off the hull table, which is the same contract by another route.
 
 ---
 
@@ -224,10 +225,10 @@ leaves it, or moves — which is the cadence slice 13 already established for th
 ## 8. Risks
 
 - **An island that spans the ceiling.** Content could, in principle, chain stations across 16 km at
-  gaps narrower than `ISLAND_GAP_METRES` and produce one island that declines to build. The failure
+  gaps narrower than `IslandGapMetres()` and produce one island that declines to build. The failure
   is now local — that island's routes degrade, the rest of the world is unaffected — but it should
   be *reported* rather than silent, which is a diagnostic the current code does not have either.
-- **`ISLAND_GAP_METRES` is derived from the hull table.** Add a hull larger than a Carrier and the
+- **`IslandGapMetres()` is derived from the hull table.** Add a hull larger than a Carrier and the
   partition changes, which changes routes. That is correct and it is also a replay-contract change;
   it belongs in the same place the other derived hull constants are already checked.
 - **Case 3 re-plans on arrival**, so a ship crossing many islands plans many times. Each plan is
@@ -243,7 +244,7 @@ Four, in dependency order. The first changes no observable behaviour and is wort
 | # | What | Layer | Size | Depends on | Record | State |
 |---|---|---|---|---|---|---|
 | 1 | The lattice is fixed to the world: global cell indices, grids as windows | `GameLogic` | S | — | — | landed |
-| 2 | Islands: cluster the static set, one grid each, `FindPath` picks the island | `GameLogic` | M | 1 | ADR | |
+| 2 | Islands: cluster the static set, one grid each, `FindPath` picks the island | `GameLogic` | M | 1 | ADR 0034 | landed |
 | 3 | Crossing islands: case 3, and the diagnostic for an island that declines | `GameLogic` | S | 2 | — | |
 | 4 | Dirty-island rebuilds and the benchmark row that shows the cost | `GameLogic` | S | 2 | — | |
 
@@ -260,14 +261,40 @@ round-trips an index through its centre either side of the universe origin and a
 which is where the floor division is the thing that can be wrong. The other eighty-three GameLogic
 test methods pass unchanged.
 
-**Slice 2 — islands.** Union-find over the static store, one `PathGrid` per island, and a `PathGrids`
-owner that `World` holds instead of a single grid. `FindPath` chooses the island the straight line
-first enters. Acceptance: two stations 20 km apart both route correctly, which is the case that
-turns A\* off worldwide today; the replay gate green; the agreement test unchanged.
+**Slice 2 — islands. Landed.** `PathIslands` in `GameLogic` — named for its subject rather than its
+storage, which is what this document calls it everywhere else — holds the partition and one
+`PathGrid` per island, and `World` holds one of those instead of a grid. The seam is unchanged:
+`Rebuild`, `Version`, `FindPath`, called from the same three places. `IslandGapMetres()` is the
+partition rule and lives in `HullSpec.h`, because it is read off the hull table.
 
-**Slice 3 — crossing.** Case 3 and the partial route. Acceptance: a route across three islands
-arrives, in more than one plan; an island at the ceiling declines and traces, and its neighbours
-still route.
+`PathGrid` gained `FirstBlockedFraction`, which is `IsClearBetween` with the answer to *where*: one
+walk of the run, returning how far along the clearance first fails. That is what lets the owner ask
+several grids which of them the run meets **first** rather than merely whether each is in the way.
+
+Landed with four rows. `TwoStationsTwentyKilometresApartBothRoute` is the acceptance, and the
+failure it records is worse than §1.1 claimed: against the single grid neither ship arrives at all —
+each flies its straight line, hugs its station at 265 m and orbits until the tick budget runs out.
+`ArchitectureIsOneIslandExactlyWhenNoHullFitsBetween` pins the partition boundary to
+`IslandGapMetres()` at ±32 m either side of it. `TheIslandOrderDoesNotFollowShipIds` permutes the
+obstacle array and requires the same island in the same slot, and it fails the moment the
+world-fixed sort is removed. `ARouteAcrossTwoIslandsIsStitched` is the crossing. All 85 GameLogic
+test methods that existed before pass unchanged.
+
+**Slice 2 took the safe half of case 3 with it**, because leaving it would have shipped a route that
+lies. A run meeting more than one island is planned in the first and reported unfinished — but the
+first island's grid appends the *destination* as its last waypoint, which is past the second island,
+so a ship steering at it flies into what the first grid cannot see. Measured, that grazed the second
+station at 261.8 m against a 251.2 m capsule. So the trailing waypoint is dropped: the route ends on
+the far side of the first island, the follower arrives and re-plans, and the clearance came back to
+304 m. Seventy-two crossings of three islands from starts all round the first one arrive, none
+stalls, and the whole set runs in 0.8 s.
+
+**Slice 3 — crossing, refined.** What is left of case 3 after slice 2: planning *deliberately* to a
+chosen point on the first island's far side rather than truncating at whatever the string-pull last
+kept, which also removes the one shape slice 2 can be slow in — a start pressed against a wall,
+where the kept waypoint is a cell away and the follower re-plans after 32 m. Plus the diagnostic for
+an island at the ceiling that declines. Acceptance: a route across three islands arrives, in more
+than one plan; an island at the ceiling declines and traces, and its neighbours still route.
 
 **Slice 4 — dirty islands.** Only islands whose membership changed rebuild. Acceptance: a benchmark
 row showing rebuild cost against island count and obstacle count, beside the 7.9 M figure in §1.2.

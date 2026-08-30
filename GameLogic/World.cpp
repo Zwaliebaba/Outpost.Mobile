@@ -224,7 +224,7 @@ void World::PlanRoute(ShipId _id, const WorldPos& _destination, float _requiredC
   ShipState& ship = m_ships[_id];
   Route& route = m_routes[_id];
 
-  const bool complete = m_pathGrid.FindPath(ship.posWorld, _destination, _requiredClearanceMetres, m_routeScratch);
+  const bool complete = m_pathIslands.FindPath(ship.posWorld, _destination, _requiredClearanceMetres, m_routeScratch);
   route.destination = _destination;
   route.requiredClearanceMetres = _requiredClearanceMetres;
   route.count = std::min<std::uint32_t>(MAX_PATH_WAYPOINTS, static_cast<std::uint32_t>(m_routeScratch.size()));
@@ -232,7 +232,7 @@ void World::PlanRoute(ShipId _id, const WorldPos& _destination, float _requiredC
     route.waypoint[at] = m_routeScratch[at];
   route.cursor = 0;
   route.legStart = ship.posWorld;
-  route.gridVersion = m_pathGrid.Version();
+  route.gridVersion = m_pathIslands.Version();
   route.reachesDestination = complete;
 
   // A grid that declined to build, or a start with nowhere to go, leaves the destination itself as
@@ -263,7 +263,7 @@ void World::AdvanceRoute(ShipId _id)
   }
 
   // A route that was planned against architecture that has since changed is not a route any more.
-  if (route.gridVersion != m_pathGrid.Version())
+  if (route.gridVersion != m_pathIslands.Version())
   {
     PlanRoute(_id, route.destination, route.requiredClearanceMetres);
     return;
@@ -326,7 +326,7 @@ void World::RebuildStaticIfDirty()
     m_obstacleScratch.clear();
     for (const SpatialIndex::Entry& entry : m_staticEntries)
       m_obstacleScratch.push_back({entry.pos, entry.boundingRadiusMetres});
-    m_pathGrid.Rebuild(m_obstacleScratch);
+    m_pathIslands.Rebuild(m_obstacleScratch);
     m_staticIndexDirty = false;
   }
 }

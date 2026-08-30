@@ -96,6 +96,6 @@ what makes the portal graph unnecessary.
 than the world's — but the count is new, and the benchmark should show it rather than leave it to be
 noticed.
 
-`ISLAND_GAP_METRES` is derived from the hull table, so adding a hull larger than a Carrier changes
+`IslandGapMetres()` is derived from the hull table, so adding a hull larger than a Carrier changes
 the partition and therefore changes routes. That is correct, and it is a replay-contract change; it
 belongs with the other derived hull constants that are already checked against the table.

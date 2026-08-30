@@ -172,6 +172,21 @@ inline constexpr HullSpec HULL_SPECS[HULL_COUNT] = {
   return largest;
 }
 
+// When two pieces of architecture belong to the same island, and therefore to one path grid: their
+// surfaces are closer together than the widest corridor any hull could need. Derived rather than
+// invented -- twice the largest mobile hull's bounding radius plus its clearance margin, because a
+// ship's centre has to stay that far clear of each surface to pass between them. A wider gap is one
+// the straight-line test flies through on its own; a narrower one is a wall A* has to find its way
+// around (Design/RegionalPathfinding.md 3.2).
+//
+// In the replay contract, and near the top of it: this decides the partition, the partition decides
+// which grid a route is planned in, and the grid decides the route. It is here rather than in
+// SimTuning.h because it is read off the hull table, which is the same contract by another route.
+[[nodiscard]] constexpr float IslandGapMetres() noexcept
+{
+  return 2.0f * (LargestMobileBoundingRadiusMetres() + PATH_CLEARANCE_MARGIN_METRES);
+}
+
 [[nodiscard]] constexpr std::uint32_t LargestNeighbourCap() noexcept
 {
   std::uint32_t largest = 0;

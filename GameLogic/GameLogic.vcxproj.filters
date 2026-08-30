@@ -54,6 +54,9 @@
     <ClInclude Include="PathGrid.h">
       <Filter>Motion</Filter>
     </ClInclude>
+    <ClInclude Include="PathIslands.h">
+      <Filter>Motion</Filter>
+    </ClInclude>
     <ClInclude Include="Publisher.h">
       <Filter>Motion</Filter>
     </ClInclude>
@@ -78,6 +81,9 @@
       <Filter>Motion</Filter>
     </ClCompile>
     <ClCompile Include="PathGrid.cpp">
+      <Filter>Motion</Filter>
+    </ClCompile>
+    <ClCompile Include="PathIslands.cpp">
       <Filter>Motion</Filter>
     </ClCompile>
     <ClCompile Include="Publisher.cpp">
