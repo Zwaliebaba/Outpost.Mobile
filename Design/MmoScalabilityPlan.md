@@ -1,13 +1,14 @@
 # The MMO scalability plan — the review as slices
 
-**Status: thirteen of the twenty-four slices have landed.** The seam: 2 (the despawn log is
+**Status: fourteen of the twenty-four slices have landed.** The seam: 2 (the despawn log is
 cursored), 3 with 4 folded into it (the publisher), 5 and 6 (the reliable lane, and departures and
 orders on it, which retires finding E1), 7 (listener slots recycled), and the loopback fallback is
 gone (ADR 0028). The view: 8 (trail and glow batching), 9 (frustum culling), 10 (hull instancing).
 The simulation: 11 (a localized gather radius), 13 (churn-gated static rebuilds), and 14 — all four
 slices of its own design, so architecture is islands on a world-fixed lattice and the 16.4 km cliff
 is gone. The tree: 21 (the guards widened) and 22 (the dead helper deleted). Slice 12 was decided
-rather than built: 60 Hz stays. **What is left is phase 3 — slices 15 through 20 — plus 23 and 24.**
+rather than built: 60 Hz stays. Slice 24 is in: a root is told what to be by a file rather than by
+a rebuild. **What is left is phase 3 — slices 15 through 20 — plus 23.**
 This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
 (tree at `de12b6d`) into an ordered slice plan in the shape `Design/README.md` defines: one slice,
 one branch, one pull request. The review is the evidence; this document is the work. Where a slice
@@ -106,22 +107,24 @@ Named here so no slice takes them silently:
    what a future change would have to re-earn, and that the per-shard multiplier is now a sizing
    input rather than an open question. Substepping stays un-built and un-needed.
 3. ~~**How a dedicated server is told what to be**~~ — **taken 2026-08-30: a configuration file, read
-   by the composition root alone.** This does not bend AGENTS.md §5: that rule bans `argv` and the
+   by the composition root alone; built as slice 24, ADR 0043.** This does not bend AGENTS.md §5: that rule bans `argv` and the
    environment, and says configuration is loaded by the composition root, which is exactly what a
    file read there is. Libraries keep receiving plain `Desc` structs and still never read a file
    themselves. It needs a format, a hand-written parser (§1 R7 — no generators), the fail-closed
    rule §5 already requires of anything parsing content, and a decision record. It is a slice of its
    own, not yet cut, and it is what gates a second process.
-4. **`FactionId` stays u8 for now** (256 factions). Fine while factions are identities; revisit in
-   slice 16's record if player corporations are to become factions, because that is the last cheap
-   moment to widen it.
+4. ~~**`FactionId` stays u8 for now**~~ — **answered by slice 16's record: it stays u8, and the
+   premise was wrong.** A corporation is a membership and a faction is an identity every client maps
+   to a relation (ADR 0013), so making one the other puts ten thousand rows into a table that is
+   quadratic in its own size. Widening the id alone would buy nothing while `FACTION_LIMIT` is 8 and
+   the wire's `hostileMask` is a byte; the three move together or not at all (ADR 0044).
 
 ## 5. Deliberately left out
 
 The same fences the review drew. No combat, economy, or content systems — this plan makes the
 engine able to carry them, not build them. No second-process migration. The seam and the
-machinery are ready and §4 decision 3 is now taken, so slice 24 cuts the configuration file a
-headless root would read — but the second process itself, and whatever runs it, stays out of this
+machinery are ready and §4 decision 3 is taken and built, so slice 24 cut the configuration file a
+headless root reads — but the second process itself, and whatever runs it, stays out of this
 plan. No 3D simulation: the plane is a product decision
 (ADR 0016, `WorldPos.h`), and nothing here spends effort for or against it. No audio. Release CI
 and the R11 documentation pass stay where AGENTS.md already tracks them.
@@ -159,7 +162,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 21 | Guard widening and the docs re-trued | `Build/`+prose | S | — | C2 C3 C4 |  | landed |
 | 22 | Legacy helper cleanup | `NeuronCore` | S | — | C1 |  | landed |
 | 23 | clang-tidy widens a project | `.github/` | S | — | C2 |  |  |
-| 24 | The server configuration file | `Outpost` | M | — | — | ADR | cuttable since §4.3 |
+| 24 | The server configuration file | `Outpost` | M | — | — | ADR | [landed](Archive/ServerConfig-work-order.md) |
 
 **Quick wins:** slices 1, 7, 13, 21 and 22 are each a sitting, depend on nothing, and retire real
 findings; any idle track starts with its nearest one.
@@ -683,6 +686,38 @@ read once at boot is the whole of it.
 asserting (§5's rule for anything parsing content); every value the current `Outpost.exe` hard-codes
 can be expressed; the existing boot is unchanged when no file is present. A decision record for the
 format and for why a file does not bend §5.
+
+**As landed**, the file is `Outpost/Assets/Server.cfg` — deployed beside the executable in the shape
+every mesh and font already uses — and it carries five keys, each with a consumer today: `port`,
+`backlog`, `interestRadiusMetres`, `interestUpdateEveryTicks`, `ordersPerTick`. The `shard` key the
+first landing carried went with slice 16, whose `World::ConfigureShard` is its only consumer; it
+returns with that slice. Work order:
+[`ServerConfig-work-order.md`](Archive/ServerConfig-work-order.md); ADR 0043.
+
+**"Fails closed" turned out to be two rules, not one**, and the split is the useful part of the
+slice. The parser applies *nothing* on a refusal — so half the admin's file and half the defaults,
+with nothing saying which, is a state that cannot exist — and it decides nothing about what to do
+next. The root decides: this one logs `CONFIG REFUSED` and boots on the defaults, because a typo in
+a tuning file should not be a black screen, while a headless root prints the same message and exits
+non-zero. Same parser, two roots.
+
+**An unknown key is a refusal**, which is the one design choice a reader will want argued: ignoring
+it turns `prot = 40000` into a silent revert to 30081, and that looks exactly like the file working.
+
+**The world seed is not in the file**, and this table's sentence for it is why that is stated rather
+than quietly dropped. Nothing reads one: `UniverseLayout` exists (ADR 0037) and is not wired into
+the root, and the two seeds the root does hold are presentation, live in `ViewTuning.h`, and are
+tunable at any time by the rule that separates that header from `SimTuning.h`. A knob with no reader
+is a knob to explain and then remove.
+
+**Verified by harness, not by suite.** `Outpost` has none — ADR 0014's standing assumption, the one
+slices 1, 8, 9 and 10 also made. The parser compiles on Linux unmodified, so the harness runs the
+shipped translation unit rather than a copy: every refusal the order names, the shipped file parsing
+to exactly the defaults, and 200,000 fuzzed inputs under ASan and UBSan without a throw, an abort or
+a silent refusal. 200,127 checks, none failing.
+
+**What it retires**: `OUTPOST_QUIC_PORT` as a literal in three places, and §4 decision 3 as an open
+question. What it does not: the headless executable itself, which stays out of this plan (§5).
 
 ---
 
