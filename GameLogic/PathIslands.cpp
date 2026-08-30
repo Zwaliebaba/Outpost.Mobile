@@ -126,18 +126,63 @@ void PathIslands::Rebuild(std::span<const PathGrid::Obstacle> _obstacles)
   ++m_version;
   m_built.assign(_obstacles.begin(), _obstacles.end());
 
-  m_islands.clear();
+  m_rebuiltIslands = 0;
   if (_obstacles.empty())
+  {
+    m_islands.clear();
+    m_islandBuilt.clear();
     return;
+  }
 
   Partition(_obstacles);
-  m_islands.resize(m_memberStart.size() - 1);
-  for (std::size_t island = 0; island + 1 < m_memberStart.size(); ++island)
+
+  // The grids from the last build, set aside so this one can claim the ones whose islands did not
+  // change. Moved out rather than copied: a grid is a clearance field of thousands of floats, and
+  // the point of the exercise is not to touch the ones that are still right.
+  //
+  // Swapped out *before* anything clears them, which is the whole of it: clearing m_islands first
+  // and swapping after leaves nothing to claim and quietly rebuilds the world every time. The
+  // benchmark is what caught that, which is why it is part of this slice.
+  m_keptIslands.clear();
+  m_keptBuilt.clear();
+  m_keptIslands.swap(m_islands);
+  m_keptBuilt.swap(m_islandBuilt);
+  m_claimed.assign(m_keptIslands.size(), 0);
+
+  const std::size_t count = m_memberStart.size() - 1;
+  m_islands.resize(count);
+  m_islandBuilt.resize(count);
+  m_rebuiltIslands = 0;
+  for (std::size_t island = 0; island < count; ++island)
   {
     m_islandScratch.clear();
     for (std::uint32_t at = m_memberStart[island]; at < m_memberStart[island + 1]; ++at)
       m_islandScratch.push_back(_obstacles[m_members[at]]);
+
+    // Matched by content, not by position: the islands are ordered by where they sit in the world,
+    // so building anything renumbers every island after it and the slot an island held last time
+    // says nothing about which island is here now (ADR 0034).
+    std::size_t kept = m_keptIslands.size();
+    for (std::size_t old = 0; old < m_keptBuilt.size(); ++old)
+    {
+      if (m_claimed[old] == 0 && SameObstacles(m_islandScratch, m_keptBuilt[old]))
+      {
+        kept = old;
+        break;
+      }
+    }
+
+    if (kept < m_keptIslands.size())
+    {
+      m_claimed[kept] = 1;
+      m_islands[island] = std::move(m_keptIslands[kept]);
+      m_islandBuilt[island].swap(m_keptBuilt[kept]);
+      continue;
+    }
+
+    ++m_rebuiltIslands;
     m_islands[island].Rebuild(m_islandScratch);
+    m_islandBuilt[island] = m_islandScratch;
   }
 }
 

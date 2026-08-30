@@ -508,6 +508,66 @@ public:
     Assert::AreEqual(size_t{1}, route.size(), L"a declining island planned a route it has no grid for");
   }
 
+  TEST_METHOD(OnlyTheIslandThatChangedIsRebuilt)
+  {
+    // What islands are for, on the rebuild side. One grid over everything meant a station moving
+    // anywhere cost a clearance field over the whole world; per island it costs its own. Measured
+    // over a hundred scattered stations, a whole rebuild is 1.58 ms and one station moving is
+    // 0.064 ms, and the evaluations go from the review's 7.9 M worst legal case to 2,304
+    // (Design/RegionalPathfinding.md 4).
+    //
+    // Matched by content and not by slot, because the islands are ordered by where they sit in the
+    // world and building anything renumbers every island after it -- an island index is not a
+    // handle, for the same reason a ShipId is not (ADR 0005, ADR 0034).
+    const float radius = Game::HullSpecOf(Game::HullId::Structure).BoundingRadiusMetres();
+    std::vector<Game::PathGrid::Obstacle> scattered;
+    for (int at = 0; at < 12; ++at)
+      scattered.push_back({Game::LocalPos(static_cast<float>(at % 4) * 3000.0f, static_cast<float>(at / 4) * 3000.0f), radius});
+
+    Game::PathIslands islands;
+    islands.Rebuild(scattered);
+    Assert::AreEqual(size_t{12}, islands.IslandCount(), L"twelve stations 3 km apart were not twelve islands");
+    Assert::AreEqual(std::uint32_t{12}, islands.RebuiltIslandCount(), L"the first build did not build every island");
+
+    // One station widens. Its own island is dirty; the other eleven hold exactly the obstacles they
+    // held before and keep the grids they have.
+    std::vector<Game::PathGrid::Obstacle> widened = scattered;
+    widened.front().radiusMetres += 0.5f;
+    islands.Rebuild(widened);
+    Assert::AreEqual(size_t{12}, islands.IslandCount(), L"widening one station changed how many islands there are");
+    Assert::AreEqual(std::uint32_t{1}, islands.RebuiltIslandCount(), L"a station moving rebuilt more than its own island");
+
+    // A station appears, which renumbers the islands after it -- and still only the new one builds.
+    std::vector<Game::PathGrid::Obstacle> grown = widened;
+    grown.push_back({Game::LocalPos(-9000.0f, -9000.0f), radius});
+    islands.Rebuild(grown);
+    Assert::AreEqual(size_t{13}, islands.IslandCount(), L"the new station did not become its own island");
+    Assert::AreEqual(std::uint32_t{1}, islands.RebuiltIslandCount(), L"a spawn rebuilt islands it did not touch");
+
+    // And a kept grid is a right grid, not merely a fast one. The same architecture built from
+    // scratch has to route identically -- which it does only because the lattice is the world's, so
+    // a grid carried across a repartition still holds the cells it did (slice 1).
+    Game::PathIslands afresh;
+    afresh.Rebuild(grown);
+    const float clearance = Game::HullSpecOf(Game::HullId::Corvette).BoundingRadiusMetres() + Game::PATH_CLEARANCE_MARGIN_METRES;
+    std::vector<Game::WorldPos> carried;
+    std::vector<Game::WorldPos> rebuilt;
+    for (int at = 0; at < 12; ++at)
+    {
+      const Game::WorldPos station = Game::LocalPos(static_cast<float>(at % 4) * 3000.0f, static_cast<float>(at / 4) * 3000.0f);
+      Game::WorldPos from = station;
+      Game::Translate(from, 0.0f, -800.0f);
+      Game::WorldPos to = station;
+      Game::Translate(to, 0.0f, 800.0f);
+      const bool one = islands.FindPath(from, to, clearance, carried);
+      const bool other = afresh.FindPath(from, to, clearance, rebuilt);
+      Assert::AreEqual(one, other, L"a carried grid and a fresh one disagreed about whether the route finished");
+      Assert::AreEqual(carried.size(), rebuilt.size(), L"a carried grid and a fresh one produced routes of different lengths");
+      for (size_t step = 0; step < carried.size(); ++step)
+        Assert::IsTrue(IsSamePosition(carried[step], rebuilt[step]), L"a carried grid routed differently from a fresh one");
+    }
+  }
+
   TEST_METHOD(ADistantObstacleDoesNotMoveTheCells)
   {
     // The lattice is the world's, not the grid's. Before this, a grid's origin was the corner of the

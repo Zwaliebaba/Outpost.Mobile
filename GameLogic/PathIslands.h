@@ -63,6 +63,15 @@ public:
     return m_islands.size();
   }
 
+  // How many islands the last rebuild actually built a clearance field for. The rest were handed the
+  // obstacles they already held and kept the grid they had, which is the whole of slice 4: one
+  // station moving in a world of thirty pays for its own island and not for the world
+  // (Design/RegionalPathfinding.md 4). Read off a benchmark rather than inferred from a timing.
+  [[nodiscard]] std::uint32_t RebuiltIslandCount() const noexcept
+  {
+    return m_rebuiltIslands;
+  }
+
   // How many of them refused to build, because a single island is genuinely wider than
   // PATH_GRID_MAX_CELLS_PER_AXIS allows. Its neighbours keep routing -- that is the whole gain over
   // one grid -- but ships crossing *it* fall back to straight-line steering, and a declining island
@@ -108,6 +117,21 @@ private:
   // version alone and every route with it -- the same gate PathGrid keeps, one level up, because
   // this is now the version a Route is stamped with (Design/MmoScalabilityReview.md U4).
   std::vector<PathGrid::Obstacle> m_built;
+
+  // What each island's grid was built from, one list per entry of m_islands and in the same order.
+  // A rebuild that hands an island the same obstacles it already holds keeps that grid rather than
+  // computing the same clearance field again, which is the difference between paying for the world
+  // and paying for what moved (Design/RegionalPathfinding.md 4).
+  //
+  // Matched by content and not by position, because the islands are ordered by where they sit in the
+  // world and building anything renumbers every island after it. An island index is not a handle,
+  // for the same reason a ShipId is not (ADR 0005, ADR 0034) -- so this asks "which of the old lists
+  // is this one" rather than "what was at this slot".
+  std::vector<std::vector<PathGrid::Obstacle>> m_islandBuilt;
+  std::vector<PathGrid> m_keptIslands;
+  std::vector<std::vector<PathGrid::Obstacle>> m_keptBuilt;
+  std::vector<std::uint8_t> m_claimed;
+  std::uint32_t m_rebuiltIslands = 0;
 
   // Partition scratch, reused so a rebuild allocates nothing after the first one. m_parent is the
   // union-find forest over m_built's indices; m_members is those indices grouped by island and

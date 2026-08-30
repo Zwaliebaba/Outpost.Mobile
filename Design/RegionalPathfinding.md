@@ -240,13 +240,14 @@ leaves it, or moves — which is the cadence slice 13 already established for th
 ## 9. Slices
 
 Four, in dependency order. The first changes no observable behaviour and is worth landing alone.
+**All four have landed**; what each turned out to be is written up beneath the table.
 
 | # | What | Layer | Size | Depends on | Record | State |
 |---|---|---|---|---|---|---|
 | 1 | The lattice is fixed to the world: global cell indices, grids as windows | `GameLogic` | S | — | — | landed |
 | 2 | Islands: cluster the static set, one grid each, `FindPath` picks the island | `GameLogic` | M | 1 | ADR 0034 | landed |
 | 3 | Crossing islands: case 3, and the diagnostic for an island that declines | `GameLogic` | S | 2 | — | landed |
-| 4 | Dirty-island rebuilds and the benchmark row that shows the cost | `GameLogic` | S | 2 | — | |
+| 4 | Dirty-island rebuilds and the benchmark row that shows the cost | `GameLogic` | S | 2 | — | landed |
 
 **Slice 1 — the fixed lattice. Landed.** `PathCellX`/`PathCellZ`/`PathCellCentre` in `PathGrid.h`
 are the lattice, and `PathGrid` holds a window on it: `m_origin` is gone and `m_originCellX`/
@@ -314,5 +315,37 @@ still routes round itself in four waypoints, and a run through the declining isl
 line it was before there was a planner. Under one grid that whole world declined and nothing routed
 at all.
 
-**Slice 4 — dirty islands.** Only islands whose membership changed rebuild. Acceptance: a benchmark
-row showing rebuild cost against island count and obstacle count, beside the 7.9 M figure in §1.2.
+**Slice 4 — dirty islands. Landed.** `PathIslands` keeps the obstacle list each grid was built
+from, and a rebuild claims a grid whose island is handed exactly the obstacles it already holds
+rather than computing the same clearance field again. Claimed **by content, not by slot**: the
+islands are ordered by where they sit in the world, so building anything renumbers every island
+after it, and the slot an island held last time says nothing about which island is there now — the
+same reason a `ShipId` is not a handle (ADR 0005, ADR 0034). `RebuiltIslandCount()` reports how
+many actually built.
+
+Measured on scattered Structures 3 km apart, one per island, on this machine:
+
+| Stations | Islands | Whole rebuild | One station moves | One station spawns |
+|---|---|---|---|---|
+| 1 | 1 | 0.022 ms, 1 island | 0.017 ms, 1 island | 0.021 ms, 1 island |
+| 5 | 5 | 0.078 ms, 5 islands | 0.018 ms, **1** island | 0.021 ms, **1** island |
+| 10 | 10 | 0.174 ms, 10 islands | 0.019 ms, **1** island | 0.034 ms, **1** island |
+| 30 | 30 | 0.493 ms, 30 islands | 0.025 ms, **1** island | 0.031 ms, **1** island |
+| 100 | 100 | 1.575 ms, 100 islands | 0.064 ms, **1** island | 0.070 ms, **1** island |
+
+A spawn renumbers the islands and still builds one, which is what claiming by content buys.
+
+Against §1.2's figures, in distance evaluations. A lone Structure's island is 48 × 48 = 2,304 cells
+(§3.3's table, confirmed by measurement), so:
+
+| | Evaluations per rebuild |
+|---|---|
+| One grid, the review's worst legal case: 262,144 cells × 30 obstacles | 7,864,320 |
+| Thirty islands, whole rebuild: 30 × 2,304 × 1 | 69,120 |
+| Thirty islands, one station moves: 2,304 × 1 | **2,304** |
+
+**The benchmark earned its place before it measured anything.** The first implementation cleared
+`m_islands` before swapping the previous grids aside, so there was never anything to claim and every
+rebuild quietly rebuilt the world. Every test passed — the answers were right, only the work was
+wasted — and the benchmark row printed "one moved: rebuilt 30 islands", which is what found it. The
+test that now guards it asserts the count rather than a timing.
