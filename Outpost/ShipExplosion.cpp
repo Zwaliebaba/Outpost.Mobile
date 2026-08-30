@@ -55,10 +55,9 @@ void ShipExplosion::Start(const Spawn& _spawn, SpriteParticles& _particles)
   desc.minCircumferenceMetres = EXPLOSION_FRAGMENT_MIN_CIRCUMFERENCE * hullScale;
   desc.fraction = EXPLOSION_HULL_FRACTION;
   desc.maxFragments = static_cast<std::uint32_t>(EXPLOSION_FRAGMENT_CAP);
-  // A shard is the colour of the panel it came off, which is the hull's own draw mix and not the
-  // raw vertex colour: ScenePS lerps the same way round (design 13).
-  desc.tintColour = XMFLOAT3(SHIP_COLOUR.r, SHIP_COLOUR.g, SHIP_COLOUR.b);
-  desc.tintMix = SHIP_MATERIAL_MIX;
+  // A shard is the colour the panel it came off was being drawn in, so it takes the same livery the
+  // hull did and applies it the same way -- blow up a Vandal Interceptor and the debris is red.
+  desc.livery = XMFLOAT3(_spawn.livery.r, _spawn.livery.g, _spawn.livery.b);
 
   std::uint32_t dropped = 0;
   for (MeshShatter& shatter : m_shatters)

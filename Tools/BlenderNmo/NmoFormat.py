@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """NMO version 2.0 -- the reference codec.
 
-This module is the executable statement of Design/NmoFormat.md section 5: an in-memory model, a
+This module is the executable statement of Design/Archive/NmoFormat.md section 5: an in-memory model, a
 writer, a reader, and the validation list, in that document's order and under its rule numbers.
 Where this file and the document disagree, one of them has a bug and the round-trip test is how
 it is found.
@@ -12,7 +12,7 @@ serves the add-on inside Blender, the fixture builder, and a bare `python3` runn
   python3 Tools/BlenderNmo/NmoFormat.py info file.nmo        print a structural summary
   python3 Tools/BlenderNmo/NmoFormat.py validate file.nmo    exit 0 if the file conforms
 
-Reading raises NmoError naming the violated rule; it never repairs (Design/NmoFormat.md 5.12).
+Reading raises NmoError naming the violated rule; it never repairs (Design/Archive/NmoFormat.md 5.12).
 All floats on disk are float32: values coming back from `read` are the exact float32 values, so
 write(read(data)) reproduces the input byte for byte.
 """
@@ -41,12 +41,12 @@ RENDER_FLAG_DOUBLE_SIDED = 0x1
 RENDER_FLAG_ALPHA_BLEND = 0x2
 RENDER_FLAG_ADDITIVE = 0x4
 # base_colour is a shade rather than a colour: the faction supplies the hue and the renderer
-# multiplies (Design/NmoFormat.md 5.5). The same rule, per marker, is MARKER_FLAG_RACE_TINTED.
+# multiplies (Design/Archive/NmoFormat.md 5.5). The same rule, per marker, is MARKER_FLAG_RACE_TINTED.
 RENDER_FLAG_RACE_TINTED = 0x8
 
 MARKER_FLAG_RACE_TINTED = 0x1
 
-# Marker kinds defined by v2.0 (Design/NmoFormat.md 5.10). The format carries any kind string;
+# Marker kinds defined by v2.0 (Design/Archive/NmoFormat.md 5.10). The format carries any kind string;
 # this list only names the ones tools give a bespoke display to.
 MARKER_KIND_EXHAUST = 'Exhaust'
 MARKER_KIND_NAV_LIGHT = 'NavLight'
@@ -311,7 +311,7 @@ def _index_stride(index_format):
 
 
 def _write_mesh_blob(mesh):
-    """One mesh blob in the recommended physical order (Design/NmoFormat.md 5.11).
+    """One mesh blob in the recommended physical order (Design/Archive/NmoFormat.md 5.11).
 
     Offsets in the headers are authoritative and blob-relative; this writer lays sections out in
     document order and records where each lands.
@@ -699,7 +699,7 @@ def _read_mesh_blob(blob, mesh_index):
 
 
 def read(data, check_crc=True):
-    """Bytes -> Model, validated per Design/NmoFormat.md 5.12. Raises NmoError, never repairs."""
+    """Bytes -> Model, validated per Design/Archive/NmoFormat.md 5.12. Raises NmoError, never repairs."""
     if len(data) < FILE_HEADER.size:
         raise NmoError('5.12.1: %d bytes cannot hold a file header' % len(data))
     (magic, version_major, version_minor, header_bytes, file_bytes, mesh_count, flags,

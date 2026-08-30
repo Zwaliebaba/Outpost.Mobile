@@ -101,7 +101,7 @@ public:
     DirectX::XMFLOAT3 local{0.0f, 0.0f, 0.0f}; // nozzle position in mesh space
     Neuron::Rgba colour{1.0f, 1.0f, 1.0f, 1.0f};
     float radiusMetres = 0.0f; // the marker's scale, already in metres
-    // The plume is livery where its author said so (Design/NmoFormat.md 5.10). Carried here so the
+    // The plume is livery where its author said so (Design/Archive/NmoFormat.md 5.10). Carried here so the
     // livery slice is one multiply rather than a second walk of the markers.
     bool raceTinted = false;
   };
@@ -151,7 +151,8 @@ public:
     // the new snapshot has no record for it and this ShipView is about to be discarded.
     DirectX::XMFLOAT4X4 lastWorld{};
     DirectX::XMFLOAT3 lastVelMetresPerSec{0.0f, 0.0f, 0.0f};
-    bool drawn = false; // false until the first Render; a ship that vanishes before one does not explode
+    Neuron::Rgba lastLivery{1.0f, 1.0f, 1.0f, 1.0f}; // so the debris wears the paint the hull did
+    bool drawn = false;                              // false until the first Render; a ship that vanishes before one does not explode
 
     bool selected = false;
     float ringFade = 0.0f;  // 0..1 alpha ramp on select and deselect
@@ -371,6 +372,12 @@ private:
   // Whether record _index is one this client may take hold of. Every selection path goes through it:
   // PickShip for taps and hovers, OnBoxSelect for a band, and RecallableIndex for a control group.
   [[nodiscard]] bool IsOwn(std::size_t _index) const noexcept;
+
+  // Whose paint a hull wears. Hostile outranks faction, which is the precedence Design/Stations.md
+  // 9.3 sets and this slice does not get to re-litigate: a Vanguard ship whose faction holds this
+  // client hostile paints the Vandals' red, because the law turning on you is the thing the player
+  // must see.
+  [[nodiscard]] static Neuron::Rgba LiveryOf(Game::FactionId _faction, bool _own, bool _hostileToMe) noexcept;
 
   // Where a group member sits in the current snapshot, or -1 if recalling the group would not take
   // hold of it -- because this client is no longer holding that ship, or because it is no longer its

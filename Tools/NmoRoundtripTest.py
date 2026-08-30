@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The codec's tests: the byte-exact round trip, and one rejection per validation rule.
 
-Two families, mirroring how Design/NmoFormat.md 5.12 will also be tested in C++ (slice 2):
+Two families, mirroring how Design/Archive/NmoFormat.md 5.12 will also be tested in C++ (slice 2):
 
   - Round trip: fixture -> write -> read -> write must be byte-identical, and the read model must
     still hold every feature the fixture authored (a silent drop round-trips clean, so the bytes
@@ -48,6 +48,10 @@ def expect_reject(name, data_or_model, rule):
     raise SystemExit('FAIL %s: a file violating %s was accepted' % (name, rule))
 
 
+def near(actual, expected, tolerance=1e-5):
+    return len(actual) == len(expected) and all(abs(a - b) <= tolerance for a, b in zip(actual, expected))
+
+
 def clear_crc(data):
     """Zero the stored CRC (0 = not computed), so a payload patch tests its own rule rather than
     the checksum."""
@@ -62,7 +66,7 @@ def patch_u32(data, offset, value):
     return data[:offset] + struct.pack('<I', value) + data[offset + 4:]
 
 
-# Field positions inside NmoMeshHeader, by pack order (Design/NmoFormat.md 5.4).
+# Field positions inside NmoMeshHeader, by pack order (Design/Archive/NmoFormat.md 5.4).
 MH_NAME_OFFSET = 1
 MH_MATERIALS_OFFSET = 3
 MH_VERTEX_BUFFERS_OFFSET = 9
@@ -126,7 +130,7 @@ def test_round_trip():
 
 
 def _cross_matches_normals(mesh):
-    """Front faces have cross(b-a, c-a) along the stored outward normal (Design/NmoFormat.md 5.2,
+    """Front faces have cross(b-a, c-a) along the stored outward normal (Design/Archive/NmoFormat.md 5.2,
     clockwise front in the left-handed basis). The Blender exporter must reproduce this, so the
     fixture itself is checked rather than trusted."""
     for sub in mesh.sub_meshes:
@@ -283,6 +287,47 @@ def test_rejections():
                   hull(lambda s: setattr(s.markers[1], 'name', 'ExhaustPort')), '5.12.9')
 
 
+def test_obj_converter():
+    """Tools/ObjToNmo.py, over an OBJ this test writes.
+
+    The converter is the OBJ path's record rather than the content pipeline (Design/Decisions/0035)
+    and the shipped hulls are NMO, so there is no OBJ in the tree to point it at any more. Its
+    conventions still have to hold: the Z negation, Kd as the material colour, one submesh per
+    material, and the union-find clustering that seeds an Exhaust marker from the thruster faces.
+    """
+    import tempfile
+    import ObjToNmo
+
+    # A quad of `hull` and a two-triangle nozzle of `thruster`, far enough apart to cluster as one.
+    obj = ('mtllib nozzle.mtl\n'
+           'v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\n'
+           'v 4 0 2\nv 4.1 0 2\nv 4.05 0.1 2\n'
+           'usemtl hull\nf 1 2 3\nf 1 3 4\n'
+           'usemtl thruster\nf 5 6 7\n')
+    mtl = 'newmtl hull\nKd 0.2 0.3 0.4\nnewmtl thruster\nKd 0.9 0.8 0.1\n'
+    with tempfile.TemporaryDirectory() as scratch:
+        with open(os.path.join(scratch, 'nozzle.obj'), 'w') as handle:
+            handle.write(obj)
+        with open(os.path.join(scratch, 'nozzle.mtl'), 'w') as handle:
+            handle.write(mtl)
+        data = ObjToNmo.convert(os.path.join(scratch, 'nozzle.obj'))
+    check('the OBJ converter produced a model', data is not None)
+
+    mesh = nmo.read(data).meshes[0]
+    check('the mesh is named for the file', mesh.name == 'nozzle')
+    check('one submesh per material', len(mesh.sub_meshes) == 2
+          and sorted(m.name for m in mesh.materials) == ['hull', 'thruster'])
+    check('every face survived', sum(sub.primitive_count for sub in mesh.sub_meshes) == 3)
+    hull = next(s for s in mesh.sub_meshes if mesh.materials[s.material_index].name == 'hull')
+    check('Kd becomes the material colour',
+          near(mesh.materials[hull.material_index].base_colour[:3], (0.2, 0.3, 0.4)))
+    markers = [m for sub in mesh.sub_meshes for m in sub.markers]
+    check('the thruster faces seeded one Exhaust marker',
+          len(markers) == 1 and markers[0].kind == nmo.MARKER_KIND_EXHAUST)
+    check('the marker sits on the nozzle, Z negated as the importer negates it',
+          near(markers[0].position[:1], (4.05,), 0.1) and markers[0].position[2] < 0.0)
+
+
 def test_command_line():
     import tempfile
     with tempfile.TemporaryDirectory() as scratch:
@@ -299,6 +344,7 @@ def main():
     test_round_trip()
     test_preserves_forward_compatible_data()
     test_rejections()
+    test_obj_converter()
     test_command_line()
     print('NmoRoundtripTest: %d checks passed' % PASSED)
     return 0

@@ -16,13 +16,13 @@ constexpr float PI = 3.14159265358979323846f;
 // Every test here builds its mesh by hand. The parser has its own suite, and a shatter test that
 // loaded a file would be measuring both.
 Neuron::MeshData OneTriangle(const XMFLOAT3& _a, const XMFLOAT3& _b, const XMFLOAT3& _c,
-                             const XMFLOAT3& _colour = XMFLOAT3(1.0f, 1.0f, 1.0f))
+                             const XMFLOAT3& _colour = XMFLOAT3(1.0f, 1.0f, 1.0f), float _race = 0.0f)
 {
   Neuron::MeshData mesh;
   mesh.verts = {
-    {_a.x, _a.y, _a.z, _colour.x, _colour.y, _colour.z},
-    {_b.x, _b.y, _b.z, _colour.x, _colour.y, _colour.z},
-    {_c.x, _c.y, _c.z, _colour.x, _colour.y, _colour.z},
+    {_a.x, _a.y, _a.z, _colour.x, _colour.y, _colour.z, _race},
+    {_b.x, _b.y, _b.z, _colour.x, _colour.y, _colour.z, _race},
+    {_c.x, _c.y, _c.z, _colour.x, _colour.y, _colour.z, _race},
   };
   mesh.boundsMin = XMFLOAT3(std::min({_a.x, _b.x, _c.x}), std::min({_a.y, _b.y, _c.y}), std::min({_a.z, _b.z, _c.z}));
   mesh.boundsMax = XMFLOAT3(std::max({_a.x, _b.x, _c.x}), std::max({_a.y, _b.y, _c.y}), std::max({_a.z, _b.z, _c.z}));
@@ -221,30 +221,39 @@ public:
                      L"a fragment indexed a tumbler that does not exist");
   }
 
-  TEST_METHOD(TheFragmentColourIsTheHullsOwnMix)
+  TEST_METHOD(TheFragmentColourIsTheHullsOwnPaint)
   {
-    const Neuron::MeshData mesh =
+    // A shard off a surface the model paints keeps the model's colour whatever livery is passed,
+    // and a shard off a liveried one takes the multiply -- the same line ScenePS runs on the hull
+    // it came off (Design/Archive/NmoFormat.md 5.5).
+    const Neuron::MeshData ownPaint =
       OneTriangle(XMFLOAT3(0.0f, 0.0f, 0.0f), XMFLOAT3(2.0f, 0.0f, 0.0f), XMFLOAT3(0.0f, 2.0f, 0.0f), XMFLOAT3(1.0f, 0.0f, 0.0f));
     Neuron::Pcg32 rng(1u);
     Neuron::MeshShatter shatter;
     std::vector<Neuron::FxVertex> verts;
 
-    shatter.Spawn(mesh, Identity(), XMFLOAT3(0.0f, 0.0f, 0.0f), Neuron::MeshShatter::Desc(), rng);
+    shatter.Spawn(ownPaint, Identity(), XMFLOAT3(0.0f, 0.0f, 0.0f), Neuron::MeshShatter::Desc(), rng);
     shatter.Build(verts);
     Assert::AreEqual(1.0f, verts[0].Colour().x, UNORM8_STEP, L"the default Desc changed the vertex colour");
     Assert::AreEqual(0.0f, verts[0].Colour().y, UNORM8_STEP, L"the default Desc changed the vertex colour");
     Assert::AreEqual(0.0f, verts[0].Colour().z, UNORM8_STEP, L"the default Desc changed the vertex colour");
 
-    // lerp(tint, vertex, mix) -- the same operand order ScenePS mixes a hull in.
-    Neuron::MeshShatter::Desc tinted;
-    tinted.tintColour = XMFLOAT3(0.0f, 0.0f, 1.0f);
-    tinted.tintMix = 0.25f;
+    Neuron::MeshShatter::Desc azure;
+    azure.livery = XMFLOAT3(0.25f, 0.5f, 1.0f);
     verts.clear();
-    shatter.Spawn(mesh, Identity(), XMFLOAT3(0.0f, 0.0f, 0.0f), tinted, rng);
+    shatter.Spawn(ownPaint, Identity(), XMFLOAT3(0.0f, 0.0f, 0.0f), azure, rng);
     shatter.Build(verts);
-    Assert::AreEqual(0.25f, verts[0].Colour().x, UNORM8_STEP, L"the tint mixed the wrong way round");
-    Assert::AreEqual(0.0f, verts[0].Colour().y, UNORM8_STEP, L"the tint mixed the wrong way round");
-    Assert::AreEqual(0.75f, verts[0].Colour().z, UNORM8_STEP, L"the tint mixed the wrong way round");
+    Assert::AreEqual(1.0f, verts[0].Colour().x, UNORM8_STEP, L"a livery reached a surface the model paints");
+
+    // The same shard off a liveried panel: a mid grey shade under the same azure.
+    const Neuron::MeshData liveried =
+      OneTriangle(XMFLOAT3(0.0f, 0.0f, 0.0f), XMFLOAT3(2.0f, 0.0f, 0.0f), XMFLOAT3(0.0f, 2.0f, 0.0f), XMFLOAT3(0.5f, 0.5f, 0.5f), 1.0f);
+    verts.clear();
+    shatter.Spawn(liveried, Identity(), XMFLOAT3(0.0f, 0.0f, 0.0f), azure, rng);
+    shatter.Build(verts);
+    Assert::AreEqual(0.125f, verts[0].Colour().x, UNORM8_STEP, L"the livery did not multiply the shade");
+    Assert::AreEqual(0.25f, verts[0].Colour().y, UNORM8_STEP, L"the livery did not multiply the shade");
+    Assert::AreEqual(0.5f, verts[0].Colour().z, UNORM8_STEP, L"the livery did not multiply the shade");
   }
 
   TEST_METHOD(ARotationAboutYIsLeftHanded)

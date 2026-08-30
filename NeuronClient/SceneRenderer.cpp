@@ -225,12 +225,12 @@ void SceneRenderer::BeginScene(GpuDevice& _gpu, const SceneFrame& _frame)
   cmd->SetGraphicsRoot32BitConstants(1, 8, shading, 4);
 }
 
-void SceneRenderer::DrawMesh(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _baseColour, float _materialMix)
+void SceneRenderer::DrawMesh(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _livery, float _highlight)
 {
   if (_mesh >= m_meshes.size() || m_meshes[_mesh].vertexCount == 0)
     return;
   const GpuMesh& mesh = m_meshes[_mesh];
-  const float base[4] = {_baseColour.r, _baseColour.g, _baseColour.b, _materialMix};
+  const float base[4] = {_livery.r, _livery.g, _livery.b, _highlight};
 
   ID3D12GraphicsCommandList* cmd = _gpu.CommandList();
   // Set here rather than relied on from BeginScene. DrawMeshInstanced switches the pipeline, so a

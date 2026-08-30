@@ -7,7 +7,7 @@ v2.0's defaults were put to the owner and taken on 2026-08-29 (§15).
 This document adapts the **Neuron Mesh Object (NMO)** format proposal from the Interstellar
 Outpost tree (`InterstellarOutpost.dx12`, *"Neuron Mesh Object (NMO): Format Design"*, revision
 2026-08-27) into this repository, under this repository's rules — the same porting posture as
-[SpaceshipExplosion.md](Archive/SpaceshipExplosion.md), which brought that tree's destruction effect
+[SpaceshipExplosion.md](SpaceshipExplosion.md), which brought that tree's destruction effect
 across. The source document designed a binary model format derived from Microsoft's CMO, extended
 with per-submesh bone animation and named markers, for a D3D9 engine migrating a 516-model `.pie`
 corpus. This tree needs the same *kind* of format for a different reason: its ships are OBJ
@@ -40,13 +40,13 @@ Constraints first, per this tree's porting convention. Each shaped the format be
 
 | Constraint | Where it comes from | What it does to this design |
 |---|---|---|
-| One vertex format for the whole scene pass: `MeshVertex{px,py,pz,r,g,b}` | [`MeshData.h:13`](../NeuronClient/MeshData.h) | The engine consumes position + colour today. The file still stores normals and UVs (§5.6) — they are authored data Blender holds and dropping them is lossy — but nothing in the engine has to change to adopt the format. |
-| Flat shading from screen-space derivatives, winding-immune | [`ScenePS.hlsl`](../NeuronClient/Shaders/ScenePS.hlsl), `GpuHelpers.cpp:83` (`CULL_MODE_NONE`) | Vertex normals are carried, not required. Winding is specified (§5.2) so a culling renderer can arrive later without touching content. |
-| Non-indexed draws; `GpuMesh` is one VB and a count | [`RenderTypes.h:32`](../NeuronClient/RenderTypes.h), `SceneRenderer.cpp:171` | The file is indexed (§3); the *loader* expands to triangle soup until an indexed pipeline is worth its slice (§14). Format ≠ renderer capability. |
-| Exhaust positions are recovered by union-find clustering of faces carrying the `thruster` material | [`ObjParser.cpp:118-136`](../NeuronClient/ObjParser.cpp), `ObjParser.h:19` | The heuristic runs in the shipping loader on every boot and yields anonymous points. Markers make it *authored* data: named, typed, coloured, oriented — the heuristic's one legitimate home is a converter that runs once (§13). |
+| One vertex format for the whole scene pass: `MeshVertex{px,py,pz,r,g,b}` | [`MeshData.h:13`](../../NeuronClient/MeshData.h) | The engine consumes position + colour today. The file still stores normals and UVs (§5.6) — they are authored data Blender holds and dropping them is lossy — but nothing in the engine has to change to adopt the format. |
+| Flat shading from screen-space derivatives, winding-immune | [`ScenePS.hlsl`](../../NeuronClient/Shaders/ScenePS.hlsl), `GpuHelpers.cpp:83` (`CULL_MODE_NONE`) | Vertex normals are carried, not required. Winding is specified (§5.2) so a culling renderer can arrive later without touching content. |
+| Non-indexed draws; `GpuMesh` is one VB and a count | [`RenderTypes.h:32`](../../NeuronClient/RenderTypes.h), `SceneRenderer.cpp:171` | The file is indexed (§3); the *loader* expands to triangle soup until an indexed pipeline is worth its slice (§14). Format ≠ renderer capability. |
+| Exhaust positions are recovered by union-find clustering of faces carrying the `thruster` material | `ObjParser.cpp:118-136`, `ObjParser.h:19` (both deleted by [ADR 0035](../Decisions/0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md)) | The heuristic runs in the shipping loader on every boot and yields anonymous points. Markers make it *authored* data: named, typed, coloured, oriented — the heuristic's one legitimate home is a converter that runs once (§13). |
 | The exhaust glow colour is a placeholder — every ship flies on `SELECTED_COLOUR` | `WorldView.cpp:728` | The Exhaust marker's colour field is the value that replaces it, per model, per nozzle (§9). |
-| The explosion effect shatters `MeshData`'s retained triangle soup | [SpaceshipExplosion.md](Archive/SpaceshipExplosion.md) §2 | The NMO loader must keep producing `MeshData`-shaped soup; the shatter, picking and bounds consumers never learn the format changed (§13). |
-| Simulation sizes are authored numbers, never derived from meshes | AGENTS.md §2, [ADR 0002](Decisions/0002-content-readers-live-with-their-consumer.md), [`HullSpec.h`](../GameLogic/HullSpec.h) | Markers are presentation data, read by the client. If combat simulation ever needs gun positions, they arrive in GameLogic as authored numbers — generated *offline* from `.nmo` by a tool at most, never read from the mesh at runtime (§9). |
+| The explosion effect shatters `MeshData`'s retained triangle soup | [SpaceshipExplosion.md](SpaceshipExplosion.md) §2 | The NMO loader must keep producing `MeshData`-shaped soup; the shatter, picking and bounds consumers never learn the format changed (§13). |
+| Simulation sizes are authored numbers, never derived from meshes | AGENTS.md §2, [ADR 0002](../Decisions/0002-content-readers-live-with-their-consumer.md), [`HullSpec.h`](../../GameLogic/HullSpec.h) | Markers are presentation data, read by the client. If combat simulation ever needs gun positions, they arrive in GameLogic as authored numbers — generated *offline* from `.nmo` by a tool at most, never read from the mesh at runtime (§9). |
 | Content errors are diagnostics, never crashes | AGENTS.md §5, `ObjParser.h:9` | The loader validates and rejects with a reason; it never repairs, asserts or throws on content (§5.12). |
 | Left-handed `(east, up, north)`, `LH` everywhere; hulls' bow lands on +Z | AGENTS.md §5, `ObjParser.h:13` | The file is stored in render space directly (§5.2). The Blender add-on owns the axis conversion, in one self-inverse function (§11). |
 | Metres, and `constexpr` tuning | AGENTS.md, `ViewTuning.h` | Spatial units are metres 1:1 (a Corvette is ~17 × 22 m and Blender's default unit is the metre). Time is seconds. |
@@ -134,7 +134,7 @@ stdlib-only and importable without Blender — it is the executable statement of
 run it with a bare `python3`.
 
 The engine reader lands in NeuronClient, next to `ObjParser` and `DdsImage`, because a mesh's only
-consumer is the renderer ([ADR 0002](Decisions/0002-content-readers-live-with-their-consumer.md));
+consumer is the renderer ([ADR 0002](../Decisions/0002-content-readers-live-with-their-consumer.md));
 nothing in NeuronCore, GameLogic or NeuronServer learns the format exists.
 
 ---
@@ -307,7 +307,7 @@ without the flag are drawn exactly as authored and never see a livery at all.
 Which faction supplies the hue is not the file's business and is deliberately absent from it: a
 mesh knows it has a liveried panel, not who is flying it. The mapping from faction to colour is
 the client's, and lives where the rest of that mapping already does
-([Stations.md](Stations.md) §9.3).
+([Stations.md](../Stations.md) §9.3).
 
 ### 5.6 Buffers
 
@@ -723,7 +723,7 @@ interiors collapse.
 - One read (`BinaryFile::ReadFile`), validate per §5.12, then parse the named records once into
   compact tables and expand geometry into `MeshData` — indexed → soup, material `baseColour`
   baked into vertex colour, exactly the shape every current consumer holds
-  ([SpaceshipExplosion.md](Archive/SpaceshipExplosion.md) §2 depends on it). The in-place-view design the
+  ([SpaceshipExplosion.md](SpaceshipExplosion.md) §2 depends on it). The in-place-view design the
   source document specifies stays available for the day the renderer goes indexed; nothing in the
   layout prevents it, which is the point of the alignment rules.
 - A `.nmo` that fails validation traces the failing rule and returns false; `MeshLibrary` skips
@@ -852,34 +852,36 @@ brightness its thrusters should burn, and every other liveried surface falls out
    `static_assert`s, `NmoReader` validating per §5.12 and expanding into `MeshData` (+ markers),
    C++ malformed-file tests over the shared fixture bytes; registered in the project files; no
    caller yet. Its work order is
-   [Archive/NmoFormat-slice-2.md](Archive/NmoFormat-slice-2.md).
+   [Archive/NmoFormat-slice-2.md](NmoFormat-slice-2.md).
 3. **Marker consumers** *(Outpost)* — **landed fourth.** `MeshLibrary` loads `.nmo` when present
    (OBJ fallback stays); `ShipView` takes exhaust positions/colours from `Exhaust` markers;
    nav-light pips with blink; screenshots at two window sizes. No fallback was written — the
    content swap came first, which
-   [ADR 0035](Decisions/0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md) records. Its
-   work order is [Archive/NmoFormat-slice-4.md](Archive/NmoFormat-slice-4.md).
+   [ADR 0035](../Decisions/0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md) records. Its
+   work order is [Archive/NmoFormat-slice-4.md](NmoFormat-slice-4.md).
 4. **Content swap** *(Assets)* — **landed third.** Hulls re-exported per §13 with authored markers;
    OBJ files and `ObjParser`'s clustering retire (parser itself may stay for dev import); the
    `SpaceshipExplosion` and picking paths re-verified over the new loader's soup. What actually
    landed diverges from §13 in three ways that
-   [ADR 0035](Decisions/0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md) records: the
+   [ADR 0035](../Decisions/0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md) records: the
    corpus is authored as GLB rather than converted from OBJ, no fallback was written, and
    `ObjParser` was deleted rather than kept. Its work order is
-   [Archive/NmoFormat-slice-3.md](Archive/NmoFormat-slice-3.md).
-5. **Liveries** *(NeuronClient shaders, Outpost)* — the visible half of `RaceTinted` (§5.5,
-   §5.10): the scene shader stops tinting a whole hull and multiplies the flagged surfaces by the
-   flying faction's colour, the faction-to-colour mapping becomes the table
-   [Stations.md](Stations.md) §9.3 describes, and exhaust plumes follow it. The converter gains
+   [Archive/NmoFormat-slice-3.md](NmoFormat-slice-3.md).
+5. **Liveries** *(NeuronClient shaders, Outpost)* — **landed.** The visible half of `RaceTinted`
+   (§5.5, §5.10): the scene shader stops tinting a whole hull and multiplies the flagged surfaces
+   by the flying faction's colour, the faction-to-colour mapping becomes the table
+   [Stations.md](../Stations.md) §9.3 describes, and exhaust plumes follow it. The converter gains
    §13.1's table and the corpus is regenerated in the same commit as the shader, so the shades and
    the multiply that gives them meaning never ship apart. Its work order is
-   [NmoFormat-slice-5.md](NmoFormat-slice-5.md).
+   [NmoFormat-slice-5.md](NmoFormat-slice-5.md) and its decision record is
+   [ADR 0036](../Decisions/0036-a-liveried-surface-is-declared-and-the-combine-is-a-multiply.md).
 6. **Articulated parts** *(later, own design note)* — pose evaluation, per-submesh transforms in
    the renderer, the first animated turret/dish; where indexed drawing and GPU skinning earn
-   their slices, they hang off this one.
+   their slices, they hang off this one. **Not this document's to schedule**: it is deferred to a
+   design of its own, which is why this one moved to `Design/Archive/` with slice 5.
 
 Slices 2→3→4→5 are ordered; 6 is independent after 2. One slice per layer at a time, per the loop
-in [Design/README.md](README.md).
+in [Design/README.md](../README.md).
 
 **On the numbering.** The work orders in `Design/` renumbered 3 and 4 against this list — the
 content swap was brought in front of the marker consumers, and

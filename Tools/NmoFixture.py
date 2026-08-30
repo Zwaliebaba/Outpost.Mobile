@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Builds the golden NMO fixture every test reads.
 
-One model, two meshes, exercising every feature of Design/NmoFormat.md 5 at the smallest size
+One model, two meshes, exercising every feature of Design/Archive/NmoFormat.md 5 at the smallest size
 that still means something:
 
   "Gunship"  - two submeshes over one shared vertex buffer; two materials (one emissive,
@@ -15,7 +15,7 @@ that still means something:
 
 The Python tests build the fixture; the C++ suite reads it as committed bytes at
 Tests/NeuronClientTests/Assets/NmoFixture.nmo. That copy is the narrow, deliberate exception to
-"nothing generated is committed" (AGENTS.md section 1) that Design/NmoFormat.md 15 D3 records:
+"nothing generated is committed" (AGENTS.md section 1) that Design/Archive/NmoFormat.md 15 D3 records:
 this file is its generator and its diff is its review, so regenerating and comparing is part of
 every slice that touches it. Coordinates are chosen exactly representable in float32 where flat,
 so comparisons in the Blender round-trip test can be exact rather than tolerant where exactness is
@@ -112,7 +112,7 @@ def _gunship():
     glow.base_colour = (0.25, 0.85, 0.4, 1.0)
     glow.emissive_colour = (0.25, 0.85, 0.4, 1.5)
     # Trim, so the faction paints it: base_colour is a shade under the multiply
-    # (Design/NmoFormat.md 5.5). HullPlate stays unflagged, so the golden bytes carry both
+    # (Design/Archive/NmoFormat.md 5.5). HullPlate stays unflagged, so the golden bytes carry both
     # values of the bit and a reader can be tested on each.
     glow.render_flags = nmo.RENDER_FLAG_ADDITIVE | nmo.RENDER_FLAG_RACE_TINTED
     mesh.materials = [plate, glow]

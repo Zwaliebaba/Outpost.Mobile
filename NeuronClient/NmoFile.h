@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-// The NMO version 2.0 on-disk layout, transcribed from Design/NmoFormat.md section 5 and nothing
+// The NMO version 2.0 on-disk layout, transcribed from Design/Archive/NmoFormat.md section 5 and nothing
 // else: no functions, no helpers, no includes from this project. It is meant to be read beside that
 // document and diffed by eye, so keep the order the document has and change nothing here that the
 // document does not say first.

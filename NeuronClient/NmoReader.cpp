@@ -13,7 +13,7 @@ namespace
 {
 constexpr std::uint32_t FNV_OFFSET_BASIS = 0x811C9DC5u;
 constexpr std::uint32_t FNV_PRIME = 0x01000193u;
-constexpr std::uint32_t CRC32_POLYNOMIAL = 0xEDB88320u; // Design/NmoFormat.md 5.3
+constexpr std::uint32_t CRC32_POLYNOMIAL = 0xEDB88320u; // Design/Archive/NmoFormat.md 5.3
 constexpr float WEIGHT_SUM_TOLERANCE = 1e-3f;
 constexpr std::uint32_t BUFFER_ALIGNMENT = 16;
 constexpr std::uint32_t RECORD_ALIGNMENT = 4;
@@ -31,7 +31,7 @@ std::string Narrow(const std::wstring& _text)
 }
 
 // FNV-1a 32, over the UTF-8 bytes exactly as the file holds them. Marker names are hashed once at
-// load and never string-compared again (Design/NmoFormat.md 5.10); the hash is never written to a
+// load and never string-compared again (Design/Archive/NmoFormat.md 5.10); the hash is never written to a
 // file, because derivable data on disk is a consistency liability.
 std::uint32_t Fnv1a(std::string_view _text) noexcept
 {
@@ -814,7 +814,7 @@ bool Expand(const Cursor& _cursor, const MeshView& _mesh, MeshData& _outMesh)
     const NmoSubMesh& record = sub.record;
     const NmoMaterial& material = _mesh.materials[record.materialIndex];
     // A submesh has exactly one material, so the flag is read once here and written to every vertex
-    // the submesh emits: no name matching, no lookup, no heuristic (Design/NmoFormat.md 5.5).
+    // the submesh emits: no name matching, no lookup, no heuristic (Design/Archive/NmoFormat.md 5.5).
     const float race = (material.renderFlags & static_cast<std::uint32_t>(NmoRenderFlags::RaceTinted)) != 0 ? 1.0f : 0.0f;
     const BufferView& indexBuffer = _mesh.indexBuffers[record.indexBufferIndex];
     const BufferView& vertexBuffer = _mesh.vertexBuffers[record.vertexBufferIndex];
@@ -846,7 +846,7 @@ bool Expand(const Cursor& _cursor, const MeshView& _mesh, MeshData& _outMesh)
 
   // Names are hashed and never stored, so two names that hash alike are one marker as far as every
   // consumer is concerned. That is a load failure naming both, for the tool to rename around,
-  // rather than an engine quietly picking one (Design/NmoFormat.md 5.10).
+  // rather than an engine quietly picking one (Design/Archive/NmoFormat.md 5.10).
   for (std::size_t index = 0; index < names.size(); ++index)
   {
     for (std::size_t earlier = 0; earlier < index; ++earlier)

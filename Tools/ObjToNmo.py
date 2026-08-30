@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Converts the shipped OBJ/MTL hulls to NMO (Design/NmoFormat.md 13).
+"""Converts the shipped OBJ/MTL hulls to NMO (Design/Archive/NmoFormat.md 13).
 
 A port of the engine's ObjParser conventions into a tool that runs once, instead of a heuristic
 that runs in the shipping loader on every boot:

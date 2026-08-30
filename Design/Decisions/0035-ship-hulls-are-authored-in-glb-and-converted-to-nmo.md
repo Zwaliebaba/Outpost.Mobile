@@ -5,7 +5,7 @@ Date: 2026-08-30
 
 ## Context
 
-[`Design/NmoFormat.md`](../NmoFormat.md) §13 assumed the shipping corpus would be the ten OBJ hulls
+[`Design/Archive/NmoFormat.md`](../Archive/NmoFormat.md) §13 assumed the shipping corpus would be the ten OBJ hulls
 run through `Tools/ObjToNmo.py`, with `Exhaust` markers seeded once from the union-find clustering
 that `ObjParser` had been running in the shipping loader on every boot. That is not what happened.
 The hulls were re-authored in a modelling package and arrive as **GLB**, with their markers placed

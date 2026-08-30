@@ -46,7 +46,10 @@ public:
 
   // Opaque pass. Set once per frame, before any DrawMesh or DrawMeshInstanced.
   void BeginScene(GpuDevice& _gpu, const SceneFrame& _frame);
-  void DrawMesh(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _baseColour, float _materialMix);
+  // _livery multiplies the surfaces the model declared RaceTinted and reaches nothing else, so a
+  // mesh whose vertices all carry race == 0 -- the ground quad, a decal -- draws as authored
+  // whatever is passed. _highlight is a lift towards white in 0..1, applied after lighting.
+  void DrawMesh(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _livery, float _highlight);
 
   // One draw for every ship sharing a mesh. Five hundred hulls over five meshes were five hundred
   // draws, because a per-object matrix could only live in a root constant and a root constant is set

@@ -7,7 +7,7 @@
 namespace Neuron
 {
 // Neuron Mesh Object version 2.0, read into the triangle soup every consumer in this client already
-// holds. Design/NmoFormat.md is the format; NmoFile.h is its on-disk layout; section 5.12 is the
+// holds. Design/Archive/NmoFormat.md is the format; NmoFile.h is its on-disk layout; section 5.12 is the
 // validation list this reader implements clause by clause, in order, before it uses a single byte.
 //
 // Every count and every offset in the file is arithmetic that ends in a pointer, so all of it is

@@ -1,6 +1,6 @@
 #include "pch.h"
 
-// The C++ half of Design/NmoFormat.md section 12: one deliberately corrupted file per section 5.12
+// The C++ half of Design/Archive/NmoFormat.md section 12: one deliberately corrupted file per section 5.12
 // clause over the same golden bytes the Python codec is tested against.
 //
 // Assets\NmoFixture.nmo is committed rather than generated at test time. That is the narrow,

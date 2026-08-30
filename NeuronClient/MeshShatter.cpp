@@ -112,7 +112,7 @@ std::uint32_t MeshShatter::Spawn(const MeshData& _mesh, const XMFLOAT4X4& _world
     // The importer gives every vertex of a face its material's colour, so the three agree and the
     // first is the panel's colour rather than a corner of a gradient that does not exist. The sign
     // of the normal does not matter: the shader faces it towards the eye, as the scene pass does.
-    fragment.colour = Lerp(_desc.tintColour, XMFLOAT3(a.r, a.g, a.b), _desc.tintMix);
+    fragment.colour = Lerp(XMFLOAT3(a.r, a.g, a.b), XMFLOAT3(a.r * _desc.livery.x, a.g * _desc.livery.y, a.b * _desc.livery.z), a.race);
     fragment.tumbler = static_cast<std::uint8_t>(_rng.Below(static_cast<std::uint32_t>(TUMBLER_COUNT)));
     m_fragments.push_back(fragment);
   }

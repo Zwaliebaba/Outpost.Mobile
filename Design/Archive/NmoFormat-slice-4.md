@@ -157,7 +157,7 @@ screenshots and state the final numbers in the pull request** — that is what t
 
 - **No `Gun` consumer.** The markers are read into `MeshData` and skipped by the view. Combat has
   no muzzle to flash yet, and simulation truth stays authored in `GameLogic`
-  ([ADR 0002](Decisions/0002-content-readers-live-with-their-consumer.md), design §9).
+  ([ADR 0002](../Decisions/0002-content-readers-live-with-their-consumer.md), design §9).
 - **No marker direction.** Nothing reads a marker's orientation. The plume is drawn along the path
   the nozzle travelled, as it is today, not along the marker's `+Z` — and the hulls' exhaust
   markers carry an identity rotation that lands on `+Y` anyway ([slice 3](NmoFormat-slice-3.md) §5).
