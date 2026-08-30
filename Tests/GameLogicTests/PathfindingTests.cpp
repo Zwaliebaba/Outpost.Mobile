@@ -204,12 +204,16 @@ public:
     // (Design/MmoScalabilityReview.md U4).
     Game::World world;
     (void)world.SpawnShip(Game::LocalPos(0.0f, 200.0f), 0.0f, STRUCTURE);
-    const Game::ShipId ship = world.SpawnShip(Game::LocalPos(0.0f, -1400.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
-    const Game::ShipId order[] = {ship};
+    // Held as a handle rather than an id, because a despawn below can renumber it (ADR 0005). It
+    // happens not to here -- the passer is the last ship -- and a test that relies on that is one
+    // spawn away from being wrong for a reason nobody would look for.
+    const Game::ShipHandle ship =
+      world.HandleOf(world.SpawnShip(Game::LocalPos(0.0f, -1400.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette)));
+    const Game::ShipId order[] = {world.Resolve(ship)};
     world.IssueMoveOrder(order, Game::LocalPos(0.0f, 1400.0f), false, 0.0f);
     world.Step();
 
-    const std::size_t planned = world.RouteOf(ship).size();
+    const std::size_t planned = world.RouteOf(world.Resolve(ship)).size();
     Assert::IsTrue(planned > 1, L"the Structure did not force a route round it");
 
     // A mobile ship arrives and leaves. Neither touches the architecture, so neither may disturb a
@@ -217,11 +221,11 @@ public:
     const Game::ShipHandle passer =
       world.HandleOf(world.SpawnShip(Game::LocalPos(600.0f, 600.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor)));
     world.Step();
-    Assert::AreEqual(planned, world.RouteOf(ship).size(), L"a mobile spawn re-planned a route it could not have affected");
+    Assert::AreEqual(planned, world.RouteOf(world.Resolve(ship)).size(), L"a mobile spawn re-planned a route it could not have affected");
 
     Assert::IsTrue(world.DespawnShip(passer), L"the despawn failed");
     world.Step();
-    Assert::AreEqual(planned, world.RouteOf(ship).size(), L"a mobile despawn re-planned a route it could not have affected");
+    Assert::AreEqual(planned, world.RouteOf(world.Resolve(ship)).size(), L"a mobile despawn re-planned a route it could not have affected");
   }
 
   TEST_METHOD(DespawningAStructureStillReplans)
@@ -230,15 +234,28 @@ public:
     // it exists for. Architecture leaving is architecture changing.
     Game::World world;
     const Game::ShipHandle wall = world.HandleOf(world.SpawnShip(Game::LocalPos(0.0f, 200.0f), 0.0f, STRUCTURE));
-    const Game::ShipId ship = world.SpawnShip(Game::LocalPos(0.0f, -1400.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
-    const Game::ShipId order[] = {ship};
-    world.IssueMoveOrder(order, Game::LocalPos(0.0f, 1400.0f), false, 0.0f);
+    const Game::ShipHandle ship =
+      world.HandleOf(world.SpawnShip(Game::LocalPos(0.0f, -1400.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette)));
+    const Game::WorldPos destination = Game::LocalPos(0.0f, 1400.0f);
+    const Game::ShipId order[] = {world.Resolve(ship)};
+    world.IssueMoveOrder(order, destination, false, 0.0f);
     world.Step();
-    Assert::IsTrue(world.RouteOf(ship).size() > 1, L"the Structure did not force a route round it");
 
+    const std::span<const Game::WorldPos> detour = world.RouteOf(world.Resolve(ship));
+    Assert::IsTrue(detour.size() > 1, L"the Structure did not force a route round it");
+    Assert::IsFalse(IsSamePosition(detour[0], destination), L"the route round the Structure starts at the destination");
+
+    // Both ships are held as handles across the despawn, because the Structure is id 0 and
+    // swap-and-pop moves the last ship into its place: the surviving ship's *id* changes even though
+    // the ship does not, which is the rule ADR 0005 exists to state.
     Assert::IsTrue(world.DespawnShip(wall), L"the despawn failed");
     world.Step();
-    Assert::AreEqual(size_t{1}, world.RouteOf(ship).size(), L"removing the Structure did not free the route");
+
+    const Game::ShipId survivor = world.Resolve(ship);
+    Assert::AreNotEqual(Game::INVALID_SHIP_ID, survivor, L"the surviving ship's handle went stale");
+    const std::span<const Game::WorldPos> freed = world.RouteOf(survivor);
+    Assert::AreEqual(size_t{1}, freed.size(), L"removing the Structure did not free the route");
+    Assert::IsTrue(IsSamePosition(freed[0], destination), L"the freed route does not go straight at the destination");
   }
 
   TEST_METHOD(ARebuildWithTheSameObstaclesKeepsItsVersion)
