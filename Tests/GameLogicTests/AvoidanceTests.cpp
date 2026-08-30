@@ -64,7 +64,7 @@ public:
     // Two identical hulls meeting head-on have equal authority and mirror each other exactly. Left
     // to the danger term alone they deadlock, or resolve by whichever way the arithmetic happens to
     // fall -- which is a coin toss that looks like a bug when the same encounter goes the other way
-    // a minute later. The rule is what makes it read as seamanship (Design/Collision.md 9).
+    // a minute later. The rule is what makes it read as seamanship (Design/Archive/Collision.md 9).
     for (const Game::HullId hull : {Game::HullId::Interceptor, Game::HullId::Corvette, Game::HullId::Frigate})
     {
       Game::World world;
@@ -152,7 +152,7 @@ public:
     // creates -- a plain argmax flips left, right, left on successive ticks and the ship shivers
     // down the middle. Counted per second rather than per encounter, because a ship that weaves
     // once a second is manoeuvring and one that reverses fourteen times a second is broken
-    // (Design/Collision.md 10, 16).
+    // (Design/Archive/Collision.md 10, 16).
     constexpr int WINDOW_TICKS = 60;
     constexpr int REVERSALS_ALLOWED = 6;
 
@@ -255,7 +255,7 @@ public:
     // Zero relative velocity is the divide-by-zero in the time-to-closest-approach formula, and it
     // is not an edge case: it is a formation flying in company, which is what a fleet does for its
     // entire journey. Getting it wrong produces a NaN in the most ordinary situation the game has
-    // (Design/Collision.md 10, 16).
+    // (Design/Archive/Collision.md 10, 16).
     Game::World world;
     std::vector<Game::ShipId> wing;
     for (int i = 0; i < 6; ++i)
@@ -289,7 +289,7 @@ public:
   {
     // Formation drift under traffic is not a separate problem; it is the authority split with a
     // different number, plus traffic that steers around rather than through. An idle ship holds its
-    // station harder than one under way (Design/Collision.md 9).
+    // station harder than one under way (Design/Archive/Collision.md 9).
     Game::World world;
     std::vector<Game::ShipId> parked;
     for (int i = 0; i < 5; ++i)

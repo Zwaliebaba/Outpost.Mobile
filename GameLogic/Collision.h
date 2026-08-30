@@ -9,7 +9,7 @@ namespace Game
 //
 // No mass, no momentum, no restitution, no impulses. This is an RTS: units nudge each other apart
 // and give way. Rigid-body response would make a fleet behave like a break shot and would put an
-// integrator's stability into the replay contract (Design/Collision.md 8).
+// integrator's stability into the replay contract (Design/Archive/Collision.md 8).
 
 // A capsule in the ground plane, in whatever local frame the caller is working in. Both ends of a
 // pair are expressed in the same frame and the frame is always local -- never absolute world
@@ -45,7 +45,7 @@ struct Contact
 // shouldering aside for an Interceptor reads as a bug to anyone watching. The share a hull takes is
 // the *other* hull's authority over the sum, so authority is a hull's tendency to hold its line.
 // Both sides compute the same split from the same two numbers, so the pass stays order-independent
-// and needs no arbitration step (Design/Collision.md 9).
+// and needs no arbitration step (Design/Archive/Collision.md 9).
 struct SeparationShares
 {
   float a = 0.0f;
@@ -64,6 +64,6 @@ struct SeparationShares
 //
 // A parked ship holds its station harder than one under way, which is what stops a fleet on station
 // being walked off it by passing traffic. Formation drift is not a separate problem; it is this one
-// with a different number (Design/Collision.md 9).
+// with a different number (Design/Archive/Collision.md 9).
 [[nodiscard]] float AvoidanceAuthorityOf(const HullSpec& _hull, OrderState _order) noexcept;
 } // namespace Game

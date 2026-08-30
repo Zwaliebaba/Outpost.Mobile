@@ -21,7 +21,7 @@ enum class SpriteType : std::uint8_t
 // Two blends, and the difference between them is the whole reason the effect reads as fire and
 // smoke rather than two clouds of pink. Additive brightens what is behind it; Dark darkens it,
 // through a destination blend of one-minus-source-colour and a vertex alpha of zero (FxRenderer,
-// Design/SpaceshipExplosion.md 7).
+// Design/Archive/SpaceshipExplosion.md 7).
 enum class SpriteBlend : std::uint8_t
 {
   Dark,

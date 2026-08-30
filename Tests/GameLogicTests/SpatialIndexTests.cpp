@@ -80,7 +80,7 @@ public:
   {
     // The test that catches every cell-ring off-by-one. A missed contact does not assert or crash;
     // it reads as a tuning problem, which is why this is the gate rather than a play-test
-    // (Design/Collision.md 16).
+    // (Design/Archive/Collision.md 16).
     IndexRandom random(12345u);
     for (int configuration = 0; configuration < 24; ++configuration)
     {

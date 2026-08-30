@@ -41,7 +41,7 @@ public:
   //
   // The faction defaults because every existing caller -- the starting fleet, every test -- spawns
   // the player's own ships, so the default states what those call sites already mean rather than
-  // papering over them. A caller that means someone else has to say so (Design/Hostiles.md 11).
+  // papering over them. A caller that means someone else has to say so (Design/Archive/Hostiles.md 11).
   ShipId SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint32_t _hullId, FactionId _factionId = FACTION_PLAYER);
 
   // Removes a ship, moving the last one into its slot. False means the handle was already stale.
@@ -54,7 +54,7 @@ public:
   //
   // It exists so that the wire can say *destroyed* where it previously said only *left*: a client
   // that infers a death from an absence detonates every ship that merely flies out of its interest
-  // radius, which is where a hostile patrol lives (Design/Hostiles.md 4.4). Step never touches it --
+  // radius, which is where a hostile patrol lives (Design/Archive/Hostiles.md 4.4). Step never touches it --
   // it is the publisher's, and each of its subscribers reads it at its own pace (ADR 0027).
   //
   // Deaths are numbered for the life of the World and the numbering is never reset, so a cursor
@@ -95,7 +95,7 @@ public:
   // its own anchor, does nothing: a station does not patrol itself.
   //
   // The ring radius and cruise speed are arguments rather than tuning constants because they are
-  // content -- what the composition root spawns, the way a spawn position is (Design/Hostiles.md 5.1).
+  // content -- what the composition root spawns, the way a spawn position is (Design/Archive/Hostiles.md 5.1).
   void AssignPatrol(ShipId _ship, ShipId _anchorStation, float _ringRadiusMetres, float _cruiseSpeedMetresPerSec);
 
   // A ship's standing patrol. Server-side only, like a route: an assignment is intent, and the
@@ -106,7 +106,7 @@ public:
   //
   // Standing NPC intent is issued first, before pass 0 -- the position an adapter's incoming orders
   // occupy from outside, so an NPC order and a player order entering on the same tick are
-  // indistinguishable to every pass below (Design/Hostiles.md 5.3).
+  // indistinguishable to every pass below (Design/Archive/Hostiles.md 5.3).
   //
   // Five passes over the whole array rather than one fused per-ship loop, and the reason is a
   // property rather than a preference: every read in a pass comes from a snapshot no pass is
@@ -114,7 +114,7 @@ public:
   // stable the moment despawn swap-and-pops, the array is split across worker threads, or entities
   // are handed between region servers -- all of which are on the roadmap, and each of which would
   // otherwise make the simulation quietly produce different answers for the same input
-  // (Design/Collision.md 6).
+  // (Design/Archive/Collision.md 6).
   //
   //   0  snapshot   prevPos and prevHeading; every neighbour read below is start-of-tick
   //   1  broad      rebuild the dynamic index from prevPos; the static one only when dirty
@@ -158,7 +158,7 @@ public:
 
   // The remaining waypoints of a ship's planned route, current one first. Server-side only: a path
   // is never wire data, and a client sees the resulting motion through snapshots like any other
-  // (Design/Collision.md 12). Exposed for tests and for a debug overlay.
+  // (Design/Archive/Collision.md 12). Exposed for tests and for a debug overlay.
   [[nodiscard]] std::span<const WorldPos> RouteOf(ShipId _id) const noexcept;
 
   // Sends the given ships to _point in formation. Returns the heading the formation was solved
@@ -171,7 +171,7 @@ public:
   // left out, not an error. The gate is here rather than in the host's adapter because the adapter
   // has no test suite and every future host, a dedicated server or a replay driver among them, would
   // otherwise have to remember the check: the simulation refusing is a property, an adapter refusing
-  // is a convention (Design/Hostiles.md 4.3).
+  // is a convention (Design/Archive/Hostiles.md 4.3).
   float IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _point, bool _hasFacing, float _facingRad,
                        FactionId _issuerFaction = FACTION_PLAYER);
 
@@ -199,7 +199,7 @@ private:
   // the ship's own state, the anchor's posWorld -- is end-of-last-tick state whatever the array
   // order, and it writes only the ship it is visiting. It draws no randomness, reads no other ship,
   // and reacts to nothing; the first behavior that responds to what it sees is a different design
-  // with senses and thresholds (Design/Hostiles.md 5.5, 8).
+  // with senses and thresholds (Design/Archive/Hostiles.md 5.5, 8).
   void StepPatrols();
 
   void SnapshotPreviousTick() noexcept;
@@ -216,7 +216,7 @@ private:
   // would depend on the order the threads arrived and determinism would depend on scheduling. That
   // is the worst failure mode available: it reproduces on one machine, not on another, and not
   // twice in a row under load. Paying two cheap closed-form evaluations to keep the replay contract
-  // free of the scheduler is not a close call (Design/Collision.md 6, 14).
+  // free of the scheduler is not a close call (Design/Archive/Collision.md 6, 14).
   void ApplySeparation();
   void ApplyBlocking();
 

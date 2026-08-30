@@ -9,7 +9,7 @@ TEST_CLASS(Noise3Tests)
 public:
   TEST_METHOD(EverySampleIsInsideTheHalfUnitRange)
   {
-    // The amplitude law in Design/PlanetRenderer.md 5.2 multiplies this output by numbers in the
+    // The amplitude law in Design/Archive/PlanetRenderer.md 5.2 multiplies this output by numbers in the
     // hundreds, so a sample that escaped its range would not look like a bug in the noise -- it would
     // look like a spike on a planet, three files away.
     Neuron::Pcg32 rng(7u);
@@ -54,7 +54,7 @@ public:
   TEST_METHOD(TheSameSeedIsTheSameFunctionAndADifferentSeedIsNot)
   {
     // This is the replay guarantee at its smallest: a body is described by a seed, and everything
-    // that follows from the seed has to follow from it alone (Design/PlanetRenderer.md 10).
+    // that follows from the seed has to follow from it alone (Design/Archive/PlanetRenderer.md 10).
     Neuron::Pcg32 first(11u);
     Neuron::Pcg32 second(11u);
     Neuron::Pcg32 other(12u);
@@ -96,7 +96,7 @@ public:
   TEST_METHOD(AnAdoptedPermutationIsTheSameFunction)
   {
     // BodyParams carries the permutation so that a compute kernel can read it, and BodyField builds
-    // its noise back out of the block rather than keeping a second copy (Design/PlanetRenderer.md
+    // its noise back out of the block rather than keeping a second copy (Design/Archive/PlanetRenderer.md
     // 17.3). The two constructors have to agree for that to be safe.
     Neuron::Pcg32 rng(23u);
     const Neuron::Noise3 shuffled(rng);

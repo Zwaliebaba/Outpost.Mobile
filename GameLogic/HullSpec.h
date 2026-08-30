@@ -11,7 +11,7 @@ namespace Game
 // What a hull is, to the simulation. There was no size information in here at all before this
 // table: the only extent anywhere was the view's mesh bounds, which is presentation data, sits in
 // the client half, and is absent on a headless server. Collision needs a size, so the size has to
-// live where the simulation can see it (Design/Collision.md 5).
+// live where the simulation can see it (Design/Archive/Collision.md 5).
 //
 // It is worth its own phase without collision anywhere near it. SimTuning.h gave an Interceptor
 // and a Carrier identical acceleration and identical turn rate -- a 30:1 hull handled as though it
@@ -52,7 +52,7 @@ struct HullSpec
   // The share of a contact correction a hull takes is the *other* hull's authority over the sum, so
   // a high authority is a hull that holds its line. Authored rather than derived from radius, so
   // that a hull which is small but immovable in intent -- a picket, a deployed turret -- is
-  // expressible without a special case (Design/Collision.md 9).
+  // expressible without a special case (Design/Archive/Collision.md 9).
   float avoidanceAuthority = 0.6f;
 
   // How many neighbours this hull tracks. Per-hull rather than global because a Carrier
@@ -61,7 +61,7 @@ struct HullSpec
   std::uint32_t neighbourCap = 8;
 
   bool immovable = false; // structures: they take no correction, and traffic is projected out of them
-  bool collidable = true; // a Stargate is flown through on purpose (Design/Collision.md 18.2)
+  bool collidable = true; // a Stargate is flown through on purpose (Design/Archive/Collision.md 18.2)
 
   [[nodiscard]] constexpr float BoundingRadiusMetres() const noexcept
   {
@@ -82,7 +82,7 @@ struct HullSpec
   // uncapped form gives a Carrier a 2.7 km query circle sixty times a second -- which makes the
   // neighbour cap meaningless and forces ghost zones tens of kilometres wide. The honest
   // consequence is that a capital cannot fully avoid on local steering alone; it needs a planned
-  // route, which is what phase 7 is for (Design/Collision.md 10).
+  // route, which is what phase 7 is for (Design/Archive/Collision.md 10).
   [[nodiscard]] constexpr float AvoidHorizonSec() const noexcept
   {
     const float derived = BrakeHorizonSec();
@@ -186,7 +186,7 @@ inline constexpr HullSpec HULL_SPECS[HULL_COUNT] = {
 // How close a hull has to get before its order is done, and how far apart the slots of a formation
 // containing it must sit. Both scale with the hull, and the constraint between them -- an arrival
 // radius must fit well inside half a slot spacing, or ships arrive in each other's positions -- is
-// what the margin in SimTuning.h exists to guarantee (Design/Collision.md 13).
+// what the margin in SimTuning.h exists to guarantee (Design/Archive/Collision.md 13).
 [[nodiscard]] constexpr float ArrivalRadiusMetres(const HullSpec& _hull) noexcept
 {
   const float scaled = ARRIVAL_RADIUS_FRACTION * _hull.BoundingRadiusMetres();

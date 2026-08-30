@@ -242,7 +242,7 @@ public:
     //
     // The relief knob is desiredHeight and not heightScale, because the tile is rescaled to its
     // desired height after generation -- heightScale sets what the roughness law measures against,
-    // and the rescale then divides it back out (Design/PlanetRenderer.md 5.2, 5.3).
+    // and the rescale then divides it back out (Design/Archive/PlanetRenderer.md 5.2, 5.3).
     const Neuron::ColourRamp ramp = AxisRamp();
 
     Neuron::BodyDesc flat = OneContinent();
@@ -307,7 +307,7 @@ public:
   TEST_METHOD(TheWholeVertexListIsPinned)
   {
     // Determinism of the build, end to end and byte for byte: the field, the placement, the normals,
-    // the ramp lookup and the dither, in one number (Design/PlanetRenderer.md 10).
+    // the ramp lookup and the dither, in one number (Design/Archive/PlanetRenderer.md 10).
     const Neuron::ColourRamp ramp = AxisRamp();
     Neuron::BodyBuildStats stats;
     const std::vector<Neuron::FxVertex> terrain = BuildTerrain(OneDryContinent(), &ramp, stats);

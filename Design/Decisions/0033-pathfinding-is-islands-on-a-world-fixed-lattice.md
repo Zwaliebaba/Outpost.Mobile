@@ -5,7 +5,7 @@ Date: 2026-08-30
 
 ## Context
 
-`PathGrid` is one clearance grid over every obstacle in the universe. `Design/Collision.md` §12
+`PathGrid` is one clearance grid over every obstacle in the universe. `Design/Archive/Collision.md` §12
 argued for exactly that shape and it was right: it is simple, it is correct for a scene that fits in
 a box, and it is what a first planner should be.
 
@@ -75,7 +75,7 @@ buy nothing but its own maintenance. It is what to build the day content can aut
 corridor.
 
 **A tangent-visibility graph over inflated discs.** Turned down once already in
-`Design/Collision.md` §12 — prettier paths for sparse convex obstacles, and structurally unable to
+`Design/Archive/Collision.md` §12 — prettier paths for sparse convex obstacles, and structurally unable to
 handle a concave island or an interior. Islands do not revive it.
 
 ## Consequences

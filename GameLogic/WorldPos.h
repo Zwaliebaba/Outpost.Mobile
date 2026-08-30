@@ -14,7 +14,7 @@ namespace Game
 // -- and the local offset carries the precision, a
 // uniform 0.49 mm everywhere rather than the precision decay a single global float suffers with
 // distance from its origin. Every line of float maths in the simulation runs in one sector's frame
-// and never sees the difference (Design/Collision.md 3).
+// and never sees the difference (Design/Archive/Collision.md 3).
 //
 // The sector fields come FIRST, and that is deliberate rather than aesthetic. Brace-initialising a
 // position as WorldPos{x, z} is ill-formed with an integer field in front of a float argument --
@@ -71,7 +71,7 @@ struct WorldPos
 //
 // Exact while the two positions are within 2^24 sectors of each other -- 1.4 * 10^11 m -- and
 // approximate beyond that. Nothing in this design goes near the limit: the query radius caps at
-// 655 m (Design/Collision.md 10), an order of magnitude inside a single sector, so no interaction
+// 655 m (Design/Archive/Collision.md 10), an order of magnitude inside a single sector, so no interaction
 // spans even two.
 [[nodiscard]] inline float OffsetX(const WorldPos& _from, const WorldPos& _to) noexcept
 {

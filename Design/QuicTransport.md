@@ -41,7 +41,7 @@ that has its own reason to (§8).
    there is no PKI here. A self-signed certificate made at boot, and a client that does not
    validate — declared as the placeholder it is (§7).
 5. **The composition root wired both ways.** `Outpost.exe` stays one process
-   (Design/Collision.md §18, decision 8) and talks to itself over `127.0.0.1`: the in-process
+   (Design/Archive/Collision.md §18, decision 8) and talks to itself over `127.0.0.1`: the in-process
    server listens, the in-process client connects, and every frame of the game crosses the real
    stack. If QUIC cannot open — no port, no credential, no MsQuic — the root logs why and falls
    back to the loopback, so a missing network is a diagnostic and not a failed boot (AGENTS.md
@@ -325,7 +325,7 @@ occupied showing the `LOOPBACK` line and the game still playing.
 
 ## 10. The MMO ledger
 
-What this design does for the persistent-world direction in Design/Collision.md §2, and what it
+What this design does for the persistent-world direction in Design/Archive/Collision.md §2, and what it
 leaves owed:
 
 - **Paid.** The server half can now be talked to from outside its process; `QuicListener` is

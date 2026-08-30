@@ -13,7 +13,7 @@ the ship. **Relation** is "this ship is hostile to you", a fact about a pair —
 is looking.
 
 The distinction is invisible with one subscriber and load-bearing with many, which is exactly the
-kind of decision Design/Hostiles.md exists to take while it is still one field.
+kind of decision Design/Archive/Hostiles.md exists to take while it is still one field.
 
 ## Decision
 

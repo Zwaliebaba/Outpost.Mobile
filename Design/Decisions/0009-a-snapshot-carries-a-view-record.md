@@ -41,7 +41,7 @@ intent fields stay on the server. Adding a field to `ShipState` does not add it 
 - The record is about 81 bytes against `ShipState`'s 120, so a datagram holds 13 ships rather than
   nine. That is a side effect, not the reason.
 - Client-side prediction, when it is designed, cannot use the server's chosen avoidance heading and
-  will have to re-derive intent from what it can see. `Design/Collision.md` §10 already argues
+  will have to re-derive intent from what it can see. `Design/Archive/Collision.md` §10 already argues
   avoidance should be server-only and unpredicted, so this is consistent with where that is heading
   — but it is a constraint that decision now inherits rather than chooses.
 - Anything the view starts needing has to be added deliberately, in this file, with a reason. That

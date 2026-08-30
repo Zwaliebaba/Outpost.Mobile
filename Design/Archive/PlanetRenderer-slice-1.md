@@ -75,7 +75,7 @@ inline constexpr std::uint32_t CUBE_FACE_COUNT = 6;
 // The unit direction of sample (x, z) on a face, 0 <= x, z < SamplesPerSide. Equal-area warp
 // (tan) on the two in-face coordinates, then normalised. An edge sample of one face is the same
 // direction as the matching edge sample of its neighbour, to the bit -- that is what makes the
-// height function seamless (Design/PlanetRenderer.md 5.1).
+// height function seamless (Design/Archive/PlanetRenderer.md 5.1).
 [[nodiscard]] constexpr DirectX::XMFLOAT3 Direction(CubeFace _face, std::uint32_t _x, std::uint32_t _z, std::uint32_t _samplesPerSide) noexcept;
 ```
 
@@ -242,7 +242,7 @@ a new `Body` filter; `NeuronClientTests.vcxproj` and `.filters` gain the three t
 | `NeuronClient/MeshData.h` | A device-free aggregate with `XMFLOAT3` fields and `[[nodiscard]]` helpers — the style for `BodyDesc` |
 | `NeuronClient/Camera.h/.cpp` | Device-free `NeuronClient` code that computes in `XMVECTOR` locals and stores `XMFLOAT*` |
 | `Tests/NeuronClientTests/CameraTests.cpp` | Sentence-named `TEST_METHOD`s, a why-comment per test, wide-string failure messages |
-| `Design/PlanetRenderer.md` §5, §8.1, §10, §17.3 | The formulas, the parameter block, the determinism rule |
+| `Design/Archive/PlanetRenderer.md` §5, §8.1, §10, §17.3 | The formulas, the parameter block, the determinism rule |
 | AGENTS.md §1 R6, R8; §5 | Units in names, plain fields on aggregates, DirectXMath rules |
 
 ---
@@ -297,7 +297,7 @@ The tree:
 - `python Build/CheckProjectFiles.py` and `python Build/CheckFormat.py` pass.
 - Debug|x64 builds; `NeuronClientTests` runs and every existing test still passes.
 - No screenshot: nothing visual.
-- `Design/PlanetRenderer.md` §15 marks slice 1 `landed` in the same pull request, and this
+- `Design/Archive/PlanetRenderer.md` §15 marks slice 1 `landed` in the same pull request, and this
   file moves to `Design/Archive/`.
 
 ---

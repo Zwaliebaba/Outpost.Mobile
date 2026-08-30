@@ -11,7 +11,7 @@ fragments and sprites, and the two-pass body — none of which uses anything pas
 been frozen since 2017; DXC is the compiler Microsoft and the IHVs develop, DXIL is the bytecode
 their drivers' optimisers are tuned for, and everything after SM 5.1 — wave intrinsics, 16-bit
 arithmetic, `ResourceDescriptorHeap`, mesh shaders, and the advanced texture operations of 6.7 —
-is DXC-only. `Design/PlanetRenderer.md` §17 named the FXC toolchain as the reason a compute bake (slice 6)
+is DXC-only. `Design/Archive/PlanetRenderer.md` §17 named the FXC toolchain as the reason a compute bake (slice 6)
 was deferred; slice 6 has since landed anyway (`0017`), at the cost of a 32x32 -> 64 multiply
 written out by hand because FXC rejects `umul`, and identifiers renamed around FXC's keyword
 list. Both of those are FXC's, not the kernels'.

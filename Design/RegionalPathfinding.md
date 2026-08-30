@@ -1,7 +1,7 @@
 # Regional pathfinding — routing when the architecture is bigger than one grid
 
 `PathGrid` is one clearance grid over every obstacle in the universe. That was the right first
-shape: it is simple, it is exactly the structure `Design/Collision.md` §12 argued for, and it is
+shape: it is simple, it is exactly the structure `Design/Archive/Collision.md` §12 argued for, and it is
 correct for a scene that fits in a box. It does not survive a universe, and this design is what
 replaces it.
 
@@ -64,7 +64,7 @@ regions would disagree about where a cell is.
 
 ## 2. What the seam must keep
 
-The review, the plan and `Design/Collision.md` all say the same thing, and it is a real constraint
+The review, the plan and `Design/Archive/Collision.md` all say the same thing, and it is a real constraint
 rather than a courtesy:
 
 - **`FindPath(from, to, requiredClearance, outWaypoints) -> bool`** keeps its signature and its
@@ -194,7 +194,7 @@ leaves it, or moves — which is the cadence slice 13 already established for th
   buys the whole design's simplicity with it. A portal graph is what to build the day a route
   *between* islands is genuinely constrained — which needs content this tree cannot author.
 - **Flow fields.** Still the right tool when hundreds of ships share one goal, and still landable
-  behind the same waypoint seam. `Design/Collision.md` §12's reasoning is unchanged.
+  behind the same waypoint seam. `Design/Archive/Collision.md` §12's reasoning is unchanged.
 - **Dynamic obstacles.** Nothing mobile is ever an obstacle. Unchanged, and load-bearing.
 - **Station interiors.** Routing *around* an island assumes an island has an outside. A station with
   an interior breaks that, and breaks the tangent-visibility alternative just as hard; it needs a
@@ -214,7 +214,7 @@ leaves it, or moves — which is the cadence slice 13 already established for th
 | **One grid per sector**, built lazily where obstacles are | The natural unit, and it fixes §1.1 and §1.3 — but a sector is 256 × 256 = 65,536 cells and 256 kB whether it holds one Structure or none of it. A hundred populated sectors is 26 MB to say "open" almost everywhere. Islands give the same lattice guarantee and size themselves to the content. |
 | **Keep one grid, raise the cap** | The cap is not the problem; the box is. A world 100 km across is 3,125 cells per axis and 39 MB, nearly all of it empty space between outposts. |
 | **Keep one grid, coarsen cells to fit** | Changes recorded outcomes as a side effect of content placement (§6). |
-| **Tangent-visibility graph over inflated discs** | Prettier paths for sparse convex obstacles, and structurally cannot handle a concave island or an interior. `Design/Collision.md` §12 turned this down once already; islands do not revive it. |
+| **Tangent-visibility graph over inflated discs** | Prettier paths for sparse convex obstacles, and structurally cannot handle a concave island or an interior. `Design/Archive/Collision.md` §12 turned this down once already; islands do not revive it. |
 | **HPA\* with portals between clusters** | The right answer when inter-cluster space is constrained. Here it is open, so the portal graph would be a complete graph over islands and would earn nothing (§6). |
 
 ---

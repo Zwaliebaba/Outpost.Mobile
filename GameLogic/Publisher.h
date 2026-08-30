@@ -145,7 +145,7 @@ private:
 
   // The departures in _subscriber's Left() that were deaths. The world's despawn log intersected
   // with what this subscriber was holding -- so a death nobody could see is told to nobody, and a
-  // ship that merely flew out of range is not reported destroyed (Design/Hostiles.md 4.4).
+  // ship that merely flew out of range is not reported destroyed (Design/Archive/Hostiles.md 4.4).
   void SplitTheLost(const World& _world, Subscriber& _subscriber);
 
   // Dense, because iteration order is array order and nothing here may depend on a pointer or a

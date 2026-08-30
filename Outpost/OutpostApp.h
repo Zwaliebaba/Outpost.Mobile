@@ -90,8 +90,8 @@ private:
 
   // Simulation, hosted. The two halves meet only at the transport: the simulation publishes a
   // snapshot on each tick and reads the orders that arrived, and the view reads the snapshot. This
-  // is one executable and stays one for every phase of Design/Collision.md -- what the transport
-  // changes is the code boundary, not the process boundary (Design/Collision.md 2).
+  // is one executable and stays one for every phase of Design/Archive/Collision.md -- what the transport
+  // changes is the code boundary, not the process boundary (Design/Archive/Collision.md 2).
   //
   // That transport is QUIC across 127.0.0.1 when it can be and the loopback when it cannot, and
   // neither half can tell which it got: the seam is four virtual functions and the choice is made

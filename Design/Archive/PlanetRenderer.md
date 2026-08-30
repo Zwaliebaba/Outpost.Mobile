@@ -665,12 +665,12 @@ below interleaves with the explosion's where the two share a file.
 
 | # | Slice | Layer | Depends on | Status | Work order |
 |---|---|---|---|---|---|
-| 1 | `Noise3`, `CubeSphere`, `BodyDesc`, `BodyField`, tests | `NeuronClient` | explosion slice 1 (`Pcg32`) | landed | [slice 1](Archive/PlanetRenderer-slice-1.md) |
-| 2 | `ColourRamp`, `BodyMeshBuilder`, `FxVertex` if not landed, tests | `NeuronClient` | 1 | landed | [slice 2](Archive/PlanetRenderer-slice-2.md) |
-| 3 | `BodyRenderer`, `UploadColourTexture` if not landed, three shaders and one `.hlsli` | `NeuronClient` | 2 | landed | [slice 3](Archive/PlanetRenderer-slice-3.md) |
-| 4 | `BodyCatalogue`, `BodyView` in `WorldView`, starting bodies, F5, `BODY_*` tuning, ADR | `Outpost` | 3 | landed | [slice 4](Archive/PlanetRenderer-slice-4.md) |
-| 5 | Ocean sphere through the scene pass, shore dip and sea-level culling wired to a class | `NeuronClient` + `Outpost` | 4 | landed | [slice 5](Archive/PlanetRenderer-slice-5.md) |
-| 6 | Compute-shader bake: `BodyBakeCS`, the reductions, readback test against the CPU builder (§17) | `NeuronClient` | 5 | landed, off by default | [slice 6](Archive/PlanetRenderer-slice-6.md) — built to the owner's ask rather than to its trigger; `BODY_BAKE_ON_GPU` is false until a readback on hardware says otherwise |
+| 1 | `Noise3`, `CubeSphere`, `BodyDesc`, `BodyField`, tests | `NeuronClient` | explosion slice 1 (`Pcg32`) | landed | [slice 1](PlanetRenderer-slice-1.md) |
+| 2 | `ColourRamp`, `BodyMeshBuilder`, `FxVertex` if not landed, tests | `NeuronClient` | 1 | landed | [slice 2](PlanetRenderer-slice-2.md) |
+| 3 | `BodyRenderer`, `UploadColourTexture` if not landed, three shaders and one `.hlsli` | `NeuronClient` | 2 | landed | [slice 3](PlanetRenderer-slice-3.md) |
+| 4 | `BodyCatalogue`, `BodyView` in `WorldView`, starting bodies, F5, `BODY_*` tuning, ADR | `Outpost` | 3 | landed | [slice 4](PlanetRenderer-slice-4.md) |
+| 5 | Ocean sphere through the scene pass, shore dip and sea-level culling wired to a class | `NeuronClient` + `Outpost` | 4 | landed | [slice 5](PlanetRenderer-slice-5.md) |
+| 6 | Compute-shader bake: `BodyBakeCS`, the reductions, readback test against the CPU builder (§17) | `NeuronClient` | 5 | landed | [slice 6](PlanetRenderer-slice-6.md) — built to the owner's ask rather than to its trigger, and switched off until it was proved. The readback ran, the bake and the builder agree, and `BODY_BAKE_ON_GPU` is now true: the GPU is the producer ([0020](../Decisions/0020-the-bake-is-the-producer.md)) |
 
 Slice 5 is split from 2 and 4 so that a dry body — every asteroid, the desert world — can land
 and be looked at before the ocean rules are argued over a screenshot. It touches two layers and

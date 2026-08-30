@@ -150,7 +150,7 @@ Verified from the encode (`WorldSnapshot.cpp:21-23,191-205`): 8 B handle + 48 B 
 `WorldPos` (2 × [i64, i64, f32, f32]) + 20 B floats + 6 B = 82 B per ship, 34 B header, **13 ships
 per 1,152 B fragment**. Meanwhile AGENTS.md §1 R6 says "a wire in centimeters" and `.clang-tidy`
 speaks of pervasive deliberate quantization ("metres to centimetres, radians to turns16") — no such
-layer exists; grep finds no centimeter identifier and no turns16 anywhere, and Design/Collision.md
+layer exists; grep finds no centimeter identifier and no turns16 anywhere, and Design/Archive/Collision.md
 §3's "a snapshot position compresses to a sector id plus a quantised local offset" is unbuilt. The
 sector-relative model is *made* for it (a local offset fits u16 at 12.5 cm inside an 8,192 m
 sector), and `prevPos` could be derived client-side for already-known ships; either halves the
@@ -312,7 +312,7 @@ A grid-6 planet is 147,456 unshared `FxVertex` = 4.13 MB (`BodyMeshBuilder.h:26-
 this tree carries an index buffer"), drawn twice per frame (terrain + overlay), with cull NONE
 shading the far hemisphere too (acknowledged, `BodyRenderer.cpp:184-186`), and the GPU bake writes
 sea-floor cells as degenerates rather than culling them (`OutpostApp.cpp:322-327`). LOD is
-explicitly deferred (Design/PlanetRenderer.md §13) and every body is a unique mesh. The bake itself
+explicitly deferred (Design/Archive/PlanetRenderer.md §13) and every body is a unique mesh. The bake itself
 is the right foundation (three dispatches per body, straight into a default-heap VB — ADRs 0017,
 0020); what breaks at dozens of bodies is drawing and memory. Fix is the design's own plan:
 projected-radius LOD from pre-baked grids, back-face culling once winding is confirmed, distance

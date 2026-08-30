@@ -1,6 +1,6 @@
 # Work order — Collision slice 8: sectors
 
-Implements slice 8 of [`Collision.md`](../Collision.md) §19: `WorldPos` grows the `int64` sector pair
+Implements slice 8 of [`Collision.md`](Collision.md) §19: `WorldPos` grows the `int64` sector pair
 §3 specifies, so the universe stops having an edge.
 
 **Layer:** `GameLogic`, plus the minimum in `Outpost` needed to keep the client correct.
@@ -200,8 +200,8 @@ to what it does today.
 | `GameLogic/SimTuning.h` | The replay-contract side of the tuning split, with the header comment stating the rule |
 | `GameLogic/SpatialIndex.cpp` | `CellOf`, `CellHash`, and the `Cell` that carries its own `cellX`/`cellZ` |
 | `GameLogic/PathGrid.h/.cpp` | `m_originX`/`m_originZ`, `ClampedCellX`, `CentreOf` |
-| `Design/Collision.md` §3 | The representation, the precision argument, and why the three obvious alternatives lose |
-| `Design/Collision.md` §14 | `SECTOR_SIZE_METRES` is named there already as entering the contract when this lands |
+| `Design/Archive/Collision.md` §3 | The representation, the precision argument, and why the three obvious alternatives lose |
+| `Design/Archive/Collision.md` §14 | `SECTOR_SIZE_METRES` is named there already as entering the contract when this lands |
 | `Tests/GameLogicTests/` | 56 tests that must keep passing, and the slice-2 benchmark that must be re-run |
 
 ---
@@ -335,7 +335,7 @@ it instead.
 
 **The documents:**
 
-- `Design/Collision.md` §19 marks slice 8 `landed`.
+- `Design/Archive/Collision.md` §19 marks slice 8 `landed`.
 - `SimTuning.h`'s replay-contract comment names `SECTOR_SIZE_METRES`.
 - The decision record from §6 exists and `Design/Decisions/README.md` lists it.
 - `AGENTS.md`: nothing here makes a sentence in it false — check rather than assume, and if the

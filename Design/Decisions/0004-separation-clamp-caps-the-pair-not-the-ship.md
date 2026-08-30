@@ -5,7 +5,7 @@ Date: 2026-08-29
 
 ## Context
 
-[`Design/Collision.md`](../Collision.md) §9 gives separation two mechanisms. Authority decides how a
+[`Design/Archive/Collision.md`](../Archive/Collision.md) §9 gives separation two mechanisms. Authority decides how a
 contacting pair splits the correction, so that a Carrier does not shoulder aside for an Interceptor:
 each side takes the *other's* authority over the sum. A per-tick clamp then bounds "the total
 correction applied to a ship in one tick", expressed as a fraction of that ship's own capsule

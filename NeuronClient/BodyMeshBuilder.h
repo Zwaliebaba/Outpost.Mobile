@@ -19,7 +19,7 @@ struct BodyBuildStats
 };
 
 // A BodyField turned into triangles: three unshared FxVertex each, one normal and one colour per
-// triangle, uv the grid cell so that one outline tile covers one cell (Design/PlanetRenderer.md 8.2).
+// triangle, uv the grid cell so that one outline tile covers one cell (Design/Archive/PlanetRenderer.md 8.2).
 //
 // Unshared vertices because there is no other way to get one colour and one normal per triangle
 // without a provoking-vertex buffer, and because nothing in this tree carries an index buffer. The
@@ -38,7 +38,7 @@ public:
   // an expression in height, and it bends at the heights a 2 000-unit map had, so a height that is a
   // fraction of a radius here is multiplied up into those units before it goes in. This is the one
   // place the conversion survives: slice 1's amplitude law dropped it when the term it fed turned
-  // out to have no fixed point (Design/PlanetRenderer.md 5.2).
+  // out to have no fixed point (Design/Archive/PlanetRenderer.md 5.2).
   static constexpr float SOURCE_MAP_SIZE = 2000.0f;
 
   // Appends _field's terrain to _outTerrain. A null _ramp bakes BODY_FALLBACK_GREY and traces once.
@@ -64,7 +64,7 @@ public:
 
   // Seeds one triangle's colour dither. Integer throughout -- no float anywhere in it -- so that the
   // grain is reproducible in HLSL, where integer arithmetic is exact on every GPU and float
-  // arithmetic is not (Design/PlanetRenderer.md 17.3). Public because both a test and, one day, a
+  // arithmetic is not (Design/Archive/PlanetRenderer.md 17.3). Public because both a test and, one day, a
   // shader have to be able to pin it.
   [[nodiscard]] static constexpr std::uint32_t CellHash(std::uint64_t _seed, std::uint32_t _face, std::uint32_t _x,
                                                         std::uint32_t _z) noexcept

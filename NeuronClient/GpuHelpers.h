@@ -57,7 +57,7 @@ void UploadColourTexture(GpuDevice& _gpu, std::uint32_t _widthPx, std::uint32_t 
 //
 // This is the path for a buffer the GPU reads every frame and the CPU never touches again. A planet
 // is seven megabytes the input assembler reads twice a frame, and in an upload heap that is system
-// memory pulled across PCIe at every draw (Design/PlanetRenderer.md 7.1).
+// memory pulled across PCIe at every draw (Design/Archive/PlanetRenderer.md 7.1).
 //
 // `SceneRenderer::UploadMesh` used to be the counter-example and is now a caller. The argument that
 // kept it on the upload-heap shortcut -- a few thousand triangles do not justify a staging copy --

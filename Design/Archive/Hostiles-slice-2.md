@@ -26,7 +26,7 @@ when nothing else in the pull request could have changed a tick.
 
 ```cpp
 // --- patrol ------------------------------------------------------------------------------------
-// In the contract: it changes which points a patrolling ship steers at (Design/Hostiles.md 5.2).
+// In the contract: it changes which points a patrolling ship steers at (Design/Archive/Hostiles.md 5.2).
 inline constexpr std::uint32_t PATROL_RING_WAYPOINTS = 12;
 ```
 
@@ -57,7 +57,7 @@ A new header, registered in `GameLogic.vcxproj`, its `.filters`, and the umbrell
 ```cpp
 // A ceiling on the speed an order asks for; 0 is uncapped. It is a property of the order, not the
 // hull -- the same Interceptor cruises at 10 m/s on patrol and burns at 34 m/s under a player --
-// and it is intent, so it stays off the wire with steerTargetPos (Design/Hostiles.md 5.4).
+// and it is intent, so it stays off the wire with steerTargetPos (Design/Archive/Hostiles.md 5.4).
 float orderSpeedCapMetresPerSec = 0.0f;
 ```
 
@@ -144,7 +144,7 @@ std::vector<Patrol> m_patrols;     // parallel to m_ships, swap-and-popped with 
 | `GameLogic/SimTuning.h` | `PATH_CLEARANCE_MARGIN_METRES`, `PATH_REPLAN_DEVIATION_METRES`, `TICK_HZ` |
 | `Tests/GameLogicTests/MovementTests.cpp` `TheSameOrderProducesTheSameRun` | the field-for-field two-world comparison the new determinism test copies |
 | `Tests/GameLogicTests/SeparationTests.cpp` | spawning a Structure in a test |
-| `Design/Hostiles.md` §5, §8, §9, §11 | the pass, the geometry, the determinism argument, the tests |
+| `Design/Archive/Hostiles.md` §5, §8, §9, §11 | the pass, the geometry, the determinism argument, the tests |
 | ADR 0005, 0008 | why the anchor is a handle; why behaviour lives here and not in an executable |
 
 ---
@@ -191,7 +191,7 @@ filter. A shared helper builds the design §6 scene: a `Structure` at `LocalPos(
 - One decision record, next number after slice 1's two, in the index: **NPC behaviour lives in
   `GameLogic`, inside the tick** — turning down the adapter-side driver and the bot client
   (design §13 decision 1).
-- `Design/Hostiles.md` §14 marks slice 2 `landed`; this file moves to `Design/Archive/`.
+- `Design/Archive/Hostiles.md` §14 marks slice 2 `landed`; this file moves to `Design/Archive/`.
 
 ---
 
@@ -202,7 +202,7 @@ filter. A shared helper builds the design §6 scene: a `Structure` at `LocalPos(
   to prove the moving case.
 - **One tick of `Idle` between legs is fine.** 16 ms at 60 Hz; no arrival logic goes in the pass.
 - **`sin`/`cos` under `/fp:precise` are same-binary-same-answer**, which is the only determinism
-  this tree promises (Design/Collision.md 2). No lookup table, no fixed point.
+  this tree promises (Design/Archive/Collision.md 2). No lookup table, no fixed point.
 - **The ring point count is fixed at compile time.** A per-patrol count is not needed and not
   added; the `Patrol` struct has no field for it.
 - **The scene numbers in the tests are the design's** (850, 850, 400, 10, three ships). They are

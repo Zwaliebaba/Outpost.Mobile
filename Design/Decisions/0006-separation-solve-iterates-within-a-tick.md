@@ -5,7 +5,7 @@ Date: 2026-08-29
 
 ## Context
 
-[`Design/Collision.md`](../Collision.md) §6 chooses a Jacobi solve for pass 5 — gather into scratch,
+[`Design/Archive/Collision.md`](../Archive/Collision.md) §6 chooses a Jacobi solve for pass 5 — gather into scratch,
 apply after the loop — over Gauss-Seidel, because Gauss-Seidel is order-dependent and
 order-independence is the property the whole tick is built to protect. It notes the cost as
 "marginally softer per iteration". That undersells it, and the shape it lands on is not the one the

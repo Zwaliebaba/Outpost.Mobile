@@ -28,7 +28,7 @@ namespace Outpost
 //
 // It is a port of Building::Destroy plus the visual half of Location::Bang from Interstellar
 // Outpost, with the source's constants read as metres and seconds and scaled by one number per
-// ship (Design/SpaceshipExplosion.md 3).
+// ship (Design/Archive/SpaceshipExplosion.md 3).
 class ShipExplosion
 {
 public:

@@ -12,7 +12,7 @@ namespace
 {
 // Explicit little-endian byte order, so the format does not depend on the machine that wrote it.
 // The two ends are the same binary today and will not be forever, and a format that quietly assumed
-// otherwise would fail on the first ARM64 client (Design/Collision.md 2 puts servers on x64 and
+// otherwise would fail on the first ARM64 client (Design/Archive/Collision.md 2 puts servers on x64 and
 // clients anywhere).
 constexpr std::uint8_t KIND_SNAPSHOT = 1;
 constexpr std::uint8_t KIND_MOVE_ORDER = 2;
@@ -447,7 +447,7 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
 }
 
 // Removes a handle from the held set, whether it left or died: the two differ in what they *say*,
-// not in what they do to the set, and only the client's effects care which (Design/Hostiles.md 4.4).
+// not in what they do to the set, and only the client's effects care which (Design/Archive/Hostiles.md 4.4).
 void SnapshotReceiver::Remove(ShipHandle _gone)
 {
   for (std::size_t at = 0; at < m_latest.ships.size(); ++at)

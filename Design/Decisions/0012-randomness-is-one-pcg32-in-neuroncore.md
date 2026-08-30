@@ -10,7 +10,7 @@ arrives", and [`GameLogic/GameLogic.h`](../../GameLogic/GameLogic.h) repeats it.
 in the tree drew a random number at all, so the sentence was a promise rather than a fact and said
 nothing about *where* the generator would live.
 
-[`Design/SpaceshipExplosion.md`](../SpaceshipExplosion.md) is what makes it arrive, and it arrives
+[`Design/Archive/SpaceshipExplosion.md`](../Archive/SpaceshipExplosion.md) is what makes it arrive, and it arrives
 from an awkward direction: the first caller is a **visual effect**, in the executable, and
 presentation randomness is explicitly allowed to differ between two clients watching one match.
 An effect could therefore hide a generator in `Outpost` and nothing would notice — until the

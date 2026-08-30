@@ -1,6 +1,6 @@
 # Work order — QUIC transport slice 1: the transport, the listener, the credential
 
-Implements slice 1 of [`QuicTransport.md`](QuicTransport.md) §13: `QuicApi`, `QuicTransport`,
+Implements slice 1 of [`QuicTransport.md`](../QuicTransport.md) §13: `QuicApi`, `QuicTransport`,
 `QuicListener` and `DevCertificate` in `NeuronCore`, their tests in `NeuronCoreTests`, and the
 three decision records the design owes (design §13).
 

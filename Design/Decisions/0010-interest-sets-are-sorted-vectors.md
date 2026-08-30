@@ -11,11 +11,11 @@ a per-entity payload — the priority accumulator — and the structure every in
 hash map from `ShipHandle` to priority.
 
 `AGENTS.md` §5 bans "iteration order that is not dense-array order" in `GameLogic`, and
-`Design/Collision.md` §7 already turned down an `unordered_map` spatial hash for the same reason:
+`Design/Archive/Collision.md` §7 already turned down an `unordered_map` spatial hash for the same reason:
 iteration order depends on hashing and on allocation, so it differs between machines and between
 runs, and it would fail the determinism gate non-reproducibly.
 
-The counter-argument is real and has to be answered rather than waved at. `Design/Collision.md` §1
+The counter-argument is real and has to be answered rather than waved at. `Design/Archive/Collision.md` §1
 warns specifically against "diffing sets per player per tick to derive spawn and despawn messages —
 which is the O(N · k) cost this section claims to avoid", and a sorted vector means sorting, which
 a hash map would not.

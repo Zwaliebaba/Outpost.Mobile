@@ -1,6 +1,6 @@
 // The generator, in HLSL. Every function here is a port of one in NeuronClient, and the ports are
 // line for line on purpose: a body baked on the GPU has to be the body the CPU builder makes, and
-// the acceptance for that is a readback compared against it (Design/PlanetRenderer.md 17.4).
+// the acceptance for that is a readback compared against it (Design/Archive/PlanetRenderer.md 17.4).
 //
 // Three rules govern everything below.
 //

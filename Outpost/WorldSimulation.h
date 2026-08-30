@@ -78,7 +78,7 @@ private:
   //
   // Its own, not every ship's. That distinction was free while every ship was the subscriber's and
   // stopped being the moment a hostile base existed: four hostiles 1.2 km out drag an unfiltered
-  // centroid some 690 m toward the enemy, which moves what the player is sent (Design/Hostiles.md 6).
+  // centroid some 690 m toward the enemy, which moves what the player is sent (Design/Archive/Hostiles.md 6).
   //
   // Accumulated as offsets from the first own ship rather than by averaging fields, so a fleet
   // straddling a sector boundary has a center between its ships and not a sector away.

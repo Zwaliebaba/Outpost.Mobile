@@ -172,7 +172,7 @@ void WorldView::ApplySnapshot()
 // were the same event -- every ship was the player's, so the only leave was F4's despawn. A patrol
 // living 1.2 km out makes the inference wrong in the most visible way there is: phantom explosions,
 // a camera shake and a SHIP LOST alert for enemies that are alive and patrolling. So a departure
-// removes the view silently and only a death detonates (Design/Hostiles.md 4.4).
+// removes the view silently and only a death detonates (Design/Archive/Hostiles.md 4.4).
 //
 // Destroyed() describes the last update the receiver applied, and PumpNetwork applies at most one
 // per tick because the composition root pumps on every tick -- which is what makes reading it here,
@@ -537,7 +537,7 @@ int WorldView::RecallableIndex(Game::ShipHandle _handle) const noexcept
 //
 // Somebody else's ship is not pickable at all, so no hover highlight, selection ring, tap, shift-tap
 // or double-tap can ever land on one. What a client cannot command it should not appear able to
-// (Design/Hostiles.md 7).
+// (Design/Archive/Hostiles.md 7).
 int WorldView::PickShip(float _xPx, float _yPx) const
 {
   XMFLOAT3 origin;
@@ -903,7 +903,7 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
 
   // The bodies: every terrain, then every outline. Two passes rather than two draws per body, so
   // there is one pipeline switch per pass and body A's outline tests against body B's depth
-  // (Design/PlanetRenderer.md 7.3).
+  // (Design/Archive/PlanetRenderer.md 7.3).
   if (m_bodyRenderer != nullptr && !m_bodies.empty())
   {
     m_bodyRenderer->Begin(_gpu, frame.viewProj, frame.lightDir, frame.ambient, frame.cameraPos, BODY_OVERLAY);
@@ -926,7 +926,7 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
   }
 
   // Hull fragments before the decals: they are blended but write depth, so a shard occludes what is
-  // behind it, and the rings and thruster glow only test (Design/SpaceshipExplosion.md 8.3).
+  // behind it, and the rings and thruster glow only test (Design/Archive/SpaceshipExplosion.md 8.3).
   if (m_fx != nullptr && m_fx->Ready() && !m_explosions.empty())
   {
     m_fxFragmentVerts.clear();

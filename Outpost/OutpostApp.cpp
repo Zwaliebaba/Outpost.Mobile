@@ -109,7 +109,7 @@ void OutpostApp::Init(HINSTANCE _instance)
 
   // The explosion's three textures, named here for the same reason the fonts are: a library that
   // spelled the name of a file would be a library with content in it. Starburst is loaded and
-  // slotted but drawn by nothing yet (Design/SpaceshipExplosion.md 12).
+  // slotted but drawn by nothing yet (Design/Archive/SpaceshipExplosion.md 12).
   FxRenderer::Desc fxDesc;
   fxDesc.fragmentTexture = TEXTURE_DIR + L"ShapeWireframe.dds";
   fxDesc.spriteTexture = TEXTURE_DIR + L"Particle.dds";
@@ -466,7 +466,7 @@ void OutpostApp::SpawnStartingFleet()
 
 // Somebody else lives here: a station northeast of the fleet, and three Interceptors walking a ring
 // around it at a third of their top speed. They do nothing else -- no combat, no reaction to the
-// player -- and the ring is a metronome by the owner's brief (Design/Hostiles.md 6).
+// player -- and the ring is a metronome by the owner's brief (Design/Archive/Hostiles.md 6).
 void OutpostApp::SpawnHostileBase()
 {
   const Game::ShipId station = m_world.SpawnShip(Game::LocalPos(HOSTILE_BASE_EAST_METRES, HOSTILE_BASE_NORTH_METRES), 0.0f,
@@ -524,7 +524,7 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
     // Debug hook, beside F3's. Nothing in the game can destroy a ship -- there is no health, no
     // damage and no order for it -- and the explosion needs something to consume, so the
     // composition root calls World directly. It is the one place allowed to, and this design must
-    // not invent a despawn order on the wire for a tuning aid (Design/SpaceshipExplosion.md 9).
+    // not invent a despawn order on the wire for a tuning aid (Design/Archive/SpaceshipExplosion.md 9).
     //
     // The handles are collected before the first despawn: Ships() is a span over the last snapshot
     // rather than over the world, so the walk itself is safe, and taking the handles first keeps it

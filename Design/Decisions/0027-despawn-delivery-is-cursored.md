@@ -7,7 +7,7 @@ Date: 2026-08-30
 
 `World` logs every despawn so the wire can say *destroyed* where it would otherwise say only *left*:
 a client that infers a death from an absence detonates every ship that merely leaves its interest
-radius, which is where a hostile patrol lives (`Design/Hostiles.md` §4.4).
+radius, which is where a hostile patrol lives (`Design/Archive/Hostiles.md` §4.4).
 
 The log arrived with one reader and an API shaped for exactly one: `DespawnLog()` returned the whole
 vector and `ClearDespawnLog()` emptied it. Its own header said what that would cost —

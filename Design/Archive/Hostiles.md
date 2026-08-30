@@ -15,7 +15,7 @@ the player's makes the tree answer **whose is a ship** (allegiance), **who may c
 have MMO-shaped answers and cheaper answers, and the cheaper ones are the kind that work perfectly
 in one process and cost a rewrite the day the halves separate. This design exists to take the
 MMO-shaped answers now, while they are still one field, one filter and one pass — it is written
-against the same target Design/Collision.md 1 is: many players connected in parallel, one
+against the same target Design/Archive/Collision.md 1 is: many players connected in parallel, one
 authoritative server.
 
 ---
@@ -59,7 +59,7 @@ how well it patrols.
 | The client sees the world only through snapshots over a `Transport`; what a record carries is a reviewable list | `GameLogic/WorldSnapshot.h`, ADR 0009 |
 | Stored cross-tick references are `ShipHandle`, never `ShipId` | ADR 0005 |
 | Presentation state does not live in the simulation; a value that would go over a wire belongs to `World` | AGENTS.md §5 |
-| Interest management sends each subscriber only what it can see | Design/Collision.md 1, `InterestSet` |
+| Interest management sends each subscriber only what it can see | Design/Archive/Collision.md 1, `InterestSet` |
 | Tuning is `constexpr` — contract values in `SimTuning.h`/`HullSpec.h`, look-and-feel in `ViewTuning.h` | AGENTS.md §5 |
 
 ---
@@ -555,9 +555,9 @@ Design/README.md gives; its work order is linked in the last column.
 
 | # | Slice | Layer | Depends on | Status | Work order |
 |---|---|---|---|---|---|
-| 1 | Allegiance and the wire: `FactionId` on ship and record, `SpawnShip` and `IssueMoveOrder` parameters, the authority gate, the despawn log and the destroyed list (§4.4), the subscriber faction in `WorldSimulation`, SnapshotTests + OrderTests | `GameLogic` (+ two lines in `Outpost`) | — | landed | [slice 1](Archive/Hostiles-slice-1.md) |
-| 2 | Patrol: `m_patrols` + despawn repair, `AssignPatrol`, the pass in `Step`, `orderSpeedCapMetresPerSec` + the `SolveOrder` clamp, `PATROL_RING_WAYPOINTS`, PatrolTests (new file, both project files) | `GameLogic` | 1 | landed | [slice 2](Archive/Hostiles-slice-2.md) |
-| 3 | The scene and the overview: mesh table split, `SpawnHostileBase`, `SubscriberCentre` faction filter, `SetOwnFaction` + selection filters, blip colors + structure dot, real `CONTACTS`, `ExplodeTheLost` consuming *destroyed* rather than every leave (§4.4), boot-log count, `ViewTuning` content constants, comment and AGENTS.md sentence updates, screenshots at two sizes | `Outpost` | 1, 2 | landed | [slice 3](Archive/Hostiles-slice-3.md) |
+| 1 | Allegiance and the wire: `FactionId` on ship and record, `SpawnShip` and `IssueMoveOrder` parameters, the authority gate, the despawn log and the destroyed list (§4.4), the subscriber faction in `WorldSimulation`, SnapshotTests + OrderTests | `GameLogic` (+ two lines in `Outpost`) | — | landed | [slice 1](Hostiles-slice-1.md) |
+| 2 | Patrol: `m_patrols` + despawn repair, `AssignPatrol`, the pass in `Step`, `orderSpeedCapMetresPerSec` + the `SolveOrder` clamp, `PATROL_RING_WAYPOINTS`, PatrolTests (new file, both project files) | `GameLogic` | 1 | landed | [slice 2](Hostiles-slice-2.md) |
+| 3 | The scene and the overview: mesh table split, `SpawnHostileBase`, `SubscriberCentre` faction filter, `SetOwnFaction` + selection filters, blip colors + structure dot, real `CONTACTS`, `ExplodeTheLost` consuming *destroyed* rather than every leave (§4.4), boot-log count, `ViewTuning` content constants, comment and AGENTS.md sentence updates, screenshots at two sizes | `Outpost` | 1, 2 | landed | [slice 3](Hostiles-slice-3.md) |
 
 Slices 1 and 2 are decided by tests (§9) and by the existing suites staying green — slice 2's
 claim that an unassigned world is bit-identical is exactly `GameLogicTests` passing unchanged.
@@ -567,9 +567,9 @@ new information reaching the client outside the record.
 Decision records due, written with the slice that lands each, in the same commit: slice 1 owed one
 for allegiance-as-identity on the wire and one for the authority gate living in the simulation (both
 turn down alternatives someone will propose again), and landed them as
-[ADR 0013](Decisions/0013-allegiance-is-identity-on-the-wire.md) and
-[ADR 0014](Decisions/0014-command-authority-is-gated-in-the-simulation.md); slice 2 owed one for NPC
+[ADR 0013](../Decisions/0013-allegiance-is-identity-on-the-wire.md) and
+[ADR 0014](../Decisions/0014-command-authority-is-gated-in-the-simulation.md); slice 2 owed one for NPC
 behavior living in `GameLogic` rather than behind the transport, and landed it as
-[ADR 0015](Decisions/0015-npc-behavior-lives-in-gamelogic.md). Slice 3 owed none, and wrote none.
+[ADR 0015](../Decisions/0015-npc-behavior-lives-in-gamelogic.md). Slice 3 owed none, and wrote none.
 AGENTS.md's description of what the game *is* changed with slice 3, when it stopped being true that
 every ship is the player's.

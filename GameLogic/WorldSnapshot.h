@@ -38,7 +38,7 @@ class World;
 //
 // factionId is on the list on purpose, and what is *not* beside it matters as much: there is no NPC
 // flag, so a client cannot tell a player's ship from an NPC's -- the day real players fly beside
-// NPCs in one faction, nothing on the wire changes (Design/Hostiles.md 4.2).
+// NPCs in one faction, nothing on the wire changes (Design/Archive/Hostiles.md 4.2).
 struct ShipSnapshot
 {
   ShipHandle handle; // not ShipId -- that is an array index, and despawn moves it (ADR 0005)
@@ -95,7 +95,7 @@ public:
   //
   // _destroyed are dropped too, and additionally stated to have died: a leave means "no longer in
   // your view" and nothing more, which is what it always meant, so a client can stop inferring a
-  // death from an absence (Design/Hostiles.md 4.4). A handle belongs in one list, never both; the
+  // death from an absence (Design/Archive/Hostiles.md 4.4). A handle belongs in one list, never both; the
   // caller decides which and the writer does not check.
   std::uint32_t WriteInterest(const World& _world, std::span<const ShipHandle> _sent, std::span<const ShipHandle> _left,
                               std::span<const ShipHandle> _destroyed, Neuron::Transport& _transport);

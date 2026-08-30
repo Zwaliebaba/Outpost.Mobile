@@ -11,7 +11,7 @@ public:
   {
     // In one process this would be a curiosity; over a wire it is the first exploit, which is why
     // the filter is in the simulation and not in whichever host happened to hand the order over
-    // (Design/Hostiles.md 4.3).
+    // (Design/Archive/Hostiles.md 4.3).
     Game::World world;
     const Game::ShipId ours = world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
     const Game::ShipId alsoOurs = world.SpawnShip(Game::LocalPos(80.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
@@ -42,7 +42,7 @@ public:
     // The trap in scaling both with the hull. Arrival radius and slot spacing grow together, so if
     // one outruns the other a Carrier's arrival radius reaches past its own slot and into the next
     // one -- and ships "arrive" in each other's positions. The formation assembles into the wrong
-    // shape and never corrects, because every ship believes it is done (Design/Collision.md 13).
+    // shape and never corrects, because every ship believes it is done (Design/Archive/Collision.md 13).
     for (std::uint32_t hull = 0; hull < Game::HULL_COUNT; ++hull)
     {
       const Game::HullSpec& spec = Game::HULL_SPECS[hull];

@@ -148,7 +148,7 @@ test files.
 | `NeuronClient/MeshData.h` | The bounds and centroid helpers; a body needs neither but the style is the model |
 | `NeuronCore/Pcg32.h` | `Signed` for the dither |
 | `Tests/NeuronClientTests/DdsImageTests.cpp` | Building a synthetic DDS in memory (`HEADER_FLAGS_BASIC`, `FORMAT_FLAGS_RGBA`, the offsets) — the ramp test builds its image the same way and calls `FromImage` |
-| `Design/PlanetRenderer.md` §6.1, §8.2, §17.3 | The lookup, the build steps, the integer-hash rule |
+| `Design/Archive/PlanetRenderer.md` §6.1, §8.2, §17.3 | The lookup, the build steps, the integer-hash rule |
 
 ---
 

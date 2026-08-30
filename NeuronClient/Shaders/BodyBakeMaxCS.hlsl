@@ -1,6 +1,6 @@
 #include "BodyBake.hlsli"
 
-// The reduction of Design/PlanetRenderer.md 17.1: the two maxima BodyField's constructor finds with
+// The reduction of Design/Archive/PlanetRenderer.md 17.1: the two maxima BodyField's constructor finds with
 // a loop. One thread per grid sample, dispatched twice -- pass 0 for each tile's own peak, pass 1
 // for the field's peak once those are known. A UAV barrier separates them, or pass 1 reads whatever
 // pass 0 happened to have finished.

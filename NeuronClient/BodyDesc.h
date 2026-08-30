@@ -8,7 +8,7 @@
 namespace Neuron
 {
 // The source's five flatten modes, over a spherical cap instead of a square
-// (Design/PlanetRenderer.md 5.3). Subtract is a crater, Absolute a landing pad, Smooth erosion.
+// (Design/Archive/PlanetRenderer.md 5.3). Subtract is a crater, Absolute a landing pad, Smooth erosion.
 enum class FlattenMode : std::uint8_t
 {
   Absolute,
@@ -43,7 +43,7 @@ struct BodyFlatten
   float threshold = 0.0f; // Subtract2 only: subtract where the height is above this
 };
 
-// Every number a planet or an asteroid is generated from (Design/PlanetRenderer.md 8.1). One
+// Every number a planet or an asteroid is generated from (Design/Archive/PlanetRenderer.md 8.1). One
 // description, one body, forever: the same BodyDesc produces the same height at the same direction on
 // every machine and every run, which is what will let a server describe a world with sixteen bytes.
 //

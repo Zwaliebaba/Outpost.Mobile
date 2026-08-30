@@ -61,7 +61,7 @@ inline constexpr Neuron::Rgba MARKER_COLOUR{0.95f, 0.78f, 0.28f, 0.9f};
 // --- ship explosion ----------------------------------------------------------------------------
 // The source values from Interstellar Outpost's Building::Destroy, read as metres and seconds 1:1
 // and scaled per ship by max(halfExtents) / EXPLOSION_REFERENCE_HALF_SIZE
-// (Design/SpaceshipExplosion.md 3). "scaled" below means multiplied by that at spawn: speeds and
+// (Design/Archive/SpaceshipExplosion.md 3). "scaled" below means multiplied by that at spawn: speeds and
 // sizes scale, lifetimes, friction and counts do not.
 //
 // The values marked "was N" have been tuned away from the source, once the effect was first seen
@@ -170,7 +170,7 @@ inline constexpr float INPUT_PICK_PADDING = 1.15f;
 
 // --- the sky -----------------------------------------------------------------------------------
 // A procedurally generated star field, drawn before anything else and never tested against depth
-// (Design/Skybox.md). Everything about it follows from SKY_SEED, so a screenshot of one reproduces,
+// (Design/Archive/Skybox.md). Everything about it follows from SKY_SEED, so a screenshot of one reproduces,
 // and F5 reseeds it with the bodies -- the sky and the neighborhood are one scene.
 //
 // The counts are what fills a sky rather than what a machine can afford: 6 000 stars is 36 000
@@ -208,7 +208,7 @@ inline constexpr float SHIP_MATERIAL_MIX = 0.55f;
 
 // What a ship of another faction is drawn in: the three knobs that make an enemy a color rather than
 // a silhouette. Which faction counts as "another" is the viewer's own, supplied by the composition
-// root -- the server states identity and each client decides what it means (Design/Hostiles.md 4.1),
+// root -- the server states identity and each client decides what it means (Design/Archive/Hostiles.md 4.1),
 // so this is a mapping the client owns and not a fact about the ship.
 //
 // The mix is the one that matters, and it is why there are three constants rather than one. The
@@ -234,14 +234,14 @@ inline constexpr float DECAL_LIFT_Y = 0.2f; // clear of the ground quad so the t
 
 // --- planets and asteroids -----------------------------------------------------------------------
 // Bodies are presentation only, placed by the composition root, at metre scale inside the frustum
-// the camera already has (Design/PlanetRenderer.md 3, 14; Design/Decisions/0016). **Every length is
+// the camera already has (Design/Archive/PlanetRenderer.md 3, 14; Design/Decisions/0016). **Every length is
 // a fraction of the body's radius unless the name carries a unit**, which is what lets one class row
 // describe a 400 m world and a 1 200 m one.
 inline constexpr float BODY_PLANET_RADIUS_MIN_METRES = 400.0f;
 inline constexpr float BODY_PLANET_RADIUS_MAX_METRES = 1200.0f;
 // A fifth of the design's 15-120 m, on the owner's eye after the first scene was on screen: at the
 // design's figures a rock at 150 m read as another planet rather than as something the fleet flies
-// among. Design/PlanetRenderer.md 3 carries the same numbers and the same sentence.
+// among. Design/Archive/PlanetRenderer.md 3 carries the same numbers and the same sentence.
 inline constexpr float BODY_ASTEROID_RADIUS_MIN_METRES = 3.0f;
 inline constexpr float BODY_ASTEROID_RADIUS_MAX_METRES = 24.0f;
 inline constexpr std::uint32_t BODY_ASTEROID_GRID_POWER = 5; // 33 a side
@@ -276,7 +276,7 @@ inline constexpr Neuron::BodyOverlayParams BODY_OVERLAY{1.2f, 4.0f, 0.5f, 40.0f}
 
 // Which producer makes a body's vertices. Both are alive and both make the same mesh; the CPU one is
 // the reference the GPU one is verified against, and it is the one the test suite exercises
-// (Design/PlanetRenderer.md 17).
+// (Design/Archive/PlanetRenderer.md 17).
 //
 // **True: the readback comparison has been run, and the two producers agree.** Measured on an
 // RTX 3070 Ti Laptop, Debug|x64, over the eight starting bodies of BODY_START_SEED, with every
@@ -352,7 +352,7 @@ inline constexpr float BODY_START_ASTEROID_RING_MAX_METRES = 400.0f;
 // --- starting scene ----------------------------------------------------------------------------
 inline constexpr float START_SPACING = 55.0f;
 
-// The hostile base and its patrol (Design/Hostiles.md 6). The station sits 1,202 m out on the
+// The hostile base and its patrol (Design/Archive/Hostiles.md 6). The station sits 1,202 m out on the
 // diagonal: inside the 2,000 m interest radius, so the base is subscribed from the first update and
 // the overview shows red immediately, and inside the minimap's 1,400 m half-range, so it has an edge
 // to be seen against. The farthest patrol point is 1,602 m out, still inside both.

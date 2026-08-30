@@ -10,7 +10,7 @@ namespace Neuron
 {
 // A BodyDesc with every random number already drawn and every vector flattened into fixed capacity:
 // the block BodyField evaluates from, and the one a compute kernel would take as a constant buffer
-// (Design/PlanetRenderer.md 8.1, 17.3).
+// (Design/Archive/PlanetRenderer.md 8.1, 17.3).
 //
 // Every field is a float4 or a group of four uints because that is what HLSL constant-buffer packing
 // wants, and obeying it now is what makes the bake of design 17.4 a memcpy rather than a rewrite. It

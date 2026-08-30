@@ -101,7 +101,7 @@ public:
   {
     // Named on its own, because it is the one thing about a ramp that cannot be seen by looking at
     // the ramp: every file in the tree was inspected and every one puts the summit on row 0
-    // (Design/PlanetRenderer.md 6.1). A ramp authored upside down should fail here rather than
+    // (Design/Archive/PlanetRenderer.md 6.1). A ramp authored upside down should fail here rather than
     // arrive as a planet with white beaches.
     bool loaded = false;
     const Neuron::ColourRamp ramp = MakeRamp(Neuron::ColourRamp::SIDE, Neuron::ColourRamp::SIDE, loaded);

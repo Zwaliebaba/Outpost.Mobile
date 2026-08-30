@@ -4,7 +4,7 @@ A station that blows up leaves a blast front: one ring on the ground plane, expa
 it stood, thinning and fading as it goes. Small enough that it is a work order rather than a design.
 
 **Layer:** `Outpost` only.
-**Depends on:** the ship explosion (`Design/SpaceshipExplosion.md`, all four slices landed).
+**Depends on:** the ship explosion (`Design/Archive/SpaceshipExplosion.md`, all four slices landed).
 **Blocks:** nothing.
 
 ---

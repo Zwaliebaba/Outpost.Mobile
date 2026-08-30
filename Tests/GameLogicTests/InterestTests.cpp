@@ -341,7 +341,7 @@ public:
   TEST_METHOD(InterestCostTracksTheNeighbourhoodNotTheWorld)
   {
     // The claim this slice exists to make good: without interest management an update costs O(N),
-    // with it O(k), and once N exceeds the neighbourhood the cost stops growing. Design/Collision.md
+    // with it O(k), and once N exceeds the neighbourhood the cost stops growing. Design/Archive/Collision.md
     // 1 calls this the hardest problem in the MMO target; this is the number behind it.
     //
     // One subscriber is enough to show it. The quadratic is in connected players, and each player

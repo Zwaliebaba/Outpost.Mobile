@@ -6,7 +6,7 @@ namespace GameLogicTests
 {
 namespace
 {
-// The scene of Design/Hostiles.md 6, which is also what slice 3's ViewTuning.h constants spell. The
+// The scene of Design/Archive/Hostiles.md 6, which is also what slice 3's ViewTuning.h constants spell. The
 // two must agree: these are the numbers the patrol was argued against -- 400 m clears the station's
 // 251.77 m skin by 148 m, and the chords clear its center by 386 m against the 263 m an Interceptor
 // needs -- so a test run at different ones would prove something about a scene nobody plays.
@@ -158,7 +158,7 @@ public:
 
   TEST_METHOD(APatrolNeverEntersItsStation)
   {
-    // The geometry argument, measured. Design/Hostiles.md 5.2 says the legs clear the station by
+    // The geometry argument, measured. Design/Archive/Hostiles.md 5.2 says the legs clear the station by
     // about 120 m and that no avoidance or separation machinery has to change to make that true; if
     // this fails, the ring is wrong rather than the machinery.
     Game::World world;

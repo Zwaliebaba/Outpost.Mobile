@@ -12,7 +12,7 @@ namespace Game
 // what makes the difference matter: a ship steering locally around a 503 m Structure will hug it,
 // and can be trapped in a concave pocket or orbit it indefinitely. No amount of tuning in the
 // steering fixes that, because the information needed -- that the way around is left, not right --
-// is not available locally (Design/Collision.md 12).
+// is not available locally (Design/Archive/Collision.md 12).
 //
 // The input is the static store the index already keeps. Nothing mobile is ever an obstacle: ships
 // route around architecture and *avoid* each other, and keeping those two problems apart is what
@@ -97,7 +97,7 @@ private:
 
   // Total, and that is the whole point. Two cells with equal f and equal g must still order the
   // same way on every run, or the same static set and the same endpoints would produce different
-  // paths and recorded outcomes would stop reproducing (Design/Collision.md 12).
+  // paths and recorded outcomes would stop reproducing (Design/Archive/Collision.md 12).
   [[nodiscard]] static bool Worse(const Open& _a, const Open& _b) noexcept;
   std::vector<float> m_travelled;
   std::vector<std::uint32_t> m_cameFrom;

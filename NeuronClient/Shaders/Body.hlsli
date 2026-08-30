@@ -6,7 +6,7 @@
 //
 // There *is* a world matrix here, unlike Fx.hlsli: a body spins, so its vertices stay in object
 // space and the matrix carries the spin and the placement. It is a rotation and a translation only
-// -- the ellipsoid is baked into the vertices (Design/PlanetRenderer.md 5.1) -- which is why the
+// -- the ellipsoid is baked into the vertices (Design/Archive/PlanetRenderer.md 5.1) -- which is why the
 // normal goes through the plain upper 3x3 and needs no inverse transpose.
 
 cbuffer VsConstants : register(b0)
