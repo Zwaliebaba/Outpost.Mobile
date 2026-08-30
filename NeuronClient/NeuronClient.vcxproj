@@ -238,6 +238,7 @@
     <ClInclude Include="NmoFile.h" />
     <ClInclude Include="NmoReader.h" />
     <ClInclude Include="GpuHelpers.h" />
+    <ClInclude Include="HandleStore.h" />
     <ClInclude Include="GpuDevice.h" />
     <ClInclude Include="SceneRenderer.h" />
     <ClInclude Include="BodyRenderer.h" />
@@ -266,6 +267,7 @@
     <ClCompile Include="MeshShatter.cpp" />
     <ClCompile Include="SpriteParticles.cpp" />
     <ClCompile Include="GpuHelpers.cpp" />
+    <ClCompile Include="HandleStore.cpp" />
     <ClCompile Include="GpuDevice.cpp" />
     <ClCompile Include="SceneRenderer.cpp" />
     <ClCompile Include="BodyRenderer.cpp" />

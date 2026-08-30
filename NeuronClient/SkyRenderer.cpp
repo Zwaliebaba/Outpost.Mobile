@@ -168,7 +168,10 @@ void SkyRenderer::UploadField(GpuDevice& _gpu, const SkyMesh& _mesh)
 
   // put() asserts the pointer is empty rather than releasing what was there (AGENTS.md 5), so a
   // second sky has to release the first explicitly. Safe here and nowhere else: this is called
-  // inside an upload bracket, and BeginUploads has drained the GPU before it opened one.
+  // inside a copy bracket, and BeginCopies has waited for the previous batch before opening one --
+  // which is what the first sky's copy was in. It no longer waits for *frames*, so a sky that is
+  // still being drawn from is the case to keep in mind if this ever moves out of a reseed
+  // (ADR 0044).
   m_vb = nullptr;
   m_vbStaging = nullptr;
 
