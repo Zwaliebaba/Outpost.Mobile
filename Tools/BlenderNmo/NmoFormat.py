@@ -40,6 +40,11 @@ SKIN_STRIDE = 32
 RENDER_FLAG_DOUBLE_SIDED = 0x1
 RENDER_FLAG_ALPHA_BLEND = 0x2
 RENDER_FLAG_ADDITIVE = 0x4
+# base_colour is a shade rather than a colour: the faction supplies the hue and the renderer
+# multiplies (Design/NmoFormat.md 5.5). The same rule, per marker, is MARKER_FLAG_RACE_TINTED.
+RENDER_FLAG_RACE_TINTED = 0x8
+
+MARKER_FLAG_RACE_TINTED = 0x1
 
 # Marker kinds defined by v2.0 (Design/NmoFormat.md 5.10). The format carries any kind string;
 # this list only names the ones tools give a bespoke display to.

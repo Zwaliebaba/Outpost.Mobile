@@ -236,6 +236,8 @@
     <ClInclude Include="MeshShatter.h" />
     <ClInclude Include="SpriteParticles.h" />
     <ClInclude Include="ObjParser.h" />
+    <ClInclude Include="NmoFile.h" />
+    <ClInclude Include="NmoReader.h" />
     <ClInclude Include="GpuHelpers.h" />
     <ClInclude Include="GpuDevice.h" />
     <ClInclude Include="SceneRenderer.h" />
@@ -259,6 +261,7 @@
     </ClCompile>
     <ClCompile Include="DdsImage.cpp" />
     <ClCompile Include="ObjParser.cpp" />
+    <ClCompile Include="NmoReader.cpp" />
     <ClCompile Include="BodyField.cpp" />
     <ClCompile Include="ColourRamp.cpp" />
     <ClCompile Include="BodyMeshBuilder.cpp" />

@@ -21,6 +21,10 @@ struct VsIn
 {
   float3 pos : POSITION;
   float3 col : COLOR0;
+  // 0 where the model paints this surface, 1 where the faction does (Design/NmoFormat.md 5.5). It
+  // is per vertex because both kinds of surface are on one hull and a hull is one draw. Carried and
+  // not yet read: ScenePS starts using it in the livery slice.
+  float race : RACE;
 };
 
 // The per-instance stream, at input slot 1, read by SceneInstancedVS alone. A matrix cannot be one
@@ -44,4 +48,5 @@ struct VsOut
   // An instanced draw has one root constant and many tints, so the tint has to travel with the
   // vertex; the non-instanced path writes the constant into it so one pixel shader serves both.
   float4 tint : COLOR1;
+  float race : RACE;
 };

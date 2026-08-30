@@ -844,13 +844,15 @@ brightness its thrusters should burn, and every other liveried surface falls out
 
 ## 14. Slices
 
-1. **Tools and specification** *(accompanies this document; no engine change)* — §4's `Tools/`
-   tree: codec, Blender add-on, OBJ converter, fixture, both test scripts, all passing on
-   python3 + bpy 5.0.1; AGENTS.md map row for `Tools/`; the ADR for adopting the format. Out of
-   scope: anything under a `.vcxproj`.
-2. **Engine reader** *(NeuronClient; Windows)* — `NmoFile.h` structs with `static_assert`s,
-   `NmoReader` validating per §5.12 and expanding into `MeshData` (+ markers), C++ malformed-file
-   tests over the shared fixture bytes; registered in the project files; no caller yet.
+1. **Tools and specification** — **landed.** *(accompanies this document; no engine change)* —
+   §4's `Tools/` tree: codec, Blender add-on, OBJ converter, fixture, both test scripts, all
+   passing on python3 + bpy 5.0.1; AGENTS.md map row for `Tools/`; the ADR for adopting the
+   format. Out of scope: anything under a `.vcxproj`.
+2. **Engine reader** — **landed.** *(NeuronClient; Windows)* — `NmoFile.h` structs with
+   `static_assert`s, `NmoReader` validating per §5.12 and expanding into `MeshData` (+ markers),
+   C++ malformed-file tests over the shared fixture bytes; registered in the project files; no
+   caller yet. Its work order is
+   [Archive/NmoFormat-slice-2.md](Archive/NmoFormat-slice-2.md).
 3. **Marker consumers** *(Outpost)* — `MeshLibrary` loads `.nmo` when present (OBJ fallback
    stays); `ShipView` takes exhaust positions/colours from `Exhaust` markers; nav-light pips with
    blink; screenshots at two window sizes.

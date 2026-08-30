@@ -7,6 +7,9 @@
     <Filter Include="Project Files">
       <UniqueIdentifier>{d3e51a72-08b4-46cf-9127-5a6e0bd39c84}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Assets">
+      <UniqueIdentifier>{0f4a6d21-9b57-4c83-ae60-1d95b7c2038f}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -24,6 +27,9 @@
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="ObjParserTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="NmoReaderTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="MeshShatterTests.cpp">
@@ -63,6 +69,9 @@
   <ItemGroup>
     <None Include="packages.config">
       <Filter>Project Files</Filter>
+    </None>
+    <None Include="Assets\NmoFixture.nmo">
+      <Filter>Assets</Filter>
     </None>
   </ItemGroup>
 </Project>

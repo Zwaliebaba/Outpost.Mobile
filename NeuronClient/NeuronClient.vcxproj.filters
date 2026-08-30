@@ -75,6 +75,12 @@
     <ClInclude Include="ObjParser.h">
       <Filter>Render</Filter>
     </ClInclude>
+    <ClInclude Include="NmoFile.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="NmoReader.h">
+      <Filter>Render</Filter>
+    </ClInclude>
     <ClInclude Include="GpuHelpers.h">
       <Filter>Render</Filter>
     </ClInclude>
@@ -132,6 +138,9 @@
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="ObjParser.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="NmoReader.cpp">
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="BodyField.cpp">

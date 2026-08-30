@@ -87,7 +87,11 @@ def test_round_trip():
     check('mesh name survives', gunship.name == 'Gunship')
     check('materials survive', [m.name for m in gunship.materials] == ['HullPlate', 'GlowStripe'])
     check('emissive survives', gunship.materials[1].emissive_colour[3] == 1.5)
-    check('render flags survive', gunship.materials[1].render_flags == nmo.RENDER_FLAG_ADDITIVE)
+    check('render flags survive',
+          gunship.materials[1].render_flags == nmo.RENDER_FLAG_ADDITIVE | nmo.RENDER_FLAG_RACE_TINTED)
+    check('material RaceTinted survives on one material and not the other',
+          not gunship.materials[0].render_flags & nmo.RENDER_FLAG_RACE_TINTED
+          and gunship.materials[1].render_flags & nmo.RENDER_FLAG_RACE_TINTED)
     check('mesh skeleton survives', [b.name for b in gunship.bones] == ['Root', 'TurretMount'])
     check('mesh clip survives', gunship.clips[0].name == 'Idle'
           and len(gunship.clips[0].tracks[0].translation_keys) == 3)
@@ -109,6 +113,9 @@ def test_round_trip():
     check('marker colour survives', nav.colour[0] == 1.0 and nav.colour[1] < 0.2)
     check('marker params survive', nav.param0 == 2.0 and hull.markers[3].param1 == 0.5)
     check('marker bone binding survives', turret.markers[0].parent_bone == 1)
+    check('marker RaceTinted survives on one exhaust and not the other',
+          hull.markers[0].flags == nmo.MARKER_FLAG_RACE_TINTED
+          and hull.markers[1].flags == 0)
 
     probe = read_back.meshes[1]
     check('unnamed mesh stays unnamed', probe.name is None and probe.sub_meshes[0].name is None)

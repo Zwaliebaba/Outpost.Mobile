@@ -187,6 +187,7 @@
     <ClCompile Include="CameraTests.cpp" />
     <ClCompile Include="DdsImageTests.cpp" />
     <ClCompile Include="ObjParserTests.cpp" />
+    <ClCompile Include="NmoReaderTests.cpp" />
     <ClCompile Include="MeshShatterTests.cpp" />
     <ClCompile Include="SpriteParticlesTests.cpp" />
     <ClCompile Include="Noise3Tests.cpp" />
@@ -201,6 +202,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="Assets\NmoFixture.nmo">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\NeuronCore\NeuronCore.vcxproj">
