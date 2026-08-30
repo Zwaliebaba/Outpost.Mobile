@@ -1,7 +1,7 @@
 # The MMO scalability plan — the review as slices
 
-**Status: slice 2 has landed and the despawn log is cursored; the loopback fallback is gone
-(ADR 0027); slices 5 and 6 are scheduled and their work orders written.** This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
+**Status: slices 2 and 5 have landed — the despawn log is cursored and the reliable lane exists;
+the loopback fallback is gone (ADR 0027). Slice 6 puts the first message on the lane.** This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
 (tree at `de12b6d`) into an ordered slice plan in the shape `Design/README.md` defines: one slice,
 one branch, one pull request. The review is the evidence; this document is the work. Where a slice
 already has a design in the tree — the reliable lane lives in [`QuicTransport.md`](QuicTransport.md)
@@ -115,7 +115,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 2 | Sequence-cursored despawn delivery | `GameLogic` | M | — | E2 | ADR | [landed](DespawnCursors-work-order.md) |
 | 3 | The publisher: subscriber table, phases, budgets | `GameLogic` | M | 2 | E2 E4 E6 | ADR |  |
 | 4 | The root joins the publisher | `Outpost` | S | 3 | E2 |  |  |
-| 5 | Reliable lane on both transports (= QuicTransport 3a) | `NeuronCore` | M | — | E1 |  | [scheduled](ReliableLane-work-order.md) |
+| 5 | Reliable lane on both transports (= QuicTransport 3a) | `NeuronCore` | M | — | E1 |  | [landed](ReliableLane-work-order.md) |
 | 6 | Leaves, destroys, orders go reliable (= QuicTransport 3b) | `GameLogic` | M | 5 | E1 |  | [scheduled](ReliableFormat-work-order.md) |
 | 7 | Listener slot reclamation, per-role rings | `NeuronCore` | S | — | E3 |  |  |
 | 8 | Trail and glow batching | `NeuronClient`+`Outpost` | S | — | G1 |  |  |

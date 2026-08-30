@@ -45,6 +45,11 @@ public:
   {
     // Per ring, fixed at Connect. Two rings of 256 datagrams is 288 KB each.
     std::uint32_t capacityDatagrams = 256;
+
+    // The reliable lane's rings, counted separately and much shallower: a message there may be
+    // MAX_RELIABLE_BYTES, so 256 of them would be 2 MB a ring for a lane carrying leaves and orders
+    // rather than a position per ship per tick. Two rings of 32 is 256 KB each.
+    std::uint32_t capacityReliableMessages = 32;
   };
 
   QuicTransport() = default;
@@ -65,6 +70,13 @@ public:
 
   [[nodiscard]] bool Send(const std::uint8_t* _bytes, std::uint32_t _count) override;
   [[nodiscard]] std::uint32_t Receive(std::uint8_t* _outBytes, std::uint32_t _capacity) override;
+
+  // The reliable lane, carried on the one bidirectional stream the handshake reserved. Ordered and
+  // never dropped, because that is what a QUIC stream is; false means the send ring is full or the
+  // stream is not up yet, which is backpressure and not loss.
+  [[nodiscard]] bool SendReliable(const std::uint8_t* _bytes, std::uint32_t _count) override;
+  [[nodiscard]] std::uint32_t ReceiveReliable(std::uint8_t* _outBytes, std::uint32_t _capacity) override;
+
   void Poll() override;
   [[nodiscard]] ConnectionState State() const override;
 
@@ -78,6 +90,11 @@ public:
   [[nodiscard]] std::uint32_t MaxSendLength() const noexcept;
 
   [[nodiscard]] const char* Reason() const noexcept;
+
+  // Whether the reliable lane is up. The datagram lane is usable the moment State() says Connected;
+  // the stream takes one more round trip, so a caller that must not lose its first message waits for
+  // this rather than for Connected.
+  [[nodiscard]] bool ReliableReady() const noexcept;
 
 private:
   friend class QuicListener;
@@ -102,6 +119,18 @@ private:
   // *and* a datagram limit that covers MAX_DATAGRAM_BYTES, so the two events that can grant it both
   // come through here.
   void ReconsiderConnected();
+
+  // Opens the lane's stream. The dialling end only: a bidirectional stream carries both directions,
+  // so one is opened and both ends write on it -- which is exactly the one the handshake reserved.
+  // Called on the owning thread from Poll, never from a callback, because StreamOpen and StreamStart
+  // are MsQuic calls and ADR 0022 keeps those off the workers.
+  void OpenReliableStream();
+
+  // Takes the peer's stream, on an MsQuic worker. The accepting end's half of the above.
+  void AdoptReliableStream(void* _stream);
+
+  // Copies one framed message into the inbound reliable ring. Runs on a worker, under m_streamInLock.
+  void PushReliable(const std::uint8_t* _bytes, std::uint32_t _count);
 
   void SetReason(const char* _format, ...) noexcept;
 
@@ -151,7 +180,41 @@ private:
   std::vector<std::atomic<bool>> m_outInFlight;
   std::uint32_t m_outCursor = 0;
 
+  // --- the reliable lane ------------------------------------------------------------------------
+  //
+  // One bidirectional stream, opened by the dialling end and adopted by the accepting one. A stream
+  // is bytes, and this lane's contract is messages, so every message goes out with a two-byte
+  // little-endian length in front of it and comes back through a reassembler that owns the leftover
+  // of a frame split across deliveries.
+  void* m_stream = nullptr; // HQUIC, void* for the reason at the top of QuicApi.h
+  std::atomic<bool> m_streamReady{false};
+  std::atomic<bool> m_streamRequested{false}; // the dialling end has called StreamOpen
+
+  // Inbound, exactly the datagram ring's shape and cursor discipline: workers write under the lock,
+  // Poll copies the write cursor into the ready cursor, ReceiveReliable pops below it unlocked.
+  std::vector<std::uint8_t> m_streamInArena;
+  std::vector<std::uint32_t> m_streamInSizes;
+  std::mutex m_streamInLock;
+  std::atomic<std::uint32_t> m_streamInWrite{0};
+  std::atomic<std::uint32_t> m_streamInRead{0};
+  std::uint32_t m_streamInReady = 0;
+  std::uint32_t m_streamInWriteSlot = 0;
+  std::uint32_t m_streamInReadSlot = 0;
+
+  // The partial frame between two RECEIVE events. Touched only by MsQuic's workers, and only under
+  // m_streamInLock, so it needs no atomic of its own.
+  std::vector<std::uint8_t> m_streamPartial;
+  std::uint32_t m_streamPartialCount = 0;
+
+  // Outbound: the same in-flight discipline the datagram lane uses, over slots that carry the
+  // two-byte frame header in front of the payload so that one QUIC_BUFFER covers the whole message.
+  std::vector<std::uint8_t> m_streamOutArena;
+  std::vector<SendBuffer> m_streamOutBuffers;
+  std::vector<std::atomic<bool>> m_streamOutInFlight;
+  std::uint32_t m_streamOutCursor = 0;
+
   std::uint32_t m_capacity = 0;
+  std::uint32_t m_reliableCapacity = 0;
   bool m_holdsApiHandle = false;
 
   // The destructor's bounded wait for SHUTDOWN_COMPLETE.

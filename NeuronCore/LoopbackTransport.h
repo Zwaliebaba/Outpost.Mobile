@@ -35,6 +35,12 @@ public:
     // Fixed at Connect, so nothing allocates once the game is running.
     std::uint32_t capacityDatagrams = 256;
 
+    // The reliable lane's depth, counted separately and much shallower on purpose: a message on
+    // that lane is up to MAX_RELIABLE_BYTES where a datagram is up to MAX_DATAGRAM_BYTES, so 256 of
+    // them would be 2 MB an end for a lane that carries leaves and orders rather than a position per
+    // ship per tick. Deep enough that an update's worth queues; shallow enough to be free.
+    std::uint32_t capacityReliableMessages = 32;
+
     // Drop every Nth datagram; 0 disables. Counted rather than randomised because AGENTS.md 5 bans
     // unseeded randomness, and because reproducible loss is the only kind worth testing against.
     std::uint32_t dropOneInN = 0;
@@ -54,12 +60,23 @@ public:
 
   [[nodiscard]] bool Send(const std::uint8_t* _bytes, std::uint32_t _count) override;
   [[nodiscard]] std::uint32_t Receive(std::uint8_t* _outBytes, std::uint32_t _capacity) override;
+
+  // The reliable lane. It carries the same latency as the datagram lane -- a wire's delay is the
+  // wire's, whichever lane a message took -- and none of its loss: dropOneInN does not apply here,
+  // because a lane that drops is not the lane Transport.h declares. A full queue still refuses,
+  // which is backpressure rather than loss and is the one false this may return.
+  [[nodiscard]] bool SendReliable(const std::uint8_t* _bytes, std::uint32_t _count) override;
+  [[nodiscard]] std::uint32_t ReceiveReliable(std::uint8_t* _outBytes, std::uint32_t _capacity) override;
+
   void Poll() override;
   [[nodiscard]] ConnectionState State() const override;
 
   // How many datagrams this end has been handed and not yet delivered. Diagnostics, and what the
   // queue-full test asserts against.
   [[nodiscard]] std::uint32_t QueuedCount() const noexcept;
+
+  // The same, for the reliable lane.
+  [[nodiscard]] std::uint32_t QueuedReliableCount() const noexcept;
 
 private:
   struct Slot
@@ -70,6 +87,7 @@ private:
 
   // Called on the receiving end by the sending one.
   [[nodiscard]] bool Accept(const std::uint8_t* _bytes, std::uint32_t _count, std::uint64_t _dueTick);
+  [[nodiscard]] bool AcceptReliable(const std::uint8_t* _bytes, std::uint32_t _count, std::uint64_t _dueTick);
 
   LoopbackTransport* m_peer = nullptr;
   ConnectionState m_state = ConnectionState::Disconnected;
@@ -85,5 +103,15 @@ private:
   std::uint32_t m_head = 0;  // oldest queued
   std::uint32_t m_count = 0; // queued, delivered or not
   std::uint32_t m_ready = 0; // of those, how many Poll has delivered and Receive may take
+
+  // The reliable lane's own ring, laid out the same way and sized the same at Connect. Separate
+  // rather than a flag on a shared ring: one lane filling up must not refuse the other, and a
+  // reliable message is up to MAX_RELIABLE_BYTES where a datagram is up to MAX_DATAGRAM_BYTES, so
+  // the strides differ.
+  std::vector<Slot> m_reliableSlots;
+  std::vector<std::uint8_t> m_reliableArena;
+  std::uint32_t m_reliableHead = 0;
+  std::uint32_t m_reliableCount = 0;
+  std::uint32_t m_reliableReady = 0;
 };
 } // namespace Neuron

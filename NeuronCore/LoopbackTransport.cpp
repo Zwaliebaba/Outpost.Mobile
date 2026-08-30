@@ -9,6 +9,7 @@ namespace Neuron
 void LoopbackTransport::Connect(LoopbackTransport& _a, LoopbackTransport& _b, const Desc& _desc)
 {
   const std::uint32_t capacity = (_desc.capacityDatagrams > 0) ? _desc.capacityDatagrams : 1;
+  const std::uint32_t reliableCapacity = (_desc.capacityReliableMessages > 0) ? _desc.capacityReliableMessages : 1;
   for (LoopbackTransport* end : {&_a, &_b})
   {
     end->m_latencyTicks = _desc.latencyTicks;
@@ -20,6 +21,11 @@ void LoopbackTransport::Connect(LoopbackTransport& _a, LoopbackTransport& _b, co
     end->m_head = 0;
     end->m_count = 0;
     end->m_ready = 0;
+    end->m_reliableSlots.assign(reliableCapacity, Slot{});
+    end->m_reliableArena.assign(static_cast<std::size_t>(reliableCapacity) * MAX_RELIABLE_BYTES, 0u);
+    end->m_reliableHead = 0;
+    end->m_reliableCount = 0;
+    end->m_reliableReady = 0;
     end->m_state = ConnectionState::Connected;
   }
   _a.m_peer = &_b;
@@ -75,6 +81,11 @@ void LoopbackTransport::Poll()
   const std::uint32_t capacity = static_cast<std::uint32_t>(m_slots.size());
   while (m_ready < m_count && m_slots[(m_head + m_ready) % capacity].dueTick <= m_tick)
     ++m_ready;
+
+  // Both lanes, one Poll -- there is no second one to forget to call.
+  const std::uint32_t reliableCapacity = static_cast<std::uint32_t>(m_reliableSlots.size());
+  while (m_reliableReady < m_reliableCount && m_reliableSlots[(m_reliableHead + m_reliableReady) % reliableCapacity].dueTick <= m_tick)
+    ++m_reliableReady;
 }
 
 std::uint32_t LoopbackTransport::Receive(std::uint8_t* _outBytes, std::uint32_t _capacity)
@@ -101,6 +112,58 @@ std::uint32_t LoopbackTransport::Receive(std::uint8_t* _outBytes, std::uint32_t 
   return size;
 }
 
+bool LoopbackTransport::SendReliable(const std::uint8_t* _bytes, std::uint32_t _count)
+{
+  if (m_state != ConnectionState::Connected || m_peer == nullptr)
+    return false;
+
+  // Refused rather than truncated, exactly as Send does, and against the lane's own bound.
+  if (_count > MAX_RELIABLE_BYTES || (_count > 0 && _bytes == nullptr))
+    return false;
+
+  // No drop counter here, and m_sendCounter is deliberately not advanced: the datagram lane's loss
+  // pattern is a property of that lane, and a test that sends on both would otherwise find its
+  // drops moving depending on how many reliable messages happened to go out between them.
+  return m_peer->AcceptReliable(_bytes, _count, m_tick + m_latencyTicks);
+}
+
+bool LoopbackTransport::AcceptReliable(const std::uint8_t* _bytes, std::uint32_t _count, std::uint64_t _dueTick)
+{
+  const std::uint32_t capacity = static_cast<std::uint32_t>(m_reliableSlots.size());
+  if (capacity == 0 || m_reliableCount == capacity)
+    return false; // backpressure: the sender is told, and nothing already in flight is disturbed
+
+  const std::uint32_t at = (m_reliableHead + m_reliableCount) % capacity;
+  m_reliableSlots[at] = Slot{_dueTick, _count};
+  if (_count > 0)
+    std::memcpy(m_reliableArena.data() + static_cast<std::size_t>(at) * MAX_RELIABLE_BYTES, _bytes, _count);
+  ++m_reliableCount;
+  return true;
+}
+
+std::uint32_t LoopbackTransport::ReceiveReliable(std::uint8_t* _outBytes, std::uint32_t _capacity)
+{
+  if (m_reliableReady == 0)
+    return 0;
+
+  const Slot& slot = m_reliableSlots[m_reliableHead];
+
+  // Same rule as Receive: a caller offering too small a buffer is a bug in the caller, and returning
+  // 0 would be indistinguishable from an empty lane and would spin a drain loop for ever.
+  ASSERT_TEXT(slot.size <= _capacity, L"ReceiveReliable was offered a buffer smaller than the waiting message");
+  if (slot.size > _capacity)
+    return 0;
+
+  if (slot.size > 0 && _outBytes != nullptr)
+    std::memcpy(_outBytes, m_reliableArena.data() + static_cast<std::size_t>(m_reliableHead) * MAX_RELIABLE_BYTES, slot.size);
+
+  const std::uint32_t size = slot.size;
+  m_reliableHead = (m_reliableHead + 1) % static_cast<std::uint32_t>(m_reliableSlots.size());
+  --m_reliableCount;
+  --m_reliableReady;
+  return size;
+}
+
 ConnectionState LoopbackTransport::State() const
 {
   return m_state;
@@ -109,5 +172,10 @@ ConnectionState LoopbackTransport::State() const
 std::uint32_t LoopbackTransport::QueuedCount() const noexcept
 {
   return m_count;
+}
+
+std::uint32_t LoopbackTransport::QueuedReliableCount() const noexcept
+{
+  return m_reliableCount;
 }
 } // namespace Neuron

@@ -1,6 +1,7 @@
 # The QUIC transport — moving the seam onto MsQuic
 
-**Status: slices 1 and 2 have landed and the game boots over QUIC; 3a and 3b are scheduled.** §13 lists the slices; §14 is the
+**Status: slices 1, 2 and 3a have landed; the game boots over QUIC and the reliable lane exists.
+3b, which puts the first message on it, is scheduled.** §13 lists the slices; §14 is the
 implementation plan. Every open question was put to the owner on 2026-08-29 and settled (§12), and
 two of those settlements have since moved: the fallback in §6 is gone (ADR 0027), and the reliable
 lane (slices 3a and 3b) is scheduled with its work orders written, the wait in §12 decision 4
@@ -389,7 +390,7 @@ moment 1 merges; 3b follows 3a because the lane must exist before the format cho
 |---|---|---|---|---|---|
 | 1 | `QuicApi`, `QuicTransport`, `QuicListener`, `DevCertificate`, the tests, ADRs 0018–0020 | `NeuronCore` | — | landed | [slice 1](Archive/QuicTransport-slice-1.md) |
 | 2 | The composition root: boot over QUIC, fallback, log, AGENTS.md text | `Outpost` | 1 | landed | [slice 2](Archive/QuicTransport-slice-2.md) |
-| 3a | A reliable lane on `Transport`, on both implementations | `NeuronCore` | 1 | scheduled | [slice 3a](ReliableLane-work-order.md) |
+| 3a | A reliable lane on `Transport`, on both implementations | `NeuronCore` | 1 | landed | [slice 3a](ReliableLane-work-order.md) |
 | 3b | Leaves, destroyed lists and orders go reliable | `GameLogic` | 3a | scheduled | [slice 3b](ReliableFormat-work-order.md) |
 
 Three decision records are due, all in slice 1: *the network transport is MsQuic* (a dependency

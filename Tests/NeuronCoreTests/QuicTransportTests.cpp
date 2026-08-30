@@ -19,6 +19,10 @@ namespace
 // The size a caller must always offer, since it is the most a datagram can be.
 using Buffer = std::array<std::uint8_t, Neuron::MAX_DATAGRAM_BYTES>;
 
+// The same, for the reliable lane. Heap-allocated where a test needs one, because 8 KB is more than
+// belongs on a stack frame the framework already owns.
+using ReliableBuffer = std::vector<std::uint8_t>;
+
 // The ring's own default, not a number this file chose. A test that spelled 256 would go on passing
 // the day the class stopped using it.
 constexpr std::uint32_t DEFAULT_CAPACITY = Neuron::QuicTransport::Desc{}.capacityDatagrams;
@@ -317,6 +321,82 @@ public:
 
     Assert::AreEqual(1, static_cast<int>(clientGot[0]), L"the client received the datagram it sent");
     Assert::AreEqual(2, static_cast<int>(serverGot[0]), L"the server received the datagram it sent");
+  }
+
+  TEST_METHOD(TheReliableLaneCarriesAMessageBothWays)
+  {
+    // The lane over a real connection. It needs one more round trip than the datagram lane -- the
+    // stream has to be opened and accepted -- which is why ReliableReady is a question of its own
+    // and a caller that must not lose its first message waits for it rather than for Connected.
+    Pair pair;
+    Assert::IsTrue(pair.PumpUntil([&pair]
+                                  { return pair.Server() != nullptr && pair.Client().State() == Neuron::ConnectionState::Connected; },
+                                  Neuron::QUIC_HANDSHAKE_TIMEOUT_MS),
+                   L"the handshake did not complete");
+    Assert::IsTrue(pair.PumpUntil([&pair] { return pair.Client().ReliableReady() && pair.Server()->ReliableReady(); },
+                                  Neuron::QUIC_HANDSHAKE_TIMEOUT_MS),
+                   L"the reliable lane never came up on both ends");
+
+    const std::uint8_t up[3] = {1, 2, 3};
+    const std::uint8_t down[2] = {9, 8};
+    Assert::IsTrue(pair.Client().SendReliable(up, 3), L"the client's reliable send failed");
+    Assert::IsTrue(pair.Server()->SendReliable(down, 2), L"the server's reliable send failed");
+
+    ReliableBuffer message(Neuron::MAX_RELIABLE_BYTES, 0u);
+    Assert::IsTrue(pair.PumpUntil([&] { return pair.Server()->ReceiveReliable(message.data(), Neuron::MAX_RELIABLE_BYTES) == 3; },
+                                  Neuron::QUIC_HANDSHAKE_TIMEOUT_MS),
+                   L"the server did not receive the client's message");
+    Assert::AreEqual(static_cast<std::uint8_t>(1), message[0], L"the message arrived corrupted");
+
+    Assert::IsTrue(pair.PumpUntil([&] { return pair.Client().ReceiveReliable(message.data(), Neuron::MAX_RELIABLE_BYTES) == 2; },
+                                  Neuron::QUIC_HANDSHAKE_TIMEOUT_MS),
+                   L"the client did not receive the server's message");
+    Assert::AreEqual(static_cast<std::uint8_t>(9), message[0], L"the message arrived corrupted");
+  }
+
+  TEST_METHOD(TheReliableLaneKeepsOrderAcrossManyMessages)
+  {
+    // A stream is ordered and this lane is framed over one, so a burst arrives in send order and
+    // whole. The burst is deliberately larger than one datagram would carry, since reassembling a
+    // frame split across deliveries is the part of this that a unit test cannot see from outside.
+    Pair pair;
+    Assert::IsTrue(
+      pair.PumpUntil([&pair] { return pair.Server() != nullptr && pair.Client().ReliableReady(); }, Neuron::QUIC_HANDSHAKE_TIMEOUT_MS),
+      L"the reliable lane never came up");
+
+    constexpr std::uint32_t COUNT = 24;
+    constexpr std::uint32_t SIZE = 700; // several of these exceed one datagram when framed together
+    ReliableBuffer payload(SIZE, 0u);
+    for (std::uint32_t at = 0; at < COUNT; ++at)
+    {
+      payload[0] = static_cast<std::uint8_t>(at);
+      Assert::IsTrue(pair.Client().SendReliable(payload.data(), SIZE), L"a reliable send failed mid-burst");
+    }
+
+    ReliableBuffer message(Neuron::MAX_RELIABLE_BYTES, 0u);
+    for (std::uint32_t at = 0; at < COUNT; ++at)
+    {
+      Assert::IsTrue(pair.PumpUntil([&] { return pair.Server()->ReceiveReliable(message.data(), Neuron::MAX_RELIABLE_BYTES) == SIZE; },
+                                    Neuron::QUIC_HANDSHAKE_TIMEOUT_MS),
+                     L"a message in the burst never arrived");
+      Assert::AreEqual(static_cast<std::uint8_t>(at), message[0], L"the reliable lane delivered out of order");
+    }
+  }
+
+  TEST_METHOD(AnOversizedReliableMessageIsRefused)
+  {
+    // Refused rather than truncated, which is what Send already promises on the datagram lane. A
+    // wire that silently shortens a message turns a format bug into a corrupt-payload hunt.
+    Pair pair;
+    Assert::IsTrue(pair.PumpUntil([&pair] { return pair.Client().ReliableReady(); }, Neuron::QUIC_HANDSHAKE_TIMEOUT_MS),
+                   L"the lane never came up");
+
+    const ReliableBuffer tooBig(Neuron::MAX_RELIABLE_BYTES + 1, 0xCDu);
+    Assert::IsFalse(pair.Client().SendReliable(tooBig.data(), Neuron::MAX_RELIABLE_BYTES + 1),
+                    L"an oversized reliable message was accepted");
+
+    const ReliableBuffer full(Neuron::MAX_RELIABLE_BYTES, 0xABu);
+    Assert::IsTrue(pair.Client().SendReliable(full.data(), Neuron::MAX_RELIABLE_BYTES), L"a full-sized reliable message was refused");
   }
 
   TEST_METHOD(AFullRingDropsTheNewestAndCountsIt)
