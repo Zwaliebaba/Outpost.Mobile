@@ -877,6 +877,13 @@ structure behind it, because the input pathfinding needs is something this desig
 route around architecture and *avoid* each other, and keeping those two problems separate is what
 keeps both of them small.
 
+**Superseded in part by [`RegionalPathfinding.md`](RegionalPathfinding.md) and ADR 0032.** The
+structure below is right and is what shipped; what it got wrong is that there is *one* of it. One
+grid over every obstacle in the universe declines to build past 16.4 km and takes A\* away from every
+ship in the world when it does. The replacement keeps this structure and makes it per-island, on a
+cell lattice anchored to the sector grid rather than to the obstacles. Everything below stands except
+the assumption of a single grid.
+
 ### The structure: a clearance grid over the static store
 
 Three steps, each cheap at the cadence it runs:

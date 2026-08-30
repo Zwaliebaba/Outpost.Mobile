@@ -64,3 +64,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0029](0029-the-publisher-lives-in-gamelogic.md) | The publisher lives in GameLogic, and serves N subscribers | accepted |
 | [0030](0030-listener-slots-are-recycled.md) | Listener slots are recycled, so backlog means concurrency | accepted |
 | [0031](0031-the-dialing-end-owns-the-lanes-stream.md) | The dialing end owns the reliable lane's stream | accepted |
+| [0032](0032-pathfinding-is-islands-on-a-world-fixed-lattice.md) | Pathfinding is islands of architecture, on a lattice fixed to the world | accepted |
