@@ -84,21 +84,6 @@ void BodyRenderer::Init(GpuDevice& _gpu, const Desc& _desc)
   else
     DebugTrace("body: the device has no 64-bit integer or wave operations, so bodies are built on the CPU\n");
 
-  // The table is bound on every draw, terrain included, and a descriptor heap starts uninitialised:
-  // a slot that never gets a view is a handle the debug layer reports the moment anything binds it.
-  // Every slot is filled with a null view first; a real one overwrites its slot when a file loads.
-  D3D12_SHADER_RESOURCE_VIEW_DESC nullSrv = {};
-  nullSrv.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-  nullSrv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-  nullSrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-  nullSrv.Texture2D.MipLevels = 1;
-  for (std::uint32_t slot = 0; slot < TEXTURE_COUNT; ++slot)
-  {
-    D3D12_CPU_DESCRIPTOR_HANDLE handle = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
-    handle.ptr += static_cast<SIZE_T>(slot) * m_srvStride;
-    _gpu.Device()->CreateShaderResourceView(nullptr, &nullSrv, handle);
-  }
-
   LoadTexture(_gpu, OUTLINE_SLOT, _desc.outlineTexture, m_outline, m_outlineStaging);
   m_outlineReady = m_outline != nullptr;
   if (!m_outlineReady)
@@ -126,29 +111,19 @@ void BodyRenderer::LoadTexture(GpuDevice& _gpu, std::uint32_t _slot, const std::
     return;
   }
 
-  // One mip, BGRA8: a copy rather than a conversion, and no mip chain to build. On the outline the
-  // shader's fwidth fade stands in for the mips the tree does not generate; on a planet map nothing
-  // does, so a globe small on screen will sparkle until this tree can generate them.
-  ByteBuffer pixels;
-  if (!image.TopMipAsBgra(pixels))
-  {
-    DebugTrace(L"body texture {} is not an uncompressed 8-bit surface\n", _fileName);
-    return;
-  }
-
-  D3D12_CPU_DESCRIPTOR_HANDLE srv = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
-  srv.ptr += static_cast<SIZE_T>(_slot) * m_srvStride;
-  UploadColourTexture(_gpu, image.widthPx, image.heightPx, pixels, srv, _outTexture, _outStaging);
+  // Whatever the file holds goes up as it is: the outline stays one BGRA8 mip under its fwidth
+  // fade, and the planet map is a baked BC chain whose mips are what stop a globe small on screen
+  // sparkling (Tools/DdsBake.py, Design/CompressedTextures-work-order.md 2.3).
+  UploadDdsTexture(_gpu, image, _gpu.SrvCpuHandle(m_slots[_slot]), _outTexture, _outStaging);
 }
 
 void BodyRenderer::CreatePipelines(GpuDevice& _gpu)
 {
-  D3D12_DESCRIPTOR_HEAP_DESC hd = {};
-  hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-  hd.NumDescriptors = TEXTURE_COUNT; // the outline and the planet map; a generated body's colour is in its vertices
-  hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-  hd.NodeMask = 0;
-  check_hresult(_gpu.Device()->CreateDescriptorHeap(&hd, IID_PPV_ARGS(m_srvHeap.put())));
+  // Slots in the shared heap -- the outline and the planet map; a generated body's colour is in
+  // its vertices. The device null-filled every slot at creation. The bake's transient heap below is
+  // untouched by this: UAV scratch with a one-dispatch lifetime is not a texture registry.
+  for (std::uint32_t at = 0; at < TEXTURE_COUNT; ++at)
+    m_slots[at] = _gpu.SrvAllocator().Allocate();
 
   D3D12_DESCRIPTOR_RANGE range = {};
   range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
@@ -589,7 +564,7 @@ void BodyRenderer::Begin(GpuDevice& _gpu, const XMFLOAT4X4& _viewProj, const XMF
                                              _cameraPos.x,  _cameraPos.y,  _cameraPos.z,      0.0f,
                                              _overlay.gain, _overlay.fade, _overlay.specular, _overlay.shininess};
 
-  ID3D12DescriptorHeap* heaps[] = {m_srvHeap.get()};
+  ID3D12DescriptorHeap* heaps[] = {_gpu.SrvHeap()};
   ID3D12GraphicsCommandList* cmd = _gpu.CommandList();
   cmd->SetGraphicsRootSignature(m_rootSignature.get());
   // Heaps are per command list and other passes set their own later in the frame, so this cannot be
@@ -639,9 +614,7 @@ void BodyRenderer::Draw(GpuDevice& _gpu, ID3D12PipelineState* _pso, BodyHandle _
   cmd->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
   cmd->SetPipelineState(_pso);
   cmd->SetGraphicsRoot32BitConstants(0, 16, &_world, WORLD_OFFSET_DWORDS);
-  D3D12_GPU_DESCRIPTOR_HANDLE srv = m_srvHeap->GetGPUDescriptorHandleForHeapStart();
-  srv.ptr += static_cast<UINT64>(_srvSlot) * m_srvStride;
-  cmd->SetGraphicsRootDescriptorTable(2, srv);
+  cmd->SetGraphicsRootDescriptorTable(2, _gpu.SrvGpuHandle(m_slots[_srvSlot]));
   cmd->IASetVertexBuffers(0, 1, &mesh.vbv);
   cmd->DrawInstanced(mesh.vertexCount, 1, 0, 0);
 }

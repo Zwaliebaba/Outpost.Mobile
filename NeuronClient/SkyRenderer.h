@@ -104,7 +104,7 @@ private:
 
   GpuPtr<ID3D12RootSignature> m_rootSignature;
   GpuPtr<ID3D12PipelineState> m_pso;
-  GpuPtr<ID3D12DescriptorHeap> m_srvHeap; // one slot per SkyLayer, in that order
+  std::uint32_t m_slots[TEXTURE_COUNT] = {}; // shared-heap slots, one per SkyLayer in that order
   GpuPtr<ID3D12Resource> m_textures[TEXTURE_COUNT];
   GpuPtr<ID3D12Resource> m_textureStaging[TEXTURE_COUNT];
 
@@ -114,7 +114,6 @@ private:
   std::uint32_t m_layerFirstVertex[SKY_LAYER_COUNT] = {};
   std::uint32_t m_layerVertexCount[SKY_LAYER_COUNT] = {};
   std::uint32_t m_vertexCount = 0;
-  std::uint32_t m_srvStride = 0;
   bool m_texturesReady = false;
 };
 } // namespace Neuron

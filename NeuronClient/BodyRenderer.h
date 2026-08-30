@@ -171,7 +171,7 @@ private:
   GpuPtr<ID3D12PipelineState> m_mainPso;
   GpuPtr<ID3D12PipelineState> m_overlayPso;
   GpuPtr<ID3D12PipelineState> m_planetPso;
-  GpuPtr<ID3D12DescriptorHeap> m_srvHeap; // slot 0 the outline, slot 1 the planet map
+  std::uint32_t m_slots[TEXTURE_COUNT] = {}; // shared-heap slots: 0 the outline, 1 the planet map
   GpuPtr<ID3D12Resource> m_outline;
   GpuPtr<ID3D12Resource> m_outlineStaging;
   GpuPtr<ID3D12Resource> m_planet;

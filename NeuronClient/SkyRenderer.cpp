@@ -32,7 +32,6 @@ constexpr std::uint32_t SKY_CONSTANT_COUNT = 32;
 void SkyRenderer::Init(GpuDevice& _gpu, const Desc& _desc)
 {
   CreatePipeline(_gpu);
-  m_srvStride = _gpu.Device()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
   LoadTexture(_gpu, SkyLayer::Nebula, _desc.nebulaTexture);
   LoadTexture(_gpu, SkyLayer::Star, _desc.starTexture);
@@ -52,29 +51,16 @@ void SkyRenderer::LoadTexture(GpuDevice& _gpu, SkyLayer _layer, const std::wstri
     return;
   }
 
-  // All three files are BGRA8 with one mip and a real alpha channel, which is where their shape is,
-  // so this is a copy rather than a conversion and there is no mip chain to build.
-  ByteBuffer pixels;
-  if (!image.TopMipAsBgra(pixels))
-  {
-    DebugTrace(L"sky texture {} is not an uncompressed 8-bit surface\n", _fileName);
-    return;
-  }
-
+  // Whatever the file holds goes up as it is; today all three are one BGRA8 mip.
   const std::uint32_t slot = static_cast<std::uint32_t>(_layer);
-  D3D12_CPU_DESCRIPTOR_HANDLE srv = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
-  srv.ptr += static_cast<SIZE_T>(slot) * m_srvStride;
-  UploadColourTexture(_gpu, image.widthPx, image.heightPx, pixels, srv, m_textures[slot], m_textureStaging[slot]);
+  UploadDdsTexture(_gpu, image, _gpu.SrvCpuHandle(m_slots[slot]), m_textures[slot], m_textureStaging[slot]);
 }
 
 void SkyRenderer::CreatePipeline(GpuDevice& _gpu)
 {
-  D3D12_DESCRIPTOR_HEAP_DESC hd = {};
-  hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-  hd.NumDescriptors = TEXTURE_COUNT;
-  hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-  hd.NodeMask = 0;
-  check_hresult(_gpu.Device()->CreateDescriptorHeap(&hd, IID_PPV_ARGS(m_srvHeap.put())));
+  // Slots in the shared heap; the device null-filled every slot at creation.
+  for (std::uint32_t at = 0; at < TEXTURE_COUNT; ++at)
+    m_slots[at] = _gpu.SrvAllocator().Allocate();
 
   D3D12_DESCRIPTOR_RANGE range = {};
   range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
@@ -223,7 +209,7 @@ void SkyRenderer::Draw(GpuDevice& _gpu, const Frame& _frame)
   const D3D12_CPU_DESCRIPTOR_HANDLE rtv = _gpu.BackBufferView();
   const D3D12_CPU_DESCRIPTOR_HANDLE dsv = _gpu.DepthView();
 
-  ID3D12DescriptorHeap* heaps[] = {m_srvHeap.get()};
+  ID3D12DescriptorHeap* heaps[] = {_gpu.SrvHeap()};
   ID3D12GraphicsCommandList* cmd = _gpu.CommandList();
   cmd->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
   cmd->SetGraphicsRootSignature(m_rootSignature.get());
@@ -241,9 +227,7 @@ void SkyRenderer::Draw(GpuDevice& _gpu, const Frame& _frame)
     if (m_layerVertexCount[layer] == 0)
       continue;
 
-    D3D12_GPU_DESCRIPTOR_HANDLE srv = m_srvHeap->GetGPUDescriptorHandleForHeapStart();
-    srv.ptr += static_cast<UINT64>(layer) * m_srvStride;
-    cmd->SetGraphicsRootDescriptorTable(1, srv);
+    cmd->SetGraphicsRootDescriptorTable(1, _gpu.SrvGpuHandle(m_slots[layer]));
     cmd->DrawInstanced(m_layerVertexCount[layer], 1, m_layerFirstVertex[layer], 0);
   }
 }

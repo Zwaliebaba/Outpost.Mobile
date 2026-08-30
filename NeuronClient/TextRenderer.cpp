@@ -23,8 +23,6 @@ void TextRenderer::Init(GpuDevice& _gpu, const Desc& _desc)
     check_hresult(m_vb[i]->Map(0, &noRead, reinterpret_cast<void**>(&m_vbCpu[i]))); // mapped for the whole run
   }
 
-  m_srvStride = _gpu.Device()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
   // Both atlases record into the device's command list and are submitted together: one flush here
   // and not one per font. The pair of calls is the bracket every boot-time uploader uses, so this
   // one no longer has to be the last thing that uploads.
@@ -44,34 +42,30 @@ void TextRenderer::Init(GpuDevice& _gpu, const Desc& _desc)
   m_verts.reserve(MAX_VERTS);
 }
 
-D3D12_CPU_DESCRIPTOR_HANDLE TextRenderer::SrvHandle(std::uint32_t _slot) const noexcept
+D3D12_CPU_DESCRIPTOR_HANDLE TextRenderer::SrvHandle(GpuDevice& _gpu, std::uint32_t _slot) const noexcept
 {
-  D3D12_CPU_DESCRIPTOR_HANDLE srv = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
-  srv.ptr += static_cast<SIZE_T>(_slot) * m_srvStride;
-  return srv;
+  return _gpu.SrvCpuHandle(m_slots[_slot]);
 }
 
 void TextRenderer::LoadFont(GpuDevice& _gpu, FontId _font, const std::wstring& _fileName)
 {
   const std::uint32_t index = static_cast<std::uint32_t>(_font);
-  if (!m_fonts[index].Load(_gpu, _fileName, SrvHandle(index)))
+  if (!m_fonts[index].Load(_gpu, _fileName, SrvHandle(_gpu, index)))
     DebugTrace(L"font {} did not load; text queued on it will not draw\n", _fileName);
 }
 
 void TextRenderer::LoadImage(GpuDevice& _gpu, ImageId _image, const std::wstring& _fileName)
 {
-  if (!m_images[_image].Load(_gpu, _fileName, SrvHandle(FONT_COUNT + _image)))
+  if (!m_images[_image].Load(_gpu, _fileName, SrvHandle(_gpu, FONT_COUNT + _image)))
     DebugTrace(L"image {} did not load; quads queued on it will not draw\n", _fileName);
 }
 
 void TextRenderer::CreatePipeline(GpuDevice& _gpu)
 {
-  D3D12_DESCRIPTOR_HEAP_DESC hd = {};
-  hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-  hd.NumDescriptors = FONT_COUNT + MAX_IMAGES; // one atlas per font, in FontId order, then the images
-  hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-  hd.NodeMask = 0;
-  check_hresult(_gpu.Device()->CreateDescriptorHeap(&hd, IID_PPV_ARGS(m_srvHeap.put())));
+  // Slots in the shared heap; the device null-filled every slot at creation, so an image that
+  // never loads draws nothing rather than binding an uninitialised descriptor.
+  for (std::uint32_t at = 0; at < FONT_COUNT + MAX_IMAGES; ++at)
+    m_slots[at] = _gpu.SrvAllocator().Allocate();
 
   D3D12_DESCRIPTOR_RANGE range = {};
   range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
@@ -251,7 +245,7 @@ void TextRenderer::Flush(GpuDevice& _gpu)
   vbv.StrideInBytes = sizeof(TextVertex);
 
   const float invViewport[2] = {1.0f / static_cast<float>(_gpu.WidthPx()), 1.0f / static_cast<float>(_gpu.HeightPx())};
-  ID3D12DescriptorHeap* heaps[] = {m_srvHeap.get()};
+  ID3D12DescriptorHeap* heaps[] = {_gpu.SrvHeap()};
   const D3D12_CPU_DESCRIPTOR_HANDLE rtv = _gpu.BackBufferView();
 
   ID3D12GraphicsCommandList* cmd = _gpu.CommandList();
@@ -265,12 +259,9 @@ void TextRenderer::Flush(GpuDevice& _gpu)
 
   // One draw per run, in the order the runs were queued. Only the texture changes between them, so
   // switching font or image costs a descriptor table and nothing else.
-  const D3D12_GPU_DESCRIPTOR_HANDLE srvStart = m_srvHeap->GetGPUDescriptorHandleForHeapStart();
   for (const Batch& batch : m_batches)
   {
-    D3D12_GPU_DESCRIPTOR_HANDLE srv = srvStart;
-    srv.ptr += static_cast<UINT64>(batch.srvSlot) * m_srvStride;
-    cmd->SetGraphicsRootDescriptorTable(1, srv);
+    cmd->SetGraphicsRootDescriptorTable(1, _gpu.SrvGpuHandle(m_slots[batch.srvSlot]));
     cmd->DrawInstanced(batch.vertCount, 1, batch.firstVert, 0);
   }
 }

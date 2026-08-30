@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DescriptorAllocator.h"
 #include "RenderTypes.h"
 
 #include <d3d12.h>
@@ -15,6 +16,12 @@ class GpuDevice
 {
 public:
   static constexpr std::uint32_t FRAME_COUNT = 3;
+
+  // The one shader-visible CBV_SRV_UAV heap every pass allocates from. A capacity, not a budget:
+  // today's content uses eighteen slots, and the constant is what to raise the day an allocation
+  // traces a refusal. Fixed for the run, because a heap that could grow would move every GPU
+  // handle already handed out (Design/CompressedTextures-work-order.md 2.1).
+  static constexpr std::uint32_t SRV_HEAP_CAPACITY = 256;
 
   void Init(HWND _hwnd);
   void Shutdown();
@@ -112,6 +119,21 @@ public:
     return m_device && m_widthPx > 0 && m_heightPx > 0;
   }
 
+  // The shared heap and the slots inside it. Passes allocate slots at Init and keep them for the
+  // run -- nothing frees per frame, and a pass that dies with the device frees nothing at all. The
+  // bookkeeping lives in DescriptorAllocator, device-free and tested; the handles live here with
+  // the heap, the split HandleStore set the pattern for.
+  [[nodiscard]] ID3D12DescriptorHeap* SrvHeap() const noexcept
+  {
+    return m_srvHeap.get();
+  }
+  [[nodiscard]] DescriptorAllocator& SrvAllocator() noexcept
+  {
+    return m_srvAllocator;
+  }
+  [[nodiscard]] D3D12_CPU_DESCRIPTOR_HANDLE SrvCpuHandle(std::uint32_t _slot) const noexcept;
+  [[nodiscard]] D3D12_GPU_DESCRIPTOR_HANDLE SrvGpuHandle(std::uint32_t _slot) const noexcept;
+
   // The current back buffer's view, for a pass that needs to rebind the target without depth.
   [[nodiscard]] D3D12_CPU_DESCRIPTOR_HANDLE BackBufferView() const noexcept;
 
@@ -131,6 +153,9 @@ private:
   GpuPtr<IDXGISwapChain3> m_swapChain;
   GpuPtr<ID3D12DescriptorHeap> m_rtvHeap;
   GpuPtr<ID3D12DescriptorHeap> m_dsvHeap;
+  GpuPtr<ID3D12DescriptorHeap> m_srvHeap; // the shared shader-visible heap; slots via m_srvAllocator
+  DescriptorAllocator m_srvAllocator;
+  std::uint32_t m_srvStride = 0;
   GpuPtr<ID3D12Resource> m_backBuffers[FRAME_COUNT];
   GpuPtr<ID3D12Resource> m_depth;
   GpuPtr<ID3D12CommandAllocator> m_allocators[FRAME_COUNT];

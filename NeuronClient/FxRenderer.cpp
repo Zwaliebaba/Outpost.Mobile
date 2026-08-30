@@ -41,20 +41,20 @@ void FxRenderer::Init(GpuDevice& _gpu, const Desc& _desc)
     check_hresult(m_vb[i]->Map(0, &noRead, reinterpret_cast<void**>(&m_vbCpu[i]))); // mapped for the whole run
   }
 
-  m_srvStride = _gpu.Device()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
-  // Everything the glow pass needs now exists: pipelines, the descriptor heap CreatePipelines made,
-  // and the ring. The textures below are the explosion's, and a glow reads none of them.
+  // Everything the glow pass needs now exists: pipelines, the slots CreatePipelines allocated, and
+  // the ring. The textures below are the explosion's, and a glow reads none of them.
   m_ringReady = true;
 
-  // All three record into the device's command list and are submitted together: one flush here and
-  // not one per texture. BeginUploads is what opens it -- without the bracket this records into a
-  // list the text renderer's own ExecuteAndWait already closed, and every call is rejected.
-  _gpu.BeginUploads();
+  // The loads ride the copy queue now, in one bracket of this pass's own -- Init runs outside the
+  // composition root's load brackets, which is why it carried a direct bracket before. Boot is the
+  // one place waiting is acceptable: the staging buffers may only be released once the copies have
+  // actually run.
+  _gpu.BeginCopies();
   LoadTexture(_gpu, FRAGMENT_SLOT, _desc.fragmentTexture);
   LoadTexture(_gpu, SPRITE_SLOT, _desc.spriteTexture);
   LoadTexture(_gpu, FLASH_SLOT, _desc.flashTexture);
-  _gpu.ExecuteAndWait();
+  _gpu.SubmitCopies();
+  _gpu.WaitForCopies();
   for (GpuPtr<ID3D12Resource>& staging : m_staging)
     staging = nullptr; // the staging buffers stayed alive until the copies had run
 
@@ -72,47 +72,17 @@ void FxRenderer::LoadTexture(GpuDevice& _gpu, std::uint32_t _slot, const std::ws
     return;
   }
 
-  // The three files are BGRA8 with one mip and a real alpha channel, so this is a copy rather than
-  // a conversion, and there is no colour key and no mip chain to build.
-  ByteBuffer pixels;
-  if (!image.TopMipAsBgra(pixels))
-  {
-    DebugTrace(L"fx texture {} is not an uncompressed 8-bit surface\n", _fileName);
-    return;
-  }
-
-  D3D12_CPU_DESCRIPTOR_HANDLE srv = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
-  srv.ptr += static_cast<SIZE_T>(_slot) * m_srvStride;
-  UploadColourTexture(_gpu, image.widthPx, image.heightPx, pixels, srv, m_textures[_slot], m_staging[_slot]);
+  // Whatever the file holds -- today one BGRA8 mip, tomorrow a baked BC chain -- goes up as it is.
+  UploadDdsTexture(_gpu, image, _gpu.SrvCpuHandle(m_slots[_slot]), m_textures[_slot], m_staging[_slot]);
 }
 
 void FxRenderer::CreatePipelines(GpuDevice& _gpu)
 {
-  D3D12_DESCRIPTOR_HEAP_DESC hd = {};
-  hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-  hd.NumDescriptors = TEXTURE_COUNT;
-  hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-  hd.NodeMask = 0;
-  check_hresult(_gpu.Device()->CreateDescriptorHeap(&hd, IID_PPV_ARGS(m_srvHeap.put())));
-
-  // Every slot gets a null SRV before any texture is read, so the heap is fully initialised whatever
-  // loads and whatever does not. The glow pass draws with a texture missing -- it samples nothing --
-  // and it binds this table on the way past, which is what makes an unwritten descriptor reachable
-  // at all. A null SRV reads as zero rather than as undefined behaviour.
-  {
-    const std::uint32_t stride = _gpu.Device()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-    D3D12_SHADER_RESOURCE_VIEW_DESC nullSrv = {};
-    nullSrv.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-    nullSrv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    nullSrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    nullSrv.Texture2D.MipLevels = 1;
-    D3D12_CPU_DESCRIPTOR_HANDLE slot = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
-    for (std::uint32_t at = 0; at < TEXTURE_COUNT; ++at)
-    {
-      _gpu.Device()->CreateShaderResourceView(nullptr, &nullSrv, slot);
-      slot.ptr += stride;
-    }
-  }
+  // Slots in the shared heap rather than a heap of this pass's own. The device wrote a null SRV
+  // into every slot at creation, so an unloaded texture reads zero -- which the glow pass relies
+  // on, since it binds the table and samples nothing (Design/CompressedTextures-work-order.md 2.1).
+  for (std::uint32_t at = 0; at < TEXTURE_COUNT; ++at)
+    m_slots[at] = _gpu.SrvAllocator().Allocate();
 
   D3D12_DESCRIPTOR_RANGE range = {};
   range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
@@ -248,7 +218,7 @@ void FxRenderer::Begin(GpuDevice& _gpu, const XMFLOAT4X4& _viewProj, const XMFLO
 
   const float shading[8] = {_lightDir.x, _lightDir.y, _lightDir.z, _ambient, _cameraPos.x, _cameraPos.y, _cameraPos.z, 0.0f};
 
-  ID3D12DescriptorHeap* heaps[] = {m_srvHeap.get()};
+  ID3D12DescriptorHeap* heaps[] = {_gpu.SrvHeap()};
   ID3D12GraphicsCommandList* cmd = _gpu.CommandList();
   cmd->SetGraphicsRootSignature(m_rootSignature.get());
   // Heaps are per command list and the overlay pass sets its own later in the frame, so this cannot
@@ -324,8 +294,7 @@ void FxRenderer::Draw(GpuDevice& _gpu, ID3D12PipelineState* _pso, std::uint32_t 
   vbv.SizeInBytes = static_cast<UINT>(count * sizeof(FxVertex));
   vbv.StrideInBytes = sizeof(FxVertex);
 
-  D3D12_GPU_DESCRIPTOR_HANDLE srv = m_srvHeap->GetGPUDescriptorHandleForHeapStart();
-  srv.ptr += static_cast<UINT64>(_srvSlot) * m_srvStride;
+  const D3D12_GPU_DESCRIPTOR_HANDLE srv = _gpu.SrvGpuHandle(m_slots[_srvSlot]);
 
   // BeginFrame has bound both of these already, so today this is a restatement. The overlay's Flush
   // rebinds the target *without* depth, and the day the passes are reordered this is what stops the

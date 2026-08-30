@@ -396,6 +396,18 @@ inline constexpr bool BODY_PLANET_TEXTURED = true;
 // Its tessellation. Sixty-four cells a side is 49 152 triangles, the same as a generated planet, and
 // puts a silhouette segment at about five pixels with the world framed as it is above.
 inline constexpr std::uint32_t BODY_PLANET_SPHERE_GRID_POWER = 6;
+
+// Level of detail (Design/BodyLod-work-order.md). Every body is baked at three grid powers -- the
+// level's power is the body's own minus its index, so a grid-6 world carries {6, 5, 4} and a
+// grid-5 rock {5, 4, 3} -- and the level drawn is chosen per frame from the body's projected
+// radius on screen. The thresholds sit where a silhouette segment is already subpixel, so the
+// switch is not visible; they are presentation tuning and outside any contract. Below the cull
+// threshold an *asteroid* is not drawn at all; a world is never distance-culled, because a world
+// on the horizon is the framing.
+inline constexpr std::uint32_t BODY_LOD_COUNT = 3;
+inline constexpr float BODY_LOD1_BELOW_PX = 220.0f;
+inline constexpr float BODY_LOD2_BELOW_PX = 90.0f;
+inline constexpr float BODY_CULL_BELOW_PX = 1.5f;
 inline constexpr float BODY_START_ASTEROID_RING_MIN_METRES = 150.0f;
 inline constexpr float BODY_START_ASTEROID_RING_MAX_METRES = 400.0f;
 

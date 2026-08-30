@@ -95,6 +95,26 @@ void GpuDevice::Init(HWND _hwnd)
   hd.NumDescriptors = 1;
   check_hresult(m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(m_dsvHeap.put())));
 
+  // The shared shader-visible heap the passes allocate slots from. Every slot gets a null SRV up
+  // front -- FxRenderer's own hygiene, generalised -- so a bound table over a slot whose texture
+  // never loaded reads zero rather than undefined behaviour.
+  hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+  hd.NumDescriptors = SRV_HEAP_CAPACITY;
+  hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+  check_hresult(m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(m_srvHeap.put())));
+  hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE; // hd is reused below; shader visibility is this heap's alone
+  m_srvStride = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+  m_srvAllocator.Init(SRV_HEAP_CAPACITY);
+  {
+    D3D12_SHADER_RESOURCE_VIEW_DESC nullSrv = {};
+    nullSrv.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    nullSrv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    nullSrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    nullSrv.Texture2D.MipLevels = 1;
+    for (std::uint32_t slot = 0; slot < SRV_HEAP_CAPACITY; ++slot)
+      m_device->CreateShaderResourceView(nullptr, &nullSrv, SrvCpuHandle(slot));
+  }
+
   for (std::uint32_t i = 0; i < FRAME_COUNT; ++i)
     check_hresult(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_allocators[i].put())));
   check_hresult(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_allocators[0].get(), nullptr, IID_PPV_ARGS(m_cmd.put())));
@@ -303,6 +323,20 @@ void GpuDevice::WaitForCopies()
     return;
   check_hresult(m_copyFence->SetEventOnCompletion(m_copyFenceValue, m_copyEvent));
   WaitForSingleObject(m_copyEvent, INFINITE);
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE GpuDevice::SrvCpuHandle(std::uint32_t _slot) const noexcept
+{
+  D3D12_CPU_DESCRIPTOR_HANDLE handle = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
+  handle.ptr += static_cast<SIZE_T>(_slot) * m_srvStride;
+  return handle;
+}
+
+D3D12_GPU_DESCRIPTOR_HANDLE GpuDevice::SrvGpuHandle(std::uint32_t _slot) const noexcept
+{
+  D3D12_GPU_DESCRIPTOR_HANDLE handle = m_srvHeap->GetGPUDescriptorHandleForHeapStart();
+  handle.ptr += static_cast<UINT64>(_slot) * m_srvStride;
+  return handle;
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE GpuDevice::BackBufferView() const noexcept
