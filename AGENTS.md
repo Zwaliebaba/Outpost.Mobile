@@ -26,13 +26,14 @@ ship is the player's: an enemy station sits 1.2 km northeast with three Intercep
 ring around it, drawn red in the scene and on the minimap and counted as contacts, and they cannot
 be selected or ordered — the simulation refuses an order from the wrong faction and the client does
 not offer one.
-There is still no combat. Two procedurally generated planets and six asteroids share the sky with
-the fleet — seeded low-poly heightfields on cube-spheres, one flat colour per triangle from a
-colour ramp, a wire-frame outline over the top, spinning or tumbling — and behind them a
-procedurally generated star field: a seeded catalogue of stars, dust clouds and a galactic band,
-uploaded once and expanded into billboards in the vertex shader (`Design/Skybox.md`). F5 reseeds
-the lot, sky included; all of it is presentation only and a ship flies straight through a rock
-(`Design/Decisions/0016`). There is no ground: the scene pass draws no plane and has no grid
+There is still no combat. One world and six asteroids share the sky with the fleet, and they are
+made two different ways (`Design/Decisions/0026`): the world is a smooth sphere wearing an authored
+equirectangular map, sampled per pixel off the direction so it has no seam, while a rock is still a
+seeded low-poly heightfield on a cube-sphere with one flat colour per triangle from a colour ramp and
+a wire-frame outline over the top. Behind them is a procedurally generated star field: a seeded
+catalogue of stars, dust clouds and a galactic band, uploaded once and expanded into billboards in
+the vertex shader (`Design/Skybox.md`). F5 reseeds the lot, sky included; all of it is presentation
+only and a ship flies straight through a rock (`Design/Decisions/0016`). There is no ground: the scene pass draws no plane and has no grid
 (`Design/Decisions/0025`), and the flat y = 0 plane a move order lands on is arithmetic in `Camera`
 rather than geometry. D3D12 renderer, WM_POINTER input covering mouse and touch, a main-screen HUD
 drawn through one overlay pipeline (bitmap font atlases, coverage-mask icons, untextured quads),

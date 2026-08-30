@@ -72,11 +72,9 @@ public:
   struct BodyView
   {
     Neuron::BodyHandle terrain = Neuron::INVALID_BODY;
-    // The ocean is a plain mesh through the scene pass, so it is a MeshHandle and not a BodyHandle:
-    // flat colour, no texture, no pipeline of its own (Design/PlanetRenderer.md 5.5). A dry body
-    // leaves it invalid and nothing draws.
-    Neuron::MeshHandle ocean = Neuron::INVALID_MESH;
-    Neuron::Rgba oceanColour{0.0f, 0.0f, 0.0f, 1.0f};
+    // Drawn through BodyRenderer::DrawPlanet and given no outline pass: a smooth sphere wearing a
+    // map rather than a generated height field (ViewTuning.h, BODY_PLANET_TEXTURED).
+    bool textured = false;
     Game::WorldPos centre;
     float centreY = 0.0f;
     DirectX::XMFLOAT3 spinAxis{0.0f, 1.0f, 0.0f};

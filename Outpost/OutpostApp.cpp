@@ -192,6 +192,8 @@ void OutpostApp::Init(HINSTANCE _instance)
   // leaves its class drawing the builder's fallback grey.
   BodyRenderer::Desc bodyDesc;
   bodyDesc.outlineTexture = TEXTURE_DIR + L"TriangleOutline.dds";
+  if constexpr (BODY_PLANET_TEXTURED)
+    bodyDesc.planetTexture = TERRAIN_DIR + L"Planet1.dds"; // 2048x1024, equirectangular
 
   // The sky's three textures, named here for the same reason: the engine knows there is a nebula
   // layer, a star layer and a flare layer, and which file fills each is content.
@@ -320,37 +322,43 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
   // _centreY is the height of the body's centre, so a caller says where a world sits rather than
   // deriving it from a radius the seed chose. A rock passes its own radius and so rests on the
   // fleet's plane; a world passes a depth well below it (ViewTuning.h).
-  const auto place = [&](BodyClass bodyClass, float _radiusMetres, float _bearingRad, float _distanceMetres, float _centreY, bool _asteroid)
+  const auto place =
+    [&](BodyClass bodyClass, float _radiusMetres, float _bearingRad, float _distanceMetres, float _centreY, bool _asteroid, bool _textured)
   {
     const std::uint64_t bodySeed = (static_cast<std::uint64_t>(rng.Next()) << 32) | rng.Next();
-    const BodyDesc desc = RandomBody(bodySeed, bodyClass, _radiusMetres);
+    const BodyDesc desc = RandomBody(bodySeed, _radiusMetres);
     const ColourRamp& ramp = m_ramps[static_cast<std::size_t>(bodyClass)];
 
-    const BodyClassSpec& spec = BodyClassOf(bodyClass);
-    std::vector<MeshVertex> ocean;
     BodyBuildStats stats;
-    const XMFLOAT3 oceanColour(spec.oceanColour.r, spec.oceanColour.g, spec.oceanColour.b);
-
     BodyHandle handle = INVALID_BODY;
-    if constexpr (BODY_BAKE_ON_GPU)
+    if (_textured)
     {
-      // The kernel writes the vertices; this side draws the random numbers into the block and builds
-      // the water, which needs no height. No BodyField is constructed at all -- its two measurement
-      // passes over the grid are exactly what the first two dispatches replace.
+      // A picture instead of a generated surface. None of the field, the ramp or the dither runs: a
+      // sphere of this radius and a map sampled off the direction is the whole of it. The
+      // description above is still drawn from the stream, because a body that skipped its draws
+      // would move every body generated after it.
+      std::vector<FxVertex> sphere;
+      BodyMeshBuilder::BuildSphere(_radiusMetres, BODY_PLANET_SPHERE_GRID_POWER, sphere);
+      handle = m_bodyRenderer.UploadBody(m_gpu, sphere);
+      stats.trianglesEmitted = static_cast<std::uint32_t>(sphere.size() / 3u);
+    }
+    else if constexpr (BODY_BAKE_ON_GPU)
+    {
+      // The kernel writes the vertices; this side only draws the random numbers into the block. No
+      // BodyField is constructed at all -- its two measurement passes over the grid are exactly what
+      // the first two dispatches replace.
       const BodyParams params = BodyField::ParamsFor(desc);
-      BodyMeshBuilder::BuildOcean(params, oceanColour, ocean);
       handle = m_bodyRenderer.BakeBody(m_gpu, params, ramp);
 
-      // A baked body writes a degenerate where the builder culls, so its triangle count is every
-      // cell and the sea floor is in it. There is no CPU-side cull count on this path and the
-      // readout says so rather than reporting a zero that would read as "nothing was culled".
+      // Every cell, because a baked body writes a degenerate triangle where the builder would have
+      // emitted nothing; there is no CPU-side count on this path to read instead.
       const std::uint32_t cells = (1u << static_cast<std::uint32_t>(params.outsideMaxHeightGrid.z));
       stats.trianglesEmitted = CUBE_FACE_COUNT * cells * cells * 2u;
     }
     else
     {
       std::vector<FxVertex> terrain;
-      BodyMeshBuilder::Build(BodyField(desc), ramp.Loaded() ? &ramp : nullptr, terrain, ocean, oceanColour, stats);
+      BodyMeshBuilder::Build(BodyField(desc), ramp.Loaded() ? &ramp : nullptr, terrain, stats);
       handle = m_bodyRenderer.UploadBody(m_gpu, terrain);
     }
 
@@ -359,14 +367,7 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
 
     WorldView::BodyView view;
     view.terrain = handle;
-    // The ocean goes through the scene renderer's own mesh path, so it is an upload-heap mesh like a
-    // hull rather than one of the body renderer's staged buffers. Three thousand triangles is what
-    // that path's comment argues for; seven megabytes of terrain is what it argues against.
-    if (!ocean.empty())
-    {
-      view.ocean = m_sceneRenderer.UploadMesh(m_gpu, ocean);
-      view.oceanColour = spec.oceanColour;
-    }
+    view.textured = _textured;
     view.centre = Game::LocalPos(std::sin(_bearingRad) * _distanceMetres, std::cos(_bearingRad) * _distanceMetres);
     view.centreY = _centreY;
     view.spinAxis = desc.spinAxis;
@@ -385,16 +386,15 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
     }
 
     m_view.AddBody(view);
-    DebugTrace("body: {} triangles ({} culled at sea level), {} ocean triangles, maximum height {} m, radius {} m\n",
-               stats.trianglesEmitted, stats.trianglesCulled, ocean.size() / 3, stats.maxHeightMetres, _radiusMetres);
+    DebugTrace("body: {} triangles, maximum height {} m, radius {} m\n", stats.trianglesEmitted, stats.maxHeightMetres, _radiusMetres);
   };
 
   const float planetRadius =
     BODY_PLANET_RADIUS_MIN_METRES + rng.Float01() * (BODY_PLANET_RADIUS_MAX_METRES - BODY_PLANET_RADIUS_MIN_METRES);
-  place(BodyClass::Terran, planetRadius, XMConvertToRadians(BODY_START_PLANET_BEARING_DEG), BODY_START_PLANET_DISTANCE_METRES,
-        -BODY_START_PLANET_DEPTH_METRES, false);
-  place(BodyClass::Barren, planetRadius * BODY_START_MOON_RADIUS_FRACTION, XMConvertToRadians(BODY_START_MOON_BEARING_DEG),
-        BODY_START_MOON_DISTANCE_METRES, -BODY_START_MOON_DEPTH_METRES, false);
+  // The world. Its class is the only one left and it is not read on this path anyway -- a textured
+  // body takes none of the ramp, the tiles or the craters a class describes.
+  place(BodyClass::Asteroid, planetRadius, XMConvertToRadians(BODY_START_PLANET_BEARING_DEG), BODY_START_PLANET_DISTANCE_METRES,
+        -BODY_START_PLANET_DEPTH_METRES, false, BODY_PLANET_TEXTURED);
 
   for (int i = 0; i < BODY_START_ASTEROIDS; ++i)
   {
@@ -403,7 +403,7 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
     const float bearing = rng.Float01() * XM_2PI;
     const float distance =
       BODY_START_ASTEROID_RING_MIN_METRES + rng.Float01() * (BODY_START_ASTEROID_RING_MAX_METRES - BODY_START_ASTEROID_RING_MIN_METRES);
-    place(BodyClass::Asteroid, radius, bearing, distance, radius, true);
+    place(BodyClass::Asteroid, radius, bearing, distance, radius, true, false);
   }
 
   m_bodyGenerationMs = m_clock.ElapsedMs(startQpc, m_clock.Now());

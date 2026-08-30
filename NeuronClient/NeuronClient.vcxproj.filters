@@ -243,6 +243,12 @@
     <FxCompile Include="Shaders\SkyPS.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
+    <FxCompile Include="Shaders\PlanetVS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\PlanetPS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\BodyBake.hlsli">
@@ -264,6 +270,9 @@
       <Filter>Shaders</Filter>
     </None>
     <None Include="Shaders\Sky.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\Planet.hlsli">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>

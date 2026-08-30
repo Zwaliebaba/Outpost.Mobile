@@ -58,6 +58,9 @@ public:
   struct Desc
   {
     std::wstring outlineTexture; // TriangleOutline.dds: white rgb, the lines in alpha
+    // An equirectangular surface map, 2:1, for a body drawn through DrawPlanet instead of being
+    // generated. Optional: leave it empty and PlanetReady() stays false.
+    std::wstring planetTexture;
   };
 
   void Init(GpuDevice& _gpu, const Desc& _desc);
@@ -105,11 +108,24 @@ public:
   void DrawMain(GpuDevice& _gpu, BodyHandle _body, const DirectX::XMFLOAT4X4& _world);
   void DrawOverlay(GpuDevice& _gpu, BodyHandle _body, const DirectX::XMFLOAT4X4& _world);
 
+  // The other kind of world: a smooth sphere from BodyMeshBuilder::BuildSphere, wearing an
+  // equirectangular map sampled per pixel from the direction (Shaders/PlanetPS.hlsl). It takes the
+  // same handles and the same Begin as the two above, and it wants no outline pass over it -- the
+  // wire-frame belongs to a generated body and would read as a cage over a photograph.
+  void DrawPlanet(GpuDevice& _gpu, BodyHandle _body, const DirectX::XMFLOAT4X4& _world);
+
   // False when the outline texture did not load. DrawOverlay then draws nothing and the terrain is
   // still there: a missing asset is a diagnostic, not a crash.
   [[nodiscard]] bool OutlineReady() const noexcept
   {
     return m_outlineReady;
+  }
+
+  // False when no planet map was named or it did not load. DrawPlanet then draws nothing, which
+  // leaves a hole where the world was rather than a crash.
+  [[nodiscard]] bool PlanetReady() const noexcept
+  {
+    return m_planetReady;
   }
 
   [[nodiscard]] std::uint32_t BodyCount() const noexcept
@@ -120,14 +136,23 @@ public:
 private:
   void CreatePipelines(GpuDevice& _gpu);
   void CreateBakePipelines(GpuDevice& _gpu);
-  void Draw(GpuDevice& _gpu, ID3D12PipelineState* _pso, BodyHandle _body, const DirectX::XMFLOAT4X4& _world);
+  void Draw(GpuDevice& _gpu, ID3D12PipelineState* _pso, BodyHandle _body, const DirectX::XMFLOAT4X4& _world, std::uint32_t _srvSlot);
+  void LoadTexture(GpuDevice& _gpu, std::uint32_t _slot, const std::wstring& _fileName, GpuPtr<ID3D12Resource>& _outTexture,
+                   GpuPtr<ID3D12Resource>& _outStaging);
+
+  static constexpr std::uint32_t OUTLINE_SLOT = 0;
+  static constexpr std::uint32_t PLANET_SLOT = 1;
+  static constexpr std::uint32_t TEXTURE_COUNT = 2;
 
   GpuPtr<ID3D12RootSignature> m_rootSignature;
   GpuPtr<ID3D12PipelineState> m_mainPso;
   GpuPtr<ID3D12PipelineState> m_overlayPso;
-  GpuPtr<ID3D12DescriptorHeap> m_srvHeap; // one slot: the outline
+  GpuPtr<ID3D12PipelineState> m_planetPso;
+  GpuPtr<ID3D12DescriptorHeap> m_srvHeap; // slot 0 the outline, slot 1 the planet map
   GpuPtr<ID3D12Resource> m_outline;
   GpuPtr<ID3D12Resource> m_outlineStaging;
+  GpuPtr<ID3D12Resource> m_planet;
+  GpuPtr<ID3D12Resource> m_planetStaging;
   // The compute side. It has its own root signature for the reason the graphics side has its own: a
   // compute root signature cannot carry ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT and this one carries two
   // UAVs, which the drawing one has no use for.
@@ -141,5 +166,6 @@ private:
   std::vector<GpuPtr<ID3D12Resource>> m_staging;         // until DiscardStaging
   std::vector<GpuPtr<ID3D12DescriptorHeap>> m_bakeHeaps; // one per bake, alive until its list has run
   bool m_outlineReady = false;
+  bool m_planetReady = false;
 };
 } // namespace Neuron
