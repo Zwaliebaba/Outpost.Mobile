@@ -268,6 +268,15 @@ inline constexpr int PATH_GRID_MAX_CELLS_PER_AXIS = 512;
 // truncated into a shortcut through a wall.
 inline constexpr std::uint32_t MAX_PATH_WAYPOINTS = 16;
 
+// How long a ship may push against a structure without gaining on its waypoint before the waypoint
+// is taken as reached. The guarantee behind it is the owner's rule that a ship can never be stuck:
+// a route whose next point lies behind a wall -- an order tapped into the middle of a station, or a
+// waypoint the geometry has moved out of reach -- would otherwise be pushed at for ever, and this
+// is what turns "as close as the geometry allows" from a hope into a property. A second, so that a
+// hull shouldered against a station by traffic while it rounds it does not give up its leg. In the
+// contract: it changes where an order ends (Design/BlockedRoutes-work-order.md 2).
+inline constexpr std::uint32_t BLOCKED_WAYPOINT_TICKS = 60;
+
 // --- test thresholds ---------------------------------------------------------------------------
 // Not in the replay contract: nothing reads this at run time, and tightening it changes no
 // recorded game. A bare `<` on the tunnelling inequality passes at a margin of 1.001 and calls

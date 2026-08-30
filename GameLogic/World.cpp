@@ -631,6 +631,7 @@ void World::PlanRoute(ShipId _id, const WorldPos& _destination, float _requiredC
   route.legStart = ship.posWorld;
   route.gridVersion = m_pathIslands.Version();
   route.reachesDestination = complete;
+  route.blockedTicks = 0;
 
   // A grid that declined to build, or a start with nowhere to go, leaves the destination itself as
   // the only waypoint -- which is exactly the behaviour before this phase existed.
@@ -645,6 +646,32 @@ void World::AdvanceRoute(ShipId _id)
     return;
 
   const HullSpec& hull = HullSpecOf(ship.hullId);
+
+  // A waypoint the wall will not let the ship reach is taken as reached. Nothing else ends a leg
+  // whose point is behind a structure: the order solver keeps asking for the point, the avoidance
+  // fan scores every reachable heading as equally dangerous and keeps the one it has, and the
+  // blocking pass undoes the advance every tick -- a ship at full thrust going nowhere, which is
+  // what the owner saw. Taking the point as reached lets the next waypoint, or the arrival, decide
+  // instead. The destination itself is moved to where the ship stands, so a route that ran out is
+  // not re-planned back at the same unreachable point.
+  if (route.blockedTicks >= BLOCKED_WAYPOINT_TICKS)
+  {
+    route.blockedTicks = 0;
+    if (route.cursor + 1 < route.count)
+    {
+      ++route.cursor;
+      route.legStart = ship.posWorld;
+      ship.steerTargetPos = route.waypoint[route.cursor];
+    }
+    else
+    {
+      route.destination = ship.posWorld;
+      route.reachesDestination = true;
+      ship.steerTargetPos = ship.posWorld;
+    }
+    return;
+  }
+
   const bool arrived = Distance(ship.posWorld, ship.steerTargetPos) <= ArrivalRadiusMetres(hull);
   if (arrived && route.cursor + 1 < route.count)
   {
@@ -958,7 +985,19 @@ void World::ApplyBlocking()
   }
 
   for (ShipId id = 0; id < count; ++id)
+  {
     Translate(m_ships[id].posWorld, m_correctionX[id], m_correctionZ[id]);
+
+    // Pushed away from the point it is steering at, or not blocked at all. A correction that does
+    // not oppose the ship's own leg -- a hull shouldered sideways while it rounds a station -- does
+    // not count, because that ship is still gaining on its point and the route is still right.
+    Route& route = m_routes[id];
+    const ShipState& ship = m_ships[id];
+    const float toTargetX = OffsetX(ship.posWorld, ship.steerTargetPos);
+    const float toTargetZ = OffsetZ(ship.posWorld, ship.steerTargetPos);
+    const bool opposed = ship.order == OrderState::Moving && (m_correctionX[id] * toTargetX + m_correctionZ[id] * toTargetZ) < 0.0f;
+    route.blockedTicks = opposed ? route.blockedTicks + 1 : 0;
+  }
 }
 
 void World::Step()

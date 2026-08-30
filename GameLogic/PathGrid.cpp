@@ -203,6 +203,17 @@ PathGrid::BlockedSpan PathGrid::BlockedAlong(const WorldPos& _from, const WorldP
   if (m_clearance.empty())
     return blocked;
 
+  // The cell the run starts in is exempt, the exemption FindPath's neighbour test already makes: a
+  // ship pressed against a wall stands in a cell below its own clearance, and a run that counted
+  // that cell would be blocked at zero whatever direction it took. The string-pull then anchored on
+  // the start cell's own centre -- a point deeper in the wall band than the ship can reach -- and
+  // the ship pushed at the skin for ever, aimed at a waypoint a few metres inside it. Measured:
+  // three hulls ordered onto a station and then away, two of them stuck at 19 m/s and 7 m/s
+  // against the skin, steering at cell centres 253 m from a 251.8 m centre
+  // (Design/BlockedRoutes-work-order.md 1).
+  const std::int64_t startCellX = PathCellX(_from);
+  const std::int64_t startCellZ = PathCellZ(_from);
+
   // Half a cell per step, so nothing can be stepped over: the clearance field varies over a cell,
   // and sampling at cell spacing would walk straight through the corner of a Structure.
   const float span = Distance(_from, _to);
@@ -210,7 +221,10 @@ PathGrid::BlockedSpan PathGrid::BlockedAlong(const WorldPos& _from, const WorldP
   for (int step = 0; step <= steps; ++step)
   {
     const float along = static_cast<float>(step) / static_cast<float>(steps);
-    if (ClearanceAt(Lerp(_from, _to, along)) >= _requiredClearanceMetres)
+    const WorldPos sample = Lerp(_from, _to, along);
+    if (PathCellX(sample) == startCellX && PathCellZ(sample) == startCellZ)
+      continue;
+    if (ClearanceAt(sample) >= _requiredClearanceMetres)
       continue;
     if (blocked.first > 1.0f)
       blocked.first = along;
