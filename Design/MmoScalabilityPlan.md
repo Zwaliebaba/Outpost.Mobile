@@ -1,13 +1,16 @@
 # The MMO scalability plan — the review as slices
 
-**Status: thirteen of the twenty-four slices have landed.** The seam: 2 (the despawn log is
+**Status: fourteen of the twenty-four slices have landed.** The seam: 2 (the despawn log is
 cursored), 3 with 4 folded into it (the publisher), 5 and 6 (the reliable lane, and departures and
 orders on it, which retires finding E1), 7 (listener slots recycled), and the loopback fallback is
 gone (ADR 0028). The view: 8 (trail and glow batching), 9 (frustum culling), 10 (hull instancing).
 The simulation: 11 (a localized gather radius), 13 (churn-gated static rebuilds), and 14 — all four
 slices of its own design, so architecture is islands on a world-fixed lattice and the 16.4 km cliff
 is gone. The tree: 21 (the guards widened) and 22 (the dead helper deleted). Slice 12 was decided
-rather than built — 60 Hz stays — and its record is written at last (ADR 0043). **What is left is phase 3 — slices 15 through 20 — plus 23 and 24.**
+rather than built — 60 Hz stays — and its record is written at last (ADR 0043). Phase 3 has opened
+with 15: the ship record is 47 bytes and a fragment carries 23 of them instead of 13.
+**What is left is slices 16 through 20, plus 23 and 24.**
+
 This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
 (tree at `de12b6d`) into an ordered slice plan in the shape `Design/README.md` defines: one slice,
 one branch, one pull request. The review is the evidence; this document is the work. Where a slice
@@ -150,7 +153,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 12 | The tick-rate decision | `GameLogic` | S | — | E7 | ADR | [landed](Decisions/0043-the-tick-rate-is-fixed-at-60-hz.md) |
 | 13 | Churn-gated static rebuilds | `GameLogic` | S | — | U4 |  | landed |
 | 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR | landed, all four slices of [its design](Archive/RegionalPathfinding.md) |
-| 15 | The quantized wire | `GameLogic` | M | 6 | E5 |  |  |
+| 15 | The quantized wire | `GameLogic` | M | 6 | E5 | ADR | [landed](Archive/QuantizedWire-work-order.md) |
 | 16 | Global entity identity | `GameLogic` | M | 15 | U3 | ADR |  |
 | 17 | The state codec and the replay gate | `GameLogic` | M | 16 | U3 |  |  |
 | 18 | Copy-queue uploader, store eviction | `NeuronClient` | M | 10 | G3 | ADR |  |
@@ -446,8 +449,8 @@ question. No code, and `SimTuning.h` is untouched.
 green; `TUNNEL_HEADROOM`'s margin restated in the record.
 
 **Landed** as [ADR 0043](Decisions/0043-the-tick-rate-is-fixed-at-60-hz.md), five months after the
-decision was taken and one slice after this plan started citing it as taken — which is the drift this
-plan exists to catch, found by reading its own status table against `Design/Decisions/`. No code, and
+decision was taken and one slice after the plan started citing it — which is the drift this plan
+exists to catch, found by reading its own status table against `Design/Decisions/`. No code, and
 `SimTuning.h` is untouched as the scope said; what the record adds over the scope is the
 substepping-versus-slower-tick comparison, because "60 Hz stays" is only half a decision without the
 thing it was chosen over.
@@ -526,6 +529,42 @@ already live in [0, 8192)), `SnapshotTests`.
 **Acceptance.** Round-trip error bounds asserted (≤ 6.25 cm position, ≤ π/2¹⁶ rad heading);
 interpolation continuity across a sector boundary tested; records per fragment stated in the pull
 request against the 13 of today; the replay gate untouched (the wire is not simulated).
+
+**As landed**, the record is **47 bytes against 83**, and a fragment carries **23 ships against 13**
+— a hundred-ship update is 5 fragments and 4,835 bytes where it was 8 and 8,516, and at 2% datagram
+loss it completes 90% of the time rather than 85%. At 500 ships the numbers are 22 fragments against
+39 and 64% against 45%, which is the case finding E1 actually cares about. Work order:
+[`QuantizedWire-work-order.md`](Archive/QuantizedWire-work-order.md); ADR 0042.
+
+Three things landed differently from the sentence above, and each is argued in the work order rather
+than left to be inferred:
+
+- **The wire's sector index narrowed to i32**, which the scope did not ask for. Sixteen bytes of
+  every record were carrying a number that is 0, ±1 or ±2 in every world this tree has built — E5
+  restated — and keeping i64 forgoes a third of the win to hold a range whose nearest use is eight
+  million light years away. The wire's range is ±1,858 light years and out of range **saturates**;
+  `WorldPos` is untouched. That is ADR 0042, and the plan's table forecast no record for this slice:
+  AGENTS.md §9's own trigger outranks the forecast, because "why not keep i64" is exactly the
+  question a reasonable person asks twice.
+- **`prevPos` is a delta, not a derivation.** The scope proposed deriving it receiver-side for
+  handles already held. The server cannot know what a client holds — datagrams drop and an
+  incomplete update is dropped whole — updates are six ticks apart while `prevPos` means *the tick
+  before*, and derivation makes the record variable-length, which `ShipsPerSnapshotFragment` derives
+  from. Four bytes of integer step delta has none of that, and both positions are put on the lattice
+  *before* the delta is taken, so the reconstruction is exact rather than doubly rounded.
+- **The lattice is eighth-metres, not centimetres.** A centimetre needs 20 bits per sector; 0.125 m
+  needs exactly 16, and the 6.25 cm it costs is a twentieth of the smallest hull's capsule radius.
+  So `.clang-tidy`'s "metres to centimetres" was re-trued rather than made true.
+
+**One thing quantization changes in the view, stated rather than discovered**: `WorldView` starts a
+new interpolation sample only when a record differs from the one it holds, so a ship moving less
+than one step between updates now holds its pose. At 10 Hz that is a ship slower than 1.25 m/s, and
+the pose it holds is inside the wire's own error. Nothing in `Outpost` or `NeuronClient` changed.
+
+Left standing deliberately: `speed`, `accelSample`, `turnRateRadPerSec` and `hullId`, sixteen bytes
+between them. Quantizing them would take the record to about 33 and a fragment to 33 ships — the
+number is measured and recorded in ADR 0042 so it is not rediscovered — but they are neither
+positions nor angles, and each needs its own argument about what precision the view actually needs.
 
 #### Slice 16 — global entity identity (`GameLogic`, M + ADR)
 

@@ -58,8 +58,10 @@ Checks: >
 # reordering fields to save padding is exactly the change this repository must not make casually.
 #
 # `-bugprone-narrowing-conversions` is off because quantisation is pervasive and deliberate:
-# metres to centimetres, radians to turns16, float to the integer wire types. It would fire on
-# most of the serialization layer, where the narrowing IS the design.
+# metres to eighth-metre lattice steps, radians to turns16, i64 sectors to the wire's i32, float to
+# the integer wire types. It would fire on most of the serialization layer, where the narrowing IS
+# the design. This block described that layer for a year before there was one and said centimetres
+# when the tree does eighth-metres; both are now true rather than aspirational (ADR 0042).
 #
 # `-performance-enum-size` is off for the same reason as the padding check: it asks a closed
 # taxonomy to shrink to the smallest type its current enumerators happen to fit in. Every such

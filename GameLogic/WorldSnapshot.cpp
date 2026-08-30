@@ -3,8 +3,12 @@
 
 #include "World.h"
 
+#include <DirectXMath.h>
+
 #include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <limits>
 
 namespace Game
 {
@@ -48,11 +52,140 @@ constexpr std::uint32_t SNAPSHOT_HEADER_BYTES = 1 + 1 + 4 + 4 + 4 + 8 + 4 + 1;
 // ShipsPerSnapshotFragment does *not* follow this header -- it derives from SNAPSHOT_HEADER_BYTES,
 // which a docking never touches (Design/Stations-slice-3.md 2.1, ADR 0040).
 constexpr std::uint32_t LEAVE_HEADER_BYTES = 1 + 8 + 4 + 4 + 4;
-// handle, posWorld, prevPos, five floats, order, faction, flags, hullId
-constexpr std::uint32_t SHIP_RECORD_BYTES = 8 + 24 + 24 + 20 + 1 + 1 + 1 + 4;
+// handle, the sector pair, the local offsets, the prevPos delta, two angles, three floats, order,
+// faction, flags, hullId.
+//
+// 47 bytes, from 83. What bought the 36 is below: positions moved onto a 0.125 m lattice, the
+// sector pair narrowed from i64 to i32 (ADR 0042), prevPos became a delta against posWorld rather
+// than a second whole position, and the two angles became turns16. At 1,152 bytes a datagram less a
+// 27-byte header that is 23 ship records per fragment against the 13 this replaces -- so a
+// hundred-ship update is 5 fragments instead of 8, which is what finding E1 cares about: at 2%
+// datagram loss it completes 90% of the time rather than 85% (Design/Archive/QuantizedWire-work-order.md).
+constexpr std::uint32_t SHIP_RECORD_BYTES = 8 + 8 + 4 + 4 + 4 + 12 + 1 + 1 + 1 + 4;
 // kind, orderId, hasFacing, facingRad, destination, handleCount
 constexpr std::uint32_t ORDER_HEADER_BYTES = 1 + 4 + 1 + 4 + 24 + 4;
 constexpr std::uint32_t HANDLE_BYTES = 8;
+
+// The wire's position lattice: 0.125 m a step.
+//
+// SECTOR_SIZE_METRES is 8,192, so a sector is exactly 65,536 steps and a local offset is a u16 with
+// nothing left over and nothing wasted. A centimetre lattice -- which two comments in this tree
+// used to promise -- needs 20 bits for the same span, so it spans a byte boundary or spends three
+// bytes on a field that has two. The step is the largest that is invisible at the scale a hull is
+// drawn: 6.25 cm at worst, against capsule radii of 1.1 m and up
+// (Design/Archive/QuantizedWire-work-order.md 2.1).
+constexpr float POSITION_STEP_METRES = 0.125f;
+constexpr float POSITION_STEPS_PER_METRE = 8.0f;
+constexpr std::int64_t POSITION_STEPS_PER_SECTOR = 65536;
+static_assert(POSITION_STEP_METRES * POSITION_STEPS_PER_METRE == 1.0f, "the step and its reciprocal disagree");
+static_assert(SECTOR_SIZE_METRES * POSITION_STEPS_PER_METRE == static_cast<float>(POSITION_STEPS_PER_SECTOR),
+              "a sector must be exactly 65,536 steps, or a local offset does not fit a u16");
+
+// An angle on the wire: a sixteenth-bit of a turn, so a step is XM_2PI/65536 = 9.59e-5 rad and
+// rounding costs at most XM_PI/65536. Fixed point wraps by construction -- there is no
+// representable value that is not an angle -- which is the property that lets the encode take a
+// fractional turn rather than clamp a range.
+constexpr float TURNS16_PER_TURN = 65536.0f;
+
+// A position as the wire states it. The sector pair is still i64 here: narrowing to the wire's i32
+// happens at the field, so the delta below is computed in the range the simulation actually uses.
+struct LatticePos
+{
+  std::int64_t sectorX = 0;
+  std::int64_t sectorZ = 0;
+  std::uint16_t stepX = 0;
+  std::uint16_t stepZ = 0;
+};
+
+// One axis of the encode, carrying whole sectors out of the offset the way Translate does.
+//
+// localX is in [0, SECTOR_SIZE_METRES) by WorldPos's invariant, so scaling lands in [0, 65536) and
+// rounding to nearest can carry it to exactly 65536 -- which is the next sector's origin and not a
+// seventeenth bit. Carrying rather than clamping is what keeps the encode monotonic across a
+// border: a ship a millimetre short of one encodes to the border, never to the far corner of the
+// sector it is leaving.
+//
+// The test against zero is not for the invariant, which holds. It is for the day something hands
+// this a position it built by hand, because a negative float converted to an unsigned type is
+// undefined behaviour and a saturating read is the whole cost of it not being.
+void ToLatticeAxis(float _local, std::int64_t& _sector, std::uint16_t& _outStep) noexcept
+{
+  const float steps = _local * POSITION_STEPS_PER_METRE + 0.5f;
+  const std::int64_t whole = (steps > 0.0f) ? static_cast<std::int64_t>(steps) : 0;
+  _sector += whole / POSITION_STEPS_PER_SECTOR;
+  _outStep = static_cast<std::uint16_t>(whole % POSITION_STEPS_PER_SECTOR);
+}
+
+[[nodiscard]] LatticePos ToLattice(const WorldPos& _pos) noexcept
+{
+  LatticePos out;
+  out.sectorX = _pos.sectorX;
+  out.sectorZ = _pos.sectorZ;
+  ToLatticeAxis(_pos.localX, out.sectorX, out.stepX);
+  ToLatticeAxis(_pos.localZ, out.sectorZ, out.stepZ);
+  return out;
+}
+
+// Back to metres, exactly: a step is a power of two, so the product is representable and decoding an
+// encoded lattice point returns the point rather than something near it.
+[[nodiscard]] WorldPos FromLattice(std::int32_t _sectorX, std::int32_t _sectorZ, std::uint16_t _stepX, std::uint16_t _stepZ) noexcept
+{
+  return WorldPos{_sectorX, _sectorZ, static_cast<float>(_stepX) * POSITION_STEP_METRES, static_cast<float>(_stepZ) * POSITION_STEP_METRES};
+}
+
+// The wire's sector index is 32 bits where the simulation's is 64 -- +/-1,858 light years against
+// +/-8 million (ADR 0042). Out of range saturates rather than wrapping, so the failure mode is a
+// ship pinned at the edge of the addressable universe and not one that appears on the other side
+// of it.
+[[nodiscard]] std::int32_t ToWireSector(std::int64_t _sector) noexcept
+{
+  constexpr std::int64_t LOWEST = std::numeric_limits<std::int32_t>::min();
+  constexpr std::int64_t HIGHEST = std::numeric_limits<std::int32_t>::max();
+  return static_cast<std::int32_t>(std::clamp(_sector, LOWEST, HIGHEST));
+}
+
+// prevPos travels as a delta from posWorld in these same steps, so the receiver reconstructs the
+// quantized prevPos exactly and its only error against the true one is that position's own
+// rounding. Quantizing the delta against the raw posWorld would stack two roundings and double the
+// bound, which is why both are put on the lattice first
+// (Design/Archive/QuantizedWire-work-order.md 2.3).
+//
+// A tick of travel is 0.567 m for the fastest hull -- four and a half steps -- against a range of
+// +/-32,767, so the saturation is about 7,000x from anything the simulation can produce, and costs
+// one interpolation sample if it ever fires.
+[[nodiscard]] std::int16_t LatticeDelta(std::int64_t _fromSector, std::uint16_t _fromStep, std::int64_t _toSector,
+                                        std::uint16_t _toStep) noexcept
+{
+  constexpr std::int64_t LOWEST = std::numeric_limits<std::int16_t>::min();
+  constexpr std::int64_t HIGHEST = std::numeric_limits<std::int16_t>::max();
+  const std::int64_t sectorSteps = std::clamp(_toSector - _fromSector, LOWEST, HIGHEST) * POSITION_STEPS_PER_SECTOR;
+  const std::int64_t steps = sectorSteps + (static_cast<std::int64_t>(_toStep) - static_cast<std::int64_t>(_fromStep));
+  return static_cast<std::int16_t>(std::clamp(steps, LOWEST, HIGHEST));
+}
+
+// Radians to turns16. The fractional turn is what makes this total: every float that is an angle
+// encodes, whatever its sign or how many turns it has accumulated, and nothing has to normalise
+// first. The test against zero catches a NaN as well as a negative -- both compare false -- for the
+// unsigned-conversion reason ToLatticeAxis gives.
+[[nodiscard]] std::uint16_t ToTurns16(float _radians) noexcept
+{
+  const float turns = _radians / DirectX::XM_2PI;
+  const float fraction = turns - std::floor(turns);
+  const float scaled = fraction * TURNS16_PER_TURN + 0.5f;
+  const std::uint32_t whole = (scaled > 0.0f) ? static_cast<std::uint32_t>(scaled) : 0u;
+  // A fraction that rounds up to a whole turn is zero turns, which is what the mask says.
+  return static_cast<std::uint16_t>(whole & 0xFFFFu);
+}
+
+// Back to (-pi, pi], which is the range Movement keeps a heading in (XMScalarModAngle) -- so a
+// decoded heading is comparable with a simulated one rather than merely equivalent to it. A source
+// of exactly -pi comes back as +pi, which is the same angle and not the same number: an assertion
+// on a heading is an assertion on the wrapped difference.
+[[nodiscard]] float FromTurns16(std::uint16_t _turns) noexcept
+{
+  const float radians = static_cast<float>(_turns) * (DirectX::XM_2PI / TURNS16_PER_TURN);
+  return (radians > DirectX::XM_PI) ? radians - DirectX::XM_2PI : radians;
+}
 
 class ByteWriter
 {
@@ -67,10 +200,28 @@ public:
     m_out->push_back(_value);
   }
 
+  void U16(std::uint16_t _value)
+  {
+    for (int shift = 0; shift < 16; shift += 8)
+      m_out->push_back(static_cast<std::uint8_t>((_value >> shift) & 0xFFu));
+  }
+
   void U32(std::uint32_t _value)
   {
     for (int shift = 0; shift < 32; shift += 8)
       m_out->push_back(static_cast<std::uint8_t>((_value >> shift) & 0xFFu));
+  }
+
+  // Two's complement over the unsigned width, which C++20 makes the only representation there is --
+  // so the conversion is a reinterpretation and the reader's cast back is its exact inverse.
+  void I16(std::int16_t _value)
+  {
+    U16(static_cast<std::uint16_t>(_value));
+  }
+
+  void I32(std::int32_t _value)
+  {
+    U32(static_cast<std::uint32_t>(_value));
   }
 
   void U64(std::uint64_t _value)
@@ -134,6 +285,16 @@ public:
     return m_bytes[m_at - 1];
   }
 
+  std::uint16_t U16()
+  {
+    if (!Take(2))
+      return 0;
+    std::uint32_t value = 0;
+    for (int byte = 0; byte < 2; ++byte)
+      value |= static_cast<std::uint32_t>(m_bytes[m_at - 2 + byte]) << (byte * 8);
+    return static_cast<std::uint16_t>(value);
+  }
+
   std::uint32_t U32()
   {
     if (!Take(4))
@@ -142,6 +303,16 @@ public:
     for (int byte = 0; byte < 4; ++byte)
       value |= static_cast<std::uint32_t>(m_bytes[m_at - 4 + byte]) << (byte * 8);
     return value;
+  }
+
+  std::int16_t I16()
+  {
+    return static_cast<std::int16_t>(U16());
+  }
+
+  std::int32_t I32()
+  {
+    return static_cast<std::int32_t>(U32());
   }
 
   std::uint64_t U64()
@@ -226,11 +397,21 @@ namespace
 void WriteShipRecord(ByteWriter& _out, const World& _world, ShipId _id)
 {
   const ShipState& ship = _world.Ships()[_id];
+
+  // Both positions go onto the lattice before either is written, because prevPos is stated as a
+  // step delta from the *quantized* posWorld and not from the one the simulation holds.
+  const LatticePos pos = ToLattice(ship.posWorld);
+  const LatticePos prev = ToLattice(ship.prevPos);
+
   _out.Handle(_world.HandleOf(_id));
-  _out.Pos(ship.posWorld);
-  _out.Pos(ship.prevPos);
-  _out.F32(ship.headingRad);
-  _out.F32(ship.prevHeading);
+  _out.I32(ToWireSector(pos.sectorX));
+  _out.I32(ToWireSector(pos.sectorZ));
+  _out.U16(pos.stepX);
+  _out.U16(pos.stepZ);
+  _out.I16(LatticeDelta(pos.sectorX, pos.stepX, prev.sectorX, prev.stepX));
+  _out.I16(LatticeDelta(pos.sectorZ, pos.stepZ, prev.sectorZ, prev.stepZ));
+  _out.U16(ToTurns16(ship.headingRad));
+  _out.U16(ToTurns16(ship.prevHeading));
   _out.F32(ship.speed);
   _out.F32(ship.accelSample);
   _out.F32(ship.turnRateRadPerSec);
@@ -447,10 +628,23 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
   {
     ShipSnapshot ship;
     ship.handle = in.Handle();
-    ship.posWorld = in.Pos();
-    ship.prevPos = in.Pos();
-    ship.headingRad = in.F32();
-    ship.prevHeading = in.F32();
+    const std::int32_t sectorX = in.I32();
+    const std::int32_t sectorZ = in.I32();
+    const std::uint16_t stepX = in.U16();
+    const std::uint16_t stepZ = in.U16();
+    const std::int16_t prevStepX = in.I16();
+    const std::int16_t prevStepZ = in.I16();
+    ship.posWorld = FromLattice(sectorX, sectorZ, stepX, stepZ);
+
+    // Through Translate rather than by adding to the fields, so the sector carry is the simulation's
+    // own and a prevPos on the far side of a border lands in the sector it belongs to. Exact: the
+    // position and the delta are both multiples of the step, their sum needs 17 bits of mantissa
+    // against float's 24, and the carry divides by a power of two.
+    ship.prevPos = ship.posWorld;
+    Translate(ship.prevPos, static_cast<float>(prevStepX) * POSITION_STEP_METRES, static_cast<float>(prevStepZ) * POSITION_STEP_METRES);
+
+    ship.headingRad = FromTurns16(in.U16());
+    ship.prevHeading = FromTurns16(in.U16());
     ship.speed = in.F32();
     ship.accelSample = in.F32();
     ship.turnRateRadPerSec = in.F32();

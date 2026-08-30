@@ -27,6 +27,14 @@ class World;
 // of padded struct -- it was 120 when this was written, which is the argument making itself -- whose
 // layout has already changed twice in this design and will again; a field-by-field format survives
 // that, and survives the day the two ends are different binaries.
+//
+// Field-by-field is also what let the record be quantized without a rework. A ship record is 47
+// bytes, not 83: a position is a sector pair narrowed to i32 plus an offset on a 0.125 m lattice, an
+// angle is a sixteenth-bit of a turn, and prevPos is an integer step delta from posWorld rather than
+// a second whole position. That is 23 records in a datagram against 13 (ADR 0042). The decoded types
+// below are unchanged floats and WorldPos, so nothing above this layer knows the wire quantizes --
+// what it costs is 6.25 cm on a position and pi/2^16 on an angle, stated here because it is the only
+// place a reader would find it.
 
 // One ship as a client is allowed to see it.
 //
@@ -42,10 +50,16 @@ class World;
 struct ShipSnapshot
 {
   ShipHandle handle; // not ShipId -- that is an array index, and despawn moves it (ADR 0005)
+
+  // The four quantized fields, decoded back to the types the view already reads. A position is
+  // within 6.25 cm of the simulation's and an angle within pi/2^16 of it, and a decoded heading is
+  // in (-pi, pi] like a simulated one -- so a source of exactly -pi arrives as +pi, the same bearing
+  // and a different number (ADR 0042).
   WorldPos posWorld;
   WorldPos prevPos;
   float headingRad = 0.0f;
   float prevHeading = 0.0f;
+
   float speed = 0.0f;
   float accelSample = 0.0f;
   float turnRateRadPerSec = 0.0f;

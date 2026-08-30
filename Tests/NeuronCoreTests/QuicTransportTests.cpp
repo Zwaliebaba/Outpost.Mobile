@@ -27,8 +27,11 @@ using ReliableBuffer = std::vector<std::uint8_t>;
 // the day the class stopped using it.
 constexpr std::uint32_t DEFAULT_CAPACITY = Neuron::QuicTransport::Desc{}.capacityDatagrams;
 
-// One snapshot's worth of fragments (GameLogic's ShipsPerSnapshotFragment() covers 13 ships), which
-// is the burst the wire actually sees at 10 Hz.
+// One snapshot's worth of fragments, which is the burst the wire actually sees at 10 Hz. The number
+// is this file's own: NeuronCore may not name GameLogic, so it cannot ask what a fragment holds. It
+// was chosen when a fragment held 13 ship records and a fragment holds 23 since the record was
+// quantized (ADR 0042), so thirteen fragments is now about 300 ships rather than about 170 -- a
+// bigger burst against the same ring, which is the direction that keeps this test honest.
 constexpr int SNAPSHOT_FRAGMENTS = 13;
 
 [[nodiscard]] std::wstring Widen(const char* _text)
