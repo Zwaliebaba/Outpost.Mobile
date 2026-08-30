@@ -7,7 +7,7 @@ gone (ADR 0028). The view: 8 (trail and glow batching), 9 (frustum culling), 10 
 The simulation: 11 (a localized gather radius), 13 (churn-gated static rebuilds), and 14 — all four
 slices of its own design, so architecture is islands on a world-fixed lattice and the 16.4 km cliff
 is gone. The tree: 21 (the guards widened) and 22 (the dead helper deleted). Slice 12 was decided
-rather than built: 60 Hz stays. **What is left is phase 3 — slices 15 through 20 — plus 23 and 24.**
+rather than built — 60 Hz stays — and its record is written at last (ADR 0045). **What is left is phase 3 — slices 15 through 20 — plus 23 and 24.**
 This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
 (tree at `de12b6d`) into an ordered slice plan in the shape `Design/README.md` defines: one slice,
 one branch, one pull request. The review is the evidence; this document is the work. Where a slice
@@ -147,7 +147,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 9 | Frustum culling | `NeuronClient`+`Outpost` | S | — | G2 |  | landed |
 | 10 | Hull instancing | `NeuronClient`+`Outpost` | M | 9 | G2 |  | landed |
 | 11 | Localized gather radius, threat pre-filter | `GameLogic` | M | — | U2 |  | landed |
-| 12 | The tick-rate decision | `GameLogic` | S | — | E7 | ADR | decided: 60 Hz stays |
+| 12 | The tick-rate decision | `GameLogic` | S | — | E7 | ADR | [landed](Decisions/0045-the-tick-rate-is-fixed-at-60-hz.md) |
 | 13 | Churn-gated static rebuilds | `GameLogic` | S | — | U4 |  | landed |
 | 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR | landed, all four slices of [its design](Archive/RegionalPathfinding.md) |
 | 15 | The quantized wire | `GameLogic` | M | 6 | E5 |  |  |
@@ -444,6 +444,13 @@ question. No code, and `SimTuning.h` is untouched.
 `Desc` field already).
 **Acceptance.** The decision record; the tunneling suite green at the chosen rate; the replay gate
 green; `TUNNEL_HEADROOM`'s margin restated in the record.
+
+**Landed** as [ADR 0045](Decisions/0045-the-tick-rate-is-fixed-at-60-hz.md), five months after the
+decision was taken and one slice after this plan started citing it as taken — which is the drift this
+plan exists to catch, found by reading its own status table against `Design/Decisions/`. No code, and
+`SimTuning.h` is untouched as the scope said; what the record adds over the scope is the
+substepping-versus-slower-tick comparison, because "60 Hz stays" is only half a decision without the
+thing it was chosen over.
 
 #### Slice 13 — churn-gated static rebuilds (`GameLogic`, S)
 
