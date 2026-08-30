@@ -611,8 +611,9 @@ tests keep testing the right rule when the fixture changes.
 govern, and they are in **v2.0 rather than a 2.1** on the one ground that makes that honest: the
 format has no consumer yet. Slice 1 shipped a codec and a corpus, not a reader, so there is no
 build in existence that would ignore the bits and no file in existence that depends on their
-absence — the fixture bytes are unchanged, the struct sizes are unchanged, and the corpus is
-regenerated from `Art/` anyway. Had an engine reader shipped first, this would have been a minor
+absence — the struct sizes are unchanged, the corpus is regenerated from `Art/` anyway, and the
+golden fixture is extended to carry one flagged material and one flagged marker in slice 2 (its
+generator is committed, so the extension is a reviewed diff rather than a silent byte change). Had an engine reader shipped first, this would have been a minor
 bump by the rule above and nothing else about it would differ. The day one has shipped, that
 latitude is gone.
 
@@ -809,8 +810,13 @@ dropped entirely.
 ### 13.1 The material vocabulary, and which half of it is livery
 
 The corpus authors five material names (`Stargate` adds a sixth, `aperture`, which follows
-`accent`), and they divide exactly as §5.5 divides authority. This is the authoring convention the
-GLB carries and `Art/Meshes/GlbToNmo.py` writes into the file:
+`accent`), and they divide exactly as §5.5 divides authority. The GLBs as authored carry green
+hues and no flags; this table is what `Art/Meshes/GlbToNmo.py` applies to them, **by material
+name, once, at conversion** — a `RaceTinted` or `baseColour` value present in a GLB material's
+`extras` wins over the row, so an author can override it at source without the converter
+learning a new name. `Exhaust` markers are flagged by kind the same way, `NavLight` and `Gun` are
+not, and a marker's `nmo_flags` in `extras` wins likewise. The name convention lives in the tool
+that runs once and never in the loader, which is the distinction §5.5 draws (slice 5 lands it):
 
 | Material | `RaceTinted` | `baseColour` | Why |
 |---|---|---|---|
@@ -854,7 +860,9 @@ brightness its thrusters should burn, and every other liveried surface falls out
 5. **Liveries** *(NeuronClient shaders, Outpost)* — the visible half of `RaceTinted` (§5.5,
    §5.10): the scene shader stops tinting a whole hull and multiplies the flagged surfaces by the
    flying faction's colour, the faction-to-colour mapping becomes the table
-   [Stations.md](Stations.md) §9.3 describes, and exhaust plumes follow it. Its work order is
+   [Stations.md](Stations.md) §9.3 describes, and exhaust plumes follow it. The converter gains
+   §13.1's table and the corpus is regenerated in the same commit as the shader, so the shades and
+   the multiply that gives them meaning never ship apart. Its work order is
    [NmoFormat-slice-5.md](NmoFormat-slice-5.md).
 6. **Articulated parts** *(later, own design note)* — pose evaluation, per-submesh transforms in
    the renderer, the first animated turret/dish; where indexed drawing and GPU skinning earn

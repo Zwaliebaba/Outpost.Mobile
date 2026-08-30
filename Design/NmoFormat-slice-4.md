@@ -5,10 +5,11 @@ slice 3, moved behind the content swap; [slice 3](NmoFormat-slice-3.md) §2.7 sa
 is the visible one: every exhaust burns the colour its author gave it, at the radius its author
 gave it, and the hulls grow navigation lights that blink on periods authored per light.
 
-**Layer:** `Outpost` only, plus the `MeshData` field slice 2 marked temporary.
+**Layer:** `Outpost`, plus the `NeuronClient` field slice 2 marked temporary and the reader loop
+that fills it.
 **Depends on:** slice 3 (hulls ship as `.nmo` and load through `NmoReader`).
-**Blocks:** nothing; it closes the design's engine-side work. Slice 5 (articulated parts) is
-independent and gets its own design note.
+**Blocks:** slice 5 (liveries), which multiplies the exhaust colours this slice puts in the view.
+Slice 6 (articulated parts) is independent.
 
 ---
 
@@ -160,15 +161,17 @@ screenshots and state the final numbers in the pull request** — that is what t
 - **No marker direction.** Nothing reads a marker's orientation. The plume is drawn along the path
   the nozzle travelled, as it is today, not along the marker's `+Z` — and the hulls' exhaust
   markers carry an identity rotation that lands on `+Y` anyway ([slice 3](NmoFormat-slice-3.md) §5).
-  Aiming a plume is a later slice's problem, after the content is fixed.
+  Slice 5's converter turns them aft when it regenerates the corpus; aiming a plume along one is
+  slice 6's.
 - **No emissive materials.** Still carried, still unread.
-- **No livery.** An `Exhaust` marker's colour is drawn exactly as authored here, and every shipped
-  one is `RaceTinted` (`NmoFormat.md` §5.10) — which means it is a *shade*, and every plume in this
-  slice's screenshots burns a greyscale version of itself. That is expected and it is not a bug to
-  chase: [slice 5](NmoFormat-slice-5.md) multiplies it by the flying faction's colour, and it is
-  the slice that makes the whole corpus stop being grey. Do not "fix" it here by reading a faction
+- **No livery.** An `Exhaust` marker's colour is drawn exactly as authored here. The corpus this
+  slice runs on is slice 3's — the GLB's green hues, no `RaceTinted` bit set anywhere — so every
+  plume burns the green its author gave it, on friend and foe alike. That is an interim look, one
+  slice long: [slice 5](NmoFormat-slice-5.md) regenerates the corpus as shades with the flags set
+  and multiplies them by the flying faction's colour. Do not "fix" it here by reading a faction
   colour early — the plume and the hull must start being liveried in the same commit or the two
-  disagree on screen.
+  disagree on screen. `MeshMarker::raceTinted` is copied into `ExhaustView` now so slice 5's
+  change is one multiply and not a second walk of the markers.
 - **No `GameLogic`, `NeuronServer` or `NeuronCore` file.** None of this crosses the seam.
 - **No new pipeline.** Nav lights reuse the FX glow the plume already batches into.
 - **No `SceneRenderer` change.**
@@ -236,9 +239,10 @@ Not visual:
   `exhausts` list draws no plume, which is the behaviour today for a hull with no attach points.
 - **Marker colours are linear RGBA and go straight to `Rgba`.** No conversion: the file states
   linear (§5.10), the codec wrote what Blender held, and `Rgba` is what the glow takes.
-- **A nav light's alpha channel is ignored.** `NAV_LIGHT_INTENSITY` and the blink decide alpha; the
-  marker's `colour.a` is authored as 1 everywhere in this corpus. If a later hull uses it as an
-  intensity, that is a one-line multiply and a note in the design.
+- **A marker's alpha is an intensity** (`NmoFormat.md` §5.10), on exhausts and nav lights alike:
+  the glow alpha is `NAV_LIGHT_INTENSITY × blink × colour.a`, and the plume's is
+  `thrusterIntensity × taper × colour.a`. Every shipped marker has `a = 1`, so nothing visible
+  changes; the multiply is there so an author who dims one gets what they asked for.
 - **Blink is not synchronised to anything.** It is free-running real time, so it drifts against the
   simulation and against a recording. That is correct for a running light.
 - **The clamp on `periodSec` is a diagnostic, not a rejection.** A marker asking for 500 s is

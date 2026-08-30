@@ -5,7 +5,7 @@ validates per §5.12 and expands a mesh into `MeshData`, markers resolved and ha
 malformed-file suite over the same bytes the Python codec is tested against. **No caller changes**
 — `MeshLibrary` still loads OBJ when this lands, and nothing on screen moves.
 
-**Layer:** `NeuronClient` and `Tests/NeuronClientTests` only.
+**Layer:** `NeuronClient` and `Tests/NeuronClientTests`, plus the one `Tools/` change §2.0 states.
 **Depends on:** slice 1 (the codec, the add-on, `Tools/NmoFixture.py`), landed.
 **Blocks:** slice 3 (the loader switch) and through it slice 4.
 
@@ -23,6 +23,24 @@ still works. When slice 3 flips `MeshLibrary` over, the only question left is co
 ---
 
 ## 2. Scope
+
+### 2.0 `Tools/` — the codec learns the two bits, and the fixture carries them
+
+The design added `NmoRenderFlags::RaceTinted` (0x8) and `NmoMarkerFlags::RaceTinted` (0x1) after
+slice 1 shipped, and the codec — "where prose and codec disagree, the codec has a bug" — does not
+name either. Before the C++ reader is written against them:
+
+- `Tools/BlenderNmo/NmoFormat.py` gains `RENDER_FLAG_RACE_TINTED = 0x8` beside the three render
+  flags it has, and `MARKER_FLAG_RACE_TINTED = 0x1`.
+- `Tools/NmoFixture.py` sets `RENDER_FLAG_RACE_TINTED` on one of the Gunship's two materials and
+  `MARKER_FLAG_RACE_TINTED` on one `Exhaust` marker, leaving one of each unflagged, so both values
+  of both bits are in the golden bytes.
+- `Tools/NmoRoundtripTest.py` asserts both bits survive the round trip; its check count grows and
+  the new number replaces 64 in §4.
+
+The committed fixture (§2.5) is generated *after* this, so the C++ positive tests can assert the
+bits arrive. No other `Tools/` file changes; the add-on already round-trips the flag words as the
+`nmo_render_flags` / `nmo_flags` custom properties.
 
 ### 2.1 `NeuronClient/NmoFile.h` — the format, as structs
 
@@ -108,12 +126,17 @@ The value is constant across a triangle — a triangle belongs to one submesh, a
 material — so nothing interpolates across a material seam and the pixel stage sees exactly 0 or 1.
 
 Growing the format reaches three places, all in this layer, and none of them changes what is on
-screen this slice: `SCENE_ELEMENTS` in `SceneRenderer.cpp` gains a fourth element
-(`"RACE", 0, DXGI_FORMAT_R32_FLOAT, 0, 24`), and `Scene.hlsli`'s `VsIn`/`VsOut` gain `float race`
-with both vertex shaders passing it through. `ScenePS` **does not read it yet** — that is slice 5,
-and until then this is a channel that is carried and ignored, which is exactly what makes it safe
-to land here. The unit quad and `ObjParser` need no edit at all, which is the initialiser earning
-its place.
+screen this slice: **both** per-vertex layouts in `SceneRenderer.cpp` — `SCENE_ELEMENTS` and
+`SCENE_INSTANCED_ELEMENTS` — gain the element (`"RACE", 0, DXGI_FORMAT_R32_FLOAT, 0, 24`), the
+vertex stride the buffer view carries becomes `sizeof(MeshVertex)` if it is not already, and
+`Scene.hlsli`'s `VsIn`/`VsOut` gain `float race` with both vertex shaders passing it through. The
+decal pipelines share `SCENE_ELEMENTS` with a `Decal.hlsli` `VsIn` that never declares `RACE`; that
+is legal — an input element no shader consumes is ignored — and a one-line comment at the layout
+says so, so nobody adds it to `Decal.hlsli` to "fix" a warning that will not come.
+
+`ScenePS` **does not read it yet** — that is slice 5, and until then this is a channel that is
+carried and ignored, which is exactly what makes it safe to land here. The unit quad and
+`ObjParser` need no edit at all, which is the initialiser earning its place.
 
 `MeshShatter` reads `MeshVertex::r/g/b` and is unaffected: it copies colours it does not
 interpret. Slice 5 is where a shard learns whose paint it was wearing.
@@ -235,10 +258,15 @@ bone whose `parentIndex >= ` its own index; duplicate bone names in one table; a
 `endSeconds < startSeconds`; track `boneIndex` values not strictly increasing; keys not strictly
 increasing in time; a skin `boneIndex` outside its scope; weights that do not sum to 1; a marker
 `parentBone` outside its scope; duplicate marker names in one submesh; and two marker names that
-collide under FNV-1a.
+collide under FNV-1a. **That last one is not a patch of the fixture**: a colliding pair has to be
+found by search and will not be the length of any name the fixture holds, so the test writes a
+minimal one-submesh file of its own with the two names and asserts the reader refuses it. It is
+the one test in the suite allowed to build bytes rather than corrupt them.
 
 Plus the positive tests: the fixture loads; the triangle count matches the fixture's; the bounds
-match its extents; every marker arrives with its kind, colour, scale and params; `attachPoints`
+match its extents; every marker arrives with its kind, colour, scale and params; the flagged
+marker arrives `raceTinted` and the unflagged one does not; every vertex of the flagged material's
+submesh carries `race == 1.0f` and every vertex of the other's `race == 0.0f`; `attachPoints`
 holds one entry per `Exhaust` marker, in file order; and a file with a truncated tail — the
 cheapest real-world corruption there is — is rejected rather than read.
 
@@ -295,8 +323,8 @@ Decided by tests, because everything here is (Design/README.md):
   asserting rejection; the positive tests; and the working-directory test.
 - **The committed fixture is regenerated and compared** in the pull request: re-run
   `Tools/NmoFixture.py`, `fc /b` against the committed bytes, and state that they are identical.
-- `python Tools/NmoRoundtripTest.py` still passes (64 checks) — the fixture serves both suites and
-  this slice must not change it.
+- `python Tools/NmoRoundtripTest.py` passes with its new check count, and the pull request states
+  the number — the fixture serves both suites and §2.0 is the only change it takes.
 - `python Build/CheckProjectFiles.py` and `python Build/CheckFormat.py` pass.
 - Debug|x64 builds; all four suites run and are green; say which you ran.
 - `git diff --stat` shows no path under `Outpost/`, `GameLogic/`, `NeuronCore/` or `NeuronServer/`;

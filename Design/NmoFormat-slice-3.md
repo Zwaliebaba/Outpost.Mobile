@@ -34,22 +34,25 @@ change is the only variable in its own screenshot.
 
 ### 2.1 `Outpost/Assets/Meshes/` — the corpus
 
-Convert every hull from the authored GLBs and land the results:
+The eleven `.nmo` — `Battleship`, `Bomber`, `Carrier`, `Corvette`, `Fighter`, `Frigate`, `Hauler`,
+`Interceptor`, `Miner`, `Stargate`, `Structure` — **are already landed and registered**: commit
+`f089656` copied them into `Outpost/Assets/Meshes/` and added their `<None>` entries beside the
+OBJ ones. Regenerate them anyway, so the pull request proves the checked-in bytes are what the
+converter makes today:
 
 ```
 python Art/Meshes/GlbToNmo.py --out Outpost/Assets/Meshes
 ```
 
-Eleven files: `Battleship`, `Bomber`, `Carrier`, `Corvette`, `Fighter`, `Frigate`, `Hauler`,
-`Interceptor`, `Miner`, `Stargate`, `Structure`. The converter reads each result back through the
-codec and prints what it holds; **paste that output into the pull request** — it is the content
-evidence, and it is the only place the marker counts are visible before slice 4 draws them.
+The converter reads each result back through the codec and prints what it holds; **paste that
+output into the pull request** — it is the content evidence, and it is the only place the marker
+counts are visible before slice 4 draws them. The corpus this slice ships is the GLB as authored:
+green hues, no `RaceTinted` flags. That is deliberate — the shades and flags of design §13.1 land
+with the shader that gives them meaning, in slice 5, so this slice's screenshots can stay boring.
 
-Delete the twenty `.obj` and `.mtl` files, and their `<None>` entries in `Outpost.vcxproj` and
-`Outpost.vcxproj.filters`. Register the eleven `.nmo` in their place, in the same `Assets\Meshes`
-filter, with the same `<CopyToOutputDirectory>` treatment the `.obj` entries had — copy the
-existing element shape rather than inventing one, and check the deployed output actually contains
-them before concluding it worked.
+Delete the twenty `.obj` and `.mtl` files and their `<None>` entries in `Outpost.vcxproj` and
+`Outpost.vcxproj.filters`; check the `.nmo` entries carry the same `<CopyToOutputDirectory>`
+treatment the `.obj` entries had, and that the deployed output actually contains them.
 
 `Fighter.nmo` and `Miner.nmo` have no OBJ counterpart and no `HULL_MESHES` row. They ship anyway:
 they are hulls this corpus has and the game will want. Do **not** add rows for them here — a new
@@ -102,8 +105,11 @@ is where it would be.
   `ObjParser.h:19` for the clustering, and §9 cites `WorldView.cpp:100`/`728`. A design is never
   rewritten to match what was built (Design/README.md) — leave the argument alone. §14 gains the
   landed marks and the note that 3 and 4 traded places, which is what the decision record explains.
-- Any comment in `NeuronClient` or `Outpost` that says a hull is an OBJ. Grep for `obj`, `mtl`
-  and `Wavefront` and fix what is now a lie; change nothing else while you are in those files.
+- Any comment in `NeuronClient`, `NeuronClient/Shaders` or `Outpost` that says a hull is an OBJ
+  — `ScenePS.hlsl`'s winding comment ("the OBJ import flips Z") is one. Grep for `obj`, `mtl` and
+  `Wavefront` and fix what is now a lie; change nothing else while you are in those files.
+- **`README.md`** line 97 says hulls are "authored as OBJ and shipped as NMO"; they are authored
+  as GLB, which is what the decision record below says.
 
 ### 2.7 The decision record
 
@@ -201,9 +207,8 @@ Not visual:
   everything into one soup and `SceneRenderer` issues one draw, exactly as before.
 - **Exhaust markers point up, not aft.** The GLB marker nodes carry identity rotation, which the
   axis conversion lands on NMO `+Y`. No consumer reads a marker's direction in this slice or the
-  next, so it is inert; it is stated here so it is found on purpose in slice 5 rather than by
-  surprise. Fixing it is a change to the GLB source or one defaulting line in the converter, and
-  it is not this slice's.
+  next, so it is inert. Slice 5 owns the fix — the converter defaults an identity-rotated `Exhaust`
+  to aft ([slice 5](NmoFormat-slice-5.md) §2.0) when it regenerates the corpus.
 - **`Structure` and `Stargate` carry only `NavLight` markers**, so their `attachPoints` are empty
   and they keep the still, unlit look they have today until slice 4 gives them nav lights.
 - **Emissive material values are carried and ignored.** Every hull has them; no pass reads them.

@@ -5,7 +5,8 @@ stops being tinted as one object and starts being painted by two authorities —
 structure, the faction paints its livery — and the faction-to-colour branch the client has carried
 since Hostiles becomes the table [Stations.md](Stations.md) §9.3 describes.
 
-**Layer:** `NeuronClient` (shaders and `SceneRenderer`), `Outpost`.
+**Layer:** `NeuronClient` (shaders and `SceneRenderer`), `Outpost`, and `Art/Meshes/` — the
+converter and the regenerated corpus.
 **Depends on:** slice 2 (`MeshVertex::race`, `MeshMarker::raceTinted`) and slice 4 (the view holds
 exhaust colours, so there is something to multiply).
 **Blocks:** nothing. Slice 6 (articulated parts) is independent.
@@ -30,6 +31,37 @@ case the faction's" — and it is exact, per surface, at every livery.
 ---
 
 ## 2. Scope
+
+### 2.0 `Art/Meshes/GlbToNmo.py` and the corpus — the shades and the flags arrive
+
+The GLBs are authored with green hues and no flags, and slices 3 and 4 shipped them that way on
+purpose. This slice is where [NmoFormat.md](NmoFormat.md) §13.1 becomes true, in the converter,
+once, at conversion:
+
+- **Materials, by name.** After the glTF import and before export, `_adopt_materials` walks the
+  collection's materials: a name in §13.1's table gets that row's `baseColour` written into the
+  Principled Base Color and, for the three liveried rows, `nmo_render_flags |= 8`
+  (`RENDER_FLAG_RACE_TINTED`, named through `NmoFormat` rather than spelled). `aperture` follows
+  `accent`. A material whose GLB `extras` carry `nmo_render_flags` or `nmo_base_colour` keeps
+  those instead — `extras` win over the table, so an author can override at source. A material
+  the table does not know is left exactly as authored and traced once, so a new name is noticed
+  rather than silently drawn as the model's paint.
+- **Markers, by kind.** `_adopt_markers` sets `nmo_flags |= 1` (`MARKER_FLAG_RACE_TINTED`) on
+  every `Exhaust` whose `extras` did not state `nmo_flags`; `NavLight` and `Gun` stay 0. A flagged
+  exhaust's authored colour is green, and under the multiply a hue is discarded, so the converter
+  writes its luminance (`0.2126 R + 0.7152 G + 0.0722 B`) to all three channels: the file holds a
+  shade, as §5.5 says a flagged colour is. Unflagged markers keep their colour as authored.
+- **Exhaust aim.** An `Exhaust` marker whose node rotation is identity is rotated 180° about +Y
+  before export, so its local +Z points aft — the same default `Tools/ObjToNmo.py` wrote.
+  Authored rotations pass through untouched. Nothing reads the orientation yet; this closes the
+  content defect slices 3 and 4 declared rather than leaving it to slice 6.
+
+Then regenerate the corpus — `python Art/Meshes/GlbToNmo.py` and again with
+`--out Outpost/Assets/Meshes` — and paste the read-back summary into the pull request. Both
+copies are committed; the `Art/` one is what an artist opens in Blender.
+
+The converter's summary line grows a count of flagged materials and markers per file, so a hull
+that lost its livery in conversion is a number rather than a screenshot.
 
 ### 2.1 `NeuronClient/Shaders/Scene.hlsli`, `ScenePS.hlsl` — the combine rule
 
@@ -117,7 +149,8 @@ with the precedence [Stations.md](Stations.md) §9.3 sets and does not get to be
 **hostile outranks faction.** A Vanguard ship whose faction holds this client hostile paints
 `LIVERY_VANDAL`'s red, because the law turning on you is the thing the player must see. Own faction
 takes `SELECTABLE_LIVERIES[PLAYER_LIVERY_INDEX]`, `FACTION_VANGUARD` takes `LIVERY_VANGUARD`, and
-`FACTION_HOSTILE`/`FACTION_VANDAL` takes `LIVERY_VANDAL`. `FACTION_VANGUARD` exists in
+`FACTION_HOSTILE` takes `LIVERY_VANDAL` — spelled `FACTION_HOSTILE` here because that is its name
+today; Stations' rename to `FACTION_VANDAL` touches this one call site like every other. `FACTION_VANGUARD` exists in
 `GameLogic/ShipState.h` and nothing spawns one yet; the row is written now so that the day Stations
 lands, no client code changes.
 
@@ -126,9 +159,10 @@ alone. This is not tidiness: under liveries a mint-green selected hull *reads as
 faction*, and the player's own livery might be mint. Selection is a brightness and a ring; identity
 is a hue. The hover lift folds into the same channel.
 
-**The plume.** Slice 4 gave `ExhaustView` an authored colour. Where the marker was `RaceTinted` —
-every shipped exhaust is — the view multiplies it by the same livery the hull got, so one authored
-plume burns azure, red or the player's own. Where it was not, it draws as authored. Nav lights
+**The plume.** Slice 4 gave `ExhaustView` an authored colour and a `raceTinted` bool. Where the
+bool is set — every shipped exhaust is, after §2.0 — the view multiplies the colour by the same
+livery the hull got, so one authored plume burns azure, red or the player's own. Where it is not,
+it draws as authored. Nav lights
 never multiply: port red and starboard green are a convention, not a livery, and
 [NmoFormat.md](NmoFormat.md) §5.10 says why at more length.
 
@@ -142,10 +176,16 @@ there. A shard off a grey hull plate stays grey; a shard off a liveried panel ke
 paint. Getting this wrong is visible and cheap to check — blow up a Vandal Interceptor and the
 debris is red.
 
-### 2.6 The HUD does not change
+### 2.6 The HUD does not change on screen
 
-`HUD_ACCENT_GREEN` and `HUD_ALERT_RED` stay what they are and stay derived from where they are
-derived. The minimap answers "friend or enemy", not "what colour is that ship" — a player who picks
+`HUD_ACCENT_GREEN` and `HUD_ALERT_RED` stay the colours they are. `HUD_ALERT_RED` is today derived
+from `HOSTILE_ACCENT_COLOUR` (`ViewTuning.h:382`), which §2.3 deletes, so it re-derives from
+`LIVERY_VANDAL` — the same relation-follows-the-faction rule Stations §9.3 states for
+`HUD_VANGUARD_BLUE` — and the pull request shows the rendered red is unchanged to the eye.
+`Hud.cpp:579` draws the HULL stat bar in `SHIP_COLOUR`, also deleted; it takes
+`SELECTABLE_LIVERIES[PLAYER_LIVERY_INDEX]`, since that bar is the player's own hull.
+
+The minimap answers "friend or enemy", not "what colour is that ship" — a player who picks
 a red-ish livery must not turn their own dots into the colour the HUD uses for hostiles, and a
 Vanguard station's dot follows §9.3's `HUD_VANGUARD_BLUE` because that is a relation too. Liveries
 are a scene language; the HUD is a relation language. Say so at the constants so the next person
@@ -161,9 +201,9 @@ does not "fix" the inconsistency.
 - **No standings.** `hostileMask` arrives with Stations; until it does, `_hostileToMe` is the
   existing "not my faction" test and `LiveryOf` takes it as a parameter so that swapping the source
   is one call site.
-- **No content change.** The `.nmo` corpus already carries the flags and the shades; this slice
-  reads what is there. If a hull comes out grey, its material lost its flag in `Art/`, and that is
-  an asset bug, not this slice's.
+- **No GLB change.** The source files stay as authored; §2.0's table is applied by the converter
+  and the regenerated `.nmo` are the content change. If a hull comes out grey, either its material
+  name is off the table (the converter traced it) or the flag never reached the instance.
 
 ---
 
@@ -184,8 +224,11 @@ does not "fix" the inconsistency.
 - **Screenshots**, which are the point of this slice: the player fleet in its livery, the Vandal
   patrol in red, a selected hull showing a lift and not a hue change, a plume in the flying
   faction's colour, and one explosion whose debris matches the hull it came off.
-- A grey ship anywhere is a failure, and names its cause: a material that lost `RaceTinted` in
-  `Art/`, or a livery that never reached the instance.
+- A grey ship anywhere is a failure, and names its cause: a material name off §2.0's table (the
+  converter's trace says which), or a livery that never reached the instance.
+- The converter's summary shows, per hull, three flagged materials (`Stargate`: four) and every
+  `Exhaust` flagged; `python Tools/NmoRoundtripTest.py` still passes; the two headless Blender
+  phases still pass inside Blender.
 - Nav port/starboard lights are still red and green on every faction. Check a Vandal hull
   specifically — that is where a wrongly-liveried nav light hides.
 - All four suites green; `python Build/CheckProjectFiles.py` and `python Build/CheckFormat.py` pass.
@@ -200,7 +243,7 @@ does not "fix" the inconsistency.
 
 ## 5. Assumptions the implementer may make
 
-- **Every liveried material is greyscale.** The corpus is authored that way (§13.1) and the
+- **Every liveried material is greyscale.** The converter writes it that way (§2.0) and the
   multiply assumes it. A hue that survives into a flagged material is an asset bug and shows up as
   a hull in the wrong colour; the loader does not police it, because content errors it can render
   are not errors it should refuse.
