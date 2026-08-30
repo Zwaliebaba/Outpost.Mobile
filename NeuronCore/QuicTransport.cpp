@@ -273,6 +273,10 @@ bool QuicTransport::Connect(QuicApi& _api, const Endpoint& _peer, const Desc& _d
   _api.AcquireHandle();
   m_holdsApiHandle = true;
 
+  // This end dialed, so this end opens the reliable lane's stream once the handshake lands. Set
+  // before ConnectionStart, because Poll may run against a Connected state as soon as it returns.
+  m_isDialer = true;
+
   status =
     table->ConnectionStart(connection, static_cast<HQUIC>(_api.ClientConfiguration()), QUIC_ADDRESS_FAMILY_INET, _peer.host, _peer.port);
   if (QUIC_FAILED(status))
@@ -340,7 +344,11 @@ void QuicTransport::Reserve(QuicApi& _api, const Desc& _desc)
     m_streamOutBuffers[slot].bytes = m_streamOutArena.data() + static_cast<std::size_t>(slot) * outSlotBytes;
   m_streamOutCursor = 0;
 
-  m_stream = nullptr;
+  m_stream.store(nullptr, std::memory_order_relaxed);
+
+  // Reserve is the pool's call, and a pooled transport accepts rather than dials. Connect sets this
+  // for the end that dials; the recycle path in QuicListener re-Reserves and so clears it back.
+  m_isDialer = false;
   m_streamReady.store(false, std::memory_order_relaxed);
   m_streamRequested.store(false, std::memory_order_relaxed);
 
@@ -413,11 +421,8 @@ void QuicTransport::Close() noexcept
   // registration: a handle cannot close over a live child. It is closed rather than shut down --
   // the connection shutdown above has already ended it, and StreamClose is what returns the handle.
   m_streamReady.store(false, std::memory_order_release);
-  if (m_stream != nullptr)
-  {
-    table->StreamClose(static_cast<HQUIC>(m_stream));
-    m_stream = nullptr;
-  }
+  if (void* const stream = m_stream.exchange(nullptr, std::memory_order_acq_rel))
+    table->StreamClose(static_cast<HQUIC>(stream));
 
   // Closing here rather than in the destructor, because Outpost's shutdown order closes the client
   // end, then the listener, then the library -- and that order only means anything if this call is
@@ -576,7 +581,12 @@ void QuicTransport::OpenReliableStream()
   // The dialling end only, and once. The accepting end gets its handle through PEER_STREAM_STARTED,
   // because a bidirectional stream carries both directions and one of them is all the handshake
   // reserved (QuicApi.cpp, QUIC_PEER_BIDI_STREAMS).
-  if (m_api == nullptr || m_connection == nullptr || m_stream != nullptr)
+  // The dialing end only. The accepting end gets its handle through PEER_STREAM_STARTED, and if it
+  // opened one of its own it would be a second bidirectional stream against a peer that negotiated
+  // room for exactly one -- which is the defect ADR 0031 records.
+  if (!m_isDialer || m_api == nullptr || m_connection == nullptr)
+    return;
+  if (m_stream.load(std::memory_order_acquire) != nullptr)
     return;
   if (m_state.load(std::memory_order_acquire) != ConnectionState::Connected)
     return;
@@ -592,22 +602,30 @@ void QuicTransport::OpenReliableStream()
     return;
   }
 
-  if (QUIC_FAILED(table->StreamStart(stream, QUIC_STREAM_START_FLAG_NONE)))
+  // IMMEDIATE, so the peer learns the stream exists now rather than when the first byte is sent.
+  // Without it the accepting end sees no PEER_STREAM_STARTED until traffic flows, so its lane never
+  // comes up and anything waiting on ReliableReady waits for ever.
+  if (QUIC_FAILED(table->StreamStart(stream, QUIC_STREAM_START_FLAG_IMMEDIATE)))
   {
     SetReason("StreamStart failed");
     table->StreamClose(stream);
     return;
   }
-  m_stream = stream;
+  m_stream.store(stream, std::memory_order_release);
 }
 
 void QuicTransport::AdoptReliableStream(void* _stream)
 {
   // On a worker. SetCallbackHandler is the one MsQuic call this file makes from one, and it is the
   // same exception ADR 0022 already carries for accepting a connection.
-  if (_stream == nullptr || m_api == nullptr || m_stream != nullptr)
+  if (_stream == nullptr || m_api == nullptr)
     return;
-  m_stream = _stream;
+
+  // Claim the slot, and refuse a second stream rather than overwrite the handle we already hold:
+  // overwriting would leak the first one, which MsQuic requires this side to close exactly once.
+  void* expected = nullptr;
+  if (!m_stream.compare_exchange_strong(expected, _stream, std::memory_order_acq_rel))
+    return;
   m_api->Table()->SetCallbackHandler(static_cast<HQUIC>(_stream), reinterpret_cast<void*>(QuicTransportCallbacks::OnStreamEvent), this);
 
   // A stream handed over by the peer is already started, so there is no START_COMPLETE coming.
@@ -640,7 +658,8 @@ void QuicTransport::PushReliable(const std::uint8_t* _bytes, std::uint32_t _coun
 
 bool QuicTransport::SendReliable(const std::uint8_t* _bytes, std::uint32_t _count)
 {
-  if (!m_streamReady.load(std::memory_order_acquire) || m_stream == nullptr || m_api == nullptr)
+  void* const stream = m_stream.load(std::memory_order_acquire);
+  if (!m_streamReady.load(std::memory_order_acquire) || stream == nullptr || m_api == nullptr)
     return false;
   if (_count > MAX_RELIABLE_BYTES || (_count > 0 && _bytes == nullptr))
     return false; // refused rather than truncated, which is Send's rule on the other lane
@@ -672,7 +691,7 @@ bool QuicTransport::SendReliable(const std::uint8_t* _bytes, std::uint32_t _coun
   m_streamOutBuffers[slot].length = RELIABLE_HEADER_BYTES + _count;
 
   const QUIC_BUFFER* const buffer = reinterpret_cast<const QUIC_BUFFER*>(&m_streamOutBuffers[slot]);
-  if (QUIC_FAILED(m_api->Table()->StreamSend(static_cast<HQUIC>(m_stream), buffer, 1, QUIC_SEND_FLAG_NONE, SlotToContext(slot))))
+  if (QUIC_FAILED(m_api->Table()->StreamSend(static_cast<HQUIC>(stream), buffer, 1, QUIC_SEND_FLAG_NONE, SlotToContext(slot))))
   {
     m_streamOutInFlight[slot].store(false, std::memory_order_release);
     return false;

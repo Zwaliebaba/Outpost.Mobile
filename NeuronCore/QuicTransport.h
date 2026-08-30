@@ -189,9 +189,18 @@ private:
   // is bytes, and this lane's contract is messages, so every message goes out with a two-byte
   // little-endian length in front of it and comes back through a reassembler that owns the leftover
   // of a frame split across deliveries.
-  void* m_stream = nullptr; // HQUIC, void* for the reason at the top of QuicApi.h
+  // HQUIC, void* for the reason at the top of QuicApi.h. Atomic because it genuinely crosses: the
+  // accepting end's handle is written by an MsQuic worker in AdoptReliableStream, and read by the
+  // owning thread in SendReliable and Close.
+  std::atomic<void*> m_stream{nullptr};
   std::atomic<bool> m_streamReady{false};
-  std::atomic<bool> m_streamRequested{false}; // the dialling end has called StreamOpen
+  std::atomic<bool> m_streamRequested{false}; // the dialing end has called StreamOpen
+
+  // Which end of the connection this is. The lane is one bidirectional stream and exactly one end
+  // may open it -- the one that dialed. Without this the accepting end's Poll runs before its
+  // PEER_STREAM_STARTED arrives, sees no stream, and opens a second one against a peer that
+  // negotiated room for one (ADR 0031).
+  bool m_isDialer = false;
 
   // Inbound, exactly the datagram ring's shape and cursor discipline: workers write under the lock,
   // Poll copies the write cursor into the ready cursor, ReceiveReliable pops below it unlocked.
