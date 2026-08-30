@@ -6,7 +6,7 @@ namespace GameLogicTests
 {
 namespace
 {
-// The Vanguard's shipped garrison (Design/Stations.md 8.2): three Corvettes, one every 1.5 s.
+// The Vanguard's shipped garrison (Design/Archive/Stations.md 8.2): three Corvettes, one every 1.5 s.
 constexpr std::uint32_t COMPLEMENT = 3;
 constexpr std::uint32_t CADENCE_TICKS = 90;
 constexpr std::uint32_t TARGET_CAP = 4;
@@ -62,7 +62,7 @@ public:
     const Game::ShipId raider = world.SpawnShip(Game::LocalPos(1500.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
 
     // Nothing before the act. The response starts from a *stated* aggression, never from a radius:
-    // a ship parked beside a station it has not attacked is unmolested (Design/Stations.md 8.4).
+    // a ship parked beside a station it has not attacked is unmolested (Design/Archive/Stations.md 8.4).
     for (int tick = 0; tick < 400; ++tick)
       world.Step();
     Assert::AreEqual(static_cast<std::uint32_t>(0), world.LaunchedProtectorCount(station),
@@ -182,7 +182,7 @@ public:
     Assert::IsTrue(home, L"the garrison never came home");
 
     // A garrison is not a guest: docking home returns the hull to the complement and writes no
-    // ledger row (Design/Stations.md 8.3).
+    // ledger row (Design/Archive/Stations.md 8.3).
     Assert::IsTrue(world.StationOf(station).docked.empty(), L"a protector coming home was written into the ledger");
     Assert::AreEqual(static_cast<std::uint32_t>(1), world.ShipCount(), L"only the station should be left in the world");
 
@@ -193,7 +193,7 @@ public:
   }
 
   // The reserve is bottomless for as long as a target lives, which is safe precisely because a
-  // protector drops nothing when destroyed (Design/Stations.md 8.6) -- there is nothing to farm.
+  // protector drops nothing when destroyed (Design/Archive/Stations.md 8.6) -- there is nothing to farm.
   TEST_METHOD(ALossIsReplaced)
   {
     Game::World world;
@@ -349,7 +349,7 @@ public:
       // The raider is a Vandal and not the player, deliberately. Provoking with the same faction
       // that is docking makes the two halves of the scene contradict each other: the standing flip
       // is empire-wide, so the docker would be turned away at the door by the capture-time re-check
-      // and the run would prove only that two refusals agree (Design/Stations.md 7.3).
+      // and the run would prove only that two refusals agree (Design/Archive/Stations.md 7.3).
       const Game::ShipId raider =
         world.SpawnShip(Game::LocalPos(200.0f, 600.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber), Game::FACTION_VANDAL);
 

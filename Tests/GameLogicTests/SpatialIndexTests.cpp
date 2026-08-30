@@ -318,7 +318,7 @@ public:
     // The number slice 11 is about. The index's query is over-inclusive on purpose, so what a tick
     // pays for is not what the query returns but what survives the pair filter -- and that number
     // should follow how crowded a ship's own neighbourhood is, not how big the fleet is or what
-    // hulls exist in the table (Design/MmoScalabilityReview.md U2).
+    // hulls exist in the table (Design/Archive/MmoScalabilityReview.md U2).
     //
     // Density is what varies here; the fleet size does not. A fixed count in a shrinking box is the
     // only way to read the two apart.

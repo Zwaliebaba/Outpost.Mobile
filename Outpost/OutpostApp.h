@@ -78,7 +78,7 @@ private:
   void SpawnHostileBase();
 
   // One Vanguard station at every planet site of the starting system: the structure ship, then the
-  // row that makes it a station (Design/Stations.md 5.3, 6.1).
+  // row that makes it a station (Design/Archive/Stations.md 5.3, 6.1).
   void SpawnVanguardStations();
   [[nodiscard]] std::uint32_t OwnShipCount() const noexcept;
   void Update();
@@ -124,7 +124,7 @@ private:
 
   // The starting system, laid out once at boot and read by three consumers: the station spawns,
   // the body placements and the minimap's marks. Static content, not simulation state -- the world
-  // is handed the sites as spawn positions and never sees the generator (Design/Stations.md 5, 10).
+  // is handed the sites as spawn positions and never sees the generator (Design/Archive/Stations.md 5, 10).
   // F5 rebuilds the bodies from it and never re-rolls it, so a debug key cannot move a station.
   Game::SystemLayout m_layout;
 

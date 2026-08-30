@@ -20,7 +20,7 @@ namespace Neuron
 //
 // It began as the explosion's alone. The fourth pipeline is the thruster plume, which moved here
 // from SceneRenderer's decal pass because a glow was one draw each and a trail is one glow per
-// sample per nozzle (Design/MmoScalabilityReview.md G1). It reads no texture -- its shape is
+// sample per nozzle (Design/Archive/MmoScalabilityReview.md G1). It reads no texture -- its shape is
 // computed per pixel -- so it is the one pass that draws while a texture is missing.
 //
 // It has its own root signature rather than widening the scene's. The scene's carries no descriptor

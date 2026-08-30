@@ -24,7 +24,7 @@ its work order for whoever makes the winding consistent.**
 This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
 (tree at `de12b6d`) into an ordered slice plan in the shape `Design/README.md` defines: one slice,
 one branch, one pull request. The review is the evidence; this document is the work. Where a slice
-already has a design in the tree — the reliable lane lives in [`QuicTransport.md`](Archive/QuicTransport.md)
+already has a design in the tree — the reliable lane lives in [`QuicTransport.md`](QuicTransport.md)
 §14 — this plan schedules it and does not restate it.
 
 **On this branch:** the review, the plan and every landed slice go as one pull request rather than
@@ -112,7 +112,7 @@ Named here so no slice takes them silently:
 
 1. ~~**Schedule the reliable lane now**~~ — **taken 2026-08-30: scheduled.** The wait in
    QuicTransport.md §12 decision 4 is lifted there, and the two work orders
-   ([3a](Archive/ReliableLane-work-order.md), [3b](Archive/ReliableFormat-work-order.md)) are written.
+   ([3a](ReliableLane-work-order.md), [3b](ReliableFormat-work-order.md)) are written.
 2. ~~**The tick rate**~~ — **taken 2026-08-30: 60 Hz stays.** Capacity is bought by putting fewer
    entities in a shard, not fewer ticks in a second. Slice 12 therefore has no code in it: it is the
    decision record, stating that the rate is fixed, that the tunneling margin in `SimTuning.h` is
@@ -152,29 +152,29 @@ Findings reference `MmoScalabilityReview.md`.
 | # | Slice | Layer | Size | Depends on | Findings | ADR | Status |
 |---|---|---|---|---|---|---|---|
 | 1 | Ghost backstop: periodic full refresh | `Outpost` | S | — | E1 interim |  | dropped: 5–6 scheduled |
-| 2 | Sequence-cursored despawn delivery | `GameLogic` | M | — | E2 | ADR | [landed](Archive/DespawnCursors-work-order.md) |
-| 3 | The publisher: subscriber table, phases, budgets | `GameLogic` | M | 2 | E2 E4 E6 | ADR | [landed](Archive/Publisher-work-order.md) |
+| 2 | Sequence-cursored despawn delivery | `GameLogic` | M | — | E2 | ADR | [landed](DespawnCursors-work-order.md) |
+| 3 | The publisher: subscriber table, phases, budgets | `GameLogic` | M | 2 | E2 E4 E6 | ADR | [landed](Publisher-work-order.md) |
 | 4 | The root joins the publisher | `Outpost` | S | 3 | E2 |  | folded into 3 |
-| 5 | Reliable lane on both transports (= QuicTransport 3a) | `NeuronCore` | M | — | E1 |  | [landed](Archive/ReliableLane-work-order.md) |
-| 6 | Leaves, destroys, orders go reliable (= QuicTransport 3b) | `GameLogic` | M | 5 | E1 | ADR | [landed](Archive/ReliableFormat-work-order.md) |
+| 5 | Reliable lane on both transports (= QuicTransport 3a) | `NeuronCore` | M | — | E1 |  | [landed](ReliableLane-work-order.md) |
+| 6 | Leaves, destroys, orders go reliable (= QuicTransport 3b) | `GameLogic` | M | 5 | E1 | ADR | [landed](ReliableFormat-work-order.md) |
 | 7 | Listener slot reclamation, per-role rings | `NeuronCore` | S | — | E3 | ADR | landed |
 | 8 | Trail and glow batching | `NeuronClient`+`Outpost` | S | — | G1 |  | landed |
 | 9 | Frustum culling | `NeuronClient`+`Outpost` | S | — | G2 |  | landed |
 | 10 | Hull instancing | `NeuronClient`+`Outpost` | M | 9 | G2 |  | landed |
 | 11 | Localized gather radius, threat pre-filter | `GameLogic` | M | — | U2 |  | landed |
-| 12 | The tick-rate decision | `GameLogic` | S | — | E7 | ADR | [landed](Decisions/0045-the-tick-rate-is-fixed-at-60-hz.md) |
+| 12 | The tick-rate decision | `GameLogic` | S | — | E7 | ADR | [landed](../Decisions/0045-the-tick-rate-is-fixed-at-60-hz.md) |
 | 13 | Churn-gated static rebuilds | `GameLogic` | S | — | U4 |  | landed |
-| 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR | landed, all four slices of [its design](Archive/RegionalPathfinding.md) |
-| 15 | The quantized wire | `GameLogic` | M | 6 | E5 | ADR | [landed](Archive/QuantizedWire-work-order.md) |
-| 16 | Global entity identity | `GameLogic` | M | 15 | U3 | ADR | [landed](Archive/EntityIdentity-work-order.md) |
-| 17 | The state codec and the replay gate | `GameLogic` | M | 16 | U3 |  | [landed](Archive/WorldState-work-order.md) |
+| 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR | landed, all four slices of [its design](RegionalPathfinding.md) |
+| 15 | The quantized wire | `GameLogic` | M | 6 | E5 | ADR | [landed](QuantizedWire-work-order.md) |
+| 16 | Global entity identity | `GameLogic` | M | 15 | U3 | ADR | [landed](EntityIdentity-work-order.md) |
+| 17 | The state codec and the replay gate | `GameLogic` | M | 16 | U3 |  | [landed](WorldState-work-order.md) |
 | 18 | Copy-queue uploader, store eviction | `NeuronClient` | M | 10 | G3 | ADR | landed, built and run (ADR 0044) |
 | 19 | Compressed textures, descriptor allocator | `NeuronClient` | M | 18 | G4 |  | [landed](CompressedTextures-work-order.md) |
 | 20 | Body LOD and culling completion | `NeuronClient` | M | 9 | G5 |  | [landed](BodyLod-work-order.md); back-face culling deferred, winding is per-face mixed |
 | 21 | Guard widening and the docs re-trued | `Build/`+prose | S | — | C2 C3 C4 |  | landed |
 | 22 | Legacy helper cleanup | `NeuronCore` | S | — | C1 |  | landed |
 | 23 | clang-tidy widens a project | `.github/` | S | — | C2 |  | landed; promoted 2026-08-30 |
-| 24 | The server configuration file | `Outpost` | M | — | — | ADR | [landed](Archive/ServerConfig-work-order.md) |
+| 24 | The server configuration file | `Outpost` | M | — | — | ADR | [landed](ServerConfig-work-order.md) |
 
 **Quick wins:** slices 1, 7, 13, 21 and 22 are each a sitting, depend on nothing, and retire real
 findings; any idle track starts with its nearest one.
@@ -211,7 +211,7 @@ several" changes in the same commit — the day arrived.
 joining late sees only deaths after its cursor; the replay gate untouched (the log is publish-side).
 **ADR.** World's despawn contract moves from drain-once to cursors — supersedes the header's note.
 
-**Landed.** Work order: [`DespawnCursors-work-order.md`](Archive/DespawnCursors-work-order.md). `DespawnLog()`
+**Landed.** Work order: [`DespawnCursors-work-order.md`](DespawnCursors-work-order.md). `DespawnLog()`
 and `ClearDespawnLog()` became `DespawnHead()`, `DespawnsSince(cursor)` and
 `TrimDespawnsBefore(cursor)`; `WorldSimulation` holds one cursor; ADR 0027 records why. Three
 `GameLogicTests` rows replace the one that drained.
@@ -245,13 +245,13 @@ stated assumption: still one subscriber in practice, now as a table of one.
 
 #### Slices 5 and 6 — the reliable lane (= QuicTransport.md slices 3a and 3b) — **scheduled**
 
-Fully specified in [`QuicTransport.md`](Archive/QuicTransport.md) §14, steps and acceptance included —
+Fully specified in [`QuicTransport.md`](QuicTransport.md) §14, steps and acceptance included —
 `SendReliable`/`ReceiveReliable` with refusing defaults, the loopback lane exempt from
 `dropOneInN`, the reserved bidirectional stream with 2-byte framing, `KIND_LEAVE`, orders going
 reliable, the ALPN bump to `outpost-2`, and the drop-everything test in which every leave and
 every order still arrives. The work orders are written from that design when the owner takes §4
 decision 1 — taken on 2026-08-30 — and are now written:
-[3a](Archive/ReliableLane-work-order.md) and [3b](Archive/ReliableFormat-work-order.md). Slice 1's backstop is
+[3a](ReliableLane-work-order.md) and [3b](ReliableFormat-work-order.md). Slice 1's backstop is
 dropped rather than built: it existed only to blunt E1 while the lane was unscheduled, and the lane
 is the real answer.
 
@@ -460,7 +460,7 @@ question. No code, and `SimTuning.h` is untouched.
 **Acceptance.** The decision record; the tunneling suite green at the chosen rate; the replay gate
 green; `TUNNEL_HEADROOM`'s margin restated in the record.
 
-**Landed** as [ADR 0045](Decisions/0045-the-tick-rate-is-fixed-at-60-hz.md), five months after the
+**Landed** as [ADR 0045](../Decisions/0045-the-tick-rate-is-fixed-at-60-hz.md), five months after the
 decision was taken and one slice after this plan started citing it as taken — which is the drift this
 plan exists to catch, found by reading its own status table against `Design/Decisions/`. No code, and
 `SimTuning.h` is untouched as the scope said; what the record adds over the scope is the
@@ -496,7 +496,7 @@ after slice 13, before any content spreads architecture past one grid. The `Find
 and the route follower are the interfaces that design must keep.
 
 **As landed**, this slice became five commits: the design
-([`RegionalPathfinding.md`](Archive/RegionalPathfinding.md), ADR 0033), then each of the four slices
+([`RegionalPathfinding.md`](RegionalPathfinding.md), ADR 0033), then each of the four slices
 it yields in its §9, in order. The cliff is gone — two stations 20 km apart both route, where before
 neither did — and the measurements are in that design's §4 and §9. What the *writing* turned up,
 before any of it was built, is still worth carrying back:
@@ -546,7 +546,7 @@ request against the 13 of today; the replay gate untouched (the wire is not simu
 — a hundred-ship update is 5 fragments and 4,835 bytes where it was 8 and 8,516, and at 2% datagram
 loss it completes 90% of the time rather than 85%. At 500 ships the numbers are 22 fragments against
 39 and 64% against 45%, which is the case finding E1 actually cares about. Work order:
-[`QuantizedWire-work-order.md`](Archive/QuantizedWire-work-order.md); ADR 0046.
+[`QuantizedWire-work-order.md`](QuantizedWire-work-order.md); ADR 0046.
 
 Three things landed differently from the sentence above, and each is argued in the work order rather
 than left to be inferred:
@@ -596,7 +596,7 @@ against the candidate for two reasons ADR 0047 carries: a slot-and-generation id
 from a handle and stops being so the moment the entity moves, which invites code that derives it;
 and a 24-bit generation reissues a live id after 16.7 million reuses of one slot, which is a weekend
 of churn. A 48-bit serial is never reused — 281 trillion ids, 8.9 million years at a million spawns
-a second. Work order: [`EntityIdentity-work-order.md`](Archive/EntityIdentity-work-order.md).
+a second. Work order: [`EntityIdentity-work-order.md`](EntityIdentity-work-order.md).
 
 **It cost no wire bytes.** An `EntityId` is 8 bytes where `{slot, generation}` was 8 bytes, so
 slice 15's arithmetic is untouched: 47-byte record, 23 ships a fragment, 139 ships an order.
@@ -641,7 +641,7 @@ updated in the same commit.
 **As landed.** `WriteWorldState`/`ReadWorldState` sit beside the snapshot functions and reach every
 private field of `World` through two `friend` declarations — a targeted grant naming two functions,
 against thirty accessors that would exist for one caller and widen the class for every other one
-forever. Work order: [`WorldState-work-order.md`](Archive/WorldState-work-order.md).
+forever. Work order: [`WorldState-work-order.md`](WorldState-work-order.md).
 
 **What is written and what is rebuilt** is the design of the slice. Everything `Step` reads is
 written; everything it derives — the spatial index, the path islands, the neighbourhood extent,
@@ -893,7 +893,7 @@ every mesh and font already uses — and it carries five keys, each with a consu
 `backlog`, `interestRadiusMetres`, `interestUpdateEveryTicks`, `ordersPerTick`. The `shard` key the
 first landing carried went with slice 16, whose `World::ConfigureShard` is its only consumer; it
 returns with that slice. Work order:
-[`ServerConfig-work-order.md`](Archive/ServerConfig-work-order.md); ADR 0043.
+[`ServerConfig-work-order.md`](ServerConfig-work-order.md); ADR 0043.
 
 **"Fails closed" turned out to be two rules, not one**, and the split is the useful part of the
 slice. The parser applies *nothing* on a refusal — so half the admin's file and half the defaults,

@@ -68,7 +68,7 @@ ShipId World::SpawnShipAs(EntityId _entity, const WorldPos& _posWorld, float _he
 
   // Only an immovable can change the static set. A spawn appends, so no existing id moves and
   // nothing already in the store is disturbed -- which is why this needs no id-shift caveat and the
-  // despawn below does (Design/MmoScalabilityReview.md U4). The gate is deliberately looser than
+  // despawn below does (Design/Archive/MmoScalabilityReview.md U4). The gate is deliberately looser than
   // the store's own filter, which is immovable *and* collidable: a Stargate costs one rebuild it did
   // not need, and a gate that is a superset of the filter cannot miss one that was needed, which is
   // the direction to be wrong in if the two ever drift apart.
@@ -147,7 +147,7 @@ std::uint8_t World::HostileMaskFor(FactionId _viewer) const noexcept
   for (std::uint32_t faction = 0; faction < FACTION_LIMIT; ++faction)
   {
     // Their opinion of the viewer, not the viewer's of them. The client colours a faction that has
-    // turned on *it*, and refuses to offer a dock it would be refused (Design/Stations.md 4.3, 9.3).
+    // turned on *it*, and refuses to offer a dock it would be refused (Design/Archive/Stations.md 4.3, 9.3).
     if (StandingOf(static_cast<FactionId>(faction), _viewer) == Standing::Hostile)
       mask |= static_cast<std::uint8_t>(1u << faction);
   }
@@ -167,12 +167,12 @@ void World::RecordAggression(ShipHandle _attacker, StationId _station)
 
   // Keyed on the faction, not on the ship: one subscriber is one faction today, so "your faction is
   // criminal" and "you are criminal" are the same sentence. The day two players share a faction this
-  // widens to per-player rows exactly as ADR 0014's authority gate does (Design/Stations.md 4.2, 12).
+  // widens to per-player rows exactly as ADR 0014's authority gate does (Design/Archive/Stations.md 4.2, 12).
   m_standings.rows[owner][attackerFaction] = Standing::Hostile;
 
   // Standing is imperial and the response is local: the flip above is the whole government's, and
   // the list below is one station's. A second aggression against a second station scrambles that
-  // one too (Design/Stations.md 8.1).
+  // one too (Design/Archive/Stations.md 8.1).
   Station& station = m_stations[_station];
   for (const ShipHandle known : station.targets)
   {
@@ -394,7 +394,7 @@ namespace
 //
 // Its current bearing rather than a fixed approach lane, because there is no bay geometry this
 // phase and a lane would be a promise the station cannot keep -- a hull captured at the skin,
-// without ceremony, is what docking is until stations have an inside (Design/Stations.md 14). Its
+// without ceremony, is what docking is until stations have an inside (Design/Archive/Stations.md 14). Its
 // *own* range rather than a shared one, so a Carrier is not asked to fly to an Interceptor's
 // doorstep and shove its way there against the separation pass.
 [[nodiscard]] WorldPos DockApproachPoint(const WorldPos& _station, const WorldPos& _ship, float _dockRangeMetres) noexcept
@@ -493,7 +493,7 @@ void World::StepDockings()
     {
       // Checked again here, and not only at order time. This closes the window between an accepted
       // order and an aggression recorded during the flight: the door is guarded, not just the
-      // doorbell (Design/Stations.md 7.3).
+      // doorbell (Design/Archive/Stations.md 7.3).
       if (StandingOf(m_stations[station].ownerFaction, ship.factionId) == Standing::Hostile)
       {
         docking.active = false;
@@ -502,9 +502,9 @@ void World::StepDockings()
       // Everything the capture needs, taken now: after the walk this ship's id may name another.
       // Hull and faction are the whole of what a ship is today, so they are the whole ledger row --
       // when undocking arrives it spawns a fresh ship from it, with a fresh handle
-      // (Design/Stations.md 7.3).
+      // (Design/Archive/Stations.md 7.3).
       // A garrison ship coming home is not a guest: no ledger row, and the hull returns to the
-      // complement by simply stopping being counted (Design/Stations.md 8.3).
+      // complement by simply stopping being counted (Design/Archive/Stations.md 8.3).
       const bool garrison = m_protectors[id].active && m_protectors[id].home == station;
       m_captureScratch.push_back(Capture{HandleOf(id), station, ship.hullId, ship.factionId, garrison});
       continue;
@@ -603,7 +603,7 @@ void World::StepProtectors()
       {
         // Nothing left to hunt: go home and dock, through the same table a player's dock order
         // writes. Standing down is one intent write rather than a return-behavior of its own, which
-        // is the reuse the docking table exists for (Design/Stations.md 8.3, 13).
+        // is the reuse the docking table exists for (Design/Archive/Stations.md 8.3, 13).
         duty.target = ShipHandle{};
         const ShipId structure = Resolve(m_stations[duty.home].structure);
         if (structure != INVALID_SHIP_ID && !m_dockings[id].active)
@@ -693,7 +693,7 @@ void World::StepProtectors()
 
   // 3. Apply. After the passes, because a spawn appends to the very tables they walk -- and a ship
   // spawned here enters pass 0 with prevPos == posWorld and participates from its first tick,
-  // exactly as a boot spawn does (Design/Stations.md 10).
+  // exactly as a boot spawn does (Design/Archive/Stations.md 10).
   for (const Launch& launch : m_launchScratch)
   {
     const ShipId id = SpawnShip(launch.posWorld, launch.headingRad, launch.hullId, launch.factionId);
@@ -849,7 +849,7 @@ void World::RebuildIndex()
 
   // The neighbourhood's extent rides along with the rebuild, which already walks every ship. It is
   // what stops a skirmish between fighters paying the Carrier's query radius because a Carrier
-  // exists in the hull table (Design/MmoScalabilityReview.md U2).
+  // exists in the hull table (Design/Archive/MmoScalabilityReview.md U2).
   //
   // Maxima over what is *present*, so every one of them is an upper bound on any neighbour a query
   // can return, which is what makes the narrower radius correct rather than merely smaller. The
@@ -1194,7 +1194,7 @@ float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _poi
     // A later move order is a change of mind: before capture a docking ship is just a ship flying
     // somewhere, and nothing about it should survive being told to go elsewhere. There is no undock
     // and no cancel-into-hold -- cleared intent leaves the ship doing whatever it was last told
-    // (Design/Stations.md 7.1).
+    // (Design/Archive/Stations.md 7.1).
     m_dockings[id].active = false;
 
     WorldPos destination = _point;

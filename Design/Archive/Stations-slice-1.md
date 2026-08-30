@@ -1,6 +1,6 @@
 # Work order — Stations slice 1: the layout
 
-Implements slice 1 of [`Stations.md`](../Stations.md) §16: `LayOutSystem`, a pure seeded function in
+Implements slice 1 of [`Stations.md`](Stations.md) §16: `LayOutSystem`, a pure seeded function in
 `GameLogic` that lays out the starting solar system — a star anchor and a few planets at real
 positions on the plane — so that both halves of the game can read the same universe from the same
 seed (design §5).
@@ -162,7 +162,7 @@ is there and not in the executable.
   three-way elimination re-run for content both binaries need, with `BodyCatalogue` staying
   client-side (design §5.2, §13). Next free number after the NMO merge is **0037**; the index in
   `Design/Decisions/README.md` lists it.
-- `Design/Stations.md` §16 marks slice 1 landed and this file moves to `Design/Archive/` — both in
+- `Design/Archive/Stations.md` §16 marks slice 1 landed and this file moves to `Design/Archive/` — both in
   the merge commit, per Design/README.md. Until then §16 says *in review*.
 
 ---

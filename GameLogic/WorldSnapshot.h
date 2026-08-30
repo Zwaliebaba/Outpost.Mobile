@@ -76,7 +76,7 @@ struct ShipSnapshot
   // Identity, which is why it is on the reviewable list beside factionId and hullId rather than
   // left to be worked out: "immovable hull of faction 2" is the client inferring server state, the
   // exact sin the destroyed list exists to prevent, and a client has to know it is tapping a
-  // station before an order is worth sending (Design/Stations.md 6.2). What is deliberately *not*
+  // station before an order is worth sending (Design/Archive/Stations.md 6.2). What is deliberately *not*
   // here: the ledger, the garrison numbers and the target list -- private state of the kind the
   // snapshot exists to withhold. Seven bits are unspoken for; user stations and conquerable ones
   // are what they are being kept for.
@@ -224,7 +224,7 @@ public:
   // like the upserts -- deliberately. An incomplete update is dropped because a half-applied set of
   // records is a half-updated world; a mask has no such coupling, so taking it from whatever
   // arrives is strictly more robust, and robustness against loss is the entire argument for
-  // spending the byte (Design/Stations.md 4.3).
+  // spending the byte (Design/Archive/Stations.md 4.3).
   [[nodiscard]] std::uint8_t HostileMask() const noexcept
   {
     return m_hostileMask;
@@ -306,7 +306,7 @@ private:
 //
 // A snapshot exists to WITHHOLD -- steerTargetPos, the order's facing and speed cap, the avoidance
 // heading, and every intent table beside m_ships -- so the snapshot path structurally cannot carry a
-// save or a handoff, and until now nothing else could either (Design/MmoScalabilityReview.md U3).
+// save or a handoff, and until now nothing else could either (Design/Archive/MmoScalabilityReview.md U3).
 // These two carry all of it, at full fidelity: this is a save, so the wire's 0.125 m lattice and its
 // turns16 have no business here and every position is a whole WorldPos.
 //

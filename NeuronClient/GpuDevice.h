@@ -20,7 +20,7 @@ public:
   // The one shader-visible CBV_SRV_UAV heap every pass allocates from. A capacity, not a budget:
   // today's content uses eighteen slots, and the constant is what to raise the day an allocation
   // traces a refusal. Fixed for the run, because a heap that could grow would move every GPU
-  // handle already handed out (Design/CompressedTextures-work-order.md 2.1).
+  // handle already handed out (Design/Archive/CompressedTextures-work-order.md 2.1).
   static constexpr std::uint32_t SRV_HEAP_CAPACITY = 256;
 
   void Init(HWND _hwnd);

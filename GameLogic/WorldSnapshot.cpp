@@ -25,7 +25,7 @@ constexpr std::uint8_t KIND_MOVE_ORDER = 2;
 //
 // They moved because a lost leave is a ghost ship for the rest of the match: a snapshot is
 // superseded by the next one and heals itself, a leave is stated once and never repeated
-// (Design/MmoScalabilityReview.md E1, Design/Archive/ReliableFormat-work-order.md). Duplicating them onto
+// (Design/Archive/MmoScalabilityReview.md E1, Design/Archive/ReliableFormat-work-order.md). Duplicating them onto
 // both lanes was the alternative and lost -- two paths carrying the same fact is two paths to
 // reason about, and the unreliable copy would still be the one that arrived first.
 constexpr std::uint8_t KIND_LEAVE = 3;
@@ -40,12 +40,12 @@ constexpr std::uint8_t KIND_DOCK_ORDER = 4;
 // The mask is appended rather than inserted, so every field a reader already knew stays where it
 // was. It rides every update rather than travelling on change because updates are datagrams: a lost
 // "you are now criminal" would leave a client believing itself honest for the rest of the match,
-// and one byte per update is the cheapest idempotence there is (Design/Stations.md 4.3).
+// and one byte per update is the cheapest idempotence there is (Design/Archive/Stations.md 4.3).
 constexpr std::uint32_t SNAPSHOT_HEADER_BYTES = 1 + 1 + 4 + 4 + 4 + 8 + 4 + 1;
 
 // kind, tick, leaveCount, destroyedCount, dockedCount
 //
-// The docked handles ride this message and not the snapshot header, and Design/Stations.md 7.4 says
+// The docked handles ride this message and not the snapshot header, and Design/Archive/Stations.md 7.4 says
 // otherwise only because it predates ADR 0029 moving departures onto the reliable lane. That ADR's
 // argument covers a docking exactly: a snapshot is superseded by the next one and heals itself, a
 // departure is stated once, and a lost "it docked" is a ghost ship for the rest of the match. So

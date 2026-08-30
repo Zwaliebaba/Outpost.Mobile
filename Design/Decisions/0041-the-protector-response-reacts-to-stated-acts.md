@@ -7,7 +7,7 @@ Date: 2026-08-30
 
 `Design/Archive/Hostiles.md` §5.5 built the first standing NPC intent in this tree — a patrol that
 walks a ring — and was explicit that it reacts to nothing: "the first behavior that responds to what
-it sees is a different design with senses and thresholds." `Design/Stations.md` §8 is that design.
+it sees is a different design with senses and thresholds." `Design/Archive/Stations.md` §8 is that design.
 An attacked station scrambles its garrison, and the protectors pursue the attacker until it is dead.
 
 The obvious way to build that is the way every game builds it: give the station an aggro radius and
@@ -28,7 +28,7 @@ rest.
 
 Two consequences of that shape are decisions in their own right:
 
-**`launchedCount` is derived, not stored.** `Design/Stations.md` §8.2 gives `Station` a field for the
+**`launchedCount` is derived, not stored.** `Design/Archive/Stations.md` §8.2 gives `Station` a field for the
 protectors currently in space. This implementation counts the active duties whose home is that
 station instead. Storing it needs a repair path on *death* as well as on docking — or "losses are
 replaced by the same metronome" never fires — and `DespawnShip` has no business knowing what a
@@ -78,7 +78,7 @@ and the ship goes home" — would lose that, and three things need it.
   radius, so flight is postponement. Nothing about the behavior is keyed on whether anybody is
   watching.
 - The reserve is bottomless while a target lives. That is safe only because a protector drops
-  nothing when destroyed (`Design/Stations.md` §8.6) — the rule is recorded for the loot design and
+  nothing when destroyed (`Design/Archive/Stations.md` §8.6) — the rule is recorded for the loot design and
   is not code here — and it is what makes an infinite response farm-proof rather than an exploit.
 - `StepProtectors` both spawns and despawns inside a tick, the first pass to do both. Launches and
   captures are each collected during a walk and applied after it, because both append to or

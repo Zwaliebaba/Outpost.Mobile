@@ -80,7 +80,7 @@ void PathGrid::Rebuild(std::span<const Obstacle> _obstacles)
 {
   // A rebuild that finds the same obstacles leaves the version alone: the version is what makes
   // every routed ship re-plan, and a rebuild triggered by something that did not move the
-  // architecture must not cost the fleet its routes (Design/MmoScalabilityReview.md U4).
+  // architecture must not cost the fleet its routes (Design/Archive/MmoScalabilityReview.md U4).
   const bool changed = !SameObstacles(_obstacles, m_built);
   if (changed)
     ++m_version;
@@ -210,7 +210,7 @@ PathGrid::BlockedSpan PathGrid::BlockedAlong(const WorldPos& _from, const WorldP
   // the ship pushed at the skin for ever, aimed at a waypoint a few metres inside it. Measured:
   // three hulls ordered onto a station and then away, two of them stuck at 19 m/s and 7 m/s
   // against the skin, steering at cell centres 253 m from a 251.8 m centre
-  // (Design/BlockedRoutes-work-order.md 1).
+  // (Design/Archive/BlockedRoutes-work-order.md 1).
   const std::int64_t startCellX = PathCellX(_from);
   const std::int64_t startCellZ = PathCellZ(_from);
 

@@ -4,7 +4,7 @@
 // rather than from root constants. That is the whole of instancing: five hundred ships sharing five
 // hulls were five hundred one-instance draws, because the only place a per-object matrix could live
 // was a root constant and a root constant is set per draw
-// (Design/MmoScalabilityReview.md G2).
+// (Design/Archive/MmoScalabilityReview.md G2).
 VsOut main(VsIn i, VsInstance n)
 {
   // Built from its rows, which is what float4x4(a, b, c, d) does and what the four input elements

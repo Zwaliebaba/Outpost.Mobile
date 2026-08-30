@@ -19,7 +19,7 @@ namespace
 }
 
 // A structure made into a station, at a place. The Vanguard's shipped garrison is three Corvettes
-// on a 90-tick metronome (Design/Stations.md 8.2); nothing launches until slice 4, so these are
+// on a 90-tick metronome (Design/Archive/Stations.md 8.2); nothing launches until slice 4, so these are
 // carried and read back rather than acted on.
 Game::World::StationId MakeVanguardStation(Game::World& _world, float _x, float _z)
 {
@@ -100,7 +100,7 @@ public:
 
   // The row holds a handle, not an id, so the death of its structure orphans the row instead of
   // retargeting it. Nothing can destroy a station this phase; the user-station design inherits a
-  // table that already tolerates one (Design/Stations.md 6.1).
+  // table that already tolerates one (Design/Archive/Stations.md 6.1).
   TEST_METHOD(ADeadStructureOrphansItsRow)
   {
     Game::World world;
@@ -159,7 +159,7 @@ public:
     Assert::IsTrue(IsHostile(world, Game::FACTION_VANGUARD, Game::FACTION_PLAYER), L"the aggression did not register");
 
     // Keyed on the faction and not on the ship: the criminal's whole fleet is criminal, which is
-    // what "one subscriber is one faction" means today (Design/Stations.md 4.2).
+    // what "one subscriber is one faction" means today (Design/Archive/Stations.md 4.2).
     const Game::ShipId innocent = world.SpawnShip(Game::LocalPos(300.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Frigate));
     Assert::IsTrue(IsHostile(world, Game::FACTION_VANGUARD, world.Ship(innocent).factionId),
                    L"a second ship of the criminal faction is clean");

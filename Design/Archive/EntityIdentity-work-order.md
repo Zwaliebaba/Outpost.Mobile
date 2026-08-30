@@ -1,8 +1,8 @@
 # Work order — slice 16: global entity identity
 
-Cut from [`MmoScalabilityPlan.md`](../MmoScalabilityPlan.md) §6 slice 16, against the tree at `fff2211`
+Cut from [`MmoScalabilityPlan.md`](MmoScalabilityPlan.md) §6 slice 16, against the tree at `fff2211`
 (slice 15 landed). It retires the first half of finding U3 of
-[`MmoScalabilityReview.md`](../MmoScalabilityReview.md); the second half — a state codec — is slice 17.
+[`MmoScalabilityReview.md`](MmoScalabilityReview.md); the second half — a state codec — is slice 17.
 
 Layer: `GameLogic`, plus the mechanical follow-on in `Outpost` that a changed wire type forces.
 

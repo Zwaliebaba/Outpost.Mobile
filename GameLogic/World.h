@@ -19,7 +19,7 @@ namespace Game
 // Hostiles 4.4 opened this door "the width of one list and no wider" so that a client could stop
 // inferring a death from an absence; docking is the second cause through the same door rather than
 // a parallel mechanism beside it. Jump-out, wreck-and-salvage and capture are each one more
-// (Design/Stations.md 7.4, ADR 0040).
+// (Design/Archive/Stations.md 7.4, ADR 0040).
 enum class DespawnCause : std::uint8_t
 {
   Destroyed,
@@ -85,7 +85,7 @@ public:
   // One ship inside a station's ledger. Hull and faction is the whole of what a ship *is* today;
   // when undocking arrives it spawns a fresh ship from this row, with a fresh handle, so control
   // groups will have pruned the docked member and will not reclaim it -- the honest consequence of
-  // handles naming lives, and what groups already do for any despawn (Design/Stations.md 7.3).
+  // handles naming lives, and what groups already do for any despawn (Design/Archive/Stations.md 7.3).
   struct DockedShip
   {
     std::uint32_t hullId = 0;
@@ -113,7 +113,7 @@ public:
   // The handle is a handle rather than an id for ADR 0005's reason, and every read of it goes
   // through Resolve, so a row whose ship is gone reports inactive instead of dangling. Nothing can
   // destroy anything this phase and a Vanguard station is indestructible as a rule
-  // (Design/Stations.md 8.5) -- but the user-station design inherits a table that already tolerates
+  // (Design/Archive/Stations.md 8.5) -- but the user-station design inherits a table that already tolerates
   // death, which is the point of doing it now.
   struct Station
   {
@@ -272,20 +272,20 @@ public:
 
   // Bit f set: faction f currently holds _viewer's faction hostile. What the wire states to each
   // subscriber so a client's affordances can tell the truth without inferring anything
-  // (Design/Stations.md 4.3).
+  // (Design/Archive/Stations.md 4.3).
   [[nodiscard]] std::uint8_t HostileMaskFor(FactionId _viewer) const noexcept;
 
   // The server's judgment on a hostile act against a station: the attacker's faction becomes
   // Hostile in the station owner's eyes, permanently and empire-wide.
   //
   // Permanently, because forgiveness is a standings design of its own and the owner chose
-  // permanence over inventing half of one here (Design/Stations.md 15, decision 3). Empire-wide,
+  // permanence over inventing half of one here (Design/Archive/Stations.md 15, decision 3). Empire-wide,
   // because CVC is one government -- so a second station of the same owner refuses the attacker
   // too, without ever having been told.
   //
   // There is no client message for this and there never will be. Aggression is a judgment about
   // acts the server observed; a client that could declare one could make anybody a criminal
-  // (Design/Stations.md 8.1). It arrives from outside the tick -- an adapter, the composition root,
+  // (Design/Archive/Stations.md 8.1). It arrives from outside the tick -- an adapter, the composition root,
   // a test -- like any order.
   //
   // A stale attacker handle is a no-op. Slice 4 adds the second half: the attacked station
@@ -300,7 +300,7 @@ public:
   // The ship keeps doing everything it already does -- static index, obstacle set, record on the
   // wire -- and the row is what knows it admits ships. Deliberately not a hull property: a
   // Structure that is scenery and a Structure that is a station must both be expressible, and
-  // user-owned stations will be stations on other hulls (Design/Stations.md 6.1).
+  // user-owned stations will be stations on other hulls (Design/Archive/Stations.md 6.1).
   //
   // Naming a ship that is not live returns INVALID_STATION_ID and makes no row.
   StationId MakeStation(ShipId _structure, const StationDesc& _desc);
@@ -309,7 +309,7 @@ public:
 
   // What happened to a dock order. Returned for the local host's log and for tests; nothing returns
   // over the wire, because an order datagram is fire-and-forget and the client's affordance already
-  // knew (Design/Stations.md 7.1, 9.2).
+  // knew (Design/Archive/Stations.md 7.1, 9.2).
   enum class DockOrderResult : std::uint8_t
   {
     Ordered,
@@ -339,7 +339,7 @@ public:
 
   // How many of _station's protectors are currently in space.
   //
-  // Counted rather than stored, and Design/Stations.md 8.2 keeps a field for it. Storing it would
+  // Counted rather than stored, and Design/Archive/Stations.md 8.2 keeps a field for it. Storing it would
   // need a repair path nobody would remember: a protector that *dies* has to decrement it too, or
   // losses are never replaced -- and DespawnShip has no business knowing what a protector is.
   // Counting removes that path, removes a counter from the replay contract's shadow, and cannot
@@ -348,7 +348,7 @@ public:
 
   // The station a ship is, or INVALID_STATION_ID if it is not one. A linear scan of a vector with
   // single digits of rows, which is free at this scale and becomes an index the day there are
-  // hundreds (Design/Stations.md 6.1, 13).
+  // hundreds (Design/Archive/Stations.md 6.1, 13).
   [[nodiscard]] StationId StationAt(ShipId _id) const noexcept;
   [[nodiscard]] bool IsStation(ShipId _id) const noexcept
   {
@@ -356,7 +356,7 @@ public:
   }
 
   // A station's row. Server-side only: the ledger, the garrison numbers and the target list are all
-  // intent or private state of the kind the snapshot exists to withhold (Design/Stations.md 6.2).
+  // intent or private state of the kind the snapshot exists to withhold (Design/Archive/Stations.md 6.2).
   // Exposed for tests and for a debug overlay.
   [[nodiscard]] const Station& StationOf(StationId _id) const noexcept;
   [[nodiscard]] std::uint32_t StationCount() const noexcept
@@ -401,7 +401,7 @@ public:
   // index returned before the pair filter looked at them. The query is over-inclusive by design, so
   // the gap between these two is the work the filter is not doing; the second number grows with the
   // widest pairing in the neighbourhood and the first with how crowded it actually is
-  // (Design/MmoScalabilityReview.md U2).
+  // (Design/Archive/MmoScalabilityReview.md U2).
   [[nodiscard]] std::uint64_t GatheredCandidateCount() const noexcept
   {
     return m_gatheredCandidates;
@@ -484,7 +484,7 @@ private:
   //
   // Captures are collected during the walk and applied after it. DespawnShip swap-and-pops four
   // parallel tables, so removing mid-iteration would make the visit order depend on who docked;
-  // collection order is array order, which is deterministic (Design/Stations.md 10).
+  // collection order is array order, which is deterministic (Design/Archive/Stations.md 10).
   void StepDockings();
 
   void StepPatrols();
@@ -494,7 +494,7 @@ private:
   // Three steps in order: the duty pass re-targets and pursues, the launch pass tops up each
   // station's garrison on its metronome, and the launches are applied after both -- because a spawn
   // appends to the very tables the pass is walking, which is the dock pass's argument for its
-  // captures from the other direction (Design/Stations.md 10).
+  // captures from the other direction (Design/Archive/Stations.md 10).
   void StepProtectors();
 
   void SnapshotPreviousTick() noexcept;
@@ -617,7 +617,7 @@ private:
     FactionId factionId = FACTION_PLAYER;
 
     // A garrison ship coming home writes no ledger row: a garrison is not a guest, and the hull
-    // returns to the complement by simply no longer being counted (Design/Stations.md 8.3).
+    // returns to the complement by simply no longer being counted (Design/Archive/Stations.md 8.3).
     bool isGarrison = false;
   };
   std::vector<Capture> m_captureScratch;
@@ -656,7 +656,7 @@ private:
 
   // The largest and fastest hulls actually in this world, recomputed as the index rebuilds and read
   // by the gather. Not the hull table's maxima: those size a region's ghost zone and are the
-  // ceiling, not the bill (Design/MmoScalabilityReview.md U2).
+  // ceiling, not the bill (Design/Archive/MmoScalabilityReview.md U2).
   NeighbourhoodExtent m_extent;
 
   // Counted per tick and reset by each gather: a readout, never read by the simulation.

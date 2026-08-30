@@ -199,7 +199,7 @@ MeshHandle SceneRenderer::UploadMesh(GpuDevice& _gpu, const std::vector<MeshVert
   // assembler crosses PCIe for it on every draw and, once instancing lands, on every *instance*. The
   // hulls in this tree average 32 kB: at a hundred ships that is 0.3 GB/s and the old comment holds,
   // at five hundred it is 1.4 and at two thousand 5.6, which is bandwidth-dead on the hardware
-  // ADR 0019 targets (Design/MmoScalabilityReview.md G2). Instancing removes the draws; this removes
+  // ADR 0019 targets (Design/Archive/MmoScalabilityReview.md G2). Instancing removes the draws; this removes
   // the fetch.
   GpuPtr<ID3D12Resource> staging;
   const std::span<const std::uint8_t> raw(reinterpret_cast<const std::uint8_t*>(_verts.data()), static_cast<std::size_t>(bytes));

@@ -1,6 +1,6 @@
 # Work order — the publisher
 
-Slice 3 of [`MmoScalabilityPlan.md`](../MmoScalabilityPlan.md), `GameLogic`. It depends on
+Slice 3 of [`MmoScalabilityPlan.md`](MmoScalabilityPlan.md), `GameLogic`. It depends on
 [slice 2](DespawnCursors-work-order.md), which made the despawn log readable by more than one
 reader, and it is what the plan's §2 calls the biggest MMO-shaped change in the tree: the seam stops
 serving one subscriber because there is one of everything, and starts serving N because there is a

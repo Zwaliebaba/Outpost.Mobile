@@ -1,7 +1,7 @@
 # Work order — the reliable lane
 
 Slice 3a of [`QuicTransport.md`](QuicTransport.md) §14, scheduled on 2026-08-30 when the owner
-lifted §12 decision 4. Also slice 5 of [`MmoScalabilityPlan.md`](../MmoScalabilityPlan.md), which is
+lifted §12 decision 4. Also slice 5 of [`MmoScalabilityPlan.md`](MmoScalabilityPlan.md), which is
 where the cost of waiting was priced: finding E1 in the review — a lost leave or destroyed list is a
 client that is permanently wrong, and a 13-fragment update completes 77% of the time at 2% loss.
 

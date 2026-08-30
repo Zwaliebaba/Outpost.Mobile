@@ -1,6 +1,6 @@
 # Work order — Stations slice 2: who is who
 
-Implements slice 2 of [`Stations.md`](../Stations.md) §16: the third faction and its name, standing as
+Implements slice 2 of [`Stations.md`](Stations.md) §16: the third faction and its name, standing as
 simulation state, the station side table, and the two fields the wire needs so a client can tell a
 station from a hull and knows who holds it hostile (design §4, §6).
 
@@ -241,7 +241,7 @@ filter.
 - Two decision records, **0038** and **0039**, in the index:
   - *Stations are ships with a side table* (design §6.1, §13);
   - *Standings are simulation state, stated per subscriber* (design §4.2, §4.3, §13).
-- `Design/Stations.md` §16 marks slice 2 landed and this file moves to `Design/Archive/` — both in
+- `Design/Archive/Stations.md` §16 marks slice 2 landed and this file moves to `Design/Archive/` — both in
   the merge commit, per Design/README.md.
 
 ---

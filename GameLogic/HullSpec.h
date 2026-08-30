@@ -234,7 +234,7 @@ inline constexpr HullSpec HULL_SPECS[HULL_COUNT] = {
 // which no fixed margin inside the boundary could have absorbed (Design/Archive/Stations-slice-3.md 2.2).
 //
 // A ship does not *stop* here. It stops existing, which is why the constant behind it is in the
-// contract (Design/Stations.md 7.3).
+// contract (Design/Archive/Stations.md 7.3).
 [[nodiscard]] constexpr float DockRangeMetres(const HullSpec& _station, const HullSpec& _ship) noexcept
 {
   return DockApproachRangeMetres(_station, _ship) + ArrivalRadiusMetres(_ship);
@@ -269,7 +269,7 @@ inline constexpr HullSpec HULL_SPECS[HULL_COUNT] = {
 // The hull table's own maxima are the ceiling, and that ceiling is what sizes a region's ghost zone.
 // What is actually in a world at a given moment is usually far less -- a skirmish between fighters
 // pays the Carrier's 655 m because a Carrier exists in the table, not because one is there
-// (Design/MmoScalabilityReview.md U2). A gather asks for the second; region sizing asks for the
+// (Design/Archive/MmoScalabilityReview.md U2). A gather asks for the second; region sizing asks for the
 // first; they are the same arithmetic over different numbers, which is why there is one function.
 struct NeighbourhoodExtent
 {

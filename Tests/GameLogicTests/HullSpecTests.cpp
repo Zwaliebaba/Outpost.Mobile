@@ -202,7 +202,7 @@ public:
   {
     // What the localisation buys. The table's worst case sizes a region's ghost zone and is not
     // going anywhere; what a tick pays is the neighbourhood actually around it
-    // (Design/MmoScalabilityReview.md U2).
+    // (Design/Archive/MmoScalabilityReview.md U2).
     const Game::HullSpec& fighter = Game::HullSpecOf(Game::HullId::Interceptor);
 
     Game::NeighbourhoodExtent fightersOnly;

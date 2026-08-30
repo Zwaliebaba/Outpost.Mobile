@@ -30,6 +30,9 @@ space. You can:
   facing the formation arrives on. The fleet solves slots, paths around architecture, separates from
   its own members on the way, and stops without anything passing through anything.
 - **Keep control groups** — five of them, on the HUD buttons: tap to recall, hold to assign.
+- **Dock** by tapping a station with ships selected: they fly in, leave the world, and the log says
+  so. A station whose owner holds you hostile refuses before the order is even sent, and there is
+  no undocking yet — the station management screen is the next phase.
 - **Read the world** through the HUD: minimap with the sector pair, contact count, event log, and a
   function rail whose screens are not built yet.
 
@@ -38,9 +41,17 @@ around it. They are drawn red, they count as contacts, and they cannot be select
 simulation refuses an order from the wrong faction, and the client does not offer one. They are also
 a metronome. They do not react to you, because nothing in this game can yet shoot at anything.
 
-Behind all of it: one world rendered as an authored equirectangular map on a smooth sphere, six
-procedurally generated asteroids, and a seeded star field of stars, dust clouds and a galactic band
-expanded into billboards on the GPU. All of it presentation — a ship flies straight through a rock.
+The government is here too. The starting solar system is laid out from a seed, and at each of its
+three planets stands a Core Vanguard Command station — azure in the scene, a hollow diamond on the
+minimap from the first frame, and the place your ships can dock. The Vanguard takes anyone who has
+not attacked it; press `F6` and it stops taking you — the law turns red across the map, and the
+provoked station launches Corvette protectors that shadow the aggressor for as long as it flies.
+
+Behind all of it: three worlds rendered as an authored equirectangular map — baked to BC with a
+full mip chain — on smooth spheres, six procedurally generated asteroids, and a seeded star field
+of stars, dust clouds and a galactic band expanded into billboards on the GPU. Every body is carried
+at three levels of detail and drawn at the one its size on screen asks for. All of it presentation
+— a ship flies straight through a rock.
 
 ### Keys
 
@@ -50,7 +61,8 @@ expanded into billboards on the GPU. All of it presentation — a ship flies str
 | `F1` | Debug readout |
 | `F3` | Camera shake (tuning hook) |
 | `F4` | Shatters the selected hulls into tumbling debris, a fireball and smoke (tuning hook) |
-| `F5` | Reseeds every body and the sky — a different scene, and the same one again after a restart |
+| `F5` | Reseeds every body's look and the sky — the worlds and their stations hold still |
+| `F6` | Declares the first selected ship an aggressor against the nearest Vanguard station |
 | `1` `2` `3` | Time scale: quarter, normal, quadruple |
 
 Input is `WM_POINTER`, so mouse and touch are the same path: drag with the second or third button to
@@ -58,10 +70,11 @@ move the camera, pinch and twist with two contacts to zoom and turn.
 
 ### Deliberately not here yet
 
-So nobody goes looking: no combat, no damage model, no economy, no audio, no save format, no
-configuration file — tuning is `constexpr` in `SimTuning.h`, `HullSpec.h` and `ViewTuning.h`. The
-networking is real QUIC over a real stack, and it is still one client in one process on `127.0.0.1`
-with a self-signed certificate the client does not validate.
+So nobody goes looking: no combat, no damage model, no economy, no audio, no save file. Tuning is
+`constexpr` in `SimTuning.h`, `HullSpec.h` and `ViewTuning.h`; what a deployment may change without
+a rebuild lives in `Outpost/Assets/Server.cfg`. The networking is real QUIC over a real stack, and
+it is still one client in one process on `127.0.0.1` with a self-signed certificate the client does
+not validate.
 
 ---
 

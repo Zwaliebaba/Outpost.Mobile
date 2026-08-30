@@ -9,7 +9,7 @@ Date: 2026-08-30
 argued for exactly that shape and it was right: it is simple, it is correct for a scene that fits in
 a box, and it is what a first planner should be.
 
-`Design/MmoScalabilityReview.md` finding U1 is where it stops. `Rebuild` sweeps one bounding box over
+`Design/Archive/MmoScalabilityReview.md` finding U1 is where it stops. `Rebuild` sweeps one bounding box over
 all obstacles and declines to build past 512 cells per axis — 16,384 m. Two stations 20 km apart
 therefore turn A\* off **for every ship in the world**, and `HullSpec.h` says plainly that this is
 not a graceful degradation: a capital's look-ahead is deliberately shorter than its own turning

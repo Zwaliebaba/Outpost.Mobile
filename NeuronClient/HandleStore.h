@@ -15,7 +15,7 @@ namespace Neuron
 // Both renderers grew forever before it: MeshHandle and BodyHandle were array indices, UploadMesh
 // and BakeBody only ever push_back'd, and F5's reseed left the scene it replaced on the GPU because
 // there was nothing that could say a body was finished with
-// (Design/MmoScalabilityReview.md G3, OutpostApp.cpp's own note beside the key).
+// (Design/Archive/MmoScalabilityReview.md G3, OutpostApp.cpp's own note beside the key).
 //
 // This is ShipHandle's argument on the client's side of the wire (ADR 0005), and the shape differs
 // for one reason: a MeshHandle is a std::uint32_t in a dozen places -- ShipView::mesh, the hull

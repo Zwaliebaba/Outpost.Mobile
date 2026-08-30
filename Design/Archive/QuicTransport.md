@@ -333,7 +333,7 @@ leaves owed:
   the connection — encryption was unaddressed in every design so far. Connection migration and
   path validation are QUIC's, not ours.
 - **Paid since.** N clients. `Game::Publisher` is that table, and it landed as slice 3 of
-  `Design/MmoScalabilityPlan.md`, with a record for where it lives (ADR 0030). `WorldSimulation`
+  `Design/Archive/MmoScalabilityPlan.md`, with a record for where it lives (ADR 0030). `WorldSimulation`
   holds a publisher with one entry in it; a dedicated server calls `Add` per accepted connection. A second process needs a headless composition root, which AGENTS.md §5
   forbids configuring by argv, so it needs a decision on how a server is told what to be. Both
   are named in §11 and neither is scheduled.
@@ -379,7 +379,7 @@ Put to the owner on 2026-08-29, each with the alternative it beat:
    (§8). Slices 1 and 2 stay a pure swap; the work orders for 3a/3b are written when they are
    scheduled.
    **Lifted on 2026-08-30 by the owner**: the migration has been lived with, and
-   `Design/MmoScalabilityReview.md` finding E1 priced the wait — a lost leave or destroyed list is
+   `Design/Archive/MmoScalabilityReview.md` finding E1 priced the wait — a lost leave or destroyed list is
    a permanently wrong client, and a 13-fragment update completes 77% of the time at 2% loss. The
    slices below are scheduled and their work orders written.
 

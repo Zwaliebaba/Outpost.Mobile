@@ -31,7 +31,7 @@ struct Rgba
 // A mesh that has been uploaded and can be drawn. Handed out by index rather than by pointer, so
 // the renderer can rehouse its buffers without invalidating anything the game is holding.
 // One ship in an instanced draw: where it is and what colour it takes. Both were root constants
-// before, which is exactly why every ship needed its own draw (Design/MmoScalabilityReview.md G2).
+// before, which is exactly why every ship needed its own draw (Design/Archive/MmoScalabilityReview.md G2).
 //
 // The layout is the input layout: four rows of the world matrix and a tint, five R32G32B32A32_FLOAT
 // elements at input slot 1. Scene.hlsli's VsInstance spells the same thing from the other side, and

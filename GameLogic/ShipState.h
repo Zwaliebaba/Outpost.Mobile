@@ -24,14 +24,14 @@ inline constexpr FactionId FACTION_PLAYER = 0;
 // relations, which is ADR 0013's split spelled into the identifiers.
 inline constexpr FactionId FACTION_VANDAL = 1;
 
-// Core Vanguard Command -- CVC, the Vanguard -- the government of known space (Design/Stations.md 4).
+// Core Vanguard Command -- CVC, the Vanguard -- the government of known space (Design/Archive/Stations.md 4).
 // Its ships and stations are ordinary records with this id: no government flag, no station-faction
 // special case anywhere in the engine, for ADR 0013's reason -- the server states whose a thing is,
 // and what that *means* is a mapping each side owns.
 inline constexpr FactionId FACTION_VANGUARD = 2;
 
 // How many factions the standing table below holds, and therefore how many the wire's hostileMask
-// can name: the mask is a u8 (Design/Stations.md 4.3). The day factions outgrow a byte the mask
+// can name: the mask is a u8 (Design/Archive/Stations.md 4.3). The day factions outgrow a byte the mask
 // becomes a small standings record and this limit moves with it -- widen both together.
 inline constexpr std::uint32_t FACTION_LIMIT = 8;
 
@@ -50,7 +50,7 @@ enum class Standing : std::uint8_t
 //
 // Directional, because "CVC despises you" and "you despise CVC" are different facts and the second
 // is none of the simulation's business. A fixed-size array indexed by two integers -- no map, no
-// hashing, no iteration at all on the hot path (Design/Stations.md 4.2, 10).
+// hashing, no iteration at all on the hot path (Design/Archive/Stations.md 4.2, 10).
 struct StandingTable
 {
   // Standing::Neutral is zero, so the authored default is "everyone is neutral" and the function
@@ -113,7 +113,7 @@ struct ShipHandle
 // server to another gets a fresh slot and generation at the destination, so a wire that named
 // handles could not say "same ship, new region" -- a client keyed on them would see a destroy and an
 // enter, which is exactly the continuity ADR 0005 exists to provide, lost at the shard boundary
-// (Design/MmoScalabilityReview.md U3). So the wire names an EntityId and the process names a handle,
+// (Design/Archive/MmoScalabilityReview.md U3). So the wire names an EntityId and the process names a handle,
 // and the publisher is where the two meet.
 //
 // Sixteen bits of shard and forty-eight of serial. The shard says who minted it and never who holds

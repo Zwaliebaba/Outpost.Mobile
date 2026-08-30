@@ -9,7 +9,7 @@ Date: 2026-08-30
 arrives on an MsQuic worker and a worker must allocate nothing (ADR 0022). It then handed each new
 connection the next one, tracked by a counter that only ever rose.
 
-`Design/MmoScalabilityReview.md` finding E3 is what that counter means: `backlog` was a budget for
+`Design/Archive/MmoScalabilityReview.md` finding E3 is what that counter means: `backlog` was a budget for
 the life of the process, not a limit on how many connections could be carried at once. A listener
 with 1,000 slots that had seen 1,000 clients connect and disconnect refused everybody afterwards,
 until restart. There was no diagnostic — a refusal is a refusal, whether the server is busy or

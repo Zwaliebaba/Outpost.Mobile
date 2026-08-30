@@ -15,7 +15,7 @@
 # after two clean runs under the runner's LLVM 22, which is how a linter arrives here and starts
 # gating. The .vcxproj files still do not enable MSBuild code
 # analysis, so on the other seven projects this file is enforced by review and by whoever remembers
-# to run it. Slice 23 of Design/MmoScalabilityPlan.md widens the job a project at a time; NeuronCore
+# to run it. Slice 23 of Design/Archive/MmoScalabilityPlan.md widens the job a project at a time; NeuronCore
 # is next, and slice 22 already swept its one header.
 # Run it by hand ON THE FILES YOU WROTE -- not on the tree, where the engine projects reach D3D12
 # and C++/WinRT headers that have never been swept and will bury your own findings:

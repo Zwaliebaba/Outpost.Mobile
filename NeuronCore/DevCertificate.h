@@ -9,7 +9,7 @@ namespace Neuron
 // A self-signed server certificate for a tree that has no PKI (Design/Archive/QuicTransport.md 7, ADR 0023).
 //
 // Schannel will not run a QUIC server without a certificate whose private key it can reach, and this
-// repository has no certificate store to read one from, no configuration file to name one in, and no
+// repository has no certificate store to read one from, nothing in its configuration that names one, and no
 // installer to put one there. So the certificate is made rather than read: an RSA-2048 key under the
 // Microsoft Software Key Storage Provider, persisted under one fixed name and reused on the next
 // boot, and a self-signed X.509 for CN=Outpost Development that points at it. Nothing is written to

@@ -479,7 +479,7 @@ public:
 
   // A client tapping a structure has to know it is tapping a station before an order is worth
   // sending, and "immovable hull of faction 2" is inference of exactly the kind the wire's whole
-  // design forbids (Design/Stations.md 6.2).
+  // design forbids (Design/Archive/Stations.md 6.2).
   TEST_METHOD(TheStationFlagSurvivesTheWire)
   {
     Game::World world;
@@ -529,7 +529,7 @@ public:
 
   // The client must not infer its standing, and there is nothing to infer from anyway: an order
   // datagram is fire-and-forget, so a refused dock would otherwise be ships that simply never go
-  // (Design/Stations.md 4.3).
+  // (Design/Archive/Stations.md 4.3).
   TEST_METHOD(StandingSurvivesTheWire)
   {
     Game::World world;
@@ -942,7 +942,7 @@ public:
   TEST_METHOD(EveryDepartureSurvivesEveryDatagramBeingLost)
   {
     // The row this slice exists for, and the one that retires finding E1 in
-    // Design/MmoScalabilityReview.md: with the datagram lane dropping everything, a client is still
+    // Design/Archive/MmoScalabilityReview.md: with the datagram lane dropping everything, a client is still
     // told about every leave and every death. Before slice 3b those lists rode in the first snapshot
     // fragment, so this test could not have passed -- a lost fragment was a ghost ship for the rest
     // of the match, and nothing repeated it.

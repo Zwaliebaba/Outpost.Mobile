@@ -200,7 +200,7 @@ public:
   TEST_METHOD(TheReliableLaneKeepsWhatTheDatagramLaneDrops)
   {
     // The row this slice exists for. Every datagram is dropped -- dropOneInN = 1 -- and every
-    // reliable message still arrives, in order. Finding E1 in Design/MmoScalabilityReview.md is a
+    // reliable message still arrives, in order. Finding E1 in Design/Archive/MmoScalabilityReview.md is a
     // lost leave being permanent; this is the property that retires it.
     Neuron::LoopbackTransport client;
     Neuron::LoopbackTransport server;

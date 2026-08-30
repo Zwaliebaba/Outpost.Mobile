@@ -76,7 +76,7 @@ public:
   TEST_METHOD(TwoSubscribersSeeTheirOwnNeighbourhoods)
   {
     // The property the single-subscriber adapter could not have: two ends, two interest sets, two
-    // writers, and neither one's bytes are the other's (Design/MmoScalabilityReview.md E2).
+    // writers, and neither one's bytes are the other's (Design/Archive/MmoScalabilityReview.md E2).
     Game::World world;
     (void)SpawnAt(world, 0.0f, 0.0f);
     (void)SpawnAt(world, 50.0f, 0.0f);

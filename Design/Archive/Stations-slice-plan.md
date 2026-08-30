@@ -170,8 +170,8 @@ against the same header, which is the conflict the serial rule exists to avoid.
 
 ## 4. Slice 1 — the layout
 
-**Landed** on 2026-08-30 in pull request #22 — work order [`Stations-slice-1.md`](Archive/Stations-slice-1.md), decision record
-[0037](Decisions/0037-the-universe-layout-is-static-content-in-gamelogic.md). What follows is what
+**Landed** on 2026-08-30 in pull request #22 — work order [`Stations-slice-1.md`](Stations-slice-1.md), decision record
+[0037](../Decisions/0037-the-universe-layout-is-static-content-in-gamelogic.md). What follows is what
 was planned; the work order is what was built, and the two agree except that the draw order gained
 a fourth item (the bearing jitter, which design §5.2 asks for in prose and leaves off its list).
 
@@ -186,7 +186,7 @@ a fourth item (the bearing jitter, which design §5.2 asks for in prose and leav
 | `Tests/GameLogicTests/UniverseLayoutTests.cpp` | New, plus both project files |
 | `AGENTS.md` §2 | The `GameLogic/` row names its headers; `UniverseLayout` joins them |
 | `Design/Decisions/0037-*.md` + `README.md` | The record below |
-| `Design/Stations.md` §16 | Marks slice 1 landed |
+| `Design/Archive/Stations.md` §16 | Marks slice 1 landed |
 
 **The work, in order.** The struct trio first, then `LayOutSystem` as one `Neuron::Pcg32(_seed)`
 drawing per planet in the fixed order the design fixes — orbit, radius, body seed — with bearing
@@ -228,9 +228,9 @@ side because what a planet *wears* is nobody's business but the client's. Next f
 
 ## 5. Slice 2 — who is who
 
-**Landed** on 2026-08-30 in pull request #22 — work order [`Stations-slice-2.md`](Archive/Stations-slice-2.md), decision records
-[0038](Decisions/0038-stations-are-ships-with-a-side-table.md) and
-[0039](Decisions/0039-standings-are-simulation-state-stated-per-subscriber.md). Built as planned; the
+**Landed** on 2026-08-30 in pull request #22 — work order [`Stations-slice-2.md`](Stations-slice-2.md), decision records
+[0038](../Decisions/0038-stations-are-ships-with-a-side-table.md) and
+[0039](../Decisions/0039-standings-are-simulation-state-stated-per-subscriber.md). Built as planned; the
 three §2.2 decisions about the mask byte were taken as recommended, and `DEFAULT_STANDINGS` is a
 `constexpr` loop rather than sixty-four literals so the rule reads as the sentence it is.
 
@@ -287,8 +287,8 @@ Debug|x64 builds; the game plays exactly as before, because nothing calls `MakeS
 
 ## 6. Slice 3 — docking
 
-**Landed** on 2026-08-30 in pull request #22 — work order [`Stations-slice-3.md`](Archive/Stations-slice-3.md), decision record
-[0040](Decisions/0040-a-departure-carries-a-cause.md). Built as planned, with one thing the plan
+**Landed** on 2026-08-30 in pull request #22 — work order [`Stations-slice-3.md`](Stations-slice-3.md), decision record
+[0040](../Decisions/0040-a-departure-carries-a-cause.md). Built as planned, with one thing the plan
 did not foresee and implementation did: the capture range and the approach destination cannot be
 the same number, or a ship parks a few metres outside the boundary for ever. Design §7.3 gained an
 amendment note and `DockRangeMetres` gained the ship's arrival radius (§2.2 of the work order).
@@ -344,8 +344,8 @@ order-state that would leave ghost entries in every pass and every index. Next f
 
 ## 7. Slice 4 — the response
 
-**Landed** on 2026-08-30 in pull request #22 — work order [`Stations-slice-4.md`](Archive/Stations-slice-4.md), decision record
-[0041](Decisions/0041-the-protector-response-reacts-to-stated-acts.md). Both recommendations below
+**Landed** on 2026-08-30 in pull request #22 — work order [`Stations-slice-4.md`](Stations-slice-4.md), decision record
+[0041](../Decisions/0041-the-protector-response-reacts-to-stated-acts.md). Both recommendations below
 were taken: the launched count is derived, and the dock pass owns the garrison branch. A third
 adjustment the plan did not foresee: a duty stays *active* while its ship flies home, which design
 §8.3 words as ending — three behaviours need the distinction, and §8.3 has an amendment note.
@@ -398,7 +398,7 @@ radius, no threat scan, no proximity trigger; the NPC reads exactly two things i
 
 ## 8. Slice 5 — the Vanguard scene
 
-**Landed** on 2026-08-30 in pull request #24 — work order [`Stations-slice-5.md`](Archive/Stations-slice-5.md), no decision
+**Landed** on 2026-08-30 in pull request #24 — work order [`Stations-slice-5.md`](Stations-slice-5.md), no decision
 record. Built as planned, with two things the plan did not spell out: the asteroid field draws
 different numbers from `BODY_START_SEED` once the worlds stop drawing from it, so the rocks move
 under this slice while the worlds and the stations do not; and `STATIONS ONLINE` counts every
@@ -416,7 +416,7 @@ half-range" describes the map as it was.
 | `Outpost/WorldView.h` / `.cpp` | `LiveryOf`'s `_hostileToMe` fed from the received mask — the table itself already exists (§2.3); the mark list handed in at boot |
 | `Outpost/Hud.cpp` | Station dots at `HUD_MINIMAP_STRUCTURE_DOT_PX` by the record's flag rather than by `HullSpecOf(...).immovable` (`Hud.cpp:379`); the hollow marks as a second draw path, clamped rather than clipped (§2.5) |
 | `AGENTS.md` §2 | The what-is-here sentences |
-| `Design/Stations.md` §16 | Marks slices 1, 2 and 5 landed as they go |
+| `Design/Archive/Stations.md` §16 | Marks slices 1, 2 and 5 landed as they go |
 
 **The work, in order.** The layout call and the station spawns first — they are testable by the
 `STATIONS ONLINE` count before anything is coloured. Then the mask into `LiveryOf` and `CONTACTS`.
@@ -454,7 +454,7 @@ record. Built as planned.
 | `Outpost/WorldView.h` / `.cpp` | `PickStation` beside `PickShip` (`WorldView.cpp:541`), ray-testing records whose flag says station, any faction; `OnTap` (`WorldView.cpp:729`) becomes own hull → select, station hull with a selection → dock, ground → move; the refusal check against the received mask before sending; the marker flash in the station's faction colour |
 | `Outpost/OutpostApp.cpp` | The docked list consumed beside the destroyed one — removed silently, no explosion, no shake, no `SHIP LOST`; F6 beside F4/F5 calling `RecordAggression` on the nearest Vanguard station; the log lines |
 | `Outpost/EventLog.h` callers | `DOCKING \| %d SHIPS`, `DOCKING REFUSED \| %s HOSTILE`, `DOCKED \| %d SHIPS`, `VANGUARD PROVOKED` |
-| `Design/Stations.md` §16 | Marks 3, 4 and 6 landed; then the design and every work order move to `Design/Archive/`, citations retargeted in the same commit |
+| `Design/Archive/Stations.md` §16 | Marks 3, 4 and 6 landed; then the design and every work order move to `Design/Archive/`, citations retargeted in the same commit |
 
 **The one thing this slice must get right.** The docked handles go through a path that is *not*
 `ExplodeTheLost`. A docked hull is removed with no ceremony; a destroyed one detonates. They arrive

@@ -13,7 +13,7 @@ namespace Neuron
 // which owns the heap the way it owns the RTV and DSV heaps. That split is what lets this be
 // tested without a device, and it is the whole reason the per-pass constant-sized heaps could go:
 // a pass asks for slots instead of owning a heap sized to today's content exactly
-// (Design/MmoScalabilityReview.md G4, Design/CompressedTextures-work-order.md 2.1).
+// (Design/Archive/MmoScalabilityReview.md G4, Design/Archive/CompressedTextures-work-order.md 2.1).
 //
 // No generations, deliberately, where HandleStore carries them. A mesh handle is given out and
 // outlives the resource it names, so a stale one must resolve to nothing; a descriptor slot never

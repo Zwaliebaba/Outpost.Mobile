@@ -16,7 +16,7 @@ namespace Neuron
 // A glow used to be one draw each: SceneRenderer::DrawGlow put the billboard's matrix in a root
 // constant, so N glows were N draws. A thruster trail is one glow per sample per nozzle, which put
 // a bomber at up to 96 draws and a hundred of them past nine thousand
-// (Design/MmoScalabilityReview.md G1). Built here instead, the whole frame's glows are one draw.
+// (Design/Archive/MmoScalabilityReview.md G1). Built here instead, the whole frame's glows are one draw.
 //
 // The shape is still decided per pixel, by FxGlowPS, and it is DecalPS's glow arithmetic unchanged
 // -- what moved is where the quad's local coordinate comes from. DecalVS derived it from the unit

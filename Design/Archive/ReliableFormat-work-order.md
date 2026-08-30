@@ -1,7 +1,7 @@
 # Work order — the format chooses the lane
 
 Slice 3b of [`QuicTransport.md`](QuicTransport.md) §14, and slice 6 of
-[`MmoScalabilityPlan.md`](../MmoScalabilityPlan.md). Depends on
+[`MmoScalabilityPlan.md`](MmoScalabilityPlan.md). Depends on
 [slice 3a](ReliableLane-work-order.md): the lane has to exist before the format can choose it.
 
 One slice, `GameLogic` (plus the two adapter lines and the ALPN bump). This is the slice that

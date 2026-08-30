@@ -101,7 +101,7 @@ public:
     // process and compare. That catches a clock or an address leaking into the tick. What it cannot
     // catch is state Step depends on that nothing can reconstruct, because both runs build it the
     // same way from the same start. This one takes a world apart and puts it back together
-    // (Design/MmoScalabilityReview.md U3).
+    // (Design/Archive/MmoScalabilityReview.md U3).
     Game::World original;
     const Scene scene = BuildScene(original);
     for (int tick = 0; tick < 240; ++tick)

@@ -1,6 +1,6 @@
 # Work order — Stations slice 4: the response
 
-Implements slice 4 of [`Stations.md`](../Stations.md) §16: the first NPC behavior in the tree that
+Implements slice 4 of [`Stations.md`](Stations.md) §16: the first NPC behavior in the tree that
 *reacts*. An attacked station scrambles its garrison; protectors pursue the ship that attacked it
 wherever it goes, are replaced if they die, and come home and dock when their target is gone
 (design §8).
@@ -182,7 +182,7 @@ that owns it, so this is the promised change and not a surprise.
 - Debug|x64 builds; the game plays exactly as before — nothing calls `RecordAggression` until
   slice 6's F6.
 - One decision record, **0041**: *the protector response reacts to stated acts, not senses*.
-- `Design/Stations.md` §16 marks slice 4 landed and this file moves to `Design/Archive/`, both in
+- `Design/Archive/Stations.md` §16 marks slice 4 landed and this file moves to `Design/Archive/`, both in
   the merge commit. §8.2 gains an amendment note for the derived count (§2.3).
 
 ---

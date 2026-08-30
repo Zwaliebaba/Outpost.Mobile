@@ -71,6 +71,10 @@ order, and a review goes stale by design — it describes the commit it names, a
 true afterwards. That is the difference from a design, which stays the document later changes are
 reviewed against.
 
+A review — and an implementation plan built from one — moves to `Design/Archive/` once everything
+it scheduled has landed, for the same reason a finished design does: `Design/` lists what is
+unfinished, and citations are retargeted in the move's own commit.
+
 ## The loop
 
 ```

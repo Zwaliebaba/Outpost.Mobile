@@ -1,6 +1,6 @@
 # Work order — Stations slice 3: docking
 
-Implements slice 3 of [`Stations.md`](../Stations.md) §16: a second order kind, a departure that carries
+Implements slice 3 of [`Stations.md`](Stations.md) §16: a second order kind, a departure that carries
 a cause, and the pass that flies a ship to a station and takes it out of the world (design §7).
 
 **Layer:** `GameLogic` and `GameLogicTests`.
@@ -247,7 +247,7 @@ assertion that the default cause is `Destroyed`.
 - `python Build/CheckProjectFiles.py` and `python Build/CheckFormat.py` pass.
 - Debug|x64 builds; the game plays exactly as before — no client sends a dock order until slice 6.
 - One decision record, **0040**: *a departure carries a cause on the wire*.
-- `Design/Stations.md` §7.4 gains its amendment note; §16 marks slice 3 landed and this file moves to
+- `Design/Archive/Stations.md` §7.4 gains its amendment note; §16 marks slice 3 landed and this file moves to
   `Design/Archive/`, both in the merge commit.
 
 ---

@@ -27,7 +27,7 @@ Rgba WithAlpha(Rgba _colour, float _alpha) noexcept
   return Rgba{_colour.r, _colour.g, _colour.b, _alpha};
 }
 
-// The overview column of Design/Stations.md 9.3: what a faction is to the viewer, as a map colour.
+// The overview column of Design/Archive/Stations.md 9.3: what a faction is to the viewer, as a map colour.
 // The mask row outranks the Vanguard row for the reason WorldView::LiveryOf gives -- turn criminal
 // and the law turns red, dots and hulls together. A faction with no row is red, because a stranger
 // drawn as a friend is the one mistake this table must not make.
@@ -387,7 +387,7 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
   // past the edge is clipped, a mark is clamped to the edge at reduced alpha, direction honest and
   // distance saturated, because a mark's whole job is to say which way to fly. Drawn before the
   // dots, so a live record at the same spot draws its filled dot over the hollow mark
-  // (Design/Stations.md 9.3).
+  // (Design/Archive/Stations.md 9.3).
   {
     const float half = HUD_MINIMAP_MARK_PX * 0.5f * s;
     const float line1 = std::max(1.0f, std::floor(s));
@@ -415,7 +415,7 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
   // (OverviewColourOf). A station draws at the larger dot so a base reads bigger than a fighter
   // without pretending to scale (Design/Archive/Hostiles.md 7) -- by the record's own flag, because
   // "immovable hull of another faction" is the client working out server state, which is the thing
-  // the flag exists to stop (Design/Stations.md 6.2).
+  // the flag exists to stop (Design/Archive/Stations.md 6.2).
   {
     const std::span<const Game::ShipSnapshot>& ships = _ships;
     for (size_t i = 0; i < ships.size(); ++i)

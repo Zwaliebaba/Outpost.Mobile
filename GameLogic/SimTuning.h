@@ -274,7 +274,7 @@ inline constexpr std::uint32_t MAX_PATH_WAYPOINTS = 16;
 // waypoint the geometry has moved out of reach -- would otherwise be pushed at for ever, and this
 // is what turns "as close as the geometry allows" from a hope into a property. A second, so that a
 // hull shouldered against a station by traffic while it rounds it does not give up its leg. In the
-// contract: it changes where an order ends (Design/BlockedRoutes-work-order.md 2).
+// contract: it changes where an order ends (Design/Archive/BlockedRoutes-work-order.md 2).
 inline constexpr std::uint32_t BLOCKED_WAYPOINT_TICKS = 60;
 
 // --- test thresholds ---------------------------------------------------------------------------
@@ -318,7 +318,7 @@ inline constexpr std::uint32_t PATROL_RING_WAYPOINTS = 12;
 //
 // 60 m is chosen against the path grid's quantization rather than by feel: at PATH_CELL_SIZE_METRES
 // of 32 it is nearly two cells of margin, so the approach destination lands in unblocked cells
-// instead of in the station's own obstacle footprint (Design/Stations.md 7.3).
+// instead of in the station's own obstacle footprint (Design/Archive/Stations.md 7.3).
 inline constexpr float DOCK_CAPTURE_METRES = 60.0f;
 
 // How far a pursued target may move from the point its hunter last aimed at before the hunter
@@ -329,7 +329,7 @@ inline constexpr float DOCK_CAPTURE_METRES = 60.0f;
 // tick would cost everything and change nothing. Its own constant rather than a share of that one
 // because the two measure different things: that is a follower drifting off its leg, this is a
 // target moving, and the day either is retuned the other should not move with it
-// (Design/Stations.md 8.3).
+// (Design/Archive/Stations.md 8.3).
 inline constexpr float PURSUIT_REPLAN_METRES = 64.0f;
 
 // --- interest management -----------------------------------------------------------------------

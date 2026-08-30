@@ -100,7 +100,7 @@ public:
     const Game::WorldPos star = Game::LocalPos(0.0f, 0.0f);
 
     // Chord of the guaranteed half-slot at the innermost orbit. At the shipped numbers -- three
-    // planets, 2 500 m -- that is 2 500 m, which is Design/Stations.md 5.3's "closest two stations".
+    // planets, 2 500 m -- that is 2 500 m, which is Design/Archive/Stations.md 5.3's "closest two stations".
     const float minSeparationMetres = 2.0f * desc.minOrbitMetres * std::sin(DirectX::XM_PI / (2.0f * static_cast<float>(desc.planetCount)));
 
     for (std::uint64_t seed = 0; seed < 256; ++seed)

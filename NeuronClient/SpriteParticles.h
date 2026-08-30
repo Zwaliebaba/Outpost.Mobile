@@ -39,7 +39,8 @@ struct SpriteTypeSpec
 };
 
 // Indexed by SpriteType. A fourth kind of particle is a row here and a name in the enum; the table
-// is constexpr data rather than a file because this tree has no configuration file (AGENTS.md).
+// is constexpr data rather than a file: the one configuration file carries deployment numbers,
+// never content or tuning (AGENTS.md, ADR 0043).
 inline constexpr SpriteTypeSpec SPRITE_TYPES[] = {
   // Core: the fireball. Additive, short, and large.
   {2.0f,

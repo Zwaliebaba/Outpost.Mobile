@@ -80,7 +80,7 @@ void FxRenderer::CreatePipelines(GpuDevice& _gpu)
 {
   // Slots in the shared heap rather than a heap of this pass's own. The device wrote a null SRV
   // into every slot at creation, so an unloaded texture reads zero -- which the glow pass relies
-  // on, since it binds the table and samples nothing (Design/CompressedTextures-work-order.md 2.1).
+  // on, since it binds the table and samples nothing (Design/Archive/CompressedTextures-work-order.md 2.1).
   for (std::uint32_t at = 0; at < TEXTURE_COUNT; ++at)
     m_slots[at] = _gpu.SrvAllocator().Allocate();
 

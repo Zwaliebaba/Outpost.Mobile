@@ -44,7 +44,7 @@ public:
     std::size_t bodyCount = 0;
     std::uint32_t bodyTriangles = 0;
     float bodyGenerationMs = 0.0f;
-    // Frustum culling (Design/MmoScalabilityReview.md G2). On the screen rather than inferred,
+    // Frustum culling (Design/Archive/MmoScalabilityReview.md G2). On the screen rather than inferred,
     // because a culler that is quietly rejecting everything and one that is quietly rejecting
     // nothing both look exactly like a working one until you count.
     std::uint32_t submittedCount = 0;
@@ -76,7 +76,7 @@ public:
   // minimap names the sector pair. contacts is the count of records this client holds whose faction
   // holds it hostile, by the update header's mask -- the subscription, not the map rectangle, so a
   // contact past the map edge is counted and clipped, and not "not mine", so a Vanguard station in
-  // view is not one (Design/Stations.md 9.4). ownFaction is session identity: the HUD colors by
+  // view is not one (Design/Archive/Stations.md 9.4). ownFaction is session identity: the HUD colors by
   // allegiance and cannot know whose side it is on without being told.
   struct Frame
   {

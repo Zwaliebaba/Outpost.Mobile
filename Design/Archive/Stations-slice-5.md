@@ -1,6 +1,6 @@
 # Work order — Stations slice 5: the Vanguard scene
 
-Implements slice 5 of [`Stations.md`](../Stations.md) §16: the starting system laid out, a Vanguard
+Implements slice 5 of [`Stations.md`](Stations.md) §16: the starting system laid out, a Vanguard
 station at every planet of it, the planets drawn where the layout says, the Vanguard's azure on the
 hulls and the overview, the marks on the minimap, and `CONTACTS` counting what the wire says is
 hostile rather than what is merely not the player's (design §5.3, §9.3, §9.4).
@@ -159,7 +159,7 @@ checking the right thing for the wrong reason, and the pull request says so.
 - All four suites green and untouched.
 - `python Build/CheckProjectFiles.py` and `python Build/CheckFormat.py` pass.
 - Debug|x64 builds; `git diff --stat` names no file under `GameLogic/`.
-- `Design/Stations.md` §16 marks slice 5 landed and this file moves to `Design/Archive/` in the
+- `Design/Archive/Stations.md` §16 marks slice 5 landed and this file moves to `Design/Archive/` in the
   merge commit.
 
 **No decision record is due.**

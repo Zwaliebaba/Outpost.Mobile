@@ -1,8 +1,8 @@
 # Work order — slice 17: the state codec and the replay gate
 
-Cut from [`MmoScalabilityPlan.md`](../MmoScalabilityPlan.md) §6 slice 17, against the tree at `4d77a36`
+Cut from [`MmoScalabilityPlan.md`](MmoScalabilityPlan.md) §6 slice 17, against the tree at `4d77a36`
 (slices 15, 16 and 24 landed). It retires the second half of finding U3 of
-[`MmoScalabilityReview.md`](../MmoScalabilityReview.md).
+[`MmoScalabilityReview.md`](MmoScalabilityReview.md).
 
 Layer: `GameLogic`.
 

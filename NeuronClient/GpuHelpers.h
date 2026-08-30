@@ -48,7 +48,7 @@ void UploadCoverageTexture(GpuDevice& _gpu, std::uint32_t _widthPx, std::uint32_
 // holds, block-compressed included -- and writes an SRV that states the real mip count. This is
 // what retires the top-mip-only paths for colour textures: the file's subresources are already in
 // D3D12 order, so the walk is footprints, a repack of rows into the staging buffer, and one
-// CopyTextureRegion per subresource (Design/MmoScalabilityReview.md G4).
+// CopyTextureRegion per subresource (Design/Archive/MmoScalabilityReview.md G4).
 //
 // The copies ride the COPY queue and are recorded into whatever bracket the caller opened --
 // GpuDevice::BeginCopies and SubmitCopies, exactly as UploadStaticBuffer asks, because the load
@@ -88,7 +88,7 @@ void UploadColourTexture(GpuDevice& _gpu, std::uint32_t _widthPx, std::uint32_t 
 // weighed the upload and not the reading, and it held only for the fleet it was written against.
 // The hulls in this tree average 32 kB: a hundred ships is 0.3 GB/s of vertex fetch and the
 // argument stands, five hundred is 1.4 and two thousand is 5.6, which does not
-// (Design/MmoScalabilityReview.md G2).
+// (Design/Archive/MmoScalabilityReview.md G2).
 void UploadStaticBuffer(GpuDevice& _gpu, std::span<const std::uint8_t> _bytes, GpuPtr<ID3D12Resource>& _outBuffer,
                         GpuPtr<ID3D12Resource>& _outStaging);
 } // namespace Neuron

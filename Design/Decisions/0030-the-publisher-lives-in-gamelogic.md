@@ -11,7 +11,7 @@ one `Transport*`, one `InterestSet`, one `SnapshotWriter`, one faction, all fiel
 — "N clients is a `WorldSimulation` change — a table of `{transport, interest set, faction}` — and
 belongs to a design of its own."
 
-`Design/MmoScalabilityReview.md` found three defects that only exist once that table does, which is
+`Design/Archive/MmoScalabilityReview.md` found three defects that only exist once that table does, which is
 why they are one slice and not three: fan-out is single-subscriber by construction (E2), every
 subscriber's interest update would land on the same tick (E4), and order intake has no rate limit,
 so wire bytes convert into formation solves and route planning at a leverage no other message has

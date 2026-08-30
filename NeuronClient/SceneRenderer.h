@@ -54,7 +54,7 @@ public:
 
   // One draw for every ship sharing a mesh. Five hundred hulls over five meshes were five hundred
   // draws, because a per-object matrix could only live in a root constant and a root constant is set
-  // per draw (Design/MmoScalabilityReview.md G2). The instances go into a per-frame ring and are read
+  // per draw (Design/Archive/MmoScalabilityReview.md G2). The instances go into a per-frame ring and are read
   // from input slot 1.
   //
   // Switches the pipeline, so a caller mixing this with DrawMesh pays a state change each way. Do the

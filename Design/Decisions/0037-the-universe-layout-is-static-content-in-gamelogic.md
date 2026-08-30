@@ -5,7 +5,7 @@ Date: 2026-08-30
 
 ## Context
 
-`Design/Stations.md` §5 needs the starting solar system to exist as *places*: a star anchor and a
+`Design/Archive/Stations.md` §5 needs the starting solar system to exist as *places*: a star anchor and a
 few planets at real positions on the plane. Two halves of the game consume that. The server half
 spawns a Core Vanguard Command station at every planet; the client half draws the world at each
 site and marks it on the minimap from the first frame, before any record has arrived — which is the

@@ -58,7 +58,7 @@ public:
 
     // The ceiling on orders read from this subscriber in one tick. A client saturating its send rate
     // otherwise converts wire bytes into formation solves and route planning at a leverage no other
-    // message has (Design/MmoScalabilityReview.md E6).
+    // message has (Design/Archive/MmoScalabilityReview.md E6).
     std::uint32_t ordersPerTick = 8;
 
     // Where it is looking, until SetCentre says otherwise.

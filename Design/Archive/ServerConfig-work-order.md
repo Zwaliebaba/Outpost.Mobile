@@ -1,6 +1,6 @@
 # Work order — slice 24: the server configuration file
 
-Cut from [`MmoScalabilityPlan.md`](../MmoScalabilityPlan.md) §6 slice 24, against the tree at `6350c7b`.
+Cut from [`MmoScalabilityPlan.md`](MmoScalabilityPlan.md) §6 slice 24, against the tree at `6350c7b`.
 It is what §4 decision 3 — "how a dedicated server is told what to be", taken 2026-08-30 as *a
 configuration file read by the composition root alone* — turns into code.
 

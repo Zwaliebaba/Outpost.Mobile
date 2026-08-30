@@ -201,7 +201,7 @@ public:
     // The cost this retires: every spawn and despawn used to dirty the static set, so a fighter
     // dying rebuilt the whole static index, rebuilt the PathGrid, bumped its version and made every
     // routed ship in the world re-plan. At MMO churn that is a universe-wide replan on every death
-    // (Design/MmoScalabilityReview.md U4).
+    // (Design/Archive/MmoScalabilityReview.md U4).
     Game::World world;
     (void)world.SpawnShip(Game::LocalPos(0.0f, 200.0f), 0.0f, STRUCTURE);
     // Held as a handle rather than an id, because a despawn below can renumber it (ADR 0005). It

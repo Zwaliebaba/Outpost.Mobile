@@ -5,7 +5,7 @@ Date: 2026-08-30
 
 ## Context
 
-`Design/Stations.md` §6 needs a thing a ship can dock at: something with an owner, a ledger of who
+`Design/Archive/Stations.md` §6 needs a thing a ship can dock at: something with an owner, a ledger of who
 is inside, and a garrison it can launch. The tree already has the body — `HullId::Structure` is
 immovable, collidable, in the static index and the pathfinding obstacle set, and the Vandal base has
 stood on one since Hostiles slice 3. What it has no way to say is that a particular structure
@@ -55,7 +55,7 @@ hull of faction 2" is the client inferring server state.
   it becomes an index, and nothing above it changes when it does.
 - The row holds a `ShipHandle`, so the death of a structure orphans its row rather than retargeting
   it to whichever ship swap-and-pop moved into that index. Nothing can destroy a station this phase
-  and a Vanguard station is indestructible as a rule (`Design/Stations.md` §8.5) — but the
+  and a Vanguard station is indestructible as a rule (`Design/Archive/Stations.md` §8.5) — but the
   user-station design inherits a table that already tolerates death, which is why it was done now
   and not then.
 - Stations do not despawn, so `StationId` is a bare index with no generation. The day one can, it

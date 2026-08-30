@@ -14,7 +14,7 @@ vector and `ClearDespawnLog()` emptied it. Its own header said what that would c
 "it is the publisher's, and there is one publisher today; the day there are several it becomes
 per-subscriber."
 
-`Design/MmoScalabilityReview.md` finding E2 is that day arriving with a number on it. With two
+`Design/Archive/MmoScalabilityReview.md` finding E2 is that day arriving with a number on it. With two
 subscribers, whichever publishes first drains the log and the second is never told: not a dropped
 datagram that the next update repairs, but a ship that stays alive on one client's screen for the
 rest of the match, because nothing will ever mention it again. It is silent, it is permanent, and it

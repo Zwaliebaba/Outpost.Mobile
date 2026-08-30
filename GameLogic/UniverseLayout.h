@@ -17,7 +17,7 @@ namespace Game
 // *position* is not that. The server half spawns a station at every site and the client half marks
 // them, so it is content both binaries need, and content living in one executable is in the wrong
 // one the day there are two. It also buys the layout a test suite, which the executable layer does
-// not have (Design/Stations.md 5.2).
+// not have (Design/Archive/Stations.md 5.2).
 //
 // Nothing in the simulation knows a planet exists. There is no ship, no record and no collision at
 // a site; ships fly through the place it marks, and its visual is kilometres below the plane
@@ -41,7 +41,7 @@ struct SystemLayout
 
 // The bounds a system is drawn within.
 //
-// The defaults are the shipped numbers (Design/Stations.md 5.3), not placeholders, and that is
+// The defaults are the shipped numbers (Design/Archive/Stations.md 5.3), not placeholders, and that is
 // load-bearing: GameLogicTests cannot see ViewTuning.h, so the grid-ceiling bound below is provable
 // here only if the values it is proved against are the ones the game actually ships. The
 // composition root sets the pinned fields and nothing else.
@@ -82,6 +82,6 @@ inline constexpr float PLANET_BEARING_JITTER = 0.5f;
 // non-overlapping.
 //
 // Boot-time only. The result is then ordinary spawn input -- positions, not a generator -- so the
-// replay contract never sees the randomness that produced it (Design/Stations.md 10).
+// replay contract never sees the randomness that produced it (Design/Archive/Stations.md 10).
 [[nodiscard]] SystemLayout LayOutSystem(std::uint64_t _seed, const WorldPos& _starPos, const SystemDesc& _desc);
 } // namespace Game

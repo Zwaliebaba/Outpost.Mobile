@@ -113,7 +113,7 @@ void BodyRenderer::LoadTexture(GpuDevice& _gpu, std::uint32_t _slot, const std::
 
   // Whatever the file holds goes up as it is: the outline stays one BGRA8 mip under its fwidth
   // fade, and the planet map is a baked BC chain whose mips are what stop a globe small on screen
-  // sparkling (Tools/DdsBake.py, Design/CompressedTextures-work-order.md 2.3).
+  // sparkling (Tools/DdsBake.py, Design/Archive/CompressedTextures-work-order.md 2.3).
   UploadDdsTexture(_gpu, image, _gpu.SrvCpuHandle(m_slots[_slot]), _outTexture, _outStaging);
 }
 

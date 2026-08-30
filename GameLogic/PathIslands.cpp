@@ -120,7 +120,7 @@ void PathIslands::Rebuild(std::span<const PathGrid::Obstacle> _obstacles)
 {
   // A rebuild that finds the same architecture leaves the version alone, and every route with it:
   // the version is what makes a routed ship re-plan, and a rebuild triggered by something that did
-  // not move a building must not cost the fleet its routes (Design/MmoScalabilityReview.md U4).
+  // not move a building must not cost the fleet its routes (Design/Archive/MmoScalabilityReview.md U4).
   if (SameObstacles(_obstacles, m_built))
     return;
   ++m_version;

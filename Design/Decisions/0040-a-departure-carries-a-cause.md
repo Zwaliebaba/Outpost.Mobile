@@ -34,7 +34,7 @@ This widens Hostiles' mechanism rather than adding a parallel one. Jump-out, wre
 capture are each one more cause through the same door.
 
 **The docked handles ride the reliable lane, not the snapshot header**, and this is where the code
-diverges from the design that asked for it. `Design/Stations.md` §7.4 puts `dockedCount` "in the
+diverges from the design that asked for it. `Design/Archive/Stations.md` §7.4 puts `dockedCount` "in the
 update header beside `destroyedCount`" and says `ShipsPerSnapshotFragment` follows it. That was true
 when it was written and stopped being true when [ADR 0029](0029-departures-and-orders-take-the-reliable-lane.md)
 moved departures onto the reliable lane. The design's *argument* is untouched — its conclusion is

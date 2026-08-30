@@ -211,7 +211,7 @@ void WorldView::ExplodeTheLost(std::uint64_t _tick)
   // Docked first, and through a loop of its own rather than a branch in the one below: a docked
   // hull is removed with no ceremony -- no explosion, no shake, no SHIP LOST -- and the two lists
   // arrive in the same message, so a consumer that treated the spans alike would look like a bug in
-  // the explosion rather than in the drain (Design/Stations.md 7.4, Stations-slice-plan.md 9). Only
+  // the explosion rather than in the drain (Design/Archive/Stations.md 7.4, Stations-slice-plan.md 9). Only
   // the player's own are counted for the line: a protector coming home is the station's business.
   const std::span<const Game::EntityId> docked = m_receiver.Docked();
   int ownDocked = 0;
@@ -594,7 +594,7 @@ void WorldView::UpdateFeedback(float _dtSec)
 
 Rgba WorldView::LiveryOf(Game::FactionId _faction, bool _own, bool _hostileToMe) noexcept
 {
-  // The hostile row outranks the faction rows (Design/Stations.md 9.3): a Vanguard ship whose
+  // The hostile row outranks the faction rows (Design/Archive/Stations.md 9.3): a Vanguard ship whose
   // faction holds this client hostile paints the Vandals' red, because the law turning on you is the
   // thing the player must see.
   if (_own)
@@ -792,7 +792,7 @@ void WorldView::IssueDockOrder(std::size_t _station)
 
   // The affordance tells the truth first: an owner that holds this client hostile refuses here,
   // and nothing is sent. The simulation's gate still stands behind it, per the twice-on-purpose
-  // rule -- affordances tell the truth, and clients are not trusted (Design/Stations.md 9.2).
+  // rule -- affordances tell the truth, and clients are not trusted (Design/Archive/Stations.md 9.2).
   if (IsHostileToMe(owner))
   {
     if (m_log)
@@ -926,7 +926,7 @@ void WorldView::OnTap(float _xPx, float _yPx, bool _shiftHeld, bool _doubleTap)
 
   // A station under the tap, with something selected, is a dock order. With nothing selected it is
   // nothing at all: selection-for-inspection is the management menu's, which is the next phase
-  // (Design/Stations.md 9.1).
+  // (Design/Archive/Stations.md 9.1).
   if (SelectedCount() > 0)
   {
     const int station = PickStation(_xPx, _yPx);
@@ -983,7 +983,7 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
 
   // One frustum a frame, tested against everything below. Built from the camera's two matrices
   // rather than their product, because that is what BoundingFrustum is defined on
-  // (Design/MmoScalabilityReview.md G2).
+  // (Design/Archive/MmoScalabilityReview.md G2).
   m_frustum = Neuron::WorldFrustum(m_camera->View(), m_camera->Proj());
   const BoundingFrustum& frustum = m_frustum;
   m_submittedCount = 0;
@@ -1010,7 +1010,7 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
   // them to disagree, and a body whose outline drew but whose land did not is a wireframe hanging
   // in empty space. The projected radius that chooses the level also finishes the culling: an
   // asteroid smaller on screen than BODY_CULL_BELOW_PX is not submitted at all, which is the
-  // distance cull slice 9's frustum test always lacked (Design/BodyLod-work-order.md 2.3).
+  // distance cull slice 9's frustum test always lacked (Design/Archive/BodyLod-work-order.md 2.3).
   m_bodyVisible.clear();
   m_bodyLod.clear();
   m_bodyTriangles = 0;
@@ -1074,7 +1074,7 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     //
     // "Hostile to me" is the server's word, from the update header's mask, and never inferred from
     // the faction: a Vanguard hull is azure until the law turns on the player, and then it is red
-    // with the Vandals' (Design/Stations.md 4.3, 9.3).
+    // with the Vandals' (Design/Archive/Stations.md 4.3, 9.3).
     const bool own = IsOwn(i);
     const Rgba livery = LiveryOf(state[i].factionId, own, IsHostileToMe(state[i].factionId));
     view.lastLivery = livery;
@@ -1344,7 +1344,7 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const Sc
   // --- thruster glow and trail ------------------------------------------------------------------
   // Billboards, built into the effect's vertex ring and drawn in one call. This used to be one draw
   // per sample: a three-nozzle hull running a full trail is 96 of them, and a hundred such ships is
-  // over nine thousand draws a frame for the plume alone (Design/MmoScalabilityReview.md G1). What
+  // over nine thousand draws a frame for the plume alone (Design/Archive/MmoScalabilityReview.md G1). What
   // each glow looks like has not changed -- the same disc, the same falloff, the same additive blend
   // -- only how many times the frame is asked to draw one.
   if (m_fx != nullptr && m_fx->RingReady() && !m_ships.empty())

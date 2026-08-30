@@ -99,7 +99,7 @@ private:
   // WorldPos, the universe origin, and the moment the last ship docked the interest set jumped
   // 3.5 km away: the station the player had just flown into left the client's view and, on
   // screen, vanished. A player looking at a station keeps looking at it; the day undocking exists
-  // the ship comes out under a centre that never moved (Design/Stations-slice-6.md 5).
+  // the ship comes out under a centre that never moved (Design/Archive/Stations-slice-6.md 5).
   [[nodiscard]] Game::WorldPos SubscriberCentre()
   {
     const std::span<const Game::ShipState> ships = m_world.Ships();

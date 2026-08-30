@@ -8,7 +8,7 @@ namespace Neuron
 // What is worth submitting: the camera's frustum, and a conservative sphere test against it.
 //
 // Everything the world draws used to be submitted whether or not it was on screen
-// (Design/MmoScalabilityReview.md G2). At a fleet's scale that is thousands of draws for hulls
+// (Design/Archive/MmoScalabilityReview.md G2). At a fleet's scale that is thousands of draws for hulls
 // behind the eye, and the cost is paid in full before the GPU discards them.
 //
 // Two functions rather than one, because the frustum is built once a frame and tested thousands of

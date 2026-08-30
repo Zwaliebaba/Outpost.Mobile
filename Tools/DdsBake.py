@@ -5,7 +5,7 @@
   python Tools/DdsBake.py --test                the self-test, stdlib only like every tool here
 
 Why this exists: DdsImage parses BC formats and mip chains and the upload path now consumes them
-(Design/CompressedTextures-work-order.md), but nothing in the tree could *produce* one -- runtime
+(Design/Archive/CompressedTextures-work-order.md), but nothing in the tree could *produce* one -- runtime
 compression is out of scope by the work order, so the compressor is a content tool beside the NMO
 codec. The encoder is a simple min/max-endpoint BC1/BC3 and says so: quality is judged by the
 slice's two screenshots, not by a metric.

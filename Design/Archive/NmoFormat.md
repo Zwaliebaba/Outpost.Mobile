@@ -307,7 +307,7 @@ without the flag are drawn exactly as authored and never see a livery at all.
 Which faction supplies the hue is not the file's business and is deliberately absent from it: a
 mesh knows it has a liveried panel, not who is flying it. The mapping from faction to colour is
 the client's, and lives where the rest of that mapping already does
-([Stations.md](../Stations.md) §9.3).
+([Stations.md](Stations.md) §9.3).
 
 ### 5.6 Buffers
 
@@ -870,7 +870,7 @@ brightness its thrusters should burn, and every other liveried surface falls out
 5. **Liveries** *(NeuronClient shaders, Outpost)* — **landed.** The visible half of `RaceTinted`
    (§5.5, §5.10): the scene shader stops tinting a whole hull and multiplies the flagged surfaces
    by the flying faction's colour, the faction-to-colour mapping becomes the table
-   [Stations.md](../Stations.md) §9.3 describes, and exhaust plumes follow it. The converter gains
+   [Stations.md](Stations.md) §9.3 describes, and exhaust plumes follow it. The converter gains
    §13.1's table and the corpus is regenerated in the same commit as the shader, so the shades and
    the multiply that gives them meaning never ship apart. Its work order is
    [NmoFormat-slice-5.md](NmoFormat-slice-5.md) and its decision record is

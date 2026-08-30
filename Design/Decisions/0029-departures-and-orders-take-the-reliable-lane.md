@@ -12,7 +12,7 @@ repeated, so a lost one is a ship that stays on a client's screen for the rest o
 nowhere, alive to a player and dead to the server.
 
 `Design/Archive/QuicTransport.md` §8 recorded the defect when the migration landed and left it for a later
-slice. `Design/MmoScalabilityReview.md` finding E1 priced it: an update is dropped whole if any
+slice. `Design/Archive/MmoScalabilityReview.md` finding E1 priced it: an update is dropped whole if any
 fragment is missing, so completeness is (1 − p)^F, and at 2% loss a 13-fragment fleet-battle update
 completes 77% of the time. On `127.0.0.1` none of this bites. On a real path all of it does, and the
 seam exists precisely so that the day the two halves are on different machines is not the day the
@@ -51,7 +51,7 @@ departure message first, since the dangerous interleaving is an upsert overtakin
   determinism rules make timers and retransmission timers especially unwelcome. The lane was
   reserved at the handshake for exactly this (`QuicApi.cpp`, `QUIC_PEER_BIDI_STREAMS`).
 - **Send periodic full snapshots** so a ghost heals within a refresh period. This was slice 1 of
-  `Design/MmoScalabilityPlan.md` and is dropped by this record: it blunts the symptom at the cost of
+  `Design/Archive/MmoScalabilityPlan.md` and is dropped by this record: it blunts the symptom at the cost of
   sending the whole visible world on a timer, and once the lane exists it is a knob to explain and
   then remove. It remains the right answer for a client that has fallen too far behind to resync,
   which is a different problem.

@@ -138,7 +138,7 @@ public:
 
   // The high-water mark. Ten F5 reseeds must not move it, which is the number this slice is
   // measured by: before the store, every reseed left the scene it replaced on the GPU
-  // (Design/MmoScalabilityReview.md G3).
+  // (Design/Archive/MmoScalabilityReview.md G3).
   [[nodiscard]] std::uint32_t BodySlotCount() const noexcept
   {
     return m_bodySlots.SlotCount();

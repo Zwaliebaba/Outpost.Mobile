@@ -157,7 +157,7 @@ inline constexpr float NAV_LIGHT_OFF_LEVEL = 0.12f; // alpha between blinks -- a
 inline constexpr float NAV_LIGHT_MAX_PERIOD_SEC = 30.0f;
 
 // --- frustum culling ----------------------------------------------------------------------------
-// What is not on screen is not submitted (Design/MmoScalabilityReview.md G2). Both numbers below
+// What is not on screen is not submitted (Design/Archive/MmoScalabilityReview.md G2). Both numbers below
 // buy the same thing: a test that errs towards drawing, because a wasted draw costs a fraction of a
 // millisecond and a wrongly culled hull is a ship that vanishes.
 //
@@ -251,8 +251,8 @@ inline constexpr Neuron::Rgba SELECTABLE_LIVERIES[] = {
   {0.86f, 0.88f, 0.92f, 1.0f}, // white
 };
 
-// There is no configuration file in this tree (AGENTS.md 5), so the player's livery is a constant
-// and the chooser is not this slice. This is the seam one will arrive at, and it is an index into
+// The player's livery is presentation, which Server.cfg deliberately does not reach (ADR 0043), so
+// it is a constant and the chooser is not this slice. This is the seam one will arrive at, and it is an index into
 // the selectable array rather than a colour precisely so that whatever chooses later cannot choose
 // a reserved one.
 inline constexpr std::size_t PLAYER_LIVERY_INDEX = 0;
@@ -371,7 +371,7 @@ inline constexpr int BODY_START_ASTEROIDS = 6;
 // the framing they always were, and they reach the scene as the pin on the starting system's first
 // planet: LayOutSystem draws the other sites, and planet 0 takes this bearing and orbit verbatim so
 // the worked camera framing survives as content instead of being superseded by a die roll
-// (Design/Stations.md 5.3). Every other SystemDesc field keeps its default on purpose -- the
+// (Design/Archive/Stations.md 5.3). Every other SystemDesc field keeps its default on purpose -- the
 // defaults are the shipped numbers, and GameLogicTests proves the grid-ceiling bound against them,
 // so a root that overrode the orbit band would be running a system the test never saw
 // (UniverseLayout.h). The star anchor is the universe origin; nothing draws a star.
@@ -397,7 +397,7 @@ inline constexpr bool BODY_PLANET_TEXTURED = true;
 // puts a silhouette segment at about five pixels with the world framed as it is above.
 inline constexpr std::uint32_t BODY_PLANET_SPHERE_GRID_POWER = 6;
 
-// Level of detail (Design/BodyLod-work-order.md). Every body is baked at three grid powers -- the
+// Level of detail (Design/Archive/BodyLod-work-order.md). Every body is baked at three grid powers -- the
 // level's power is the body's own minus its index, so a grid-6 world carries {6, 5, 4} and a
 // grid-5 rock {5, 4, 3} -- and the level drawn is chosen per frame from the body's projected
 // radius on screen. The thresholds sit where a silhouette segment is already subpixel, so the
@@ -429,7 +429,7 @@ inline constexpr float HOSTILE_PATROL_CRUISE_MPS = 10.0f; // 29 % of an Intercep
 inline constexpr int HOSTILE_PATROL_COUNT = 3;
 
 // The Vanguard's garrison: what every station of the starting system launches when it is attacked,
-// and how (Design/Stations.md 8.2). Content, passed to MakeStation by the composition root the way
+// and how (Design/Archive/Stations.md 8.2). Content, passed to MakeStation by the composition root the way
 // the patrol numbers above are passed to AssignPatrol -- not a tuning constant, because what the
 // root spawns is content. Nothing in the running game attacks a station until slice 6's debug key,
 // so these are exercised by GameLogicTests and by nothing else yet.
@@ -460,7 +460,7 @@ inline constexpr Neuron::Rgba HUD_ALERT_RED{LIVERY_VANDAL.r, LIVERY_VANDAL.g, LI
 // Derived the same way, for the same reason: the blue a Vanguard record draws in on the map is the
 // azure the Vanguard flies in the scene. Only while the mask says they are not hostile -- the day
 // the law turns on the player, every Vanguard dot goes HUD_ALERT_RED with the hulls
-// (Design/Stations.md 9.3).
+// (Design/Archive/Stations.md 9.3).
 inline constexpr Neuron::Rgba HUD_VANGUARD_BLUE{LIVERY_VANGUARD.r, LIVERY_VANGUARD.g, LIVERY_VANGUARD.b, 1.0f};
 inline constexpr Neuron::Rgba HUD_INFO_GREY{0.45f, 0.50f, 0.56f, 1.0f};
 inline constexpr Neuron::Rgba HUD_BAR_TRACK{1.0f, 1.0f, 1.0f, 0.07f};
@@ -502,7 +502,7 @@ inline constexpr float HUD_MINIMAP_HALF_RANGE = 4000.0f;
 // A station mark: a hollow diamond at a station of the layout, drawn from static content rather than
 // from a record, so it is there from the first frame however far away the station is. One past the
 // map's edge is clamped to the edge and dimmed rather than clipped like a dot -- direction honest,
-// distance saturated (Design/Stations.md 9.3).
+// distance saturated (Design/Archive/Stations.md 9.3).
 inline constexpr float HUD_MINIMAP_MARK_PX = 10.0f;
 inline constexpr float HUD_MINIMAP_MARK_CLAMPED_ALPHA = 0.5f;
 

@@ -115,7 +115,7 @@ private:
 
   // What the last build was built from, so a rebuild with an unchanged obstacle set can leave the
   // version alone and every route with it -- the same gate PathGrid keeps, one level up, because
-  // this is now the version a Route is stamped with (Design/MmoScalabilityReview.md U4).
+  // this is now the version a Route is stamped with (Design/Archive/MmoScalabilityReview.md U4).
   std::vector<PathGrid::Obstacle> m_built;
 
   // What each island's grid was built from, one list per entry of m_islands and in the same order.

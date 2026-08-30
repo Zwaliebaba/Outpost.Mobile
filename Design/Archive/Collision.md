@@ -1329,7 +1329,7 @@ Two open questions gate work rather than follow it, and both are named in §18: 
 tick rate** was settled at 60 Hz for the slices above, and **minimum region size** follows
 arithmetically from the widest query radius, which slice 2 measured at 647 m. It is 655 m since
 the MMO scalability plan's slice 11, which added the avoidance margin the query had been
-omitting -- see `Design/MmoScalabilityPlan.md`.
+omitting -- see `Design/Archive/MmoScalabilityPlan.md`.
 
 ### What the landed slices did not do as written
 

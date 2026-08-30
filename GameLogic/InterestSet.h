@@ -42,7 +42,7 @@ public:
   // _phase is which tick within the period this subscriber is due on, and it exists so that N of
   // them do not all come due together: without it every subscriber's query, sort and egress lands on
   // the same tick, and the server's worst frame is the period times its average one
-  // (Design/MmoScalabilityReview.md E4). Zero is the old behavior and the right default for the one
+  // (Design/Archive/MmoScalabilityReview.md E4). Zero is the old behavior and the right default for the one
   // subscriber that has no siblings to avoid.
   [[nodiscard]] bool IsDueOn(std::uint64_t _tick, std::uint32_t _phase = 0) const noexcept;
 

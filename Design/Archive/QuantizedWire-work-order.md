@@ -1,7 +1,7 @@
 # Work order — slice 15: the quantized wire
 
-Cut from [`MmoScalabilityPlan.md`](../MmoScalabilityPlan.md) §6 slice 15, against the tree at `f301e0e`.
-It retires finding E5 of [`MmoScalabilityReview.md`](../MmoScalabilityReview.md): the ship record is 83
+Cut from [`MmoScalabilityPlan.md`](MmoScalabilityPlan.md) §6 slice 15, against the tree at `f301e0e`.
+It retires finding E5 of [`MmoScalabilityReview.md`](MmoScalabilityReview.md): the ship record is 83
 uncompressed bytes and the tree's own prose has been describing a quantized wire that does not exist.
 
 One slice, one branch, one pull request. Layer: `GameLogic`, plus the one-line ALPN bump in

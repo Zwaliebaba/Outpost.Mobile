@@ -5,7 +5,7 @@ Date: 2026-08-30
 
 ## Context
 
-`Design/Stations.md` needs one judgment in two places: does a station's owner hold this issuer
+`Design/Archive/Stations.md` needs one judgment in two places: does a station's owner hold this issuer
 hostile? The dock gate asks it before admitting a ship (§7.1) and the protector response asks it
 from the other side (§8). It changes recorded outcomes, and a spectator watching a replay would need
 it to understand why a ship was turned away.
@@ -72,7 +72,7 @@ decides whether CVC lets you dock. Faction-granular, because one subscriber is o
   half a world; a mask is coupled to no record, so taking whatever arrives is strictly more robust —
   which is the whole argument for spending the byte.
 - Aggression is permanent: no decay, no fines, no amnesty. That is the owner's decision
-  (`Design/Stations.md` §15, decision 3) rather than this record's, and a standings-repair design is
+  (`Design/Archive/Stations.md` §15, decision 3) rather than this record's, and a standings-repair design is
   where it changes.
 - `SHIP_RECORD_BYTES` 82 → 83 and `SNAPSHOT_HEADER_BYTES` 26 → 27, which happens to leave
   `ShipsPerSnapshotFragment` at 13: `(1152 − 26) / 82` and `(1152 − 27) / 83` both floor the same.

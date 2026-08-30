@@ -75,7 +75,7 @@ public:
   struct BodyView
   {
     // Three grids of the same body, finest first; the level drawn is chosen per frame from the
-    // projected radius (Design/BodyLod-work-order.md 2.2). A level that failed to bake holds
+    // projected radius (Design/Archive/BodyLod-work-order.md 2.2). A level that failed to bake holds
     // INVALID_BODY and the finest one that exists is drawn instead.
     static constexpr std::uint32_t LOD_COUNT = 3;
     Neuron::BodyHandle terrainLod[LOD_COUNT] = {Neuron::INVALID_BODY, Neuron::INVALID_BODY, Neuron::INVALID_BODY};
@@ -174,7 +174,7 @@ public:
   // A station of the layout, for the minimap: where it is and whose it is. Static content handed in
   // at boot the way body placements are, not a record -- it exists from the first frame however far
   // away the station is, which is what "static so can be marked" bought, and nothing on the wire
-  // carries one (Design/Stations.md 9.3).
+  // carries one (Design/Archive/Stations.md 9.3).
   struct StationMark
   {
     Game::WorldPos posWorld;
@@ -183,7 +183,7 @@ public:
 
   // One per order, at the point that was tapped rather than one per ship. A move order's is the
   // marker colour; a dock order's flashes in the station's faction colour, so the tap visibly landed
-  // on the thing and not the ground beside it (Design/Stations.md 9.2).
+  // on the thing and not the ground beside it (Design/Archive/Stations.md 9.2).
   struct OrderMarker
   {
     DirectX::XMFLOAT3 posWorld{0.0f, 0.0f, 0.0f};
@@ -363,7 +363,7 @@ public:
 
   // Whether _faction holds this client hostile, as of the last update header that arrived. The one
   // reading of the mask in the executable: the livery table, the overview and the contact count all
-  // ask this rather than inferring a relation from an identity (Design/Stations.md 4.3).
+  // ask this rather than inferring a relation from an identity (Design/Archive/Stations.md 4.3).
   [[nodiscard]] bool IsHostileToMe(Game::FactionId _faction) const noexcept
   {
     return m_receiver.IsHostileToMe(_faction);
@@ -371,7 +371,7 @@ public:
 
   // For the F1 readout: what the bodies on screen cost *last frame* -- the levels actually chosen
   // and drawn, not the sum of everything resident, which tripled when every body gained three
-  // grids (Design/BodyLod-work-order.md 2.1).
+  // grids (Design/Archive/BodyLod-work-order.md 2.1).
   [[nodiscard]] std::uint32_t BodyTriangleCount() const noexcept
   {
     return m_bodyTriangles;
@@ -429,18 +429,18 @@ private:
 
   // Records whose flag says station, of any faction. Consulted from exactly one place -- a tap with
   // a non-empty selection -- because a station is a place to send ships and not a thing to hold
-  // (Design/Stations.md 9.1).
+  // (Design/Archive/Stations.md 9.1).
   [[nodiscard]] int PickStation(float _xPx, float _yPx) const;
 
   // Sends the selection to dock at record _station, or refuses before sending: the affordance
-  // tells the truth first, and the simulation's gate stands behind it (Design/Stations.md 9.2).
+  // tells the truth first, and the simulation's gate stands behind it (Design/Archive/Stations.md 9.2).
   void IssueDockOrder(std::size_t _station);
 
   // Whether record _index is one this client may take hold of. Every selection path goes through it:
   // PickShip for taps and hovers, OnBoxSelect for a band, and RecallableIndex for a control group.
   [[nodiscard]] bool IsOwn(std::size_t _index) const noexcept;
 
-  // Whose paint a hull wears. Hostile outranks faction, which is the precedence Design/Stations.md
+  // Whose paint a hull wears. Hostile outranks faction, which is the precedence Design/Archive/Stations.md
   // 9.3 sets and this slice does not get to re-litigate: a Vanguard ship whose faction holds this
   // client hostile paints the Vandals' red, because the law turning on you is the thing the player
   // must see.
@@ -540,7 +540,7 @@ private:
   std::vector<std::uint8_t> m_bodyLod;
 
   // The visible hulls, grouped by the mesh they draw with, so a fleet sharing a hull is one draw
-  // (Design/MmoScalabilityReview.md G2). A plain vector rather than a map: there are ten meshes in
+  // (Design/Archive/MmoScalabilityReview.md G2). A plain vector rather than a map: there are ten meshes in
   // the game and a linear scan over ten beats a hash on every ship, and it keeps the draw order
   // stable across frames, which a hash does not.
   struct MeshBucket
