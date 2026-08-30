@@ -231,7 +231,7 @@ inline constexpr HullSpec HULL_SPECS[HULL_COUNT] = {
 //
 // Adding the arrival radius makes the implication hold by construction rather than by luck, for
 // every hull -- including the Carrier, whose 37 m tolerance is more than half the capture slack and
-// which no fixed margin inside the boundary could have absorbed (Design/Stations-slice-3.md 2.2).
+// which no fixed margin inside the boundary could have absorbed (Design/Archive/Stations-slice-3.md 2.2).
 //
 // A ship does not *stop* here. It stops existing, which is why the constant behind it is in the
 // contract (Design/Stations.md 7.3).

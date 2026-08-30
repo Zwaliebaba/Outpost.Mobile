@@ -132,7 +132,7 @@ public:
   // docks, and it ends by being swap-and-popped away with it.
   //
   // It also means a protector already on its way home picks up a new target and turns round rather
-  // than docking and being relaunched a tick later (Design/Stations-slice-4.md 2.4).
+  // than docking and being relaunched a tick later (Design/Archive/Stations-slice-4.md 2.4).
   struct ProtectorDuty
   {
     StationId home = INVALID_STATION_ID;
@@ -293,7 +293,7 @@ public:
   // need a repair path nobody would remember: a protector that *dies* has to decrement it too, or
   // losses are never replaced -- and DespawnShip has no business knowing what a protector is.
   // Counting removes that path, removes a counter from the replay contract's shadow, and cannot
-  // drift from the truth because it is the truth (Design/Stations-slice-4.md 2.3).
+  // drift from the truth because it is the truth (Design/Archive/Stations-slice-4.md 2.3).
   [[nodiscard]] std::uint32_t LaunchedProtectorCount(StationId _station) const noexcept;
 
   // The station a ship is, or INVALID_STATION_ID if it is not one. A linear scan of a vector with

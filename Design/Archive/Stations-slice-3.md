@@ -1,6 +1,6 @@
 # Work order — Stations slice 3: docking
 
-Implements slice 3 of [`Stations.md`](Stations.md) §16: a second order kind, a departure that carries
+Implements slice 3 of [`Stations.md`](../Stations.md) §16: a second order kind, a departure that carries
 a cause, and the pass that flies a ship to a station and takes it out of the world (design §7).
 
 **Layer:** `GameLogic` and `GameLogicTests`.
@@ -32,7 +32,7 @@ Design §7.4 says the docked handles travel "as a fourth span beside the destroy
 
 Half of that is out of date, and it is the half that would send an implementer to the wrong file.
 `destroyedCount` is no longer in the snapshot header: deaths and leaves moved to the reliable lane
-as their own `KIND_LEAVE` message when [ADR 0029](Decisions/0029-departures-and-orders-take-the-reliable-lane.md)
+as their own `KIND_LEAVE` message when [ADR 0029](../Decisions/0029-departures-and-orders-take-the-reliable-lane.md)
 landed, for the reason `WorldSnapshot.cpp` states — a snapshot is superseded by the next one and
 heals itself, a leave is stated once and a lost one is a ghost ship for the rest of the match.
 

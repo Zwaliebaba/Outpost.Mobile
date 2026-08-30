@@ -8,7 +8,7 @@ namespace GameLogicTests
 {
 namespace
 {
-// The shipped bounds are SystemDesc's own defaults (Design/Stations-slice-1.md 2.3), so a test that
+// The shipped bounds are SystemDesc's own defaults (Design/Archive/Stations-slice-1.md 2.3), so a test that
 // wants them constructs one and asks. Spelling them here instead would prove something about a
 // system nobody plays the first time the game retuned an orbit.
 constexpr std::uint64_t LAYOUT_SEED = 0x53746174696F6Eull; // "Station"

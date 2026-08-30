@@ -1,6 +1,6 @@
 # Work order — Stations slice 4: the response
 
-Implements slice 4 of [`Stations.md`](Stations.md) §16: the first NPC behavior in the tree that
+Implements slice 4 of [`Stations.md`](../Stations.md) §16: the first NPC behavior in the tree that
 *reacts*. An attacked station scrambles its garrison; protectors pursue the ship that attacked it
 wherever it goes, are replaced if they die, and come home and dock when their target is gone
 (design §8).

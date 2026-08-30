@@ -46,7 +46,7 @@ constexpr std::uint32_t SNAPSHOT_HEADER_BYTES = 1 + 1 + 4 + 4 + 4 + 8 + 4 + 1;
 // argument covers a docking exactly: a snapshot is superseded by the next one and heals itself, a
 // departure is stated once, and a lost "it docked" is a ghost ship for the rest of the match. So
 // ShipsPerSnapshotFragment does *not* follow this header -- it derives from SNAPSHOT_HEADER_BYTES,
-// which a docking never touches (Design/Stations-slice-3.md 2.1, ADR 0040).
+// which a docking never touches (Design/Archive/Stations-slice-3.md 2.1, ADR 0040).
 constexpr std::uint32_t LEAVE_HEADER_BYTES = 1 + 8 + 4 + 4 + 4;
 // handle, posWorld, prevPos, five floats, order, faction, flags, hullId
 constexpr std::uint32_t SHIP_RECORD_BYTES = 8 + 24 + 24 + 20 + 1 + 1 + 1 + 4;
@@ -637,7 +637,7 @@ bool WriteDockOrder(const DockOrder& _order, Neuron::Transport& _transport)
   // MaxShipsPerOrder, not a cap of its own. This header is smaller than a move order's, so its own
   // arithmetic would admit two more ships -- and two caps differing by two is a fact nobody would
   // remember and no test would pin. One number, which the client's selection logic already agrees
-  // on (Design/Stations-slice-3.md 2.6).
+  // on (Design/Archive/Stations-slice-3.md 2.6).
   if (_order.ships.empty() || _order.ships.size() > MaxShipsPerOrder())
     return false;
 
