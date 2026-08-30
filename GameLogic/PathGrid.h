@@ -8,6 +8,24 @@
 
 namespace Game
 {
+// The path lattice: where the cells are, as a property of the world rather than of any grid.
+//
+// A cell's index is a pure function of the position and of nothing else -- not of the obstacle set,
+// not of which grid is asking. That is what stops the same architecture producing a different route
+// because something was built a kilometre away, and it is what will let two grids overlap and agree
+// about every cell they share (Design/RegionalPathfinding.md 3.1, 5).
+//
+// Exact, because PATH_CELLS_PER_SECTOR is exact and the local offset is inside one sector by the
+// type's invariant. The index is a sector multiplied by 256, so it covers a factor of 256 less of
+// the universe than a WorldPos does -- 2^55 sectors, about 3x10^20 m, thirty thousand light years.
+// Past that it overflows, which is why this says so rather than claiming the whole range.
+[[nodiscard]] std::int64_t PathCellX(const WorldPos& _pos) noexcept;
+[[nodiscard]] std::int64_t PathCellZ(const WorldPos& _pos) noexcept;
+
+// The centre of a lattice cell: the point a clearance is measured at, and the point A* searches.
+// The inverse of the pair above over that range: PathCellX(PathCellCentre(x, z)) == x.
+[[nodiscard]] WorldPos PathCellCentre(std::int64_t _cellX, std::int64_t _cellZ) noexcept;
+
 // Routes around architecture. Local avoidance is not pathfinding, and large static structures are
 // what makes the difference matter: a ship steering locally around a 503 m Structure will hug it,
 // and can be trapped in a concave pocket or orbit it indefinitely. No amount of tuning in the
@@ -70,16 +88,20 @@ public:
   }
 
 private:
-  // Both take an offset from m_origin, not a coordinate. Positions reach them through
-  // OffsetX/OffsetZ so that a grid spanning a sector boundary indexes correctly.
-  [[nodiscard]] std::int32_t ClampedCellX(float _offsetMetres) const noexcept;
-  [[nodiscard]] std::int32_t ClampedCellZ(float _offsetMetres) const noexcept;
+  // The cell a position falls in, pulled into the window and flattened. Clamped rather than
+  // rejected because a route may start or end outside the grid entirely, and the nearest edge cell
+  // is the honest answer for both.
+  [[nodiscard]] std::uint32_t ClampedCell(const WorldPos& _pos) const noexcept;
   [[nodiscard]] WorldPos CentreOf(std::uint32_t _cell) const noexcept;
 
   std::vector<float> m_clearance; // metres to the nearest obstacle surface, per cell
   std::uint32_t m_width = 0;
   std::uint32_t m_height = 0;
-  WorldPos m_origin; // the centre of cell (0, 0)
+  // Which cells of the world lattice this grid holds, as the index of its south-west one. A grid
+  // chooses its window, never where the cells are: store a WorldPos origin instead and the lattice
+  // becomes a function of the obstacles, which is the defect this shape exists to remove.
+  std::int64_t m_originCellX = 0;
+  std::int64_t m_originCellZ = 0;
   std::uint32_t m_version = 0;
 
   // What the last build was built from, so a rebuild with an unchanged obstacle set can leave the

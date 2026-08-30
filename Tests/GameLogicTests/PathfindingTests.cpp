@@ -279,6 +279,69 @@ public:
     Assert::AreNotEqual(second, grid.Version(), L"a radius change alone did not bump the version");
   }
 
+  TEST_METHOD(ADistantObstacleDoesNotMoveTheCells)
+  {
+    // The lattice is the world's, not the grid's. Before this, a grid's origin was the corner of the
+    // box over its own obstacles, so building something a kilometre away moved every cell centre
+    // under every fixed point in the world -- and cell centres are what ClearanceAt samples and what
+    // A* searches. The same architecture, approached from the same place, could then give a
+    // different route because of something built somewhere else entirely
+    // (Design/RegionalPathfinding.md 1.3, 3.1).
+    //
+    // Invisible today, because every rebuild bumps the version and every route re-plans, so the
+    // shifted answer is simply the new answer. It stops being invisible the moment routes are
+    // cached, compared across machines or replayed -- and SimTuning.h already puts the cell size in
+    // the replay contract.
+    const Game::WorldPos probe = Game::LocalPos(400.0f, 0.0f);
+    const std::vector<Game::PathGrid::Obstacle> alone = {{Game::LocalPos(0.0f, 0.0f), 251.77f}};
+    const std::vector<Game::PathGrid::Obstacle> andARockFourKilometresWest = {{Game::LocalPos(0.0f, 0.0f), 251.77f},
+                                                                              {Game::LocalPos(-4000.0f, 0.0f), 131.61f}};
+
+    Game::PathGrid grid;
+    grid.Rebuild(alone);
+    const float before = grid.ClearanceAt(probe);
+    grid.Rebuild(andARockFourKilometresWest);
+    const float after = grid.ClearanceAt(probe);
+
+    // Exactly equal rather than close, because the probe falls in the same cell of the same lattice
+    // both times and the rock is 4 km further off than the Structure: this is the same distance
+    // computed twice. It read 136.5 m and then 160.6 m before the lattice was fixed to the world.
+    Assert::AreEqual(before, after, 0.0f, L"a rock 4 km away moved the clearance under a fixed point");
+    Assert::IsTrue(before < 1000.0f, L"the probe is not inside the grid at all, so the check proves nothing");
+  }
+
+  TEST_METHOD(ACellIndexIsAFunctionOfThePositionAlone)
+  {
+    // The lattice said directly, rather than through a grid. A cell's index is derived from the
+    // sector pair and the local offset, which is exact only because a sector is a whole number of
+    // cells across (SimTuning.h, PATH_CELLS_PER_SECTOR) -- so the round trip has to hold at a sector
+    // join and west of the origin, where the floor division is the thing that can be wrong.
+    const Game::WorldPos probe = Game::LocalPos(400.0f, 0.0f);
+    Assert::AreEqual(std::int64_t{12}, Game::PathCellX(probe), L"400 m is not in the thirteenth cell");
+    Assert::AreEqual(std::int64_t{0}, Game::PathCellZ(probe), L"0 m is not in the first cell");
+
+    const Game::WorldPos centre = Game::PathCellCentre(Game::PathCellX(probe), Game::PathCellZ(probe));
+    Assert::AreEqual(400.0f, WorldX(centre), 0.0f, L"the cell centre is not on the lattice");
+    Assert::AreEqual(16.0f, WorldZ(centre), 0.0f, L"the cell centre is not on the lattice");
+
+    // A cell one west of the universe origin is the last cell of the sector before it, not the
+    // first of this one -- which is the case a truncating division gets wrong.
+    const Game::WorldPos westOfOrigin = Game::PathCellCentre(-1, -1);
+    Assert::AreEqual(std::int64_t{-1}, westOfOrigin.sectorX, L"cell -1 did not land in the sector before the origin");
+    Assert::AreEqual(-16.0f, WorldX(westOfOrigin), 0.0f, L"cell -1's centre is not half a cell west of the origin");
+
+    for (const float metres : {-9000.0f, -8192.0f, -8191.5f, -33.0f, -1.0f, 0.0f, 31.9f, 8191.0f, 20000.0f})
+    {
+      const Game::WorldPos at = Game::LocalPos(metres, metres);
+      const std::int64_t cellX = Game::PathCellX(at);
+      const Game::WorldPos back = Game::PathCellCentre(cellX, Game::PathCellZ(at));
+      Assert::AreEqual(cellX, Game::PathCellX(back), L"a cell centre does not fall in its own cell");
+      Assert::IsTrue(std::fabs(Game::OffsetX(at, back)) <= Game::PATH_CELL_SIZE_METRES * 0.5f,
+                     L"a position is further than half a cell from its own cell centre");
+      Assert::IsTrue(back.localX >= 0.0f && back.localX < Game::SECTOR_SIZE_METRES, L"a cell centre broke the WorldPos invariant");
+    }
+  }
+
   TEST_METHOD(AnEmptyWorldPlansNothing)
   {
     // Every phase before this one was verified with no planner in the tree. With no architecture in

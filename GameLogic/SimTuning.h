@@ -237,6 +237,16 @@ static_assert(IsSectorAlignedCellSize(PATH_CELL_SIZE_METRES),
               "a path cell must not straddle a sector boundary (Design/Archive/Collision-slice-8.md 2.2)");
 inline constexpr float PATH_CLEARANCE_MARGIN_METRES = 8.0f;
 
+// How many path cells span a sector on one axis: 8,192 / 32 = 256. Derived rather than tuned -- it
+// is the two values above divided, and there is nothing to choose -- and exact because the assert
+// on the cell size says it is a power of two no larger than a sector. That exactness is what lets a
+// cell's index be a pure function of a position: the sector pair contributes whole cells and the
+// local offset contributes the rest, with no cell straddling the join (PathGrid.h, PathCellX;
+// Design/RegionalPathfinding.md 3.1).
+inline constexpr std::int64_t PATH_CELLS_PER_SECTOR = static_cast<std::int64_t>(SECTOR_SIZE_METRES / PATH_CELL_SIZE_METRES);
+static_assert(static_cast<float>(PATH_CELLS_PER_SECTOR) * PATH_CELL_SIZE_METRES == SECTOR_SIZE_METRES,
+              "a sector must be a whole number of path cells across");
+
 // How far off its planned leg a follower may drift before the route is re-planned. Never per tick:
 // a plan is a pure function of the static set and the two endpoints, and re-running it every tick
 // would cost everything and change nothing.

@@ -48,7 +48,9 @@ The grid's origin is its own minimum extent: `m_origin` is the corner of the bou
 obstacles, plus a margin. So the lattice is a function of *where the architecture happens to be*,
 not of the world. Add an obstacle 900 m west of an existing Structure and the origin moves 900 m
 west — and because 900 is not a multiple of the 32 m cell, **every cell centre in the grid shifts
-under every fixed point in the world**, by 28 m in that example.
+under every fixed point in the world**. Measured on that example, the clearance a fixed probe reads
+moves 4.0 m; the shift is the displacement modulo the cell, so the worst case is half a cell, 16 m,
+and a rock dropped 4 km west moves it 24.2 m by putting the probe in a different cell entirely.
 
 Cell centres are what A\* searches and what `ClearanceAt` samples, so the same architecture,
 approached from the same place, can produce a different route depending on what else was built
@@ -238,18 +240,25 @@ leaves it, or moves — which is the cadence slice 13 already established for th
 
 Four, in dependency order. The first changes no observable behaviour and is worth landing alone.
 
-| # | What | Layer | Size | Depends on | Record |
-|---|---|---|---|---|---|
-| 1 | The lattice is fixed to the world: global cell indices, grids as windows | `GameLogic` | S | — | — |
-| 2 | Islands: cluster the static set, one grid each, `FindPath` picks the island | `GameLogic` | M | 1 | ADR |
-| 3 | Crossing islands: case 3, and the diagnostic for an island that declines | `GameLogic` | S | 2 | — |
-| 4 | Dirty-island rebuilds and the benchmark row that shows the cost | `GameLogic` | S | 2 | — |
+| # | What | Layer | Size | Depends on | Record | State |
+|---|---|---|---|---|---|---|
+| 1 | The lattice is fixed to the world: global cell indices, grids as windows | `GameLogic` | S | — | — | landed |
+| 2 | Islands: cluster the static set, one grid each, `FindPath` picks the island | `GameLogic` | M | 1 | ADR | |
+| 3 | Crossing islands: case 3, and the diagnostic for an island that declines | `GameLogic` | S | 2 | — | |
+| 4 | Dirty-island rebuilds and the benchmark row that shows the cost | `GameLogic` | S | 2 | — | |
 
-**Slice 1 — the fixed lattice.** `PathGrid` gains a global cell index derived from `WorldPos`, and
-its `m_origin` becomes an origin *cell* rather than a world position. Acceptance: the existing
-pathfinding suite passes unchanged; a new row builds the same architecture twice with a distant
-obstacle added between, and requires the cell centre nearest a fixed world point to be identical
-both times — which fails today by 28 m.
+**Slice 1 — the fixed lattice. Landed.** `PathCellX`/`PathCellZ`/`PathCellCentre` in `PathGrid.h`
+are the lattice, and `PathGrid` holds a window on it: `m_origin` is gone and `m_originCellX`/
+`m_originCellZ` replace it, so a build chooses which cells it holds and never where they are.
+`ClearanceAt` and `FindPath` index by integer cell rather than by a float offset from a moving
+origin, which also retired the half-cell tolerance the old bounds test needed.
+
+Landed with two rows. `ADistantObstacleDoesNotMoveTheCells` builds one Structure, reads the
+clearance under a fixed probe, adds a rock 4 km west and reads it again; the two must be *exactly*
+equal, and before this they were 136.5 m and 160.6 m. `ACellIndexIsAFunctionOfThePositionAlone`
+round-trips an index through its centre either side of the universe origin and at a sector join,
+which is where the floor division is the thing that can be wrong. The other eighty-three GameLogic
+test methods pass unchanged.
 
 **Slice 2 — islands.** Union-find over the static store, one `PathGrid` per island, and a `PathGrids`
 owner that `World` holds instead of a single grid. `FindPath` chooses the island the straight line

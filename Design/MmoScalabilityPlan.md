@@ -135,7 +135,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 11 | Localized gather radius, threat pre-filter | `GameLogic` | M | — | U2 |  | landed |
 | 12 | The tick-rate decision | `GameLogic` | S | — | E7 | ADR | decided: 60 Hz stays |
 | 13 | Churn-gated static rebuilds | `GameLogic` | S | — | U4 |  | landed |
-| 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR | [designed](RegionalPathfinding.md) |
+| 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR | [designed](RegionalPathfinding.md); its slice 1 landed |
 | 15 | The quantized wire | `GameLogic` | M | 6 | E5 |  |  |
 | 16 | Global entity identity | `GameLogic` | M | 15 | U3 | ADR |  |
 | 17 | The state codec and the replay gate | `GameLogic` | M | 16 | U3 |  |  |
@@ -463,12 +463,13 @@ and the route follower are the interfaces that design must keep.
 what this slice was: it yields four slices of its own, listed in its §9, and none of them is
 implemented here. What the writing turned up is worth carrying back:
 
-- **A third failure the review did not have.** The grid's lattice is a function of its contents —
-  `m_origin` is the corner of the bounding box over the obstacles, so adding an obstacle 900 m west
-  shifts every cell centre under every fixed world point by 28 m. Invisible today because any change
-  re-plans everything anyway; fatal to any regional scheme, because two neighbouring grids would
-  disagree about where a cell is. It is that design's slice 1, it changes no observable behaviour,
-  and it is worth landing before the rest.
+- **A third failure the review did not have. Now fixed.** The grid's lattice was a function of its
+  contents — `m_origin` was the corner of the bounding box over the obstacles, so adding an obstacle
+  900 m west shifted every cell centre under every fixed world point by 4 m, and a rock dropped 4 km
+  west moved a fixed probe's clearance by 24.2 m. Invisible then because any change re-plans
+  everything anyway; fatal to any regional scheme, because two neighbouring grids would disagree
+  about where a cell is. That design's slice 1 has landed:
+  `PathCellX`/`PathCellZ`/`PathCellCentre` are the world's lattice and a grid holds a window on it.
 - **Islands beat sectors**, which is not what "regional" suggested. A sector-aligned grid is the
   natural unit and costs 256 kB whether it holds one Structure or none of it; a hundred populated
   sectors is 26 MB spent to say "open". Islands take the same fixed lattice and size themselves to

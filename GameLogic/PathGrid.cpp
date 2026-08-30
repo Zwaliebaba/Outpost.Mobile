@@ -10,7 +10,47 @@ namespace
 // Anywhere off the grid is open. True by construction: the grid is inflated past everything in it.
 constexpr float OPEN_CLEARANCE_METRES = 1e9f;
 constexpr std::uint32_t NO_CELL = 0xFFFFFFFFu;
+
+// Floor division for a signed numerator, because C++ truncates towards zero and the lattice runs
+// west and south of the origin as freely as east and north: cell -1 is the last cell of sector -1,
+// not the first of sector 0.
+[[nodiscard]] std::int64_t FloorDivide(std::int64_t _numerator, std::int64_t _divisor) noexcept
+{
+  const std::int64_t quotient = _numerator / _divisor;
+  return (_numerator % _divisor < 0) ? quotient - 1 : quotient;
+}
+
+// One axis of the lattice. The sector contributes whole cells and the local offset the rest, which
+// is exact only because a cell never straddles a sector boundary (SimTuning.h,
+// PATH_CELLS_PER_SECTOR). std::floor rather than a cast because the invariant on WorldPos keeps
+// _localMetres non-negative today and a cast would be the thing that broke silently if it stopped.
+[[nodiscard]] std::int64_t CellOnAxis(std::int64_t _sector, float _localMetres) noexcept
+{
+  return _sector * PATH_CELLS_PER_SECTOR + static_cast<std::int64_t>(std::floor(_localMetres / PATH_CELL_SIZE_METRES));
+}
 } // namespace
+
+std::int64_t PathCellX(const WorldPos& _pos) noexcept
+{
+  return CellOnAxis(_pos.sectorX, _pos.localX);
+}
+
+std::int64_t PathCellZ(const WorldPos& _pos) noexcept
+{
+  return CellOnAxis(_pos.sectorZ, _pos.localZ);
+}
+
+WorldPos PathCellCentre(std::int64_t _cellX, std::int64_t _cellZ) noexcept
+{
+  // Built field by field rather than through LocalPos, because LocalPos takes metres from the
+  // universe origin and a cell index far from it does not survive the trip through a float. The
+  // invariant holds by construction: the remainder is in [0, PATH_CELLS_PER_SECTOR), so the local
+  // offset is half a cell to half a cell short of a sector.
+  const std::int64_t sectorX = FloorDivide(_cellX, PATH_CELLS_PER_SECTOR);
+  const std::int64_t sectorZ = FloorDivide(_cellZ, PATH_CELLS_PER_SECTOR);
+  return WorldPos{sectorX, sectorZ, (static_cast<float>(_cellX - sectorX * PATH_CELLS_PER_SECTOR) + 0.5f) * PATH_CELL_SIZE_METRES,
+                  (static_cast<float>(_cellZ - sectorZ * PATH_CELLS_PER_SECTOR) + 0.5f) * PATH_CELL_SIZE_METRES};
+}
 
 bool PathGrid::Worse(const Open& _a, const Open& _b) noexcept
 {
@@ -84,30 +124,39 @@ void PathGrid::Rebuild(std::span<const Obstacle> _obstacles)
   minZ -= PATH_GRID_MARGIN_METRES;
   maxZ += PATH_GRID_MARGIN_METRES;
 
-  const std::int64_t width = static_cast<std::int64_t>((maxX - minX) / PATH_CELL_SIZE_METRES) + 1;
-  const std::int64_t height = static_cast<std::int64_t>((maxZ - minZ) / PATH_CELL_SIZE_METRES) + 1;
+  // The bounding box, snapped outward onto the world lattice. This is the whole of what a build
+  // decides: which cells it holds, never where they are. Both corners go through the lattice
+  // rather than being divided by the cell size here, so a box that spans a sector boundary is
+  // measured in cells and not in the offsets it happens to be expressed in.
+  WorldPos corner = reference;
+  Translate(corner, minX, minZ);
+  const std::int64_t originCellX = PathCellX(corner);
+  const std::int64_t originCellZ = PathCellZ(corner);
+  corner = reference;
+  Translate(corner, maxX, maxZ);
+  const std::int64_t width = PathCellX(corner) - originCellX + 1;
+  const std::int64_t height = PathCellZ(corner) - originCellZ + 1;
 
   // A world whose architecture is spread over tens of kilometres would want a grid of millions of
   // cells, and the honest answer today is to decline rather than to silently coarsen: cell size is
   // in the replay contract, so coarsening it here would change recorded outcomes as a side effect
   // of where someone put a building. Declining degrades to exactly the behaviour before this
-  // phase -- straight-line steering with local avoidance -- and sectors are what will bound this
-  // properly (Collision.md 3).
+  // phase -- straight-line steering with local avoidance -- and one grid per island of architecture
+  // is what will bound this properly (Design/RegionalPathfinding.md 3.3).
   if (width > PATH_GRID_MAX_CELLS_PER_AXIS || height > PATH_GRID_MAX_CELLS_PER_AXIS)
     return;
 
   m_width = static_cast<std::uint32_t>(width);
   m_height = static_cast<std::uint32_t>(height);
-  m_origin = reference;
-  Translate(m_origin, minX, minZ);
+  m_originCellX = originCellX;
+  m_originCellZ = originCellZ;
   m_clearance.assign(static_cast<std::size_t>(m_width) * m_height, OPEN_CLEARANCE_METRES);
 
   for (std::uint32_t cellZ = 0; cellZ < m_height; ++cellZ)
   {
     for (std::uint32_t cellX = 0; cellX < m_width; ++cellX)
     {
-      WorldPos centre = m_origin;
-      Translate(centre, static_cast<float>(cellX) * PATH_CELL_SIZE_METRES, static_cast<float>(cellZ) * PATH_CELL_SIZE_METRES);
+      const WorldPos centre = PathCellCentre(m_originCellX + cellX, m_originCellZ + cellZ);
       float clearance = OPEN_CLEARANCE_METRES;
       for (const Obstacle& obstacle : _obstacles)
         clearance = std::min(clearance, Distance(centre, obstacle.pos) - obstacle.radiusMetres);
@@ -116,40 +165,30 @@ void PathGrid::Rebuild(std::span<const Obstacle> _obstacles)
   }
 }
 
-std::int32_t PathGrid::ClampedCellX(float _offsetMetres) const noexcept
+std::uint32_t PathGrid::ClampedCell(const WorldPos& _pos) const noexcept
 {
-  const std::int32_t cell = static_cast<std::int32_t>(std::floor(_offsetMetres / PATH_CELL_SIZE_METRES + 0.5f));
-  return std::clamp(cell, 0, static_cast<std::int32_t>(m_width) - 1);
-}
-
-std::int32_t PathGrid::ClampedCellZ(float _offsetMetres) const noexcept
-{
-  const std::int32_t cell = static_cast<std::int32_t>(std::floor(_offsetMetres / PATH_CELL_SIZE_METRES + 0.5f));
-  return std::clamp(cell, 0, static_cast<std::int32_t>(m_height) - 1);
+  const std::int64_t cellX = std::clamp(PathCellX(_pos) - m_originCellX, std::int64_t{0}, static_cast<std::int64_t>(m_width) - 1);
+  const std::int64_t cellZ = std::clamp(PathCellZ(_pos) - m_originCellZ, std::int64_t{0}, static_cast<std::int64_t>(m_height) - 1);
+  return static_cast<std::uint32_t>(cellZ) * m_width + static_cast<std::uint32_t>(cellX);
 }
 
 WorldPos PathGrid::CentreOf(std::uint32_t _cell) const noexcept
 {
-  const std::uint32_t cellX = _cell % m_width;
-  const std::uint32_t cellZ = _cell / m_width;
-  WorldPos centre = m_origin;
-  Translate(centre, static_cast<float>(cellX) * PATH_CELL_SIZE_METRES, static_cast<float>(cellZ) * PATH_CELL_SIZE_METRES);
-  return centre;
+  return PathCellCentre(m_originCellX + (_cell % m_width), m_originCellZ + (_cell / m_width));
 }
 
 float PathGrid::ClearanceAt(const WorldPos& _pos) const noexcept
 {
   if (m_clearance.empty())
     return OPEN_CLEARANCE_METRES;
-  const float offsetX = OffsetX(m_origin, _pos);
-  const float offsetZ = OffsetZ(m_origin, _pos);
-  const float cellX = offsetX / PATH_CELL_SIZE_METRES;
-  const float cellZ = offsetZ / PATH_CELL_SIZE_METRES;
-  if (cellX < -0.5f || cellZ < -0.5f || cellX > static_cast<float>(m_width) - 0.5f || cellZ > static_cast<float>(m_height) - 0.5f)
+
+  // Which cell of the lattice, then whether this grid holds it. In that order: the cell a point is
+  // in is the world's answer and the same for every grid, and holding it is this grid's.
+  const std::int64_t cellX = PathCellX(_pos) - m_originCellX;
+  const std::int64_t cellZ = PathCellZ(_pos) - m_originCellZ;
+  if (cellX < 0 || cellZ < 0 || cellX >= static_cast<std::int64_t>(m_width) || cellZ >= static_cast<std::int64_t>(m_height))
     return OPEN_CLEARANCE_METRES;
-  const std::uint32_t x = static_cast<std::uint32_t>(ClampedCellX(offsetX));
-  const std::uint32_t z = static_cast<std::uint32_t>(ClampedCellZ(offsetZ));
-  return m_clearance[static_cast<std::size_t>(z) * m_width + x];
+  return m_clearance[static_cast<std::size_t>(cellZ) * m_width + static_cast<std::size_t>(cellX)];
 }
 
 bool PathGrid::IsClearBetween(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres) const
@@ -180,10 +219,8 @@ bool PathGrid::FindPath(const WorldPos& _from, const WorldPos& _to, float _requi
   }
 
   const std::uint32_t cells = static_cast<std::uint32_t>(m_clearance.size());
-  const std::uint32_t start = static_cast<std::uint32_t>(ClampedCellZ(OffsetZ(m_origin, _from))) * m_width +
-                              static_cast<std::uint32_t>(ClampedCellX(OffsetX(m_origin, _from)));
-  const std::uint32_t goal = static_cast<std::uint32_t>(ClampedCellZ(OffsetZ(m_origin, _to))) * m_width +
-                             static_cast<std::uint32_t>(ClampedCellX(OffsetX(m_origin, _to)));
+  const std::uint32_t start = ClampedCell(_from);
+  const std::uint32_t goal = ClampedCell(_to);
 
   m_travelled.assign(cells, OPEN_CLEARANCE_METRES);
   m_cameFrom.assign(cells, NO_CELL);

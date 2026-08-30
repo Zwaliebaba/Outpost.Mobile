@@ -20,9 +20,10 @@ Writing the replacement turned up a second problem the review did not have, and 
 decided the shape. **The grid's lattice is a function of its contents.** `m_origin` is the corner of
 the bounding box over the obstacles, so adding an obstacle 900 m west of a Structure moves the origin
 900 m west — and 900 is not a multiple of the 32 m cell, so every cell centre shifts under every
-fixed point in the world, by 28 m in that example. Cell centres are what A\* searches and what
-`ClearanceAt` samples. The same architecture, approached from the same place, can therefore produce a
-different route because of something built somewhere else entirely.
+fixed point in the world, by 4 m in that example and by up to half a cell in the worst one. Cell
+centres are what A\* searches and what `ClearanceAt` samples. The same architecture, approached from
+the same place, can therefore produce a different route because of something built somewhere else
+entirely.
 
 Today that is invisible: any change bumps the version, every route re-plans, and the shifted answer
 is simply the new answer. It stops being invisible the moment routes are cached, compared across
