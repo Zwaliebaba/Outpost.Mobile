@@ -129,7 +129,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 5 | Reliable lane on both transports (= QuicTransport 3a) | `NeuronCore` | M | — | E1 |  | [landed](ReliableLane-work-order.md) |
 | 6 | Leaves, destroys, orders go reliable (= QuicTransport 3b) | `GameLogic` | M | 5 | E1 | ADR | [landed](ReliableFormat-work-order.md) |
 | 7 | Listener slot reclamation, per-role rings | `NeuronCore` | S | — | E3 | ADR | landed |
-| 8 | Trail and glow batching | `NeuronClient`+`Outpost` | S | — | G1 |  |  |
+| 8 | Trail and glow batching | `NeuronClient`+`Outpost` | S | — | G1 |  |   landed |
 | 9 | Frustum culling | `NeuronClient`+`Outpost` | S | — | G2 |  |  |
 | 10 | Hull instancing | `NeuronClient`+`Outpost` | M | 9 | G2 |  |  |
 | 11 | Localized gather radius, threat pre-filter | `GameLogic` | M | — | U2 |  |  |
@@ -253,6 +253,27 @@ accepting; a recycled slot serves a fresh connection; existing QUIC tests unchan
 **Acceptance.** A code read: glow/trail submission is ≤ 2 draws per frame at any ship count;
 screenshots at two window sizes showing the plume unchanged; the ring headroom stated against
 `MAX_FX_VERTS` in the pull request.
+
+**As landed**, submission is **one** draw, not two. The look could not be preserved by reusing the
+sprite pass: a glow is a procedural disc, `pow(saturate(1 - d), falloff)`, and a sprite samples a
+texture. So the pass moved rather than the appearance — `FxGlowPS` is `DecalPS`'s glow branch
+arithmetic for arithmetic, the new pipeline's blend and depth state is the retired `m_glowPso`'s
+field for field, and what changed is where the quad's local coordinate comes from: the vertex, not a
+per-glow matrix. `SceneRenderer::DrawGlow` had exactly one caller and is gone, with its pipeline and
+the `decalParams.z` branch that only it reached.
+
+**Headroom**: 6 verts a glow, so a three-nozzle hull running a full 32-sample trail is 576 and
+`MAX_FX_VERTS` (49,152) holds 85 of them, shared with explosion fragments and sprites; past that the
+ring's existing `DroppedVerts` counter reports rather than the frame growing. The draw count it
+replaces, for a hundred such ships, was 9,600.
+
+**Screenshots are owed and not supplied** — this container has no Windows, no D3D12 and no way to
+run the game. In their place the geometry is verified against the path it replaces: a harness runs
+the retired billboard matrix and the new builder over four camera bases (including a tilted eye),
+three centres and three radii, and requires every corner to agree to 1e-3. Seven `NeuronClientTests`
+rows pin the builder — the quad's shared diagonal, corners one radius out along the camera basis,
+the uv the shader measures from, turning with the camera, and the two guards `DrawGlow` used to
+apply. A reviewer on Windows should still take the two screenshots before this merges.
 
 #### Slice 9 — frustum culling (`NeuronClient` + `Outpost`, S)
 

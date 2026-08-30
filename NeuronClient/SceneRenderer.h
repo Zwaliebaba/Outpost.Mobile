@@ -9,9 +9,13 @@
 
 namespace Neuron
 {
-// The world pass: opaque geometry, then the alpha-blended and additive overlays that sit on top of
-// it. Three pipelines, one root signature, one vertex format -- the cost of adding a new kind of
-// ground decal or glow is a constant, not a pipeline.
+// The world pass: opaque geometry, then the alpha-blended ground decals that sit on top of it. Two
+// pipelines, one root signature, one vertex format -- the cost of adding a new kind of ground decal
+// is a constant, not a pipeline.
+//
+// Thruster glows were a third pipeline here and are not any more. A decal is drawn a handful of
+// times a frame and a glow was drawn thousands, which is a different problem: it moved to
+// FxRenderer's vertex ring, where the whole frame's worth is one draw.
 //
 // It owns the uploaded meshes because they are only meaningful to it. Callers hold a MeshHandle,
 // which stays valid for the run and survives the renderer rehousing its buffers.
@@ -24,9 +28,9 @@ public:
   // thousand triangles do not justify a staging copy and its barrier.
   [[nodiscard]] MeshHandle UploadMesh(GpuDevice& _gpu, const std::vector<MeshVertex>& _verts);
 
-  // A unit quad in the XZ plane, built at Init. Every ring, marker and billboard is this one mesh
-  // with a different matrix and a different shader parameter, so none of them needs geometry rebuilt
-  // when its size or thickness changes.
+  // A unit quad in the XZ plane, built at Init. Every ring and marker is this one mesh with a
+  // different matrix and a different shader parameter, so none of them needs geometry rebuilt when
+  // its size or thickness changes.
   [[nodiscard]] MeshHandle UnitQuad() const noexcept
   {
     return m_unitQuad;
@@ -36,11 +40,10 @@ public:
   void BeginScene(GpuDevice& _gpu, const SceneFrame& _frame);
   void DrawMesh(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _baseColour, float _materialMix);
 
-  // Overlay pass. Both take the unit quad and shape it in the pixel shader, so ring thickness and
-  // glow falloff stay plain parameters with no geometry to rebuild.
+  // Overlay pass. The decal takes the unit quad and is shaped in the pixel shader, so ring thickness
+  // and fill stay plain parameters with no geometry to rebuild.
   void BeginDecals(GpuDevice& _gpu, const DirectX::XMFLOAT4X4& _viewProj, const DirectX::XMFLOAT3& _cameraPos);
   void DrawDecal(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _colour, float _thickness, float _fill);
-  void DrawGlow(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _colour, float _falloff);
 
 private:
   void CreateScenePipeline(GpuDevice& _gpu);
@@ -49,7 +52,6 @@ private:
   GpuPtr<ID3D12RootSignature> m_sceneRs;
   GpuPtr<ID3D12PipelineState> m_scenePso;
   GpuPtr<ID3D12PipelineState> m_decalPso; // alpha blended
-  GpuPtr<ID3D12PipelineState> m_glowPso;  // additive
   std::vector<GpuMesh> m_meshes;
   MeshHandle m_unitQuad = INVALID_MESH;
 };

@@ -1,5 +1,6 @@
-// Shared by the two effect passes -- tumbling hull fragments and camera-facing sprites. Both stages
-// of both pairs include this, so the vertex output and the pixel input cannot drift apart.
+// Shared by the effect passes -- tumbling hull fragments, camera-facing sprites, and the thruster
+// glows and trails. Every stage of every pair includes this, so the vertex output and the pixel
+// input cannot drift apart.
 //
 // `row_major` matches XMFLOAT4X4's storage, so mul(rowVector, matrix) means what DirectXMath means
 // by it -- the same reason Scene.hlsli gives.
@@ -16,7 +17,10 @@ cbuffer VsConstants : register(b0)
 cbuffer PsConstants : register(b1)
 {
   float4 lightDirAmbient; // xyz towards the light, w ambient level -- the same meaning as Scene.hlsli
-  float4 cameraPos;       // xyz eye
+  // xyz eye. w is the glow falloff exponent, written by FxRenderer::DrawGlows and read by FxGlowPS
+  // alone: the fragment and sprite passes leave it zero and never look at it. It is here rather
+  // than in the vertex because it is one tuning constant for the whole game, not a per-glow value.
+  float4 cameraPos;
 };
 
 Texture2D FxTex : register(t0);

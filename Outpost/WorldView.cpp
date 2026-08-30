@@ -1038,75 +1038,72 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu)
   }
 
   // --- thruster glow and trail ------------------------------------------------------------------
-  // Billboards: the unit quad lies in XZ, so putting the camera right vector in row 0 and the
-  // camera up vector in row 2 turns it to face the eye wherever it is.
-  const float glowRadius = std::max(0.1f, THRUSTER_GLOW_RADIUS) * SHIP_SCALE;
-  const float trailLength = std::max(0.0f, THRUSTER_TRAIL_LENGTH);
-  const float trailFade = std::max(0.01f, THRUSTER_TRAIL_FADE);
-  const XMFLOAT3& cameraRight = m_camera->Right();
-  const XMFLOAT3& cameraUp = m_camera->Up();
-
-  for (size_t i = 0; i < m_ships.size(); ++i)
+  // Billboards, built into the effect's vertex ring and drawn in one call. This used to be one draw
+  // per sample: a three-nozzle hull running a full trail is 96 of them, and a hundred such ships is
+  // over nine thousand draws a frame for the plume alone (Design/MmoScalabilityReview.md G1). What
+  // each glow looks like has not changed -- the same disc, the same falloff, the same additive blend
+  // -- only how many times the frame is asked to draw one.
+  if (m_fx != nullptr && m_fx->RingReady() && !m_ships.empty())
   {
-    const ShipView& view = m_ships[i];
-    if (view.thrusterLocals.empty() || view.thrusterIntensity <= 0.002f)
-      continue;
+    const float glowRadius = std::max(0.1f, THRUSTER_GLOW_RADIUS) * SHIP_SCALE;
+    const float trailLength = std::max(0.0f, THRUSTER_TRAIL_LENGTH);
+    const float trailFade = std::max(0.01f, THRUSTER_TRAIL_FADE);
 
-    // Hoisted out of the nozzle loop: one lookup per ship rather than one per billboard, and the
-    // whole plume of a hostile is one color rather than being decided sample by sample.
-    const Rgba accent = IsOwn(i) ? SELECTED_COLOUR : HOSTILE_ACCENT_COLOUR;
-
-    // Every exhaust gets its own glow and its own trail: a bomber flying with three nozzles lays
-    // down three ribbons, and they fan apart through a turn because the outboard ones sweep wider.
-    for (size_t nozzle = 0; nozzle < view.thrusterLocals.size(); ++nozzle)
+    m_glowSamples.clear();
+    for (size_t i = 0; i < m_ships.size(); ++i)
     {
-      const XMFLOAT3* const samples = view.trail.data() + nozzle * TRAIL_SAMPLES;
+      const ShipView& view = m_ships[i];
+      if (view.thrusterLocals.empty() || view.thrusterIntensity <= 0.002f)
+        continue;
 
-      // Newest sample first, walking back along the path until trailLength runs out. The trail
-      // follows the path the nozzle actually took, so it curves through a turn.
-      float travelled = 0.0f;
-      XMFLOAT3 previous = samples[view.trailHead];
-      for (int step = 0; step < view.trailCount; ++step)
+      // Hoisted out of the nozzle loop: one lookup per ship rather than one per billboard, and the
+      // whole plume of a hostile is one color rather than being decided sample by sample.
+      const Rgba accent = IsOwn(i) ? SELECTED_COLOUR : HOSTILE_ACCENT_COLOUR;
+
+      // Every exhaust gets its own glow and its own trail: a bomber flying with three nozzles lays
+      // down three ribbons, and they fan apart through a turn because the outboard ones sweep wider.
+      for (size_t nozzle = 0; nozzle < view.thrusterLocals.size(); ++nozzle)
       {
-        const int index = ((view.trailHead - step) % TRAIL_SAMPLES + TRAIL_SAMPLES) % TRAIL_SAMPLES;
-        const XMFLOAT3 point = samples[index];
-        if (step > 0)
+        const XMFLOAT3* const samples = view.trail.data() + nozzle * TRAIL_SAMPLES;
+
+        // Newest sample first, walking back along the path until trailLength runs out. The trail
+        // follows the path the nozzle actually took, so it curves through a turn.
+        float travelled = 0.0f;
+        XMFLOAT3 previous = samples[view.trailHead];
+        for (int step = 0; step < view.trailCount; ++step)
         {
-          travelled += Distance2D(previous.x, previous.z, point.x, point.z);
-          if (travelled >= trailLength)
+          const int index = ((view.trailHead - step) % TRAIL_SAMPLES + TRAIL_SAMPLES) % TRAIL_SAMPLES;
+          const XMFLOAT3 point = samples[index];
+          if (step > 0)
+          {
+            travelled += Distance2D(previous.x, previous.z, point.x, point.z);
+            if (travelled >= trailLength)
+              break;
+          }
+          previous = point;
+
+          const float along = (trailLength > 0.0f) ? travelled / trailLength : 1.0f;
+          const float taper = std::pow(std::max(0.0f, 1.0f - along), trailFade);
+          const float radius = glowRadius * (step == 0 ? 1.0f : taper * 0.8f);
+          const float alpha = view.thrusterIntensity * (step == 0 ? 1.0f : taper * 0.55f);
+          if (alpha <= 0.002f || radius <= 0.001f)
+            continue;
+
+          m_glowSamples.push_back(
+            Neuron::GlowSample{.posWorld = point, .radiusMetres = radius, .colour = Rgba{accent.r, accent.g, accent.b, alpha}});
+
+          if (trailLength <= 0.0f)
             break;
         }
-        previous = point;
-
-        const float along = (trailLength > 0.0f) ? travelled / trailLength : 1.0f;
-        const float taper = std::pow(std::max(0.0f, 1.0f - along), trailFade);
-        const float radius = glowRadius * (step == 0 ? 1.0f : taper * 0.8f);
-        const float alpha = view.thrusterIntensity * (step == 0 ? 1.0f : taper * 0.55f);
-        if (alpha <= 0.002f || radius <= 0.001f)
-          continue;
-
-        XMFLOAT4X4 billboard;
-        billboard._11 = cameraRight.x * radius * 2.0f;
-        billboard._12 = cameraRight.y * radius * 2.0f;
-        billboard._13 = cameraRight.z * radius * 2.0f;
-        billboard._14 = 0.0f;
-        billboard._21 = 0.0f;
-        billboard._22 = 1.0f;
-        billboard._23 = 0.0f;
-        billboard._24 = 0.0f;
-        billboard._31 = cameraUp.x * radius * 2.0f;
-        billboard._32 = cameraUp.y * radius * 2.0f;
-        billboard._33 = cameraUp.z * radius * 2.0f;
-        billboard._34 = 0.0f;
-        billboard._41 = point.x;
-        billboard._42 = point.y;
-        billboard._43 = point.z;
-        billboard._44 = 1.0f;
-        _renderer.DrawGlow(_gpu, m_quadMesh, billboard, Rgba{accent.r, accent.g, accent.b, alpha}, THRUSTER_GLOW_FALLOFF);
-
-        if (trailLength <= 0.0f)
-          break;
       }
+    }
+
+    if (!m_glowSamples.empty())
+    {
+      m_fxGlowVerts.clear();
+      Neuron::BuildGlowBillboards(m_glowSamples, m_camera->Right(), m_camera->Up(), m_fxGlowVerts);
+      m_fx->Begin(_gpu, m_camera->ViewProj(), frame.lightDir, frame.ambient, m_camera->Eye());
+      m_fx->DrawGlows(_gpu, m_fxGlowVerts, THRUSTER_GLOW_FALLOFF);
     }
   }
 }

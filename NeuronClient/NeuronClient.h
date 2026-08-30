@@ -32,6 +32,7 @@
 #include "SceneRenderer.h"
 #include "BodyRenderer.h"
 #include "FxRenderer.h"
+#include "GlowBillboards.h"
 #include "SkyRenderer.h"
 #include "BitmapFont.h"
 #include "ScreenImage.h"

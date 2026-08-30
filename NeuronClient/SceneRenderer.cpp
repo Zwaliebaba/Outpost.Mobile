@@ -100,10 +100,6 @@ void SceneRenderer::CreateDecalPipelines(GpuDevice& _gpu)
   pso.InputLayout.NumElements = static_cast<UINT>(std::size(SCENE_ELEMENTS));
   pso.DSVFormat = DEPTH_FORMAT;
   check_hresult(_gpu.Device()->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(m_decalPso.put())));
-
-  // Same shader, added rather than blended, for thruster glow and trail.
-  pso.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
-  check_hresult(_gpu.Device()->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(m_glowPso.put())));
 }
 
 MeshHandle SceneRenderer::UploadMesh(GpuDevice& _gpu, const std::vector<MeshVertex>& _verts)
@@ -194,19 +190,4 @@ void SceneRenderer::DrawDecal(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::
   cmd->DrawInstanced(m_meshes[_mesh].vertexCount, 1, 0, 0);
 }
 
-void SceneRenderer::DrawGlow(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _colour, float _falloff)
-{
-  if (_mesh >= m_meshes.size() || m_meshes[_mesh].vertexCount == 0 || _colour.a <= 0.001f)
-    return;
-  const float colour[4] = {_colour.r, _colour.g, _colour.b, _colour.a};
-  const float params[4] = {0.0f, _falloff, 1.0f, 0.0f};
-
-  ID3D12GraphicsCommandList* cmd = _gpu.CommandList();
-  cmd->SetPipelineState(m_glowPso.get());
-  cmd->SetGraphicsRoot32BitConstants(0, 16, &_world, 0);
-  cmd->SetGraphicsRoot32BitConstants(1, 4, colour, 0);
-  cmd->SetGraphicsRoot32BitConstants(1, 4, params, 4);
-  cmd->IASetVertexBuffers(0, 1, &m_meshes[_mesh].vbv);
-  cmd->DrawInstanced(m_meshes[_mesh].vertexCount, 1, 0, 0);
-}
 } // namespace Neuron

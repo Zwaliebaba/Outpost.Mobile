@@ -385,6 +385,12 @@ private:
   Neuron::SpriteParticles m_particles;
   std::vector<Neuron::FxVertex> m_fxFragmentVerts;
   std::vector<Neuron::FxVertex> m_fxSpriteVerts;
+
+  // The thruster plume, gathered before it is turned into quads. Two vectors rather than one
+  // because what the view decides (where each glow is, how big, how bright) and how a quad faces
+  // the camera are different jobs, and only the second is worth a test.
+  std::vector<Neuron::GlowSample> m_glowSamples;
+  std::vector<Neuron::FxVertex> m_fxGlowVerts;
   // Smoke is shed once a frame rather than once per death, so it cannot use a per-explosion seed
   // and does not need one: what a replay wants reproducible is the shatter, and that is seeded from
   // the ship's handle and the tick it died on.

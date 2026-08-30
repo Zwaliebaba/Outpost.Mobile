@@ -90,6 +90,9 @@
     <ClInclude Include="FxRenderer.h">
       <Filter>Render</Filter>
     </ClInclude>
+    <ClInclude Include="GlowBillboards.h">
+      <Filter>Render</Filter>
+    </ClInclude>
     <ClInclude Include="SkyRenderer.h">
       <Filter>Render</Filter>
     </ClInclude>
@@ -156,6 +159,9 @@
       <Filter>Body</Filter>
     </ClCompile>
     <ClCompile Include="FxRenderer.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="GlowBillboards.cpp">
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="SkyField.cpp">
@@ -235,6 +241,9 @@
       <Filter>Shaders</Filter>
     </FxCompile>
     <FxCompile Include="Shaders\FxSpritePS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\FxGlowPS.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
     <FxCompile Include="Shaders\SkyVS.hlsl">

@@ -50,6 +50,9 @@
     <ClCompile Include="FxVertexTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="GlowBillboardsTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="SkyFieldTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
