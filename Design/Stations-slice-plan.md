@@ -1,7 +1,7 @@
 # Stations — slice implementation plan
 
 An implementation plan for the six slices [`Stations.md`](Stations.md) §16 lists, grounded against
-the tree at `766b4d9`. It is not one of Design/README.md's five document kinds and it does not
+the tree at `66ac880`. It is not one of Design/README.md's five document kinds and it does not
 replace one: the design still argues the shape, and each slice still gets its own work order when
 it is picked up. What this adds is the part a work order otherwise has to rediscover — which files
 each slice touches, in what order, what the tree has moved under the design since it was written,
@@ -14,7 +14,9 @@ one is written, and the whole file goes when the last slice lands.
 
 ## 1. Where the tree stands
 
-Verified, not assumed. Every claim below was read at `766b4d9`.
+Verified, not assumed. Every claim below was read at `766b4d9` and re-checked at `66ac880`, the
+merge that brought NMO slices 2-5 in. `GameLogic/` is byte-identical across that merge, so
+everything slices 1-4 rest on is unchanged; what moved is slice 5's, and §2.3 says what.
 
 **Nothing from Stations has landed.** No `Standing`, no `Station`, no `MakeStation`, no
 `hostileMask`, no `DespawnCause`, no `UniverseLayout`, no `DockOrder`, no `FACTION_VANDAL`.
@@ -28,7 +30,7 @@ which is currently a note about work not yet done.
 
 **What the design builds on is all there and matches its arithmetic:**
 
-| The design says | The tree at `766b4d9` |
+| The design says | The tree at `66ac880` |
 |---|---|
 | `SHIP_RECORD_BYTES` 82 → 83 | 82 today (`WorldSnapshot.cpp:35`) ✓ |
 | A `Structure`'s skin is 251 m from its centre | `251.180f` (`HullSpec.h:114`) ✓, so §7.3's 315 m and 419 m dock ranges are right |
@@ -95,19 +97,22 @@ For the record, because a reviewer will expect a change and there is none:
 `ShipsPerSnapshotFragment` is 13 before and 13 after — (1152 − 26) / 82 = 13.7 and
 (1152 − 27) / 83 = 13.5, both floor to 13.
 
-### 2.3 The colour table Stations §9.3 describes is another design's slice, and it has not landed
+### 2.3 The colour table Stations §9.3 describes has landed — slice 5 shrinks
 
-`Design/NmoFormat-slice-5.md` is still in `Design/`, so it is open. Its opening paragraph says the
-faction-to-colour branch "becomes the table [Stations.md](Stations.md) §9.3 describes" — that slice
-*builds* the table; Stations §9.3 says the Vanguard entry is spelled `LIVERY_VANGUARD` "when they
-land". Today the tree still has the branch the two of them replace: `WorldView.cpp:856`,
-`tint = own ? SHIP_COLOUR : HOSTILE_SHIP_COLOUR`.
+**Resolved at `66ac880`.** This was the plan's one open scheduling question and the merge answered
+it: NMO slices 2-5 are in, `Design/NmoFormat.md` and all four work orders have moved to
+`Design/Archive/`, and the table exists.
 
-So Stations slice 5 either adds a row to a table that exists, or writes a third arm onto a branch
-that NMO slice 5 then deletes. **Recommendation: land NMO slice 5 first and let Stations slice 5
-add one row.** They are both `Outpost` slices and therefore serial anyway (Design/README.md, one
-slice per layer at a time), so the ordering costs nothing but the wait, and the alternative pays
-for the same colour twice. §11 puts this to the owner as the one scheduling question in the plan.
+`WorldView::LiveryOf(FactionId, bool _own, bool _hostileToMe)` (`WorldView.cpp:558`) is already
+§9.3's table, precedence and all — the hostile row outranks the faction rows, `LIVERY_VANGUARD`
+(`ViewTuning.h:240`) is the CVC azure, `LIVERY_VANDAL` is the red, `HUD_ALERT_RED` derives from the
+latter, and its comment says the Vanguard row "is written now so that the day Stations lands, no
+client code changes."
+
+Take that at its word and slice 5's colour work is one wire: `_hostileToMe` is a parameter with
+nothing feeding it, and slice 2's `hostileMask` is what feeds it. What remains for slice 5 is
+`HUD_VANGUARD_BLUE` for the overview column — the minimap answers friend-or-enemy and deliberately
+does not follow a livery — and the mask reaching `LiveryOf` and `CONTACTS`.
 
 ### 2.4 `DespawnsSince` changing its element type is a cross-file edit
 
@@ -165,6 +170,11 @@ against the same header, which is the conflict the serial rule exists to avoid.
 
 ## 4. Slice 1 — the layout
 
+**Written, in review** — work order [`Stations-slice-1.md`](Stations-slice-1.md), decision record
+[0037](Decisions/0037-the-universe-layout-is-static-content-in-gamelogic.md). What follows is what
+was planned; the work order is what was built, and the two agree except that the draw order gained
+a fourth item (the bearing jitter, which design §5.2 asks for in prose and leaves off its list).
+
 **Layer:** `GameLogic`, `GameLogicTests`. **Depends on:** nothing. **Blocks:** slice 5.
 
 | File | What happens to it |
@@ -175,7 +185,7 @@ against the same header, which is the conflict the serial rule exists to avoid.
 | `GameLogic/GameLogic.h` | Include after `Patrol.h`; and the umbrella's randomness sentence (below) |
 | `Tests/GameLogicTests/UniverseLayoutTests.cpp` | New, plus both project files |
 | `AGENTS.md` §2 | The `GameLogic/` row names its headers; `UniverseLayout` joins them |
-| `Design/Decisions/0035-*.md` + `README.md` | The record below |
+| `Design/Decisions/0037-*.md` + `README.md` | The record below |
 | `Design/Stations.md` §16 | Marks slice 1 landed |
 
 **The work, in order.** The struct trio first, then `LayOutSystem` as one `Neuron::Pcg32(_seed)`
@@ -212,7 +222,7 @@ agree"), and this design does not have to.
 **Decision record due:** the universe layout is static content in `GameLogic` — ADR 0008's
 three-way elimination re-run for content both binaries need, with `BodyCatalogue` staying client-
 side because what a planet *wears* is nobody's business but the client's. Next free number is
-**0035**.
+**0037**.
 
 ---
 
@@ -231,7 +241,7 @@ side because what a planet *wears* is nobody's business but the client's. Next f
 | `Tests/GameLogicTests/StationTests.cpp` | New: the station table and the standings table |
 | `Tests/GameLogicTests/SnapshotTests.cpp` | The two new wire fields; plus the rename at its `FACTION_HOSTILE` sites |
 | `Tests/GameLogicTests/PatrolTests.cpp`, `OrderTests.cpp` | The rename only |
-| `Design/Decisions/0036-*.md`, `0037-*.md` + `README.md` | The two records below |
+| `Design/Decisions/0038-*.md`, `0039-*.md` + `README.md` | The two records below |
 
 **The work, in order.** Rename first, as its own commit inside the branch — 15 sites, no behaviour
 — so the rest of the diff is readable. Then the standings table: a `FACTION_LIMIT × FACTION_LIMIT`
@@ -253,13 +263,13 @@ are stated in design §6.2 and §4.3 respectively and neither is free to move.
 `GameLogicTests` passing unchanged. Three test files change in this slice — for the rename, and
 nothing else. The claim to make in the pull request is the honest one: **no assertion changed, no
 scene changed, no test's behaviour changed**; a world with no stations and no standings mutation
-ticks bit-identically to `766b4d9`.
+ticks bit-identically to `66ac880`.
 
 **Acceptance.** `TheStandingTableStartsAsAuthored`, `StandingSurvivesTheWire`,
 `TheStationFlagSurvivesTheWire`, `AStationIsItsRow` (design §11); the whole suite green;
 Debug|x64 builds; the game plays exactly as before, because nothing calls `MakeStation` yet.
 
-**Decision records due — two.** Next free numbers **0036** and **0037**:
+**Decision records due — two.** Next free numbers **0038** and **0039**:
 
 - *Stations are ships with a side table* — against a hull property (which cannot say "this
   `Structure` is scenery") and against a second entity array (which forks snapshots, interest,
@@ -283,7 +293,7 @@ Debug|x64 builds; the game plays exactly as before, because nothing calls `MakeS
 | `Tests/GameLogicTests/DockingTests.cpp` | New |
 | `Tests/GameLogicTests/WorldTests.cpp` | `DespawnsSince(...)[n]` becomes `...[n].handle`, about a dozen sites |
 | `Tests/GameLogicTests/SnapshotTests.cpp`, `PublisherTests.cpp` | The docked list end to end |
-| `Design/Decisions/0038-*.md` + `README.md` | The record below |
+| `Design/Decisions/0040-*.md` + `README.md` | The record below |
 
 **The work, in order.** `DespawnCause` first, because it is the mechanical change everything else
 sits on and it should be green before any docking logic exists. Then the order kind and its gates.
@@ -316,7 +326,7 @@ green; Debug|x64 builds; the game plays as before, because no client can send a 
 **Decision record due:** *a departure carries a cause on the wire* — the second cause through
 Hostiles §4.4's one-list door, and why docking reuses despawn rather than inventing a `Docked`
 order-state that would leave ghost entries in every pass and every index. Next free number
-**0038**.
+**0040**.
 
 ---
 
@@ -329,7 +339,7 @@ order-state that would leave ghost entries in every pass and every index. Next f
 | `GameLogic/SimTuning.h` | `PURSUIT_REPLAN_METRES = 64.0f` |
 | `GameLogic/World.h` / `.cpp` | Target lists and the launch metronome on `Station`; `ProtectorDuty` + `m_protectors`; `StepProtectors()` last in the slot; the full `RecordAggression`; stand-down-and-dock-home; the despawn repair widened to a fourth table |
 | `Tests/GameLogicTests/ProtectorTests.cpp` | New, including the whole-scene replay test |
-| `Design/Decisions/0039-*.md` + `README.md` | The record below |
+| `Design/Decisions/0041-*.md` + `README.md` | The record below |
 
 **The work, in order.** `RecordAggression`'s second half (the target list) first, then the
 metronome, then the pursuit, then the stand-down. Launches are collected during the pass and
@@ -364,27 +374,26 @@ because nothing calls `RecordAggression` until slice 6's F6.
 **Decision record due:** *the protector response reacts to stated acts, not senses* — no aggro
 radius, no threat scan, no proximity trigger; the NPC reads exactly two things it did not write
 (its target's position and liveness), and the combat design owns the senses. Next free number
-**0039**.
+**0041**.
 
 ---
 
 ## 8. Slice 5 — the Vanguard scene
 
-**Layer:** `Outpost`. **Depends on:** 1, 2 — and, by recommendation, NMO slice 5 (§2.3).
-**Blocks:** 6.
+**Layer:** `Outpost`. **Depends on:** 1, 2. **Blocks:** 6.
 
 | File | What happens to it |
 |---|---|
-| `Outpost/ViewTuning.h` | The starting-system block: layout seed beside `BODY_START_SEED`, the `SystemDesc` overrides (`pinFirstPlanet`, `BODY_START_PLANET_BEARING_DEG`, `BODY_START_PLANET_DISTANCE_METRES`); the Vanguard garrison content (Corvette, complement 3, cadence 90, target cap 4); the Vanguard colour (one `LIVERY_VANGUARD` if NMO 5 has landed, else `VANGUARD_SHIP_COLOUR` + `VANGUARD_ACCENT_COLOUR`); `HUD_VANGUARD_BLUE` |
+| `Outpost/ViewTuning.h` | The starting-system block: layout seed beside `BODY_START_SEED`, the `SystemDesc` overrides (`pinFirstPlanet`, `BODY_START_PLANET_BEARING_DEG`, `BODY_START_PLANET_DISTANCE_METRES`); the Vanguard garrison content (Corvette, complement 3, cadence 90, target cap 4); `HUD_VANGUARD_BLUE`, derived from `LIVERY_VANGUARD` the way `HUD_ALERT_RED` is derived from `LIVERY_VANDAL` (§2.3: the scene colours already exist) |
 | `Outpost/OutpostApp.h` / `.cpp` | `LayOutSystem` once at boot; `SpawnVanguardStations()`; the Vandal base registered through `MakeStation` with complement 0; `SpawnStartingBodies` placing worlds at the layout's sites; `FACTION_NAMES` beside `HULL_NAMES`; `CONTACTS` by mask (`OutpostApp.cpp:613`); the `STATIONS ONLINE` boot line; F5 rerolls looks only |
-| `Outpost/WorldView.h` / `.cpp` | The faction-tint table replacing the branch at `WorldView.cpp:856`; the mark list handed in at boot |
+| `Outpost/WorldView.h` / `.cpp` | `LiveryOf`'s `_hostileToMe` fed from the received mask — the table itself already exists (§2.3); the mark list handed in at boot |
 | `Outpost/Hud.cpp` | Station dots at `HUD_MINIMAP_STRUCTURE_DOT_PX` by the record's flag rather than by `HullSpecOf(...).immovable` (`Hud.cpp:379`); the hollow marks as a second draw path, clamped rather than clipped (§2.5) |
 | `AGENTS.md` §2 | The what-is-here sentences |
 | `Design/Stations.md` §16 | Marks slices 1, 2 and 5 landed as they go |
 
 **The work, in order.** The layout call and the station spawns first — they are testable by the
-`STATIONS ONLINE` count before anything is coloured. Then the tint table. Then the minimap, dots
-before marks.
+`STATIONS ONLINE` count before anything is coloured. Then the mask into `LiveryOf` and `CONTACTS`.
+Then the minimap, dots before marks.
 
 **F5 must stop short of the layout.** `ReseedBodies` currently reseeds from
 `BODY_START_SEED + m_bodyRerollCount` (`OutpostApp.cpp:450`). After this slice the *sites* come
@@ -439,15 +448,16 @@ refusal line at the Vandal base. All four suites green; no `GameLogic` file touc
 
 ## 10. The decision-record ledger
 
-Next free number is **0035** (`Design/Decisions/` ends at `0034-a-routes-version-is-the-whole-worlds.md`).
+Next free number is **0037** — the merge at `66ac880` took 0035 (hulls are authored in GLB) and
+0036 (a liveried surface is declared and the combine is a multiply).
 
 | # | Record | Slice |
 |---|---|---|
-| 0035 | The universe layout is static content in `GameLogic` | 1 |
-| 0036 | Stations are ships with a side table | 2 |
-| 0037 | Standings are simulation state, stated per subscriber | 2 |
-| 0038 | A departure carries a cause on the wire | 3 |
-| 0039 | The protector response reacts to stated acts, not senses | 4 |
+| 0037 | The universe layout is static content in `GameLogic` | 1 |
+| 0038 | Stations are ships with a side table | 2 |
+| 0039 | Standings are simulation state, stated per subscriber | 2 |
+| 0040 | A departure carries a cause on the wire | 3 |
+| 0041 | The protector response reacts to stated acts, not senses | 4 |
 
 Numbers are claimed in order of writing, so a slice that lands out of order takes the next free one
 and this table is the thing that goes stale, not the records. Each goes in the same pull request as
@@ -457,12 +467,10 @@ the change it explains, and the index in `Design/Decisions/README.md` lists it.
 
 ## 11. What is not decided
 
-Three of these are the implementer's and are recommended above; the first is the owner's.
+The first is answered; the rest are the implementer's and are recommended above.
 
-1. **NMO slice 5 before Stations slice 5?** Recommended (§2.3). The alternative is a third arm on
-   the tint branch that NMO slice 5 deletes on arrival — the same colour paid for twice. Both are
-   `Outpost` slices and cannot run in parallel anyway, so the recommendation costs only the order
-   they are picked up in.
+1. ~~**NMO slice 5 before Stations slice 5?**~~ Resolved at `66ac880`: NMO slice 5 landed first,
+   which is what was recommended, and slice 5 is smaller for it (§2.3).
 2. **§7.4 is one sentence out of date** (§2.1). The docked list belongs on the reliable lane beside
    the destroyed one, and `ShipsPerSnapshotFragment` does not follow. Recommend an amendment note
    in the design rather than a rewrite — the argument is intact, the byte layout moved underneath

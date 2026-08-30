@@ -1,8 +1,9 @@
 # Stations — Core Vanguard Command, docking, and the protector response
 
-**Status: proposed. No slice has landed.** Four decisions were put to the owner on 2026-08-30 and
-taken (§15); each was the recommended option. §16 lists the slices and the dependencies between
-them.
+**Status: in progress. No slice has merged; slice 1 is written and in review.** Four decisions were
+put to the owner on 2026-08-30 and taken (§15); each was the recommended option. §16 lists the
+slices and the dependencies between them, and
+[`Stations-slice-plan.md`](Stations-slice-plan.md) grounds that list against the tree.
 
 This document designs the game's first *civic* presence: stations owned by **Core Vanguard
 Command** — CVC, or the **Vanguard** — the government entity of known space. A station is a place
@@ -871,7 +872,7 @@ shape; work orders are written per slice when it is picked up.
 
 | # | Slice | Layer | Depends on | Decision records due |
 |---|---|---|---|---|
-| 1 | **The layout**: `UniverseLayout.h/.cpp`, `LayOutSystem`, the three layout tests | `GameLogic` | — | the layout is static content in `GameLogic` (ADR-0008-shaped) |
+| 1 | **The layout**: `UniverseLayout.h/.cpp`, `LayOutSystem`, the three layout tests — *in review*, [work order](Stations-slice-1.md) | `GameLogic` | — | the layout is static content in `GameLogic` ([ADR 0037](Decisions/0037-the-universe-layout-is-static-content-in-gamelogic.md)) |
 | 2 | **Who is who**: `FACTION_VANGUARD`, the `FACTION_HOSTILE` → `FACTION_VANDAL` rename at every caller (§4.1), `Standing` + `DEFAULT_STANDINGS` + the table in `World`, the standing half of `RecordAggression`, the station table + `MakeStation` + `StationDesc`, the record's flags byte, the update header's `hostileMask`, their tests | `GameLogic` (+ the rename's `Outpost` call sites) | — | stations are ships with a side table; standings are simulation state stated per subscriber |
 | 3 | **Docking**: `DespawnCause` + the docked list on the wire, `DockOrder` write/read, `IssueDockOrder` + gates, `m_dockings` + the dock pass + capture + ledger, `DOCK_CAPTURE_METRES` + `DockRangeMetres`, move-order cancellation, despawn repair, their tests | `GameLogic` | 2 | a departure carries a cause on the wire |
 | 4 | **The response**: target lists + the launch metronome, `m_protectors` + the pursuit pass + `PURSUIT_REPLAN_METRES`, stand-down-and-dock-home, the full `RecordAggression`, the replay test over the whole scene | `GameLogic` | 2, 3 | the protector response reacts to stated acts, not senses |

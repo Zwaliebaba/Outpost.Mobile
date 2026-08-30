@@ -8,7 +8,10 @@
 // the same code be unit-tested, replayed, and eventually run on a server that has no GPU:
 //
 //   * no wall clock -- the only time in here is TICK_DT and the tick count;
-//   * no OS entropy -- randomness, when it arrives, is one seeded generator held by World;
+//   * no OS entropy -- the one generator is Neuron::Pcg32 and nothing seeds itself from the
+//     machine. Randomness has arrived, in UniverseLayout: a pure function of a seed its caller
+//     supplies, called at boot, whose output is then ordinary spawn input. Nothing inside Step
+//     draws at all, so the replay contract sees positions and never a generator;
 //   * no pointers as keys, and no iteration order that is not dense-array order;
 //   * no presentation state -- ring fades, camera lag and thruster glow live in the view.
 //
@@ -28,6 +31,7 @@
 #include "InterestSet.h"
 #include "Formation.h"
 #include "Patrol.h"
+#include "UniverseLayout.h"
 #include "Movement.h"
 #include "World.h"
 #include "WorldSnapshot.h"

@@ -71,3 +71,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0034](0034-a-routes-version-is-the-whole-worlds.md) | A route's version is the whole world's, not its island's | accepted |
 | [0035](0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md) | Ship hulls are authored in GLB and converted to NMO, and ObjParser is deleted | accepted |
 | [0036](0036-a-liveried-surface-is-declared-and-the-combine-is-a-multiply.md) | A liveried surface is declared by its material, and the combine is a multiply | accepted |
+| [0037](0037-the-universe-layout-is-static-content-in-gamelogic.md) | The universe layout is static content in GameLogic | accepted |

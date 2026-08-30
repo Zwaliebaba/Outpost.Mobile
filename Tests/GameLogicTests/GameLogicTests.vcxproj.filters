@@ -44,6 +44,9 @@
     <ClCompile Include="PatrolTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="UniverseLayoutTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="PublisherTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

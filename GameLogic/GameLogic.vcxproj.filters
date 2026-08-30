@@ -45,6 +45,9 @@
     <ClInclude Include="Patrol.h">
       <Filter>Motion</Filter>
     </ClInclude>
+    <ClInclude Include="UniverseLayout.h">
+      <Filter>World</Filter>
+    </ClInclude>
     <ClInclude Include="Movement.h">
       <Filter>Motion</Filter>
     </ClInclude>
@@ -96,6 +99,9 @@
       <Filter>World</Filter>
     </ClCompile>
     <ClCompile Include="InterestSet.cpp">
+      <Filter>World</Filter>
+    </ClCompile>
+    <ClCompile Include="UniverseLayout.cpp">
       <Filter>World</Filter>
     </ClCompile>
     <ClCompile Include="World.cpp">
