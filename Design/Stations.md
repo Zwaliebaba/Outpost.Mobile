@@ -43,8 +43,9 @@ key, so that the day the combat design lands it connects to a trigger rather tha
 - **Stations**: a side table in `World` that makes an existing `Structure` ship a station — an
   owner, a docked ledger, a garrison. The station *is* its structure ship; the table is what knows
   it admits ships. The record's wire form gains one flags byte so a client knows a station when it
-  sees one (§6). The existing pirate base becomes a pirate-owned station in the same table, and
-  nothing about it changes for the player (§15, owner decision 4).
+  sees one (§6). The existing pirate base becomes a station in the same table, owned by the
+  pirates — the **Vandal Collective** ("Vandal"), named by the owner with the Vanguard (§4.1) —
+  and nothing about it changes for the player (§15, owner decision 4).
 - **Docking**: a second order kind on the wire. Select own ships, tap a station: the ships fly to
   it through the existing order machinery, and each one that reaches capture range leaves the
   world into the station's ledger. The wire learns to say *docked* as distinct from *destroyed*
@@ -116,10 +117,11 @@ More of this feature exists than not, which is what keeps the slices small:
 
 ## 4. Factions and standings — the Vanguard
 
-### 4.1 The faction
+### 4.1 The factions, named
 
 ```cpp
-// ShipState.h, beside FACTION_PLAYER and FACTION_HOSTILE
+// ShipState.h, beside FACTION_PLAYER
+inline constexpr FactionId FACTION_VANDAL = 1;   // was FACTION_HOSTILE: renamed, same value (below)
 inline constexpr FactionId FACTION_VANGUARD = 2;
 ```
 
@@ -128,6 +130,17 @@ entity, and the HUD says **VANGUARD**. Its ships and stations are ordinary recor
 `factionId = FACTION_VANGUARD` — no government flag, no station-faction special case anywhere in
 the engine, for ADR 0013's reason: the server states whose a thing is, and what that *means* is a
 mapping each side owns.
+
+The pirates have a name now too: the **Vandal Collective** — "Vandal", and **VANDAL** where the
+HUD needs a word. With the name comes a rename, and it is not cosmetic: this design introduces
+`Standing::Hostile` as a *relation* (§4.2), and a faction *named* `FACTION_HOSTILE` beside it is
+one word carrying two meanings — `StandingOf(FACTION_HOSTILE, …) == Standing::Hostile` is a
+sentence nobody should have to parse twice. Identity constants name identities and standing
+values name relations, which is ADR 0013's split spelled into the identifiers. So slice 2 renames
+`FACTION_HOSTILE` to `FACTION_VANDAL`, same value, every caller in the same commit. The view's
+`HOSTILE_*` constants — `HOSTILE_SHIP_COLOUR`, `HUD_ALERT_RED` and family — deliberately keep
+their names: they color the relation (whatever faction the mask flags, §9.3), not the Vandal
+Collective, and the day the Vanguard turns on a criminal it is these that paint it.
 
 ### 4.2 Standing — what a faction is to a faction
 
@@ -149,9 +162,9 @@ inline constexpr std::uint32_t FACTION_LIMIT = 8; // the mask in §4.3 is a u8; 
 `StandingOf(_owner, _other)` — *the owner's opinion of the other*, directional, because "CVC
 despises you" and "you despise CVC" are different facts and the second is none of the
 simulation's business. The table initializes from a `constexpr DEFAULT_STANDINGS` beside the
-enum: everyone is `Neutral` to everyone except that `FACTION_HOSTILE` holds every other faction
-`Hostile` and is held `Hostile` by every other faction — the pirates were never neutral, the
-tree just had no word for it. The one mutation this design adds is `RecordAggression` (§8.1),
+enum: everyone is `Neutral` to everyone except that the Vandal Collective holds every other
+faction `Hostile` and is held `Hostile` by every other faction — the Vandals were never neutral,
+the tree just had no word for it. The one mutation this design adds is `RecordAggression` (§8.1),
 which sets `StandingOf(stationOwner, attackerFaction) = Hostile`. Permanently: no decay, no
 forgiveness, no payment of dues — a standings-repair mechanic is a later design, and the owner
 chose permanence over inventing one here (§15, decision 3).
@@ -334,7 +347,7 @@ permanently indestructible as a rule (§8.5) — but every read of `structure` s
 `Resolve`, so a row whose ship is gone deactivates instead of dangling, and the user-station
 design inherits a table that already tolerates death.
 
-The **pirate base** is registered in this same table at boot — owner `FACTION_HOSTILE`,
+The **Vandal base** is registered in this same table at boot — owner `FACTION_VANDAL`,
 complement 0 (its patrol is not a garrison and does not change) — so "may I dock here" has one
 answer path for every station in the game, and the player is refused by standing (§4.2) rather
 than by a special case. Nothing about the base's behavior or look changes (§15, decision 4).
@@ -527,7 +540,7 @@ reserve is bottomless, which is safe precisely because of §8.6 — there is not
 Launches happen inside the tick, so every number that shapes them is either per-station content
 (hull, complement, cadence, cap — passed to `MakeStation` by the root, the patrol-ring precedent)
 or already contract. The Vanguard's content this phase: **Corvette** protectors, complement **3**,
-the mid-weight silhouette — reading distinct from the pirates' Interceptors — with the faction
+the mid-weight silhouette — reading distinct from the Vandals' Interceptors — with the faction
 tint carrying IFF as it has since Hostiles slice 3.
 
 ### 8.3 The pursuit — the first behavior that reacts
@@ -566,7 +579,7 @@ needs — a ship that is always in weapons range of its target — is exactly wh
 ### 8.4 Senses, deliberately absent
 
 The response starts from a *stated* act (`RecordAggression`), not from perception: no protector
-or station scans for enemies, no radius makes you a criminal, and a pirate flying past a Vanguard
+or station scans for enemies, no radius makes you a criminal, and a Vandal flying past a Vanguard
 station is unmolested however hostile the standings table says it is. Aggro radii, threat
 assessment and target switching by proximity are the combat design's senses; this phase's NPC
 reads exactly two things it did not write — its target's position and liveness — which is the
@@ -607,11 +620,15 @@ half-landed here, and `PointerTracker` gains long-press support when the menu ex
 ### 9.2 The affordance tells the truth first
 
 Before sending, the view checks the received `hostileMask` (§4.3): if the station's owner holds
-this client hostile, no order is sent and the log says `DOCKING REFUSED | VANGUARD HOSTILE`. The
-simulation gate (§7.1) still stands behind it, per the twice-on-purpose rule Hostiles set:
-affordances tell the truth, and clients are not trusted. An accepted tap sends the order and logs
-`DOCKING | %d SHIPS`, and the station under the tap flashes the marker treatment orders already
-get, in the station's faction color, so the tap visibly landed on the thing and not the ground.
+this client hostile, no order is sent and the log says `DOCKING REFUSED | %s HOSTILE` — the
+owner's name from `FACTION_NAMES`, a table beside `HULL_NAMES` in the root reading `PLAYER`,
+`VANDAL`, `VANGUARD`. Hostiles §12 deferred exactly this table "until something displays it";
+this line is the something, and refusal at the Vandal base and at a Vanguard station is one
+format string either way. The simulation gate (§7.1) still stands behind it, per the
+twice-on-purpose rule Hostiles set: affordances tell the truth, and clients are not trusted. An
+accepted tap sends the order and logs `DOCKING | %d SHIPS`, and the station under the tap flashes
+the marker treatment orders already get, in the station's faction color, so the tap visibly
+landed on the thing and not the ground.
 
 ### 9.3 Colors, the minimap, and the marks
 
@@ -638,10 +655,10 @@ boot the way it hands body placements; nothing about marks touches the wire.
 ### 9.4 Counting and narrating
 
 `CONTACTS` stops meaning "not mine" and starts meaning "hostile to me": records whose faction bit
-is set in `hostileMask`. At boot that is the pirate four — unchanged number, honest definition —
+is set in `hostileMask`. At boot that is the Vandal four — unchanged number, honest definition —
 and Vanguard stations do not inflate it; turn criminal and every Vanguard record joins the count,
 which is the HUD saying what just happened without a new widget. The event log gains: `DOCKING |
-%d SHIPS`, `DOCKING REFUSED | VANGUARD HOSTILE`, `DOCKED | %d SHIPS` (on consuming docked
+%d SHIPS`, `DOCKING REFUSED | %s HOSTILE` (§9.2), `DOCKED | %d SHIPS` (on consuming docked
 handles), and `VANGUARD PROVOKED` from F6 so a screenshot of the response names its cause. The
 boot line stays the player's own count; a `STATIONS ONLINE | %d` line beside it says the grid
 spawned what the layout described.
@@ -694,9 +711,9 @@ the way `BODY_START_SEED` is.
 | `TheLayoutIsAFunctionOfItsSeed` | two calls with one seed agree field-for-field; adjacent seeds differ |
 | `TheLayoutRespectsTheGridCeiling` | the shipped `SystemDesc` bounds keep worst-case static span under 512 path cells |
 | `PlanetsKeepTheirDistance` | bearing-slot placement holds a stated minimum separation for any seed tried |
-| `AStationIsItsRow` | `MakeStation` on a live structure resolves; on a dead handle deactivates; the pirate base registers with complement 0 |
-| `TheStandingTableStartsAsAuthored` | defaults: pirates hostile both ways, Vanguard neutral to the player |
-| `StandingSurvivesTheWire` | the hostileMask byte arrives set for pirates at boot and gains the Vanguard bit after `RecordAggression` |
+| `AStationIsItsRow` | `MakeStation` on a live structure resolves; on a dead handle deactivates; the Vandal base registers with complement 0 |
+| `TheStandingTableStartsAsAuthored` | defaults: the Vandal Collective hostile both ways, Vanguard neutral to the player |
+| `StandingSurvivesTheWire` | the hostileMask byte arrives with the Vandal bit set at boot and gains the Vanguard bit after `RecordAggression` |
 | `TheStationFlagSurvivesTheWire` | a station's record decodes with bit 0 set; a plain ship's does not |
 | `AShipDocksAndLeavesTheWorld` | order → approach → capture within `DockRangeMetres` → despawn, ledger row `{hull, faction}` |
 | `ADockAndADeathDifferOnTheWire` | a docked handle arrives in the docked list, a destroyed one in the destroyed list, and a range-leaver in neither |
@@ -808,7 +825,8 @@ Named so nobody goes looking, and so the next design knows its edges:
 - **More systems than the starting one**, and the per-region path grids and interest regions that
   a second system 100 km away would force. `LayOutSystem` takes a star position precisely so the
   second call is content, not redesign — but nothing calls it twice today.
-- **Station names.** Log lines count ships; marks are anonymous. A designation scheme
+- **Station names.** Factions have names now (`FACTION_NAMES`, §9.2); individual stations do not
+  — log lines count ships and name owners, marks are anonymous. A designation scheme
   ("VGR KEPLER-2") belongs to the menu that will display it.
 - **Docking animations and bay geometry.** A captured hull is removed on the docked statement, at
   the skin, without ceremony. A fade or an approach lane is presentation polish for the phase that
@@ -825,7 +843,11 @@ Put to the owner on 2026-08-30 and answered as follows; each was the recommended
 | The brief's "ensure that a System is distributed across the Universe… every planet… has a system… static so can be marked" | **"Station" was meant. One seeded solar-system layout as static content; this phase instantiates the starting system** — a few planets, one Vanguard station each, all inside the path grid's ceiling | instantiating many systems now — per-region grids, streaming and interest regions for content no ship can reach in a session; reading it literally — no coherent feature answers to it |
 | Protectors must "attack until it is killed", but nothing can attack | **Framework now, combat later**: aggression, standings, scramble, pursuit and shadowing land testable via `RecordAggression` and F6; a separate combat design supplies the trigger and the teeth | folding a minimal combat model in here — doubles the design, and a damage model deserves its own argued document rather than a stowaway berth |
 | Which stations refuse an aggressor, for how long | **All Vanguard stations, permanently** — CVC is one government, and forgiveness is a standings design of its own | per-station grudges — a government that forgets you at the next port; a decay timer — invents half a standings system to expire a flag |
-| The existing hostile base | **Stays, as pirates** — registered as a `FACTION_HOSTILE` station with no garrison change; the standing rule refuses the player for free | converting it to the Vanguard — loses the hostile contrast and the combat-test dummy; removing it — deletes landed content for tidiness |
+| The existing hostile base | **Stays, as pirates** — registered as a Vandal-owned station with no garrison change; the standing rule refuses the player for free | converting it to the Vanguard — loses the hostile contrast and the combat-test dummy; removing it — deletes landed content for tidiness |
+
+After these were taken, the owner named the pirate faction: the **Vandal Collective** ("Vandal").
+§4.1 adopts the name and renames `FACTION_HOSTILE` to `FACTION_VANDAL` with it, for the
+two-meanings-of-one-word reason argued there.
 
 ---
 
@@ -839,10 +861,10 @@ shape; work orders are written per slice when it is picked up.
 | # | Slice | Layer | Depends on | Decision records due |
 |---|---|---|---|---|
 | 1 | **The layout**: `UniverseLayout.h/.cpp`, `LayOutSystem`, the three layout tests | `GameLogic` | — | the layout is static content in `GameLogic` (ADR-0008-shaped) |
-| 2 | **Who is who**: `FACTION_VANGUARD`, `Standing` + `DEFAULT_STANDINGS` + the table in `World`, the standing half of `RecordAggression`, the station table + `MakeStation` + `StationDesc`, the record's flags byte, the update header's `hostileMask`, their tests | `GameLogic` | — | stations are ships with a side table; standings are simulation state stated per subscriber |
+| 2 | **Who is who**: `FACTION_VANGUARD`, the `FACTION_HOSTILE` → `FACTION_VANDAL` rename at every caller (§4.1), `Standing` + `DEFAULT_STANDINGS` + the table in `World`, the standing half of `RecordAggression`, the station table + `MakeStation` + `StationDesc`, the record's flags byte, the update header's `hostileMask`, their tests | `GameLogic` (+ the rename's `Outpost` call sites) | — | stations are ships with a side table; standings are simulation state stated per subscriber |
 | 3 | **Docking**: `DespawnCause` + the docked list on the wire, `DockOrder` write/read, `IssueDockOrder` + gates, `m_dockings` + the dock pass + capture + ledger, `DOCK_CAPTURE_METRES` + `DockRangeMetres`, move-order cancellation, despawn repair, their tests | `GameLogic` | 2 | a departure carries a cause on the wire |
 | 4 | **The response**: target lists + the launch metronome, `m_protectors` + the pursuit pass + `PURSUIT_REPLAN_METRES`, stand-down-and-dock-home, the full `RecordAggression`, the replay test over the whole scene | `GameLogic` | 2, 3 | the protector response reacts to stated acts, not senses |
-| 5 | **The Vanguard scene**: root calls `LayOutSystem` + spawns the stations + registers the pirate base, planet visuals follow the sites (F5 reseeds looks only), `VANGUARD_*`/`HUD_VANGUARD_BLUE` colors + the faction-tint table, minimap station dots + hollow marks + edge clamping, `hostileMask` consumption, `CONTACTS` by mask, `STATIONS ONLINE` boot line, AGENTS.md's what-is-here sentences, screenshots at two sizes | `Outpost` | 1, 2 | — |
+| 5 | **The Vanguard scene**: root calls `LayOutSystem` + spawns the stations + registers the Vandal base, planet visuals follow the sites (F5 reseeds looks only), `VANGUARD_*`/`HUD_VANGUARD_BLUE` colors + the faction-tint table, `FACTION_NAMES` beside `HULL_NAMES`, minimap station dots + hollow marks + edge clamping, `hostileMask` consumption, `CONTACTS` by mask, `STATIONS ONLINE` boot line, AGENTS.md's what-is-here sentences, screenshots at two sizes | `Outpost` | 1, 2 | — |
 | 6 | **Docking and the response, on screen**: `PickStation` + the tap order + refusal affordance + marker flash, docked-list consumption (silent removal, `DOCKED` line), F6 + `VANGUARD PROVOKED`, log lines, screenshots of a dock and of a scramble at two sizes | `Outpost` | 3, 4, 5 | — |
 
 Slices 1–4 are decided by their tests and by the existing suites staying green — slice 2's claim
