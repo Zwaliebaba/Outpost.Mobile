@@ -17,8 +17,20 @@ namespace
 constexpr std::uint8_t KIND_SNAPSHOT = 1;
 constexpr std::uint8_t KIND_MOVE_ORDER = 2;
 
-// kind, complete, snapshotId, fragmentIndex, fragmentCount, tick, recordCount, leaveCount, destroyedCount
-constexpr std::uint32_t SNAPSHOT_HEADER_BYTES = 1 + 1 + 4 + 4 + 4 + 8 + 4 + 4 + 4;
+// Leaves and deaths, on the reliable lane and no longer in the snapshot header.
+//
+// They moved because a lost leave is a ghost ship for the rest of the match: a snapshot is
+// superseded by the next one and heals itself, a leave is stated once and never repeated
+// (Design/MmoScalabilityReview.md E1, Design/ReliableFormat-work-order.md). Duplicating them onto
+// both lanes was the alternative and lost -- two paths carrying the same fact is two paths to
+// reason about, and the unreliable copy would still be the one that arrived first.
+constexpr std::uint8_t KIND_LEAVE = 3;
+
+// kind, complete, snapshotId, fragmentIndex, fragmentCount, tick, recordCount
+constexpr std::uint32_t SNAPSHOT_HEADER_BYTES = 1 + 1 + 4 + 4 + 4 + 8 + 4;
+
+// kind, tick, leaveCount, destroyedCount
+constexpr std::uint32_t LEAVE_HEADER_BYTES = 1 + 8 + 4 + 4;
 // handle, posWorld, prevPos, five floats, order, faction, hullId
 constexpr std::uint32_t SHIP_RECORD_BYTES = 8 + 24 + 24 + 20 + 1 + 1 + 4;
 // kind, orderId, hasFacing, facingRad, destination, handleCount
@@ -233,8 +245,6 @@ std::uint32_t SnapshotWriter::Write(const World& _world, Neuron::Transport& _tra
     out.U32(fragmentCount);
     out.U64(_world.Tick());
     out.U32(count);
-    out.U32(0); // and therefore nothing to say left -- anything absent is gone by construction
-    out.U32(0); // nor destroyed: a full snapshot states the world, not what changed in it
 
     for (std::uint32_t at = 0; at < count; ++at)
       WriteShipRecord(out, _world, static_cast<ShipId>(first + at));
@@ -248,6 +258,35 @@ std::uint32_t SnapshotWriter::Write(const World& _world, Neuron::Transport& _tra
   return sent;
 }
 
+bool SnapshotWriter::WriteLeaves(std::uint64_t _tick, std::span<const ShipHandle> _left, std::span<const ShipHandle> _destroyed,
+                                 Neuron::Transport& _transport)
+{
+  if (_left.empty() && _destroyed.empty())
+    return true; // nothing to state is not a failure to state it
+
+  const std::uint32_t leaveCount = static_cast<std::uint32_t>(_left.size());
+  const std::uint32_t destroyedCount = static_cast<std::uint32_t>(_destroyed.size());
+
+  // One message, not fragmented. The lane's bound is what caps it, and at eight bytes a handle that
+  // is 1021 departures in one update -- far past what an interest set can shed at 10 Hz, and the
+  // day it is not, the answer is a second message and not a silent truncation.
+  if (LEAVE_HEADER_BYTES + (leaveCount + destroyedCount) * HANDLE_BYTES > Neuron::MAX_RELIABLE_BYTES)
+    return false;
+
+  m_leaveScratch.clear();
+  ByteWriter out(m_leaveScratch);
+  out.U8(KIND_LEAVE);
+  out.U64(_tick);
+  out.U32(leaveCount);
+  out.U32(destroyedCount);
+  for (const ShipHandle handle : _left)
+    out.Handle(handle);
+  for (const ShipHandle handle : _destroyed)
+    out.Handle(handle);
+
+  return _transport.SendReliable(m_leaveScratch.data(), static_cast<std::uint32_t>(m_leaveScratch.size()));
+}
+
 std::uint32_t SnapshotWriter::WriteInterest(const World& _world, std::span<const ShipHandle> _sent, std::span<const ShipHandle> _left,
                                             std::span<const ShipHandle> _destroyed, Neuron::Transport& _transport)
 {
@@ -256,27 +295,29 @@ std::uint32_t SnapshotWriter::WriteInterest(const World& _world, std::span<const
 
   const std::uint32_t perFragment = ShipsPerSnapshotFragment();
   const std::uint32_t sendCount = static_cast<std::uint32_t>(_sent.size());
-  const std::uint32_t leaveCount = static_cast<std::uint32_t>(_left.size());
-  const std::uint32_t destroyedCount = static_cast<std::uint32_t>(_destroyed.size());
 
-  // Leaves and destroyed handles ride in the first fragment, and a fragment carries fewer records
-  // when they do. A handle is eight bytes against a record's eighty-two, so this costs at most one
-  // record's room.
-  const std::uint32_t handleBytes = (leaveCount + destroyedCount) * HANDLE_BYTES;
-  const std::uint32_t firstFragmentRoom = (Neuron::MAX_DATAGRAM_BYTES > SNAPSHOT_HEADER_BYTES + handleBytes)
-                                            ? (Neuron::MAX_DATAGRAM_BYTES - SNAPSHOT_HEADER_BYTES - handleBytes) / SHIP_RECORD_BYTES
-                                            : 0u;
+  // The leave and destroyed lists go first, on the reliable lane and in one message of their own.
+  // First rather than last because a leave that overtakes the upserts is harmless -- removing a
+  // handle the receiver does not hold is a no-op -- while an upsert that overtakes its own leave
+  // would put a dead ship back. The two lanes have no ordering between them, so the order that is
+  // safe under either is the one to send in.
+  if (!WriteLeaves(_world.Tick(), _left, _destroyed, _transport))
+  {
+    // The lane refused: it is full, or not up yet. Nothing is retried and the update goes on --
+    // the next one carries these handles again only if the interest set states them again, which
+    // it will not. A refused leave is therefore counted, so the gap is visible rather than silent.
+    ++m_refusedLeaves;
+  }
 
-  std::uint32_t remaining = (sendCount > firstFragmentRoom) ? sendCount - firstFragmentRoom : 0u;
-  const std::uint32_t fragmentCount = 1 + (remaining + perFragment - 1) / perFragment;
+  // Every fragment now carries records and nothing else, so the first is no different from the rest.
+  const std::uint32_t fragmentCount = (sendCount + perFragment - 1) / perFragment + (sendCount == 0 ? 1 : 0);
   const std::uint32_t snapshotId = m_nextSnapshotId++;
 
   std::uint32_t sent = 0;
   std::uint32_t at = 0;
   for (std::uint32_t fragment = 0; fragment < fragmentCount; ++fragment)
   {
-    const std::uint32_t room = (fragment == 0) ? firstFragmentRoom : perFragment;
-    const std::uint32_t claimed = std::min(room, sendCount - at);
+    const std::uint32_t claimed = std::min(perFragment, sendCount - at);
 
     // Resolve BEFORE writing the header, because the header states how many records follow and a
     // handle can have died between the set being taken and this write. Declaring a count and then
@@ -293,25 +334,15 @@ std::uint32_t SnapshotWriter::WriteInterest(const World& _world, std::span<const
     m_scratch.clear();
     ByteWriter out(m_scratch);
     out.U8(KIND_SNAPSHOT);
-    out.U8(0); // an update, so the receiver upserts and applies the leave list
+    out.U8(0); // an update, so the receiver upserts rather than replacing what it holds
     out.U32(snapshotId);
     out.U32(fragment);
     out.U32(fragmentCount);
     out.U64(_world.Tick());
     out.U32(count);
-    out.U32((fragment == 0) ? leaveCount : 0u);
-    out.U32((fragment == 0) ? destroyedCount : 0u);
 
     for (const ShipId id : m_resolvedScratch)
       WriteShipRecord(out, _world, id);
-
-    if (fragment == 0)
-    {
-      for (const ShipHandle handle : _left)
-        out.Handle(handle);
-      for (const ShipHandle handle : _destroyed)
-        out.Handle(handle);
-    }
 
     if (!_transport.Send(m_scratch.data(), static_cast<std::uint32_t>(m_scratch.size())))
       break;
@@ -328,8 +359,6 @@ void SnapshotReceiver::AbandonInProgress() noexcept
   if (m_fragmentCount > 0 && m_fragmentsSeen < m_fragmentCount)
     ++m_dropped;
   m_pendingUpserts.clear();
-  m_pendingLeaves.clear();
-  m_pendingDestroyed.clear();
   m_buildingId = 0;
   m_fragmentsSeen = 0;
   m_fragmentCount = 0;
@@ -338,7 +367,10 @@ void SnapshotReceiver::AbandonInProgress() noexcept
 bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
 {
   ByteReader in(_datagram);
-  if (in.U8() != KIND_SNAPSHOT)
+  const std::uint8_t kind = in.U8();
+  if (kind == KIND_LEAVE)
+    return AcceptLeaves(_datagram);
+  if (kind != KIND_SNAPSHOT)
     return false;
 
   const bool complete = in.U8() != 0;
@@ -347,8 +379,6 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
   const std::uint32_t fragmentCount = in.U32();
   const std::uint64_t tick = in.U64();
   const std::uint32_t count = in.U32();
-  const std::uint32_t leaveCount = in.U32();
-  const std::uint32_t destroyedCount = in.U32();
   if (!in.Ok() || fragmentCount == 0 || fragment >= fragmentCount)
     return false;
 
@@ -396,28 +426,6 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
     m_pendingUpserts.push_back(ship);
   }
 
-  for (std::uint32_t at = 0; at < leaveCount; ++at)
-  {
-    const ShipHandle handle = in.Handle();
-    if (!in.Ok())
-    {
-      AbandonInProgress();
-      return false;
-    }
-    m_pendingLeaves.push_back(handle);
-  }
-
-  for (std::uint32_t at = 0; at < destroyedCount; ++at)
-  {
-    const ShipHandle handle = in.Handle();
-    if (!in.Ok())
-    {
-      AbandonInProgress();
-      return false;
-    }
-    m_pendingDestroyed.push_back(handle);
-  }
-
   ++m_fragmentsSeen;
   if (m_fragmentsSeen < m_fragmentCount)
     return false;
@@ -425,8 +433,6 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
   Apply();
   m_latest.tick = m_buildingTick;
   m_pendingUpserts.clear();
-  m_pendingLeaves.clear();
-  m_pendingDestroyed.clear();
   m_buildingId = 0;
   m_fragmentsSeen = 0;
   m_fragmentCount = 0;
@@ -434,44 +440,82 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
   return true;
 }
 
+// Removes a handle from the held set, whether it left or died: the two differ in what they *say*,
+// not in what they do to the set, and only the client's effects care which (Design/Hostiles.md 4.4).
+void SnapshotReceiver::Remove(ShipHandle _gone)
+{
+  for (std::size_t at = 0; at < m_latest.ships.size(); ++at)
+  {
+    if (m_latest.ships[at].handle == _gone)
+    {
+      // Swap-and-pop. The client's order is its own -- it is a set, not the world's array -- and
+      // WorldView carries presentation state across by handle rather than by position.
+      m_latest.ships[at] = m_latest.ships.back();
+      m_latest.ships.pop_back();
+      return;
+    }
+  }
+}
+
+// One reliable message, applied whole and at once -- there is nothing to reassemble, because the
+// lane delivers a message or does not deliver it.
+//
+// It is applied the moment it arrives rather than being held for a snapshot, and that is the point
+// of the split: a departure no longer waits on the fragments of an update that may never complete.
+// A handle that is not held is removed by a no-op, which is what makes the two lanes safe in either
+// order.
+bool SnapshotReceiver::AcceptLeaves(std::span<const std::uint8_t> _message)
+{
+  ByteReader in(_message);
+  if (in.U8() != KIND_LEAVE)
+    return false;
+
+  const std::uint64_t tick = in.U64();
+  const std::uint32_t leaveCount = in.U32();
+  const std::uint32_t destroyedCount = in.U32();
+  if (!in.Ok())
+    return false;
+
+  // Read the whole message before touching the set: a truncated one must change nothing rather than
+  // remove half of what it names.
+  m_leaveScratch.clear();
+  m_destroyedScratch.clear();
+  for (std::uint32_t at = 0; at < leaveCount; ++at)
+    m_leaveScratch.push_back(in.Handle());
+  for (std::uint32_t at = 0; at < destroyedCount; ++at)
+    m_destroyedScratch.push_back(in.Handle());
+  if (!in.Ok())
+    return false;
+
+  for (const ShipHandle gone : m_leaveScratch)
+    Remove(gone);
+  for (const ShipHandle dead : m_destroyedScratch)
+    Remove(dead);
+
+  // Appended, not assigned: several of these can arrive in one drain, and every death in them is one
+  // the client owes an explosion. The consumer clears it when it has drawn them.
+  m_destroyed.insert(m_destroyed.end(), m_destroyedScratch.begin(), m_destroyedScratch.end());
+
+  // The lane is ordered, so a later message cannot be overtaken by an earlier one; the tick is
+  // carried for diagnostics and for the day a subscriber wants to know how stale a departure is.
+  m_lastLeaveTick = tick;
+  return true;
+}
+
 // Applied only once every fragment is in, never as they land: a world left half-updated by a
 // fragment that never arrived is exactly what "dropped whole" exists to prevent.
 void SnapshotReceiver::Apply()
 {
-  m_destroyed.clear(); // it describes the update being applied, and nothing older
-
   // A complete snapshot IS the world, so anything it does not carry is gone. An update carries only
   // what changed, so what it does not mention is untouched. Without this distinction a full snapshot
-  // could never remove a despawned ship, because it has no leave list to put one in.
+  // could never remove a despawned ship, because departures no longer travel with it at all -- they
+  // are their own message on the reliable lane now (KIND_LEAVE).
   if (m_buildingComplete)
   {
     m_latest.ships.clear();
     m_latest.ships.insert(m_latest.ships.end(), m_pendingUpserts.begin(), m_pendingUpserts.end());
     return;
   }
-
-  // Destroyed removes exactly as a leave does. The two lists differ in what they *say*, not in what
-  // they do to the set: one is a departure and the other a death, and only the client's effects care
-  // which (Design/Hostiles.md 4.4).
-  const auto remove = [this](ShipHandle _gone)
-  {
-    for (std::size_t at = 0; at < m_latest.ships.size(); ++at)
-    {
-      if (m_latest.ships[at].handle == _gone)
-      {
-        // Swap-and-pop. The client's order is its own -- it is a set, not the world's array -- and
-        // WorldView carries presentation state across by handle rather than by position.
-        m_latest.ships[at] = m_latest.ships.back();
-        m_latest.ships.pop_back();
-        break;
-      }
-    }
-  };
-  for (const ShipHandle gone : m_pendingLeaves)
-    remove(gone);
-  for (const ShipHandle dead : m_pendingDestroyed)
-    remove(dead);
-  m_destroyed.insert(m_destroyed.end(), m_pendingDestroyed.begin(), m_pendingDestroyed.end());
 
   for (const ShipSnapshot& ship : m_pendingUpserts)
   {
@@ -506,7 +550,9 @@ bool WriteMoveOrder(const MoveOrder& _order, Neuron::Transport& _transport)
   for (const ShipHandle handle : _order.ships)
     out.Handle(handle);
 
-  return _transport.Send(bytes.data(), static_cast<std::uint32_t>(bytes.size()));
+  // On the reliable lane: a dropped order is a click the player made and the game ignored, which is
+  // the one failure mode no amount of interpolation covers up (Design/QuicTransport.md 8).
+  return _transport.SendReliable(bytes.data(), static_cast<std::uint32_t>(bytes.size()));
 }
 
 bool ReadMoveOrder(std::span<const std::uint8_t> _datagram, MoveOrder& _outOrder)

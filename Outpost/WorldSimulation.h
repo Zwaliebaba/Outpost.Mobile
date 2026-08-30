@@ -143,30 +143,39 @@ private:
       return;
 
     m_transport->Poll();
-    std::array<std::uint8_t, Neuron::MAX_DATAGRAM_BYTES> datagram{};
-    for (;;)
+
+    // Orders arrive on the reliable lane (ADR 0028): a dropped order is a click the player made and
+    // the game ignored. The datagram lane is still drained, because a client that predates the lane
+    // -- or one whose lane is not up yet -- may still be sending there, and dropping its orders
+    // silently would be a worse answer than reading them.
+    m_orderScratch.resize(Neuron::MAX_RELIABLE_BYTES);
+    for (int lane = 0; lane < 2; ++lane)
     {
-      const std::uint32_t size = m_transport->Receive(datagram.data(), static_cast<std::uint32_t>(datagram.size()));
-      if (size == 0)
-        break;
-
-      Game::MoveOrder order;
-      if (!Game::ReadMoveOrder(std::span<const std::uint8_t>(datagram.data(), size), order))
-        continue; // a datagram this half does not understand is dropped, not fatal
-
-      // Handles resolve here and nowhere else. A ship that died between the click and this tick
-      // resolves to nothing and is simply left out of the order, rather than steering whichever
-      // ship swap-and-pop moved into its index (ADR 0005).
-      m_resolved.clear();
-      m_resolved.reserve(order.ships.size());
-      for (const Game::ShipHandle handle : order.ships)
+      for (;;)
       {
-        const Game::ShipId id = m_world.Resolve(handle);
-        if (id != Game::INVALID_SHIP_ID)
-          m_resolved.push_back(id);
+        const std::uint32_t size = (lane == 0) ? m_transport->ReceiveReliable(m_orderScratch.data(), Neuron::MAX_RELIABLE_BYTES)
+                                               : m_transport->Receive(m_orderScratch.data(), Neuron::MAX_DATAGRAM_BYTES);
+        if (size == 0)
+          break;
+
+        Game::MoveOrder order;
+        if (!Game::ReadMoveOrder(std::span<const std::uint8_t>(m_orderScratch.data(), size), order))
+          continue; // a message this half does not understand is dropped, not fatal
+
+        // Handles resolve here and nowhere else. A ship that died between the click and this tick
+        // resolves to nothing and is simply left out of the order, rather than steering whichever
+        // ship swap-and-pop moved into its index (ADR 0005).
+        m_resolved.clear();
+        m_resolved.reserve(order.ships.size());
+        for (const Game::ShipHandle handle : order.ships)
+        {
+          const Game::ShipId id = m_world.Resolve(handle);
+          if (id != Game::INVALID_SHIP_ID)
+            m_resolved.push_back(id);
+        }
+        if (!m_resolved.empty())
+          (void)m_world.IssueMoveOrder(m_resolved, order.destination, order.hasFacing, order.facingRad, m_subscriberFaction);
       }
-      if (!m_resolved.empty())
-        (void)m_world.IssueMoveOrder(m_resolved, order.destination, order.hasFacing, order.facingRad, m_subscriberFaction);
     }
   }
 
@@ -185,6 +194,10 @@ private:
   std::uint64_t m_despawnCursor = 0;
 
   std::vector<Game::ShipId> m_resolved;
+
+  // One message's worth, reused so a tick allocates nothing. Sized to the reliable lane's bound
+  // because it is the larger of the two.
+  std::vector<std::uint8_t> m_orderScratch;
   std::vector<Game::ShipHandle> m_sendScratch;
   std::vector<Game::ShipHandle> m_leftScratch;
   std::vector<Game::ShipHandle> m_destroyedScratch;

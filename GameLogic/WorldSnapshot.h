@@ -99,6 +99,21 @@ public:
   std::uint32_t WriteInterest(const World& _world, std::span<const ShipHandle> _sent, std::span<const ShipHandle> _left,
                               std::span<const ShipHandle> _destroyed, Neuron::Transport& _transport);
 
+  // The leave and destroyed lists, as one message on the reliable lane. Public because a caller
+  // that is not sending an interest update -- a subscriber leaving, a world shutting down -- still
+  // has departures to state. Returns false when the lane refused it, which is a full lane or one
+  // that is not up yet, and never a partial send.
+  bool WriteLeaves(std::uint64_t _tick, std::span<const ShipHandle> _left, std::span<const ShipHandle> _destroyed,
+                   Neuron::Transport& _transport);
+
+  // How many leave messages the lane has refused. Nothing repeats a refused one, so this is the
+  // count of departures a subscriber was never told about -- a number that should be zero, and a
+  // diagnostic when it is not.
+  [[nodiscard]] std::uint32_t RefusedLeaveCount() const noexcept
+  {
+    return m_refusedLeaves;
+  }
+
   // Bytes the last Write or WriteInterest put on the wire, and how many ship records it carried.
   // The benchmark in slice 6's acceptance is this pair against a growing world.
   [[nodiscard]] std::uint32_t LastByteCount() const noexcept
@@ -115,7 +130,9 @@ private:
   std::uint32_t m_nextSnapshotId = 1;
   std::uint32_t m_lastBytes = 0;
   std::uint32_t m_lastRecords = 0;
+  std::uint32_t m_refusedLeaves = 0;
   std::vector<std::uint8_t> m_scratch;
+  std::vector<std::uint8_t> m_leaveScratch;
   std::vector<ShipId> m_resolvedScratch;
 };
 
@@ -126,7 +143,11 @@ private:
 class SnapshotReceiver
 {
 public:
-  // Feeds one datagram. True when a complete, newer-than-current update became available.
+  // Feeds one message from either lane, dispatching on its kind byte. True when something changed
+  // that the view should redraw from.
+  //
+  // A datagram carries snapshot fragments; the reliable lane carries departures. The caller does not
+  // have to know which it is holding, which is what keeps the two drains in WorldView identical.
   //
   // An update UPSERTS rather than replaces: a record for a handle already held updates it in place,
   // one for a handle not held appends it, and a handle in the leave list removes it. That is what
@@ -152,6 +173,20 @@ public:
     return m_destroyed;
   }
 
+  // Deaths accumulate across every message in a drain, so the consumer says when it has drawn them
+  // rather than the receiver guessing. Without this, two leave messages in one pump would leave the
+  // first one's dead unexploded (Design/ReliableFormat-work-order.md).
+  void ClearDestroyed() noexcept
+  {
+    m_destroyed.clear();
+  }
+
+  // The tick the last departure message was written on. Diagnostics: how stale a departure was.
+  [[nodiscard]] std::uint64_t LastLeaveTick() const noexcept
+  {
+    return m_lastLeaveTick;
+  }
+
   // Diagnostics: snapshots abandoned because a fragment never arrived.
   [[nodiscard]] std::uint32_t DroppedSnapshotCount() const noexcept
   {
@@ -161,13 +196,16 @@ public:
 private:
   void AbandonInProgress() noexcept;
   void Apply();
+  void Remove(ShipHandle _gone);
+  [[nodiscard]] bool AcceptLeaves(std::span<const std::uint8_t> _message);
 
   // What arrived in the update being assembled, held until every fragment is in. Applying as
   // fragments land would leave the world half-updated if one never arrived.
   std::vector<ShipSnapshot> m_pendingUpserts;
-  std::vector<ShipHandle> m_pendingLeaves;
-  std::vector<ShipHandle> m_pendingDestroyed;
-  std::vector<ShipHandle> m_destroyed; // what the last applied update stated, for Destroyed()
+  std::vector<ShipHandle> m_leaveScratch;     // one departure message, read before any of it applies
+  std::vector<ShipHandle> m_destroyedScratch; // the same, for the deaths in it
+  std::vector<ShipHandle> m_destroyed;        // deaths since the consumer last cleared them
+  std::uint64_t m_lastLeaveTick = 0;
   WorldSnapshot m_latest;
   std::uint32_t m_buildingId = 0;
   std::uint64_t m_buildingTick = 0;

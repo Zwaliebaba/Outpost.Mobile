@@ -18,11 +18,11 @@ namespace
 // The application-layer protocol name both ends offer. It bumps the day the wire format's KIND_*
 // bytes change meaning, so that two builds which cannot talk refuse at the handshake rather than at
 // the parser (Design/QuicTransport.md 4.3).
-constexpr const char* QUIC_ALPN = "outpost-1";
+constexpr const char* QUIC_ALPN = "outpost-2";
 
-// One bidirectional stream is negotiated and none is opened. The reliable lane that will use it is
-// Design/QuicTransport.md 8, slice 3a; reserving the count here means that slice does not have to
-// change a configuration both ends already agreed on.
+// One bidirectional stream is negotiated, and QuicTransport opens it: it is the reliable lane
+// (ADR 0028). Reserving the count here before the lane existed is what let that slice land without
+// changing a configuration both ends had already agreed on.
 constexpr std::uint16_t QUIC_PEER_BIDI_STREAMS = 1;
 } // namespace
 

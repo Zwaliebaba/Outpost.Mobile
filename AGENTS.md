@@ -51,11 +51,11 @@ damage model, no save format, no content pipeline beyond OBJ and DDS, and no con
 tuning is `constexpr` in `SimTuning.h`, `HullSpec.h` and `ViewTuning.h` (§5). The hostiles above
 have no weapons and no senses: the patrol is a metronome that never reacts to anything, and the
 station cannot be destroyed. The networking stops well short of a network: one client, one process,
-`127.0.0.1` only, and a self-signed certificate the client does not validate. `Transport` now has a
-reliable lane on both implementations — ordered, never dropped, the QUIC one carried on the
-bidirectional stream the handshake reserves — but **nothing on the wire uses it yet**: every message
-the game sends is still a datagram and a lost one still stays lost, until the format chooses the
-lane (`Design/ReliableFormat-work-order.md`).
+`127.0.0.1` only, and a self-signed certificate the client does not validate. The wire has two lanes
+and the format chooses by asking whether a later message makes a lost one right (`ADR 0028`):
+positions are datagrams and heal themselves, while departures and move orders take the reliable
+lane and cannot be lost. What remains missing is the far end of it — one client, one process, and no
+second machine to be on the other side of.
 The client sees the world through the seam, filtered to what one subscriber can see (§2).
 Where the HUD shows a number the simulation does not yet have, it is a placeholder supplied by the
 composition root, and it says so at the definition.

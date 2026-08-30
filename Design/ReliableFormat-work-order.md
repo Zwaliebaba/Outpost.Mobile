@@ -76,8 +76,12 @@ real update at MMO scale even though it is not one today.
   every order. That is finding E1 retired, stated as a test rather than as an argument.
 - `TheSameOrderProducesTheSameRun` and the permutation test unchanged and green: none of this is
   simulated, all of it is sent.
-- `ShipsPerSnapshotFragment()` is expected to *change* in this slice — it rises, because the first
-  fragment no longer reserves room for two lists. The pull request states the old and new values.
+- `ShipsPerSnapshotFragment()` was expected to *rise* in this slice, because the first fragment no
+  longer reserves room for two lists. **It does not, and the arithmetic is why**: the header shrinks
+  from 34 bytes to 26, and `(1152 − 34) / 82` and `(1152 − 26) / 82` both floor to 13. What the
+  slice actually buys is that *every* fragment now carries 13 rather than the first one carrying
+  fewer whenever there were departures — which is the same win, spent where it is felt. The pull
+  request states this rather than the prediction.
 - Every suite green; Debug|x64 builds; both `Build/` checks pass.
 - `AGENTS.md`'s "no reliable lane on the wire — every message is a datagram and a lost one stays
   lost" sentence is false the moment this lands, and changes in the same commit.

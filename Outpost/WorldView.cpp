@@ -72,6 +72,18 @@ void WorldView::PumpNetwork()
     arrived = m_receiver.Accept(std::span<const std::uint8_t>(datagram.data(), size)) || arrived;
   }
 
+  // Then the reliable lane, which carries departures. After the datagrams rather than before, so a
+  // departure and the upserts of the same update apply in the order the server wrote them; the
+  // receiver is safe either way, and this is the order that needs no argument.
+  m_reliableScratch.resize(Neuron::MAX_RELIABLE_BYTES);
+  for (;;)
+  {
+    const std::uint32_t size = m_transport->ReceiveReliable(m_reliableScratch.data(), Neuron::MAX_RELIABLE_BYTES);
+    if (size == 0)
+      break;
+    arrived = m_receiver.Accept(std::span<const std::uint8_t>(m_reliableScratch.data(), size)) || arrived;
+  }
+
   if (arrived)
     ApplySnapshot();
 }
@@ -205,6 +217,10 @@ void WorldView::ExplodeTheLost(std::uint64_t _tick)
     if (m_log != nullptr)
       m_log->Push(EventLog::Severity::Alert, SimTimeSec(), "SHIP LOST");
   }
+
+  // Drawn, so the receiver may forget them. Deaths accumulate across every message in a drain now
+  // that departures have their own lane, and nothing else clears them (ADR 0028).
+  m_receiver.ClearDestroyed();
 }
 
 WorldView::MotionSample WorldView::SampleOf(const Game::ShipSnapshot& _ship, std::uint64_t _tick) noexcept

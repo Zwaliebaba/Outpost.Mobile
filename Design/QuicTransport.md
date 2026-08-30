@@ -1,7 +1,7 @@
 # The QUIC transport — moving the seam onto MsQuic
 
-**Status: slices 1, 2 and 3a have landed; the game boots over QUIC and the reliable lane exists.
-3b, which puts the first message on it, is scheduled.** §13 lists the slices; §14 is the
+**Status: all four slices have landed.** The game boots over QUIC, the seam has a reliable lane,
+and departures and orders travel on it (ADR 0028). §13 lists the slices; §14 is the
 implementation plan. Every open question was put to the owner on 2026-08-29 and settled (§12), and
 two of those settlements have since moved: the fallback in §6 is gone (ADR 0027), and the reliable
 lane (slices 3a and 3b) is scheduled with its work orders written, the wait in §12 decision 4
@@ -265,6 +265,10 @@ and no elevated prompt, because every one of those is a step a fresh clone would
 
 ## 8. What changes on the wire — nothing, yet
 
+**Landed in slice 3b (ADR 0028).** The two defects below are fixed: leaves and destroyed lists are
+their own message on the reliable lane, and orders travel on it too. The section is kept as the
+argument that chose which messages go where, which is the part still worth reading.
+
 Every message today is a datagram, and QUIC DATAGRAM frames are datagrams: unreliable,
 unordered, bounded. The mapping is one-to-one and the format is untouched, which is what makes
 the migration a swap. Two things this does *not* fix, both already on record:
@@ -391,7 +395,7 @@ moment 1 merges; 3b follows 3a because the lane must exist before the format cho
 | 1 | `QuicApi`, `QuicTransport`, `QuicListener`, `DevCertificate`, the tests, ADRs 0018–0020 | `NeuronCore` | — | landed | [slice 1](Archive/QuicTransport-slice-1.md) |
 | 2 | The composition root: boot over QUIC, fallback, log, AGENTS.md text | `Outpost` | 1 | landed | [slice 2](Archive/QuicTransport-slice-2.md) |
 | 3a | A reliable lane on `Transport`, on both implementations | `NeuronCore` | 1 | landed | [slice 3a](ReliableLane-work-order.md) |
-| 3b | Leaves, destroyed lists and orders go reliable | `GameLogic` | 3a | scheduled | [slice 3b](ReliableFormat-work-order.md) |
+| 3b | Leaves, destroyed lists and orders go reliable | `GameLogic` | 3a | landed | [slice 3b](ReliableFormat-work-order.md) |
 
 Three decision records are due, all in slice 1: *the network transport is MsQuic* (a dependency
 record, overdue since `ac1eb00`), *MsQuic's workers enqueue to a ring and the owning thread

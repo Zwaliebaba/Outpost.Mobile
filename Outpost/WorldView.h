@@ -359,6 +359,11 @@ private:
   std::vector<Game::ShipHandle> m_handles;
   std::vector<Game::WorldPos> m_orderPositions; // gathered for FormationHeading when an order is sent
   std::vector<ShipView> m_carryScratch;
+
+  // One reliable message's worth, kept so a pump allocates nothing. Sized on first use rather than
+  // at Init, because MAX_RELIABLE_BYTES is eight kilobytes and a view that never sees a departure
+  // should not carry it.
+  std::vector<std::uint8_t> m_reliableScratch;
   std::vector<Game::ShipHandle> m_carryHandles;
 
   // Indexed by Game::HullId. A hull with no mesh registered simply is not drawn, which is the same
