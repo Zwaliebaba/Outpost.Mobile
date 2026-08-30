@@ -226,16 +226,31 @@ and the two of you take turns undoing each other.
 The tree is formatted and a whole-tree run is a no-op. Keep it that way: format the lines you
 write, and do not reformat files you are only passing through.
 
-Three rules `.clang-tidy` structurally cannot state, so check them by eye:
+Three rules `.clang-tidy` structurally cannot state. All three are checked by
+[`Build/CheckProjectFiles.py`](Build/CheckProjectFiles.py) instead, which needs no compiler and runs
+in CI before the build:
 
-- **R2's suffixes.** clang-tidy can require an *absent* prefix but cannot ban a *present* suffix,
-  so `FooBase` slips through it entirely. A bare `struct Impl;` is the pimpl idiom and is not a
-  suffix on anything; `FooImpl` is.
+- **R2's affixes.** clang-tidy can require an *absent* prefix but cannot ban a *present* suffix, so
+  `FooBase` slips through it entirely. A bare `struct Impl;` is the pimpl idiom and is not a suffix
+  on anything; `FooImpl` is. The check tests a declared type name for a two-capital start, a
+  `Base`/`Impl` suffix, an `Abstract` prefix or a `_t` suffix — the two-capital test being safe only
+  because R4 already bans `GPUDevice` in favour of `GpuDevice`.
 - **R7's file naming**, and that a new file is registered in the `.vcxproj` **and** the
   `.filters` (§3). Registering it in one and not the other is the miss §8's checklist exists to
   prevent.
-- **R11's spelling.** No tool in this tree reads English. The family list in R11 is greppable, and
-  review is the gate.
+- **R11's spelling.** No tool in this tree reads English, and none needs to: the check reads only
+  names *this tree declares*, told apart by the tree's own markers — R1's leading `_`, R8's `m_`/
+  `sm_`, R3's UPPER_CASE, and type names. A local spelled plain camelCase is out of its reach, and
+  so is every call into D3D12 and Win32, which spell `Color` and `Center` and are not ours to
+  rename.
+
+Two more things it checks that no rule had to state, because both cost a CI run first: a declarator
+named after a macro `<windows.h>` defines (`near`, `far`, `small`, `interface`, …), which expands
+rather than failing where it is written; and a braced call argument of nothing but literals, such as
+`Connect(client, server, {0, 256, 3})`, where inserting a field into the aggregate silently rebinds
+every element. Neither reaches the cases needing types — a positional aggregate of *variables* is
+the same hazard and is not caught — and the file says so at each check rather than implying cover it
+does not have.
 
 ---
 
@@ -245,7 +260,7 @@ Three rules `.clang-tidy` structurally cannot state, so check them by eye:
 |---|---|
 | `NeuronCore/` | Engine primitives shared by every layer — zero game semantics, no graphics API, headless (below). Diagnostics, file IO, framerate-independent easing, the frame clock, the seeded `Pcg32` (ADR 0012), and `Transport`. No content readers: those live with their consumer (below). |
 | `GameLogic/` | The deterministic simulation, namespace `Game`. `World`, `ShipState`, `WorldPos`, `HullSpec`, `Movement`, `Collision`, `SpatialIndex`, `PathGrid`, `Formation`, `Patrol`, `SimTuning`, `InterestSet`, `WorldSnapshot` (the wire format, ADR 0008) and `Publisher` (the fan-out to N subscribers, ADR 0029). Depends on NeuronCore only. |
-| `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, the explosion's `FxRenderer`/`MeshShatter`/`SpriteParticles`, and the content readers `DdsImage`, `ObjParser`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
+| `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, the explosion's `FxRenderer`/`MeshShatter`/`SpriteParticles`, the planet pipeline (`CubeSphere`, `Noise3`, `BodyDesc`/`BodyParams`/`BodyField`, `BodyMeshBuilder`, `BodyRenderer`, `ColourRamp` — see [`Design/PlanetRenderer.md`](Design/PlanetRenderer.md)), the star field (`SkyField`, `SkyRenderer`, `SkyVertex` — [`Design/Skybox.md`](Design/Skybox.md)), and the content readers `DdsImage`, `ObjParser`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
 | `Outpost/` | The executable: composition root, presentation state, the HUD and its event log, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
@@ -254,6 +269,12 @@ Three rules `.clang-tidy` structurally cannot state, so check them by eye:
 | `Tools/` | Content tools, stdlib Python only: the NMO ship-mesh codec and Blender add-on (`BlenderNmo/`), the OBJ→NMO converter (`ObjToNmo.py`), and their tests (`Nmo*Test.py` — the codec test needs bare python3, the Blender one the `bpy` wheel). [`Design/NmoFormat.md`](Design/NmoFormat.md) is the format; nothing here is engine code, and no `.vcxproj` names it. |
 | `Design/` | Designs, work orders, `Screenprints/`, `Archive/` for landed work orders, and `Design/Decisions/` — the architecture decision records (§9). Its `README.md` says which document is which and how a slice moves from a design into the tree (§7). |
 | `.github/` | CI (§6) and the pull request template every slice answers (§7). |
+
+**On the name.** The repository is `Outpost.Mobile`; Outpost is a Windows game and nothing in this
+document says otherwise. The name is historical. What is actually mobile-adjacent in the tree is
+`WM_POINTER` touch input, MSIX packaging, and the ARM64 configurations §6 records as unverified —
+there is no phone target, and no plan stated anywhere for one. Read the name as a repository
+identifier, not as an intention.
 
 The dependency rules are hard, and each of them is one thing this structure buys:
 
@@ -351,7 +372,8 @@ HLSL lives in `<Project>/Shaders/`, one entry point per file, named for the stag
 |---|---|
 | `<Name>VS.hlsl` | vertex shader |
 | `<Name>PS.hlsl` | pixel shader |
-| `<Name>.hlsli` | declarations both stages of `<Name>` share — cbuffers, and the `VsOut` struct that is the contract between them |
+| `<Name>CS.hlsl` | compute shader — `BodyBakeCS`, `BodyBakeMaxCS` |
+| `<Name>.hlsli` | declarations the stages of `<Name>` share — cbuffers, and the `VsOut` struct that is the contract between them |
 
 **DXC compiles them at build time**, as shader model 6.7 DXIL, into `<Project>/CompiledShaders/<Name>.h`, as a byte array
 called `g_p<Name>` — so `Shaders/SceneVS.hlsl` becomes `CompiledShaders/SceneVS.h` holding
@@ -654,8 +676,8 @@ configurations you built.
 - [ ] Every added, removed or moved file is in both the `.vcxproj` **and** the `.filters`, and
       `python Build/CheckProjectFiles.py` passes.
 - [ ] `python Build/CheckFormat.py` passes, on clang-format 18.1.3.
-- [ ] Shader touched? It is `<Name>VS.hlsl` or `<Name>PS.hlsl` under `Shaders/`, and nothing
-      generated under `CompiledShaders/` was committed.
+- [ ] Shader touched? It is `<Name>VS.hlsl`, `<Name>PS.hlsl` or `<Name>CS.hlsl` under `Shaders/`,
+      and nothing generated under `CompiledShaders/` was committed.
 - [ ] The dependency rules in §2 still hold: no engine project names a game type, the client and
       server do not name each other, nothing names the executable, and no graphics header reaches
       NeuronCore or NeuronServer.

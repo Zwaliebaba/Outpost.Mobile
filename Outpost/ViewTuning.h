@@ -105,7 +105,7 @@ inline constexpr std::uint32_t EXPLOSION_PARTICLE_CAPACITY = 4096;
 // --- shock ring --------------------------------------------------------------------------------
 // The blast front a station leaves behind: one expanding ring on the ground plane, drawn through
 // the same decal the selection rings and order markers use, so it costs no pipeline, no shader and
-// no texture of its own (Design/ShockRing-work-order.md).
+// no texture of its own (Design/Archive/ShockRing-work-order.md).
 //
 // Flat on purpose. A real front is a sphere; a flat ring is what every other ground marker in this
 // game already is, and a sphere would want a pass of its own.

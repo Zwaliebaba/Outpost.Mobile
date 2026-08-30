@@ -10,12 +10,13 @@
 # tree, this one is greenfield: format everything you write, and a whole-tree run should be a
 # no-op rather than an unreviewable rewrite.
 #
-# ── Status: no CI step runs this yet ───────────────────────────────────────────────────────
+# ── Status: CI gates on this, over the whole tree ──────────────────────────────────────────
 #
-# CI builds and tests but does not format-check (AGENTS.md §6), so this is enforced by review and
-# by editors that pick the file up. Keep
-# ColumnLimit and IndentWidth in step with /.editorconfig; if you change one, change the other in
-# the same commit or they start lying to each other.
+# `Build/CheckFormat.py` runs in its own Linux job and fails the build on an unformatted file
+# (AGENTS.md §6), on clang-format 18.1.3 exactly -- the output changes between releases, so if a
+# local run disagrees with CI, compare the version line first. Run it yourself before you push.
+# Keep ColumnLimit and IndentWidth in step with /.editorconfig; if you change one, change the other
+# in the same commit or they start lying to each other.
 #
 # ── Deliberate choices ─────────────────────────────────────────────────────────────────────
 #

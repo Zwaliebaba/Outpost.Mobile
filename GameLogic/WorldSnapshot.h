@@ -23,9 +23,10 @@ class World;
 // NeuronCore, so it may include Transport.h. Same test AGENTS.md 2 applies to content readers: the
 // code lives with what it is about (Design/Archive/Collision-slice-2b.md 2.2).
 //
-// Fields are written one at a time into a byte buffer rather than memcpy'd. ShipState is 120 bytes
-// of padded struct whose layout has already changed once in this design and will again; a
-// field-by-field format survives that, and survives the day the two ends are different binaries.
+// Fields are written one at a time into a byte buffer rather than memcpy'd. ShipState is 128 bytes
+// of padded struct -- it was 120 when this was written, which is the argument making itself -- whose
+// layout has already changed twice in this design and will again; a field-by-field format survives
+// that, and survives the day the two ends are different binaries.
 
 // One ship as a client is allowed to see it.
 //

@@ -28,8 +28,9 @@
 #   * Outpost.slnx needs MSBuild 17.13 or newer; older msbuild does not read the .slnx format at
 #     all. If a runner image ever regresses below that, build the .vcxproj files directly -- the
 #     include paths are relative, so nothing but the output location depends on the solution.
-#   * Shaders are compiled by FXC into headers under NeuronClient/CompiledShaders, which is build
-#     output and not in source control. Nothing extra is needed for that here; it falls out of the
+#   * Shaders are compiled by DXC into headers under NeuronClient/CompiledShaders, which is build
+#     output and not in source control -- DXC and not FXC because the projects ask for shader model
+#     6.7, which FXC does not reach. Nothing extra is needed for that here; it falls out of the
 #     project build.
 #   * SolutionDir is passed explicitly. Without it every project writes its output beside itself
 #     instead of into x64\Debug\, and the test paths below stop resolving.

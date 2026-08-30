@@ -9,8 +9,9 @@ namespace Game
 {
 // Where something is, in the one representation the simulation uses for it.
 //
-// A sector index and an offset within it. The sector pair carries the range -- a universe of
-// +/-10^19 m, past thousands of star systems -- and the local offset carries the precision, a
+// A sector index and an offset within it. The sector pair carries the range -- int64 sectors of
+// 8,192 m each is +/-7.6x10^22 m, about eight million light years, past any number of star systems
+// -- and the local offset carries the precision, a
 // uniform 0.49 mm everywhere rather than the precision decay a single global float suffers with
 // distance from its origin. Every line of float maths in the simulation runs in one sector's frame
 // and never sees the difference (Design/Collision.md 3).

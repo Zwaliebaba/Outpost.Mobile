@@ -142,7 +142,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 18 | Copy-queue uploader, store eviction | `NeuronClient` | M | 10 | G3 | ADR |  |
 | 19 | Compressed textures, descriptor allocator | `NeuronClient` | M | 18 | G4 |  |  |
 | 20 | Body LOD and culling completion | `NeuronClient` | M | 9 | G5 |  |  |
-| 21 | Guard widening and the docs re-trued | `Build/`+prose | S | — | C2 C3 C4 |  |  |
+| 21 | Guard widening and the docs re-trued | `Build/`+prose | S | — | C2 C3 C4 |  | landed |
 | 22 | Legacy helper cleanup | `NeuronCore` | S | — | C1 |  | landed |
 | 23 | clang-tidy widens a project | `.github/` | S | — | C2 |  |  |
 | 24 | The server configuration file | `Outpost` | M | — | — | ADR | cuttable since §4.3 |
@@ -442,6 +442,42 @@ R11's family list. The six stale sentences fix: both lint configs' "nothing runs
 **Acceptance.** A deliberately planted violation of each new check goes red in a run linked from
 the pull request (measured, not read — the tree's own standard); `CheckProjectFiles.py` and
 `CheckFormat.py` green on the clean tree.
+
+**As landed.** The game-header list is fifteen read off disk, not six spelled out. Four source
+checks joined the guard: R2's affixes, R11's families, and two the slices above earned rather than
+the review — a declarator named after a `<windows.h>` macro (`Link near;`, eight errors none of
+which named the line), and a braced call argument of nothing but literals (`{0, 256, 3}` bound a
+loss test's `dropOneInN` to a ring depth when a field landed between two others, so the test passed
+while measuring nothing). Both cost a CI run each. Acceptance was met: five planted violations, five
+reports, exit 1; the clean tree exits 0.
+
+The R11 check reads only names the tree *declares*, told apart by R1's `_`, R8's `m_`/`sm_`, R3's
+UPPER_CASE and type names — because D3D12 and Win32 spell `Color` and `Center` on every second line
+and are not ours to rename. The literal-aggregate check refuses the general case for the same
+reason: a positional aggregate of *variables* is the same hazard and needs types to see, so it is
+declared uncaught at the check rather than implied covered. A guard that overstates its reach is the
+thing this slice exists to remove.
+
+Two candidate checks were measured and **not** shipped. A general "bare braced argument" rule scored
+65 hits on the clean tree, nearly all legitimate — rows of `HULL_SPECS`, vertex constructions,
+`std::max({_a.x, _b.x, _c.x})` — and a guard that cries wolf is worse than no guard. Narrowing it to
+all-literal lists inside a call took that to zero while still catching the original defect, which is
+the version that landed.
+
+Six sentences re-trued, all of them measured rather than re-read: `ShipState` is **128** bytes and
+`WorldSnapshot.h` claimed 120; `WorldPos` reaches **±7.6×10²² m**, about eight million light years,
+and claimed ±10¹⁹; `build.yml` credited FXC for shaders the projects ask of DXC at shader model 6.7;
+`.clang-tidy` still said nothing ran it, when it gates GameLogic; its "R2 and R7 have their own CI
+step" is now true and names the file; AGENTS.md §3 and §8 admit `<Name>CS.hlsl`, which the tree has
+had two of. `.clang-format` said the same thing `.clang-tidy` did and is corrected the same way.
+§2's map gained the two subsystems it omitted outright — the planet pipeline and the star field,
+nine headers between them — and a line on the repository's name (C4): it is historical, Outpost is a
+Windows game, and the tree's own standard is that an unexplained thing gets one sentence rather than
+a shrug. `ShockRing-work-order.md` moved to `Design/Archive/`, and `ViewTuning.h:108`'s citation
+followed it — a citation meant to be followed (`Design/README.md`) is worth no more than its path.
+
+Left standing deliberately: R11's prose sweep, which the work order puts in a pass of its own, and
+`WorldSnapshot.h`'s "wire in centimeters", which is slice 15's layer and not yet built.
 
 #### Slice 22 — legacy helper cleanup (`NeuronCore`, S)
 
