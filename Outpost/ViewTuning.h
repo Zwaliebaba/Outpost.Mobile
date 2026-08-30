@@ -247,9 +247,6 @@ inline constexpr float BODY_ASTEROID_RADIUS_MAX_METRES = 24.0f;
 inline constexpr std::uint32_t BODY_PLANET_GRID_POWER = 6;   // 65 samples a side, 49 152 triangles
 inline constexpr std::uint32_t BODY_ASTEROID_GRID_POWER = 5; // 33 a side
 
-// The centre's height above the ground plane, as a multiple of the radius. At or above one, always:
-// below it the ground quad -- 4 km across and following the camera -- slices the body in half.
-inline constexpr float BODY_PLANET_LIFT = 1.15f;
 inline constexpr float BODY_PLANET_SPIN_SEC = 240.0f; // one turn
 inline constexpr float BODY_PLANET_TILT_MAX_DEG = 30.0f;
 inline constexpr float BODY_ASTEROID_TUMBLE_MAX_RAD_PER_SEC = 0.15f;
@@ -312,8 +309,40 @@ inline constexpr bool BODY_BAKE_ON_GPU = true;
 // The starting scene, from one seed, so the pull request's screenshot reproduces. F5 reseeds with
 // BODY_START_SEED + the number of presses, which makes a scene reproducible by press count.
 inline constexpr std::uint64_t BODY_START_SEED = 0x4F75747031ull; // "Outp1"
-inline constexpr float BODY_START_PLANET_DISTANCE_METRES = 4000.0f;
-inline constexpr float BODY_START_MOON_DISTANCE_METRES = 3000.0f;
+
+// **Where the two worlds sit is framing, and it is worked out against the camera the player starts
+// with, not chosen as a round number.** That camera looks north and 52 degrees *down* from an eye at
+// (0, 152.7, -117): 190 m of zoom at 52 degrees of pitch over a target 3 m up. With a 45 degree
+// vertical field of view on 16:9 that leaves a cone spanning 29.5 to 74.5 degrees of depression and
+// plus or minus 36.4 degrees of azimuth -- so anything level with the fleet or above it, or more
+// than 36 degrees off north, is off the screen before it is drawn.
+//
+// Both worlds used to be 45 degrees off north and lifted 1.15 radii *above* the plane, which put
+// them roughly 40 degrees above the top edge and 7 degrees past the right one. They were in the
+// scene and nobody had ever seen them.
+//
+// So each is placed where it lands on the screen, and the numbers below are what that works out to
+// as a bearing and a range from the fleet. Against BODY_START_SEED, whose planet comes out 864 m
+// across and whose moon is half that:
+//
+//   planet  23 deg left of north, 43.7 deg down  -> 5.0 km of slant range, 19.6 deg across
+//           centred at (489, 335) of a 1600x900 client, 393 px wide
+//   moon    23 deg right of north, 38.0 deg down -> 3.8 km of slant range, 12.9 deg across
+//           centred at (1145, 223), 258 px wide -- its right limb stops 41 px short of the minimap
+//
+// Both stay wholly on screen at 16:9 and at 4:3, and with the camera pulled back to
+// CAMERA_MAX_ZOOM. The far limb of the farther one is 6 574 m away at the worst pitch and yaw the
+// camera allows, which leaves 1.4 km of headroom under CAMERA_FAR_PLANE.
+//
+// A depth is metres, not radii: what is being aimed at is an angle on the screen, and the seeded
+// radius must not be able to move it. Both sit high on the screen while being far below the fleet in
+// the world, which is the whole point -- the outpost is flying over them.
+inline constexpr float BODY_START_PLANET_BEARING_DEG = -23.0f;
+inline constexpr float BODY_START_PLANET_DISTANCE_METRES = 3500.0f;
+inline constexpr float BODY_START_PLANET_DEPTH_METRES = 3300.0f; // below the fleet's plane
+inline constexpr float BODY_START_MOON_BEARING_DEG = 23.0f;
+inline constexpr float BODY_START_MOON_DISTANCE_METRES = 2900.0f;
+inline constexpr float BODY_START_MOON_DEPTH_METRES = 2200.0f;
 inline constexpr float BODY_START_MOON_RADIUS_FRACTION = 0.5f; // of the planet's
 inline constexpr int BODY_START_ASTEROIDS = 6;
 inline constexpr float BODY_START_ASTEROID_RING_MIN_METRES = 150.0f;

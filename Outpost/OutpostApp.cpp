@@ -301,7 +301,10 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
   // A body of a class, at a bearing and a distance. The seed each body is generated from is drawn
   // from this scene's generator, so the whole scene follows from one number and no body has to be
   // told where in the stream it sits.
-  const auto place = [&](BodyClass bodyClass, float _radiusMetres, float _bearingRad, float _distanceMetres, bool _asteroid)
+  // _centreY is the height of the body's centre, so a caller says where a world sits rather than
+  // deriving it from a radius the seed chose. A rock passes its own radius and so rests on the
+  // fleet's plane; a world passes a depth well below it (ViewTuning.h).
+  const auto place = [&](BodyClass bodyClass, float _radiusMetres, float _bearingRad, float _distanceMetres, float _centreY, bool _asteroid)
   {
     const std::uint64_t bodySeed = (static_cast<std::uint64_t>(rng.Next()) << 32) | rng.Next();
     const BodyDesc desc = RandomBody(bodySeed, bodyClass, _radiusMetres);
@@ -349,8 +352,7 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
       view.oceanColour = spec.oceanColour;
     }
     view.centre = Game::LocalPos(std::sin(_bearingRad) * _distanceMetres, std::cos(_bearingRad) * _distanceMetres);
-    // A planet floats clear of the ground quad; a rock rests on it, the way a Structure does.
-    view.centreY = _asteroid ? _radiusMetres : _radiusMetres * BODY_PLANET_LIFT;
+    view.centreY = _centreY;
     // The sphere the frustum test uses. Every length in a BodyDesc but radiusMetres is a fraction of
     // it, so the furthest the body can reach is its radius stretched by its widest ellipsoid axis and
     // raised by its tallest continent. Read off the description, so it is right on either bake path
@@ -383,8 +385,10 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
 
   const float planetRadius =
     BODY_PLANET_RADIUS_MIN_METRES + rng.Float01() * (BODY_PLANET_RADIUS_MAX_METRES - BODY_PLANET_RADIUS_MIN_METRES);
-  place(BodyClass::Terran, planetRadius, XM_PIDIV4, BODY_START_PLANET_DISTANCE_METRES, false);
-  place(BodyClass::Barren, planetRadius * BODY_START_MOON_RADIUS_FRACTION, -XM_PIDIV4, BODY_START_MOON_DISTANCE_METRES, false);
+  place(BodyClass::Terran, planetRadius, XMConvertToRadians(BODY_START_PLANET_BEARING_DEG), BODY_START_PLANET_DISTANCE_METRES,
+        -BODY_START_PLANET_DEPTH_METRES, false);
+  place(BodyClass::Barren, planetRadius * BODY_START_MOON_RADIUS_FRACTION, XMConvertToRadians(BODY_START_MOON_BEARING_DEG),
+        BODY_START_MOON_DISTANCE_METRES, -BODY_START_MOON_DEPTH_METRES, false);
 
   for (int i = 0; i < BODY_START_ASTEROIDS; ++i)
   {
@@ -393,7 +397,7 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
     const float bearing = rng.Float01() * XM_2PI;
     const float distance =
       BODY_START_ASTEROID_RING_MIN_METRES + rng.Float01() * (BODY_START_ASTEROID_RING_MAX_METRES - BODY_START_ASTEROID_RING_MIN_METRES);
-    place(BodyClass::Asteroid, radius, bearing, distance, true);
+    place(BodyClass::Asteroid, radius, bearing, distance, radius, true);
   }
 
   m_bodyGenerationMs = m_clock.ElapsedMs(startQpc, m_clock.Now());

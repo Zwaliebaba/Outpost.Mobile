@@ -83,14 +83,20 @@ somewhere sensible relative to it.
 | Grid `N` per cube face | 65 (64 cells) | 17 or 33 |
 | Cell at the equator | `πR / (2·64)` ≈ 10–30 m | 0.3–2.3 m (at the cut size; the grid power was left alone, so a small rock is finely tessellated for its size) |
 | Relief (`heightScale`, as a fraction of `R`) | 3–12 % | 15–40 % |
-| Centre height above the plane | `R · BODY_PLANET_LIFT` (default 1.15 — floats clear of the grid) | `R` (rests on the plane, as a Structure does) |
+| Centre height | far *below* the fleet's plane, in metres, so the framing does not move with the seeded radius: `-BODY_START_PLANET_DEPTH_METRES` and `-BODY_START_MOON_DEPTH_METRES` (`Design/Decisions/0025`) | `R` (rests on the plane, as a Structure does) |
 | Where | 2.5–5 km from the fleet's start, one or two per scene | among the ships, several |
 | Motion | spin about a tilted axis, one turn per `BODY_PLANET_SPIN_SEC` | tumble on two axes |
 
-A 1 000 m planet 4 km away subtends about 28° at the camera's 45° field of view — a backdrop that
-fills a third of the screen at the edge of the play area, under a grid that has already faded
-(`GRID_FADE_DISTANCE = 900`). A 60 m asteroid beside a 10 m Corvette reads as a rock you could
-park behind. Both are ordinary meshes at ordinary depths; nothing about the camera changes.
+A 900 m planet 5 km away subtends about 20° at the camera's 45° field of view — a backdrop that
+fills nearly half the screen's height. A 60 m asteroid beside a 10 m Corvette reads as a rock you
+could park behind. Both are ordinary meshes at ordinary depths; nothing about the camera changes.
+
+**Where a world sits is framing, and it is worked out against the camera the player starts with.**
+This originally placed both worlds 45° off north and lifted them above the plane, which — against a
+camera that looks 52° *down* — put them roughly 40° above the top edge of the screen and 7° past the
+right one. They were in the scene, correct in every other respect, and had never been seen. They are
+now placed by the two angles that decide where they land on the screen, and `ViewTuning.h` carries
+the arithmetic beside the constants.
 
 What this deliberately does not do is put a 6 000 km planet in the sky. That takes a
 camera-relative origin, a second projection or reversed-Z, and a decision about what the ground
