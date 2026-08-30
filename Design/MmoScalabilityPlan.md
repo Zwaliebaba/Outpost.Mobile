@@ -131,7 +131,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 7 | Listener slot reclamation, per-role rings | `NeuronCore` | S | — | E3 | ADR | landed |
 | 8 | Trail and glow batching | `NeuronClient`+`Outpost` | S | — | G1 |  | landed |
 | 9 | Frustum culling | `NeuronClient`+`Outpost` | S | — | G2 |  | landed |
-| 10 | Hull instancing | `NeuronClient`+`Outpost` | M | 9 | G2 |  |  |
+| 10 | Hull instancing | `NeuronClient`+`Outpost` | M | 9 | G2 |  |   landed |
 | 11 | Localized gather radius, threat pre-filter | `GameLogic` | M | — | U2 |  | landed |
 | 12 | The tick-rate decision | `GameLogic` | S | — | E7 | ADR | decided: 60 Hz stays |
 | 13 | Churn-gated static rebuilds | `GameLogic` | S | — | U4 |  | landed |
@@ -339,6 +339,33 @@ draws one instanced call per hull family. Root constants stay for everything non
 **Acceptance.** A code read: the fleet is one draw per hull family present; screenshots at two
 sizes; the shader change is `SceneVS.hlsl` + `Scene.hlsli` only, compiled by the existing FxCompile
 settings.
+
+**As landed**, the shader change is `Scene.hlsli`, `SceneVS.hlsl`, `ScenePS.hlsl` and a new
+`SceneInstancedVS.hlsl` — one more file than the order predicted, and for a reason the order did not
+foresee. `baseColour` is a *pixel* root constant, and an instanced draw has one root constant and a
+tint per ship, so the tint had to move into `VsOut`. Both vertex shaders write it there and one
+pixel shader reads it, which is why `params[1]` is now visible to `ALL` rather than `PIXEL`. The
+alternative — a second pixel shader for the instanced path — would have been two copies of the
+lighting to keep in step.
+
+`DrawMesh` now binds the scene pipeline itself. It used to rely on `BeginScene` having left it
+bound, which stopped being true the moment `DrawMeshInstanced` could switch it: a `DrawMesh` after a
+batch would have drawn through the instanced input layout with no instance buffer, which nothing
+reports and which looks like corrupt geometry.
+
+**Default heaps landed with it**, and they contradict a comment that argued the other way. The
+hulls average 32 kB, so the vertex fetch is 0.3 GB/s at a hundred ships — where `GpuHelpers.h` was
+right that a staging copy is not worth it — 1.4 at five hundred and 5.6 at two thousand, where it is
+not. Instancing removes the draws and the heap move removes the fetch; neither substitutes for the
+other. `UploadMesh` records a copy now, so its three call sites are bracketed and
+`SceneRenderer::DiscardStaging` joins the two that already existed.
+
+Verified by pinning `MeshInstance`'s layout against the offsets `SCENE_INSTANCED_ELEMENTS` declares,
+and by transforming a point through a matrix assembled from four rows the way the shader does and
+requiring it to match the row-major `XMFLOAT4X4` path. The ring holds 4,096 instances — 320 kB a
+frame, 1 MB over three frames in flight — and reports what it drops past that, like the effect ring.
+
+**Screenshots are owed**, for the third slice running: nothing here can put a frame on a screen.
 
 #### Slice 11 — localized gather radius and threat pre-filter (`GameLogic`, M)
 

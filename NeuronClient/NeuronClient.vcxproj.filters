@@ -222,6 +222,9 @@
     <FxCompile Include="Shaders\SceneVS.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
+    <FxCompile Include="Shaders\SceneInstancedVS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
     <FxCompile Include="Shaders\ScenePS.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>

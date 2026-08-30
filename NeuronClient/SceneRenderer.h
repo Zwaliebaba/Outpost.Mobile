@@ -3,6 +3,8 @@
 #include "GpuDevice.h"
 #include "RenderTypes.h"
 
+#include <span>
+
 #include "MeshData.h"
 
 #include <vector>
@@ -24,8 +26,14 @@ class SceneRenderer
 public:
   void Init(GpuDevice& _gpu);
 
-  // Static geometry, uploaded once at startup. The vertex buffer stays in an upload heap: a few
-  // thousand triangles do not justify a staging copy and its barrier.
+  // Static geometry, uploaded once at startup into a DEFAULT heap, through a staging copy the
+  // caller's GpuDevice upload bracket runs -- so this must be called inside one, and DiscardStaging
+  // after it.
+  //
+  // It was an upload heap and a straight memcpy, on the argument that a few thousand triangles do
+  // not justify a staging copy. That was about the upload; the cost is in the reading. An upload
+  // heap is system memory, so the input assembler crosses PCIe for these vertices on every draw and,
+  // once instancing lands, on every instance.
   [[nodiscard]] MeshHandle UploadMesh(GpuDevice& _gpu, const std::vector<MeshVertex>& _verts);
 
   // A unit quad in the XZ plane, built at Init. Every ring and marker is this one mesh with a
@@ -36,9 +44,29 @@ public:
     return m_unitQuad;
   }
 
-  // Opaque pass. Set once per frame, before any DrawMesh.
+  // Opaque pass. Set once per frame, before any DrawMesh or DrawMeshInstanced.
   void BeginScene(GpuDevice& _gpu, const SceneFrame& _frame);
   void DrawMesh(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _baseColour, float _materialMix);
+
+  // One draw for every ship sharing a mesh. Five hundred hulls over five meshes were five hundred
+  // draws, because a per-object matrix could only live in a root constant and a root constant is set
+  // per draw (Design/MmoScalabilityReview.md G2). The instances go into a per-frame ring and are read
+  // from input slot 1.
+  //
+  // Switches the pipeline, so a caller mixing this with DrawMesh pays a state change each way. Do the
+  // instanced draws together.
+  void DrawMeshInstanced(GpuDevice& _gpu, MeshHandle _mesh, std::span<const MeshInstance> _instances);
+
+  // Releases the staging buffers UploadMesh recorded copies from. Call after the GpuDevice bracket
+  // those uploads were recorded into has run, never before -- the copies read them.
+  void DiscardStaging() noexcept;
+
+  // Instances the ring had no room for, this frame. Reset by BeginScene, so it reports the frame in
+  // front of the reader rather than the run.
+  [[nodiscard]] std::uint32_t DroppedInstances() const noexcept
+  {
+    return m_droppedInstances;
+  }
 
   // Overlay pass. The decal takes the unit quad and is shaped in the pixel shader, so ring thickness
   // and fill stay plain parameters with no geometry to rebuild.
@@ -48,11 +76,24 @@ public:
 private:
   void CreateScenePipeline(GpuDevice& _gpu);
   void CreateDecalPipelines(GpuDevice& _gpu);
+  void CreateInstanceRing(GpuDevice& _gpu);
 
   GpuPtr<ID3D12RootSignature> m_sceneRs;
   GpuPtr<ID3D12PipelineState> m_scenePso;
+  GpuPtr<ID3D12PipelineState> m_instancedPso;
   GpuPtr<ID3D12PipelineState> m_decalPso; // alpha blended
   std::vector<GpuMesh> m_meshes;
   MeshHandle m_unitQuad = INVALID_MESH;
+
+  // Held only until the bracket the copies were recorded into has run; DiscardStaging drops them.
+  std::vector<GpuPtr<ID3D12Resource>> m_staging;
+
+  // The instance ring, one buffer per frame in flight -- FxRenderer's pattern, for the same reason:
+  // a buffer the CPU writes and the GPU reads in the same frame cannot be one buffer.
+  GpuPtr<ID3D12Resource> m_instanceBuffers[GpuDevice::FRAME_COUNT];
+  std::uint8_t* m_instanceCpu[GpuDevice::FRAME_COUNT] = {};
+  std::uint32_t m_instanceOffset = 0;
+  std::uint32_t m_instanceFrameIndex = 0xFFFFFFFFu; // no frame yet, so the first BeginScene resets it
+  std::uint32_t m_droppedInstances = 0;
 };
 } // namespace Neuron

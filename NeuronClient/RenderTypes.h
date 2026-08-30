@@ -6,6 +6,7 @@
 
 #include <DirectXMath.h>
 
+#include <cstddef>
 #include <cstdint>
 
 namespace Neuron
@@ -29,6 +30,20 @@ struct Rgba
 
 // A mesh that has been uploaded and can be drawn. Handed out by index rather than by pointer, so
 // the renderer can rehouse its buffers without invalidating anything the game is holding.
+// One ship in an instanced draw: where it is and what colour it takes. Both were root constants
+// before, which is exactly why every ship needed its own draw (Design/MmoScalabilityReview.md G2).
+//
+// The layout is the input layout: four rows of the world matrix and a tint, five R32G32B32A32_FLOAT
+// elements at input slot 1. Scene.hlsli's VsInstance spells the same thing from the other side, and
+// the static_assert below is what stops the two drifting.
+struct MeshInstance
+{
+  DirectX::XMFLOAT4X4 world;
+  float tint[4]; // rgb base colour, w material mix -- baseColour's two halves
+};
+static_assert(sizeof(MeshInstance) == 80, "MeshInstance is padded; the instanced input layout's offsets are wrong");
+static_assert(offsetof(MeshInstance, tint) == 64, "MeshInstance::tint moved; the instanced input layout spells 64");
+
 struct GpuMesh
 {
   GpuPtr<ID3D12Resource> vb;

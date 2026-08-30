@@ -11,7 +11,10 @@ float4 main(VsOut i) : SV_Target
     faceNormal = -faceNormal;
   }
 
-  float3 albedo = lerp(baseColour.rgb, i.col, baseColour.w);
+  // From the vertex rather than from baseColour directly: an instanced draw has one root constant
+  // and a tint per ship, so SceneVS and SceneInstancedVS each put theirs here and this reads one
+  // thing (Scene.hlsli).
+  float3 albedo = lerp(i.tint.rgb, i.col, i.tint.w);
 
   float lambert = saturate(dot(faceNormal, normalize(lightDirAmbient.xyz)));
   float3 lit = albedo * (lightDirAmbient.w + (1.0 - lightDirAmbient.w) * lambert);

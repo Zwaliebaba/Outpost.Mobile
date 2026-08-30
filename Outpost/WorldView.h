@@ -422,6 +422,21 @@ private:
   // Decided once per body per frame and reused by the ocean, terrain and outline passes.
   std::vector<bool> m_bodyVisible;
 
+  // The visible hulls, grouped by the mesh they draw with, so a fleet sharing a hull is one draw
+  // (Design/MmoScalabilityReview.md G2). A plain vector rather than a map: there are ten meshes in
+  // the game and a linear scan over ten beats a hash on every ship, and it keeps the draw order
+  // stable across frames, which a hash does not.
+  struct MeshBucket
+  {
+    Neuron::MeshHandle mesh = Neuron::INVALID_MESH;
+    std::vector<Neuron::MeshInstance> instances;
+  };
+  std::vector<MeshBucket> m_meshBuckets;
+
+  // The bucket for a mesh, made on first sight. Buckets are kept across frames and only their
+  // contents cleared, so a steady fleet allocates nothing after the first frame.
+  [[nodiscard]] std::vector<Neuron::MeshInstance>& Bucket(Neuron::MeshHandle _mesh);
+
   // This frame's frustum, built at the top of Render. Held rather than passed because DrawFeedback
   // is a second pass over the same frame and rebuilding it there would be a second chance for the
   // two to disagree about what is on screen.

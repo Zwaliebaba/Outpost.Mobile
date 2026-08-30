@@ -168,7 +168,12 @@ void OutpostApp::Init(HINSTANCE _instance)
   skyTuning.intensity = SKY_INTENSITY;
   skyTuning.twinkleMaxRateRadPerSec = SKY_TWINKLE_MAX_RATE_RAD_PER_SEC;
   m_view.SetSkyRenderer(m_skyRenderer, skyTuning);
+  // Hull vertices go to default heaps (SceneRenderer::UploadMesh), so their copies are recorded
+  // rather than written, and something has to run them. One bracket for all of them, not one each.
+  m_gpu.BeginUploads();
   LoadHullMeshes();
+  m_gpu.ExecuteAndWait();
+  m_sceneRenderer.DiscardStaging();
   SpawnStartingFleet();
   SpawnHostileBase();
 
@@ -205,6 +210,7 @@ void OutpostApp::Init(HINSTANCE _instance)
   m_gpu.ExecuteAndWait();
   m_bodyRenderer.DiscardStaging();
   m_skyRenderer.DiscardStaging();
+  m_sceneRenderer.DiscardStaging(); // the oceans SpawnStartingBodies uploaded
   m_log.PushFormat(EventLog::Severity::Friendly, 0.0f, "FLEET ONLINE | %u SHIPS", OwnShipCount());
 
   m_window.Show();
@@ -440,6 +446,7 @@ void OutpostApp::ReseedBodies()
   m_gpu.ExecuteAndWait();
   m_bodyRenderer.DiscardStaging();
   m_skyRenderer.DiscardStaging();
+  m_sceneRenderer.DiscardStaging(); // the oceans the reroll uploaded
 }
 
 void OutpostApp::SpawnStartingFleet()

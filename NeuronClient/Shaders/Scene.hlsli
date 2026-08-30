@@ -23,9 +23,25 @@ struct VsIn
   float3 col : COLOR0;
 };
 
+// The per-instance stream, at input slot 1, read by SceneInstancedVS alone. A matrix cannot be one
+// input element, so it arrives as its four rows; `row_major` above is what makes assembling them in
+// that order mean what XMFLOAT4X4 means by it.
+struct VsInstance
+{
+  float4 worldRow0 : INSTANCEWORLD0;
+  float4 worldRow1 : INSTANCEWORLD1;
+  float4 worldRow2 : INSTANCEWORLD2;
+  float4 worldRow3 : INSTANCEWORLD3;
+  float4 tint : INSTANCETINT; // rgb base colour, w material mix -- baseColour's two halves, per instance
+};
+
 struct VsOut
 {
   float4 clip : SV_Position;
   float3 worldPos : TEXCOORD0;
   float3 col : COLOR0;
+  // What baseColour used to be, carried from the vertex stage rather than read from a root constant.
+  // An instanced draw has one root constant and many tints, so the tint has to travel with the
+  // vertex; the non-instanced path writes the constant into it so one pixel shader serves both.
+  float4 tint : COLOR1;
 };

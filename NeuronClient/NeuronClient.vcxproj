@@ -315,6 +315,11 @@
       <HeaderFileOutput>CompiledShaders\SceneVS.h</HeaderFileOutput>
       <VariableName>g_pSceneVS</VariableName>
     </FxCompile>
+    <FxCompile Include="Shaders\SceneInstancedVS.hlsl">
+      <ShaderType>Vertex</ShaderType>
+      <HeaderFileOutput>CompiledShaders\SceneInstancedVS.h</HeaderFileOutput>
+      <VariableName>g_pSceneInstancedVS</VariableName>
+    </FxCompile>
     <FxCompile Include="Shaders\ScenePS.hlsl">
       <ShaderType>Pixel</ShaderType>
       <HeaderFileOutput>CompiledShaders\ScenePS.h</HeaderFileOutput>

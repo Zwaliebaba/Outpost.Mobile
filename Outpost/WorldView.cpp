@@ -793,6 +793,8 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
   const BoundingFrustum& frustum = m_frustum;
   m_submittedCount = 0;
   m_culledCount = 0;
+  for (MeshBucket& bucket : m_meshBuckets)
+    bucket.instances.clear();
 
   XMFLOAT4X4 world;
 
@@ -883,7 +885,10 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     if (view.visible)
     {
       ++m_submittedCount;
-      _renderer.DrawMesh(_gpu, view.mesh, world, tint, materialMix);
+      // Bucketed by mesh rather than drawn, so a fleet of one hull is one draw. Bucketing by the
+      // mesh handle and not the hull id is what makes two hull ids sharing a mesh share a draw, and
+      // the handle is what the draw needs anyway.
+      Bucket(view.mesh).push_back(Neuron::MeshInstance{.world = world, .tint = {tint.r, tint.g, tint.b, materialMix}});
     }
     else
     {
@@ -902,6 +907,11 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     view.lastVelMetresPerSec = XMFLOAT3(std::sin(heading) * state[i].speed, 0.0f, std::cos(heading) * state[i].speed);
     view.drawn = true;
   }
+
+  // One draw per hull family present. Order within the opaque pass does not matter -- it writes and
+  // tests depth -- so grouping by mesh costs nothing and buys everything.
+  for (const MeshBucket& bucket : m_meshBuckets)
+    _renderer.DrawMeshInstanced(_gpu, bucket.mesh, bucket.instances);
 
   // The bodies: every terrain, then every outline. Two passes rather than two draws per body, so
   // there is one pipeline switch per pass and body A's outline tests against body B's depth
@@ -977,6 +987,17 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
 // ------------------------------------------------------------------------------------------------
 // The overlay pass: selection and hover rings on the ground, order markers, thruster glow and
 // trail in the air. All of it is the same unit quad shaped by the decal shader.
+
+std::vector<Neuron::MeshInstance>& WorldView::Bucket(Neuron::MeshHandle _mesh)
+{
+  for (MeshBucket& bucket : m_meshBuckets)
+  {
+    if (bucket.mesh == _mesh)
+      return bucket.instances;
+  }
+  m_meshBuckets.push_back(MeshBucket{.mesh = _mesh, .instances = {}});
+  return m_meshBuckets.back().instances;
+}
 
 void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const SceneFrame& _frame)
 {
