@@ -143,7 +143,9 @@ a Vanguard station the player can see on the minimap as a mark and reach as an a
 **Screenshots**, at two window sizes, in the pull request:
 
 - the opening scene, with the pinned world where it was, a Vanguard mark on the minimap at its
-  bearing — clamped to the edge, since 3 500 m is past the map's 1 400 m half-range — and the
+  bearing — inside the map, since `HUD_MINIMAP_HALF_RANGE` widens to 4 000 m in this slice so that a
+  station the player is meant to fly to reads as a distance and not only a direction (the owner's
+  ask on review); the other two marks inside or clamped by where the layout put them — and the
   `STATIONS ONLINE | 4` line in the log beside `FLEET ONLINE | 3 SHIPS`;
 - the fleet arrived at a Vanguard station: the azure structure in the scene, its filled blue dot
   on the minimap over the mark, `CONTACTS` unchanged by it.

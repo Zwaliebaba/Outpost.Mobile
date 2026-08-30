@@ -33,8 +33,9 @@ hull declares as livery -- the plating and the canopy are the model's own paint 
 be selected or ordered — the simulation refuses an order from the wrong faction and the client does
 not offer one. The government is here too: the starting solar system is laid out from a seed
 (`Game::LayOutSystem`, ADR 0037), and at each of its three planets stands a station of Core Vanguard
-Command, azure in the scene and a hollow diamond on the minimap from the first frame — clamped to
-the map's edge while it is out of range, because a mark is static content and not a record. A
+Command, azure in the scene and a hollow diamond on the minimap from the first frame — the nearest
+inside the 4 km half-range, a farther one clamped to the map's edge, because a mark is static
+content and not a record. A
 station is a Structure with a row in `World`'s station table (ADR 0038); the Vandal base is a row
 in the same table. The simulation can dock ships at one and scramble its garrison, and the client
 cannot yet ask it to: the tap, the refusal line and the debug key that provokes the Vanguard are

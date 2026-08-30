@@ -402,7 +402,10 @@ radius, no threat scan, no proximity trigger; the NPC reads exactly two things i
 record. Built as planned, with two things the plan did not spell out: the asteroid field draws
 different numbers from `BODY_START_SEED` once the worlds stop drawing from it, so the rocks move
 under this slice while the worlds and the stations do not; and `STATIONS ONLINE` counts every
-station row, the Vandal base included, so it reads 4.
+station row, the Vandal base included, so it reads 4. And one thing review asked for: the
+minimap's half-range widens from 1 400 m to 4 000 m, so the nearest Vanguard station is on the map
+from boot rather than a mark clamped to its edge -- design §9.3's "beyond the map's 1 400 m
+half-range" describes the map as it was.
 
 **Layer:** `Outpost`. **Depends on:** 1, 2. **Blocks:** 6.
 

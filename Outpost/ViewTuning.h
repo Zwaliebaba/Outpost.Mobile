@@ -404,7 +404,7 @@ inline constexpr float START_SPACING = 55.0f;
 
 // The hostile base and its patrol (Design/Archive/Hostiles.md 6). The station sits 1,202 m out on the
 // diagonal: inside the 2,000 m interest radius, so the base is subscribed from the first update and
-// the overview shows red immediately, and inside the minimap's 1,400 m half-range, so it has an edge
+// the overview shows red immediately, and well inside the minimap's half-range, so it has an edge
 // to be seen against. The farthest patrol point is 1,602 m out, still inside both.
 //
 // The ring clears the station's 251.77 m skin by 148 m, and its chords clear the station's center by
@@ -477,7 +477,16 @@ inline constexpr float HUD_MINIMAP_DOT_PX = 4.0f;
 // A structure reads bigger than a fighter without pretending to scale: to scale, a 500 m station is
 // 25 px, a quarter of the map for one base. Iconography beats cartography at 0.05 px per metre.
 inline constexpr float HUD_MINIMAP_STRUCTURE_DOT_PX = 8.0f;
-inline constexpr float HUD_MINIMAP_HALF_RANGE = 1400.0f; // metres from the camera target to the map's edge; wider than CAMERA_MAX_ZOOM sees
+// Metres from the camera target to the map's edge. It was 1 400 -- wider than CAMERA_MAX_ZOOM sees,
+// and enough to hold the Vandal base -- until the Vanguard stations existed: the nearest stands at
+// the pinned world's 3 500 m, and a mark that is clamped to the edge from the first frame says which
+// way to fly but never how far. At 4 000 the nearest station is inside the map from boot, by the
+// owner's ask, and the two farther ones (2 500-6 500 m from the star) are inside or clamped by
+// where the layout put them. What it costs is resolution: 140 px over 8 km is 57 m per pixel, so the
+// three starting hulls draw as one cluster and the patrol ring is a 7 px circle. The map is
+// iconography, not cartography (HUD_MINIMAP_STRUCTURE_DOT_PX says the same), and a station's
+// distance is the thing the map now answers that it could not before.
+inline constexpr float HUD_MINIMAP_HALF_RANGE = 4000.0f;
 // A station mark: a hollow diamond at a station of the layout, drawn from static content rather than
 // from a record, so it is there from the first frame however far away the station is. One past the
 // map's edge is clamped to the edge and dimmed rather than clipped like a dot -- direction honest,
