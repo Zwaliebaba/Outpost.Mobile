@@ -38,6 +38,7 @@ public:
     DirectX::XMFLOAT4X4 world{};                         // the hull's last drawn matrix, bank and hover included
     DirectX::XMFLOAT3 velMetresPerSec{0.0f, 0.0f, 0.0f}; // what the ship was carrying when it died
     DirectX::XMFLOAT3 halfExtents{1.0f, 1.0f, 1.0f};     // the mesh's, for hullScale
+    Neuron::Rgba livery{1.0f, 1.0f, 1.0f, 1.0f};         // the paint the hull was last drawn in
     std::uint64_t seed = 0;                              // the ship's handle mixed with the tick it died on
 
     // Whether this death leaves a blast front on the ground. A parameter rather than something the

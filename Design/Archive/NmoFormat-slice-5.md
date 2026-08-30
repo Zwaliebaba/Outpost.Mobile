@@ -3,7 +3,7 @@
 Implements slice 5 of [`NmoFormat.md`](NmoFormat.md) §14: the visible half of `RaceTinted`. A hull
 stops being tinted as one object and starts being painted by two authorities — the model paints its
 structure, the faction paints its livery — and the faction-to-colour branch the client has carried
-since Hostiles becomes the table [Stations.md](Stations.md) §9.3 describes.
+since Hostiles becomes the table [Stations.md](../Stations.md) §9.3 describes.
 
 **Layer:** `NeuronClient` (shaders and `SceneRenderer`), `Outpost`, and `Art/Meshes/` — the
 converter and the regenerated corpus.
@@ -145,7 +145,7 @@ inline constexpr float SELECTED_HIGHLIGHT_LIFT = 0.35f; // toward white, on the 
 Rgba LiveryOf(Game::FactionId _faction, bool _hostileToMe);
 ```
 
-with the precedence [Stations.md](Stations.md) §9.3 sets and does not get to be re-litigated here:
+with the precedence [Stations.md](../Stations.md) §9.3 sets and does not get to be re-litigated here:
 **hostile outranks faction.** A Vanguard ship whose faction holds this client hostile paints
 `LIVERY_VANDAL`'s red, because the law turning on you is the thing the player must see. Own faction
 takes `SELECTABLE_LIVERIES[PLAYER_LIVERY_INDEX]`, `FACTION_VANGUARD` takes `LIVERY_VANGUARD`, and
@@ -212,7 +212,7 @@ does not "fix" the inconsistency.
 | File | What it already gives you |
 |---|---|
 | [`NmoFormat.md`](NmoFormat.md) §5.5, §5.10, §13.1 | The two-authority rule, the marker bit, and the shade ladder the corpus is authored against |
-| [`Stations.md`](Stations.md) §9.3 | The faction-to-colour table and the precedence this slice implements |
+| [`Stations.md`](../Stations.md) §9.3 | The faction-to-colour table and the precedence this slice implements |
 | `NeuronClient/Shaders/Scene.hlsli` | `race` and `tint` already reach the pixel stage; only `ScenePS`'s one line is new |
 | `Outpost/ViewTuning.h` | The block being deleted, and the worked example that says exactly why the lerp lost |
 | `Outpost/WorldView.cpp` `DrawShips` | The three-case branch becoming a table |

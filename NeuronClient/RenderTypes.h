@@ -39,7 +39,11 @@ struct Rgba
 struct MeshInstance
 {
   DirectX::XMFLOAT4X4 world;
-  float tint[4]; // rgb base colour, w material mix -- baseColour's two halves
+  // rgb is the flying faction's livery, multiplied into the surfaces the model declared RaceTinted
+  // and into nothing else; w is a highlight lift in 0..1 applied after lighting. It carried a base
+  // colour and a material mix before liveries, which is exactly the kind of drift a comment is for:
+  // the shape did not change and the meaning did (Design/Archive/NmoFormat.md 5.5, Design/Decisions/0036).
+  float tint[4];
 };
 static_assert(sizeof(MeshInstance) == 80, "MeshInstance is padded; the instanced input layout's offsets are wrong");
 static_assert(offsetof(MeshInstance, tint) == 64, "MeshInstance::tint moved; the instanced input layout spells 64");

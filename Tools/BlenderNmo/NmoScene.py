@@ -4,13 +4,13 @@ Everything that has to be exactly inverse between the two directions lives here:
 conversion, the quaternion and matrix conversion, the marker aim compensation, the frame/second
 mapping, the canonical bone-table order, and the compatibility shim over Blender's animation API.
 
-Space conversion (Design/NmoFormat.md 11): NMO is Y-up left-handed with the bow on +Z; Blender is
+Space conversion (Design/Archive/NmoFormat.md 11): NMO is Y-up left-handed with the bow on +Z; Blender is
 Z-up right-handed with, under this convention, the bow on +Y. One self-inverse component swap
 (x, y, z) <-> (x, z, y) converts positions, normals and translations both ways. The swap is a
 reflection, so:
 
   - Triangle winding reverses on each crossing. NMO wants cross(b - a, c - a) along the outward
-    face normal (the clockwise-front rule of Design/NmoFormat.md 5.2 in that basis); Blender wants
+    face normal (the clockwise-front rule of Design/Archive/NmoFormat.md 5.2 in that basis); Blender wants
     the same relation in its basis; the swap alone breaks it, so both directions also swap two
     triangle corners, and the double reversal cancels on a round trip.
   - A rotation R maps to S R S (S the swap), which for quaternions is the closed form
@@ -199,7 +199,7 @@ def rebuild_polygons(triangles, facets):
     """Triangles plus facet ids -> polygon corner lists, walking each facet group's boundary in
     winding order. Triangles that were one polygon are consecutive and share an id (the exporter
     writes them that way); a group that does not reassemble into one simple loop falls back to its
-    triangles -- malformed grouping degrades, never fails (Design/NmoFormat.md 8)."""
+    triangles -- malformed grouping degrades, never fails (Design/Archive/NmoFormat.md 8)."""
     polygons = []
     group = []
     group_id = None

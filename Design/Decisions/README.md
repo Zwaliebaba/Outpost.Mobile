@@ -69,3 +69,5 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0032](0032-the-dialing-end-owns-the-lanes-stream.md) | The dialing end owns the reliable lane's stream | accepted |
 | [0033](0033-pathfinding-is-islands-on-a-world-fixed-lattice.md) | Pathfinding is islands of architecture, on a lattice fixed to the world | accepted |
 | [0034](0034-a-routes-version-is-the-whole-worlds.md) | A route's version is the whole world's, not its island's | accepted |
+| [0035](0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md) | Ship hulls are authored in GLB and converted to NMO, and ObjParser is deleted | accepted |
+| [0036](0036-a-liveried-surface-is-declared-and-the-combine-is-a-multiply.md) | A liveried surface is declared by its material, and the combine is a multiply | accepted |

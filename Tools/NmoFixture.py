@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Builds the golden NMO fixture every test reads.
 
-One model, two meshes, exercising every feature of Design/NmoFormat.md 5 at the smallest size
+One model, two meshes, exercising every feature of Design/Archive/NmoFormat.md 5 at the smallest size
 that still means something:
 
   "Gunship"  - two submeshes over one shared vertex buffer; two materials (one emissive,
@@ -13,9 +13,13 @@ that still means something:
                baseVertex/minVertex window with unreferenced vertices outside it, no bones, no
                markers, no facets, no skin.
 
-The fixture is *built*, never committed as bytes -- "nothing generated is committed" (AGENTS.md
-section 1). Coordinates are chosen exactly representable in float32 where flat, so comparisons in
-the Blender round-trip test can be exact rather than tolerant where exactness is cheap.
+The Python tests build the fixture; the C++ suite reads it as committed bytes at
+Tests/NeuronClientTests/Assets/NmoFixture.nmo. That copy is the narrow, deliberate exception to
+"nothing generated is committed" (AGENTS.md section 1) that Design/Archive/NmoFormat.md 15 D3 records:
+this file is its generator and its diff is its review, so regenerating and comparing is part of
+every slice that touches it. Coordinates are chosen exactly representable in float32 where flat,
+so comparisons in the Blender round-trip test can be exact rather than tolerant where exactness is
+cheap.
 
   python3 Tools/NmoFixture.py out.nmo    write the fixture to out.nmo
 """
@@ -107,7 +111,10 @@ def _gunship():
     glow = nmo.Material('GlowStripe')
     glow.base_colour = (0.25, 0.85, 0.4, 1.0)
     glow.emissive_colour = (0.25, 0.85, 0.4, 1.5)
-    glow.render_flags = nmo.RENDER_FLAG_ADDITIVE
+    # Trim, so the faction paints it: base_colour is a shade under the multiply
+    # (Design/Archive/NmoFormat.md 5.5). HullPlate stays unflagged, so the golden bytes carry both
+    # values of the bit and a reader can be tested on each.
+    glow.render_flags = nmo.RENDER_FLAG_ADDITIVE | nmo.RENDER_FLAG_RACE_TINTED
     mesh.materials = [plate, glow]
 
     root = nmo.Bone('Root')
@@ -158,6 +165,7 @@ def _gunship():
     port.orientation = (0.0, 1.0, 0.0, 0.0)  # 180 degrees about +Y: the plume points -Z, aft
     port.scale = 0.5
     port.colour = (1.0, 0.6, 0.2, 1.0)
+    port.flags = nmo.MARKER_FLAG_RACE_TINTED  # the flagged half of the pair; the other is not
     starboard = nmo.Marker('ExhaustStarboard', nmo.MARKER_KIND_EXHAUST)
     starboard.position = (1.0, 1.0, -4.0)
     starboard.orientation = (0.0, 1.0, 0.0, 0.0)

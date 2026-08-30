@@ -15,7 +15,10 @@ Three phases:
      partition, bones, clips (times, values, quaternions up to sign), markers, materials, skin
      weights by bone name. Byte-exactness is the codec test's job; through Blender the claim is
      semantic equality, and this is its definition.
-  3. Convert a real hull (Corvette) with Tools/ObjToNmo.py and round-trip it the same way.
+  3. Round-trip a real shipped hull (Art/Meshes/Corvette.nmo) the same way. It used to be an OBJ
+     converted by Tools/ObjToNmo.py; the OBJ corpus went with ObjParser (Design/Decisions/0035), so
+     the phase reads the authored corpus instead -- which is the content this actually protects.
+     The OBJ converter keeps its own test, in Tools/NmoRoundtripTest.py, where it needs no Blender.
 """
 
 import math
@@ -36,7 +39,6 @@ except ImportError:
 
 import NmoFixture
 import NmoFormat as nmo
-import ObjToNmo
 from NmoRoundtripTest import _cross_matches_normals
 
 import BlenderNmo
@@ -313,16 +315,13 @@ def test_fixture_import_export(scratch):
     compare_models('roundtrip', model, exported)
 
 
-# --- phase 3: a real hull through the converter and the scene ------------------------------------
+# --- phase 3: a real shipped hull through the scene -----------------------------------------------
 
-def test_converted_hull(scratch):
-    source = os.path.join(os.path.dirname(TOOLS), 'Outpost', 'Assets', 'Meshes', 'Corvette.obj')
-    data = ObjToNmo.convert(source)
-    check('converter produced a model', data is not None)
-    path = os.path.join(scratch, 'Corvette.nmo')
-    with open(path, 'wb') as handle:
-        handle.write(data)
-    before = nmo.read(data)
+def test_shipped_hull(scratch):
+    del scratch  # this phase reads the corpus rather than writing anything
+    path = os.path.join(os.path.dirname(TOOLS), 'Art', 'Meshes', 'Corvette.nmo')
+    check('the shipped hull is where the corpus keeps it', os.path.exists(path))
+    before = nmo.read_file(path)
 
     NmoImport.import_file(bpy.context, path)
     check('hull collection', bpy.data.collections.get('Corvette') is not None)
@@ -336,7 +335,7 @@ def test_converted_hull(scratch):
 
 PHASES = {
     'fixture': test_fixture_import_export,
-    'corvette': test_converted_hull,
+    'corvette': test_shipped_hull,
 }
 
 

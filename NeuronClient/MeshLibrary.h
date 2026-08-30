@@ -10,7 +10,7 @@
 namespace Neuron
 {
 // Loads meshes once and keeps what the rest of the client needs to know about them: the GPU handle
-// to draw, and the CPU-side bounds and attach points to pick and to place effects with.
+// to draw, and the CPU-side bounds and markers to pick and to place effects with.
 //
 // Kept out of the renderer because the renderer's job ends at "draw this handle", and out of the
 // game because a mesh is not a game concept. It is the seam where content becomes something both
@@ -24,8 +24,8 @@ public:
     MeshData data;
   };
 
-  // Loads _dir/_name.obj (and its .mtl) and uploads it. Returns INVALID_MESH and logs on a mesh
-  // that cannot be read or is empty -- a missing asset is a diagnostic, not a crash.
+  // Loads _dir/_name.nmo and uploads it. Returns INVALID_MESH and logs on a mesh that cannot be
+  // read or is empty -- a missing asset is a diagnostic, not a crash.
   MeshHandle Load(GpuDevice& _gpu, SceneRenderer& _renderer, const std::wstring& _dir, const std::wstring& _name);
 
   [[nodiscard]] const MeshData& Data(MeshHandle _mesh) const;

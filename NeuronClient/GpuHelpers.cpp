@@ -78,8 +78,8 @@ D3D12_GRAPHICS_PIPELINE_STATE_DESC DefaultPipelineDesc() noexcept
   pso.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
   pso.SampleMask = 0xFFFFFFFFu;
   pso.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-  // Cull nothing: the OBJ import flips Z, which reverses winding, and several hulls carry
-  // single-sided panels that should be visible from both sides anyway.
+  // Cull nothing: several hulls carry single-sided panels that should be visible from both
+  // sides, and nothing in the scene pass depends on which way a triangle faces.
   pso.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
   pso.RasterizerState.FrontCounterClockwise = FALSE;
   pso.RasterizerState.DepthBias = 0;

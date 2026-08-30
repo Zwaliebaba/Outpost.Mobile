@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Converts the shipped OBJ/MTL hulls to NMO (Design/NmoFormat.md 13).
+"""Converts OBJ/MTL hulls to NMO (Design/Archive/NmoFormat.md 13).
+
+No longer the content pipeline: the shipping corpus is authored as GLB and converted by
+Art/Meshes/GlbToNmo.py (Design/Decisions/0035). This is the OBJ path's record -- the place
+ObjParser's conventions live now that the parser is gone -- and it is tested over an OBJ
+Tools/NmoRoundtripTest.py writes for the purpose, since the tree ships none.
 
 A port of the engine's ObjParser conventions into a tool that runs once, instead of a heuristic
 that runs in the shipping loader on every boot:
