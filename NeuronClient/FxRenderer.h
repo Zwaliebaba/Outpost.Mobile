@@ -13,10 +13,15 @@
 
 namespace Neuron
 {
-// The GPU side of the explosion effect: three textures, two static samplers, three pipelines and
-// one per-frame vertex ring. It is the only file in the effect that includes <d3d12.h> -- everything
-// that decides where a fragment or a sprite goes is in MeshShatter and SpriteParticles, which hold
-// no device and are decided by tests.
+// The GPU side of the effect passes: three textures, two static samplers, four pipelines and one
+// per-frame vertex ring. It is the only file in the effect that includes <d3d12.h> -- everything
+// that decides where a fragment, a sprite or a glow goes is in MeshShatter, SpriteParticles and
+// GlowBillboards, which hold no device and are decided by tests.
+//
+// It began as the explosion's alone. The fourth pipeline is the thruster plume, which moved here
+// from SceneRenderer's decal pass because a glow was one draw each and a trail is one glow per
+// sample per nozzle (Design/MmoScalabilityReview.md G1). It reads no texture -- its shape is
+// computed per pixel -- so it is the one pass that draws while a texture is missing.
 //
 // It has its own root signature rather than widening the scene's. The scene's carries no descriptor
 // table and no sampler, and adding both would touch every draw in the game to save one object.

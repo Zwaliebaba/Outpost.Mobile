@@ -129,10 +129,10 @@ Findings reference `MmoScalabilityReview.md`.
 | 5 | Reliable lane on both transports (= QuicTransport 3a) | `NeuronCore` | M | — | E1 |  | [landed](ReliableLane-work-order.md) |
 | 6 | Leaves, destroys, orders go reliable (= QuicTransport 3b) | `GameLogic` | M | 5 | E1 | ADR | [landed](ReliableFormat-work-order.md) |
 | 7 | Listener slot reclamation, per-role rings | `NeuronCore` | S | — | E3 | ADR | landed |
-| 8 | Trail and glow batching | `NeuronClient`+`Outpost` | S | — | G1 |  |   landed |
-| 9 | Frustum culling | `NeuronClient`+`Outpost` | S | — | G2 |  |   landed |
+| 8 | Trail and glow batching | `NeuronClient`+`Outpost` | S | — | G1 |  | landed |
+| 9 | Frustum culling | `NeuronClient`+`Outpost` | S | — | G2 |  | landed |
 | 10 | Hull instancing | `NeuronClient`+`Outpost` | M | 9 | G2 |  |  |
-| 11 | Localized gather radius, threat pre-filter | `GameLogic` | M | — | U2 |  |   landed |
+| 11 | Localized gather radius, threat pre-filter | `GameLogic` | M | — | U2 |  | landed |
 | 12 | The tick-rate decision | `GameLogic` | S | — | E7 | ADR | decided: 60 Hz stays |
 | 13 | Churn-gated static rebuilds | `GameLogic` | S | — | U4 |  | landed |
 | 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR |  |

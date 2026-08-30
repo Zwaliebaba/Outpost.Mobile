@@ -710,6 +710,18 @@ The query radius follows from the horizon and is therefore per-ship and per-tick
 queryRadius = (ownSpeed + fastestNeighbourSpeed) * horizonSec + ownBoundingRadius + largestNeighbourRadius
 ```
 
+**Two corrections since, both from the MMO scalability plan's slice 11.** The sum is missing
+`AVOID_MARGIN_METRES`, which is part of the clearance `ThreatAlong` tests against — so every query
+was that margin short of its own threat test, in an outer band where a neighbour existed and was
+not returned. And `fastestNeighbourSpeed` and `largestNeighbourRadius` are read off *what is
+present in the world*, not off the hull table: a skirmish between fighters has no business paying
+the Carrier's circle because a Carrier exists somewhere in a table. The table's own maxima are
+still what §17's ghost zone is sized from, because a region has to be wide enough for any fleet
+that might enter it, and that number is now 655 m rather than 647.
+
+The second correction is what exposed the first: the table's worst case was buying enough slack to
+hide eight metres, and narrowing the radius to what is actually there took the slack away.
+
 `QueryCircle` taking an explicit radius is what makes this work — a fast ship naturally sweeps a
 wider cell ring than a slow one, and cell size stays a performance knob (§7).
 

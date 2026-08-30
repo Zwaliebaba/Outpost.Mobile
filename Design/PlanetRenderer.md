@@ -434,13 +434,17 @@ void DrawOverlay(GpuDevice&, BodyHandle, const XMFLOAT4X4& world);    // overlay
 
 Two entry points rather than one `Draw` that does both, so the caller can draw every body's main
 pass, then every body's overlay — one PSO switch per pass rather than two per body, and the
-overlay of body A tests against the depth of body B. The order in `WorldView::Render` becomes:
+overlay of body A tests against the depth of body B. The order in `WorldView::Render` becomes
+(every `× bodies` below is over the *visible* bodies since slice 9 of the MMO scalability plan:
+visibility is decided once per body and the ocean, main and overlay passes reuse that one answer,
+because three passes deciding separately is three chances to disagree and leave a hole in the
+world):
 
 ```
 BeginScene → ground → ocean spheres (DrawMesh, flat colour) → hulls      (opaque, depth write)
 bodies.Begin → DrawMain × bodies                                          (opaque, depth write)
 bodies.DrawOverlay × bodies                                               (additive, depth test only)
-DrawFeedback                                                              (decals, glow)
+DrawFeedback                                                              (decals, then the plume)
 [fx passes, when the explosion lands]
 TextRenderer.Flush
 ```
