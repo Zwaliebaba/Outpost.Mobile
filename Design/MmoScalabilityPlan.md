@@ -1,6 +1,6 @@
 # The MMO scalability plan — the review as slices
 
-**Status: no slice scheduled.** This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
+**Status: slice 2 has landed; the despawn log is cursored.** This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
 (tree at `de12b6d`) into an ordered slice plan in the shape `Design/README.md` defines: one slice,
 one branch, one pull request. The review is the evidence; this document is the work. Where a slice
 already has a design in the tree — the reliable lane lives in [`QuicTransport.md`](QuicTransport.md)
@@ -106,31 +106,31 @@ Twenty-three, in four phases. Sizes: **S** is a sitting, **M** is a normal work 
 its own design before it can be ordered. "ADR" marks a decision record due in the slice's commit.
 Findings reference `MmoScalabilityReview.md`.
 
-| # | Slice | Layer | Size | Depends on | Findings | ADR |
-|---|---|---|---|---|---|---|
-| 1 | Ghost backstop: periodic full refresh | `Outpost` | S | — | E1 interim | |
-| 2 | Sequence-cursored despawn delivery | `GameLogic` | M | — | E2 | ADR |
-| 3 | The publisher: subscriber table, phases, budgets | `GameLogic` | M | 2 | E2 E4 E6 | ADR |
-| 4 | The root joins the publisher | `Outpost` | S | 3 | E2 | |
-| 5 | Reliable lane on both transports (= QuicTransport 3a) | `NeuronCore` | M | — | E1 | |
-| 6 | Leaves, destroys, orders go reliable (= QuicTransport 3b) | `GameLogic` | M | 5 | E1 | |
-| 7 | Listener slot reclamation, per-role rings | `NeuronCore` | S | — | E3 | |
-| 8 | Trail and glow batching | `NeuronClient`+`Outpost` | S | — | G1 | |
-| 9 | Frustum culling | `NeuronClient`+`Outpost` | S | — | G2 | |
-| 10 | Hull instancing | `NeuronClient`+`Outpost` | M | 9 | G2 | |
-| 11 | Localized gather radius, threat pre-filter | `GameLogic` | M | — | U2 | |
-| 12 | The tick-rate decision | `GameLogic` | M | 11 | E7 | ADR |
-| 13 | Churn-gated static rebuilds | `GameLogic` | S | — | U4 | |
-| 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR |
-| 15 | The quantized wire | `GameLogic` | M | 6 | E5 | |
-| 16 | Global entity identity | `GameLogic` | M | 15 | U3 | ADR |
-| 17 | The state codec and the replay gate | `GameLogic` | M | 16 | U3 | |
-| 18 | Copy-queue uploader, store eviction | `NeuronClient` | M | 10 | G3 | ADR |
-| 19 | Compressed textures, descriptor allocator | `NeuronClient` | M | 18 | G4 | |
-| 20 | Body LOD and culling completion | `NeuronClient` | M | 9 | G5 | |
-| 21 | Guard widening and the docs re-trued | `Build/`+prose | S | — | C2 C3 C4 | |
-| 22 | Legacy helper cleanup | `NeuronCore` | S | — | C1 | |
-| 23 | clang-tidy widens a project | `.github/` | S | — | C2 | |
+| # | Slice | Layer | Size | Depends on | Findings | ADR | Status |
+|---|---|---|---|---|---|---|---|
+| 1 | Ghost backstop: periodic full refresh | `Outpost` | S | — | E1 interim |  |  |
+| 2 | Sequence-cursored despawn delivery | `GameLogic` | M | — | E2 | ADR | [landed](DespawnCursors-work-order.md) |
+| 3 | The publisher: subscriber table, phases, budgets | `GameLogic` | M | 2 | E2 E4 E6 | ADR |  |
+| 4 | The root joins the publisher | `Outpost` | S | 3 | E2 |  |  |
+| 5 | Reliable lane on both transports (= QuicTransport 3a) | `NeuronCore` | M | — | E1 |  |  |
+| 6 | Leaves, destroys, orders go reliable (= QuicTransport 3b) | `GameLogic` | M | 5 | E1 |  |  |
+| 7 | Listener slot reclamation, per-role rings | `NeuronCore` | S | — | E3 |  |  |
+| 8 | Trail and glow batching | `NeuronClient`+`Outpost` | S | — | G1 |  |  |
+| 9 | Frustum culling | `NeuronClient`+`Outpost` | S | — | G2 |  |  |
+| 10 | Hull instancing | `NeuronClient`+`Outpost` | M | 9 | G2 |  |  |
+| 11 | Localized gather radius, threat pre-filter | `GameLogic` | M | — | U2 |  |  |
+| 12 | The tick-rate decision | `GameLogic` | M | 11 | E7 | ADR |  |
+| 13 | Churn-gated static rebuilds | `GameLogic` | S | — | U4 |  |  |
+| 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR |  |
+| 15 | The quantized wire | `GameLogic` | M | 6 | E5 |  |  |
+| 16 | Global entity identity | `GameLogic` | M | 15 | U3 | ADR |  |
+| 17 | The state codec and the replay gate | `GameLogic` | M | 16 | U3 |  |  |
+| 18 | Copy-queue uploader, store eviction | `NeuronClient` | M | 10 | G3 | ADR |  |
+| 19 | Compressed textures, descriptor allocator | `NeuronClient` | M | 18 | G4 |  |  |
+| 20 | Body LOD and culling completion | `NeuronClient` | M | 9 | G5 |  |  |
+| 21 | Guard widening and the docs re-trued | `Build/`+prose | S | — | C2 C3 C4 |  |  |
+| 22 | Legacy helper cleanup | `NeuronCore` | S | — | C1 |  |  |
+| 23 | clang-tidy widens a project | `.github/` | S | — | C2 |  |  |
 
 **Quick wins:** slices 1, 7, 13, 21 and 22 are each a sitting, depend on nothing, and retire real
 findings; any idle track starts with its nearest one.
@@ -162,6 +162,11 @@ several" changes in the same commit — the day arrived.
 **Acceptance.** `GameLogicTests` rows: two readers each see every death exactly once; a reader
 joining late sees only deaths after its cursor; the replay gate untouched (the log is publish-side).
 **ADR.** World's despawn contract moves from drain-once to cursors — supersedes the header's note.
+
+**Landed.** Work order: [`DespawnCursors-work-order.md`](DespawnCursors-work-order.md). `DespawnLog()`
+and `ClearDespawnLog()` became `DespawnHead()`, `DespawnsSince(cursor)` and
+`TrimDespawnsBefore(cursor)`; `WorldSimulation` holds one cursor; ADR 0026 records why. Three
+`GameLogicTests` rows replace the one that drained.
 
 #### Slice 3 — the publisher (`GameLogic`, M)
 

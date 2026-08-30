@@ -50,24 +50,37 @@ public:
   // that moved keeps resolving, to the same ship. That second half is the reason handles exist.
   bool DespawnShip(ShipHandle _handle);
 
-  // Handles despawned since the last ClearDespawnLog, in despawn order. The publisher drains it once
-  // per interest update, so a subscriber hears about every death in the interval and not only the
-  // ones on the tick the update happened to fall on.
+  // The despawn log, read by sequence rather than drained.
   //
   // It exists so that the wire can say *destroyed* where it previously said only *left*: a client
   // that infers a death from an absence detonates every ship that merely flies out of its interest
-  // radius, which is where a hostile patrol lives (Design/Hostiles.md 4.4). Step never clears it --
-  // it is the publisher's, and there is one publisher today; the day there are several it becomes
-  // per-subscriber.
-  [[nodiscard]] std::span<const ShipHandle> DespawnLog() const noexcept
+  // radius, which is where a hostile patrol lives (Design/Hostiles.md 4.4). Step never touches it --
+  // it is the publisher's, and each of its subscribers reads it at its own pace (ADR 0026).
+  //
+  // Deaths are numbered for the life of the World and the numbering is never reset, so a cursor
+  // stays comparable across a trim and the difference between two cursors is exactly the number of
+  // deaths between them.
+
+  // The sequence one past the last death logged. A subscriber joining a running world opens its
+  // cursor here, so it is told about every death from now on and about none of the ships it never
+  // held.
+  [[nodiscard]] std::uint64_t DespawnHead() const noexcept
   {
-    return m_despawnLog;
+    return m_despawnBase + m_despawnLog.size();
   }
 
-  void ClearDespawnLog() noexcept
-  {
-    m_despawnLog.clear();
-  }
+  // The handles despawned at or after _cursor, in despawn order.
+  //
+  // A cursor older than what the log still holds returns everything held rather than reporting the
+  // gap. That is the over-report direction on purpose: the publisher intersects these with the
+  // subscriber's own interest set, so a handle it never knew about is dropped there, while a death
+  // silently skipped here would be a ship that never dies on one client's screen.
+  [[nodiscard]] std::span<const ShipHandle> DespawnsSince(std::uint64_t _cursor) const noexcept;
+
+  // Drops every death before _cursor. The publisher passes the minimum cursor across its
+  // subscribers, so what remains is exactly what at least one of them has still to hear -- which is
+  // why the log cannot do this for itself: it does not know who is reading it.
+  void TrimDespawnsBefore(std::uint64_t _cursor) noexcept;
 
   // The handle for a live ship. Null (generation 0) if the id is not one.
   [[nodiscard]] ShipHandle HandleOf(ShipId _id) const noexcept;
@@ -206,7 +219,8 @@ private:
   std::vector<std::uint32_t> m_shipSlot; // parallel to m_ships: which slot each ship owns
   std::vector<Slot> m_slots;
   std::vector<std::uint32_t> m_freeSlots; // reused last-in-first-out, so reuse is reproducible
-  std::vector<ShipHandle> m_despawnLog;   // drained by the publisher, never by Step
+  std::vector<ShipHandle> m_despawnLog;   // read by cursor, trimmed by the publisher, never by Step
+  std::uint64_t m_despawnBase = 0;        // the sequence of m_despawnLog[0]; rises with every trim
   std::uint64_t m_tick = 0;
 
   SpatialIndex m_index;

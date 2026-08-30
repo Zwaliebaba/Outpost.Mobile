@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <iterator>
 #include <span>
 #include <vector>
@@ -78,19 +79,24 @@ private:
   // out of range (Design/Hostiles.md 4.4).
   //
   // Left() is sorted (ADR 0010) and the log is a handful of handles, so this is a walk of the log
-  // with a binary search into Left(). The log is drained on every due update rather than only on the
-  // ones that send, since a despawn no subscriber held has nobody left to tell and would otherwise
-  // sit in the log for the rest of the match.
+  // with a binary search into Left(). The cursor advances on every due update rather than only on
+  // the ones that send, since a despawn no subscriber held has nobody left to tell and would
+  // otherwise sit in the log for the rest of the match.
+  //
+  // One subscriber, so the minimum cursor across subscribers is this one's and the trim follows the
+  // read immediately. With a table of them the read stays here and the trim moves to whoever knows
+  // every cursor (ADR 0026).
   void SplitTheLost()
   {
     const std::span<const Game::ShipHandle> left = m_interest.Left();
     m_destroyedScratch.clear();
-    for (const Game::ShipHandle dead : m_world.DespawnLog())
+    for (const Game::ShipHandle dead : m_world.DespawnsSince(m_despawnCursor))
     {
       if (std::binary_search(left.begin(), left.end(), dead, Game::HandleOrderBefore))
         m_destroyedScratch.push_back(dead);
     }
-    m_world.ClearDespawnLog();
+    m_despawnCursor = m_world.DespawnHead();
+    m_world.TrimDespawnsBefore(m_despawnCursor);
 
     std::sort(m_destroyedScratch.begin(), m_destroyedScratch.end(), Game::HandleOrderBefore);
     m_leftScratch.clear();
@@ -172,6 +178,11 @@ private:
   // Whose orders this subscriber may give. One subscriber today, so it is the player's; the day a
   // real player connects, this comes from the session -- the same sentence SubscriberCentre carries.
   Game::FactionId m_subscriberFaction = Game::FACTION_PLAYER;
+
+  // How far through the world's despawn log this subscriber has been told. Zero is the right start:
+  // a world that has killed nothing has a head of zero, and a subscriber joining a running world
+  // takes DespawnHead() instead so it is not told about ships it never held (ADR 0026).
+  std::uint64_t m_despawnCursor = 0;
 
   std::vector<Game::ShipId> m_resolved;
   std::vector<Game::ShipHandle> m_sendScratch;

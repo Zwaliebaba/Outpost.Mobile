@@ -6,6 +6,8 @@
 #include "Movement.h"
 #include "SimTuning.h"
 
+#include <cstddef>
+
 using namespace DirectX;
 
 namespace Game
@@ -55,8 +57,9 @@ bool World::DespawnShip(ShipHandle _handle)
     return false;
 
   // Logged before the slot is retired, so the publisher can tell this death from a departure. A
-  // despawn no subscriber held is dropped when the log is drained: you cannot be told of the death
-  // of something you never knew about (Design/Hostiles.md 4.4).
+  // despawn no subscriber held is dropped where the publisher intersects it with what that
+  // subscriber knew: you cannot be told of the death of something you never knew about
+  // (Design/Hostiles.md 4.4).
   m_despawnLog.push_back(_handle);
 
   const ShipId last = static_cast<ShipId>(m_ships.size() - 1);
@@ -81,6 +84,33 @@ bool World::DespawnShip(ShipHandle _handle)
   m_freeSlots.push_back(_handle.slot);
   m_staticIndexDirty = true;
   return true;
+}
+
+std::span<const ShipHandle> World::DespawnsSince(std::uint64_t _cursor) const noexcept
+{
+  if (_cursor <= m_despawnBase)
+    return m_despawnLog;
+  const std::uint64_t offset = _cursor - m_despawnBase;
+  if (offset >= m_despawnLog.size())
+    return {};
+  return std::span<const ShipHandle>(m_despawnLog).subspan(static_cast<std::size_t>(offset));
+}
+
+void World::TrimDespawnsBefore(std::uint64_t _cursor) noexcept
+{
+  if (_cursor <= m_despawnBase)
+    return;
+  const std::uint64_t offset = _cursor - m_despawnBase;
+  if (offset >= m_despawnLog.size())
+  {
+    // Trimming past the head is not an error and must not move the base past it: a cursor ahead of
+    // the log names deaths that have not happened, and the next one to happen is still theirs.
+    m_despawnBase += m_despawnLog.size();
+    m_despawnLog.clear();
+    return;
+  }
+  m_despawnLog.erase(m_despawnLog.begin(), m_despawnLog.begin() + static_cast<std::ptrdiff_t>(offset));
+  m_despawnBase = _cursor;
 }
 
 ShipHandle World::HandleOf(ShipId _id) const noexcept

@@ -197,7 +197,7 @@ public:
     std::vector<Game::ShipHandle> left;
     for (const Game::ShipHandle handle : interest.Left())
     {
-      if (Holds(world.DespawnLog(), handle))
+      if (Holds(world.DespawnsSince(0), handle))
         destroyed.push_back(handle);
       else
         left.push_back(handle);
