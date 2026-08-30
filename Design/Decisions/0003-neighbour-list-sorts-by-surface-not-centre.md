@@ -5,7 +5,7 @@ Date: 2026-08-29
 
 ## Context
 
-[`Design/Collision.md`](../Collision.md) §7 specifies the sense pass as: gather every candidate from
+[`Design/Archive/Collision.md`](../Archive/Collision.md) §7 specifies the sense pass as: gather every candidate from
 the covering cell ring, sort by `(distanceSquared, ShipId)`, then truncate to the per-hull
 neighbour cap `K`. The sort-then-truncate order is load-bearing and stays — truncating cell by cell
 would put cell size in the replay contract. What is wrong is the key.

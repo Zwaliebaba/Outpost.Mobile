@@ -56,7 +56,7 @@ bool World::DespawnShip(ShipHandle _handle)
 
   // Logged before the slot is retired, so the publisher can tell this death from a departure. A
   // despawn no subscriber held is dropped when the log is drained: you cannot be told of the death
-  // of something you never knew about (Design/Hostiles.md 4.4).
+  // of something you never knew about (Design/Archive/Hostiles.md 4.4).
   m_despawnLog.push_back(_handle);
 
   const ShipId last = static_cast<ShipId>(m_ships.size() - 1);
@@ -341,7 +341,7 @@ void World::GatherNeighbours()
     // Every candidate from the covering ring, then sorted, and only then truncated. Truncating
     // cell by cell would make cell size part of the replay contract and it could never be retuned
     // again -- not per region, not after profiling. ShipId is the tie-break and is what makes the
-    // order total, so std::sort's instability cannot show through (Design/Collision.md 7).
+    // order total, so std::sort's instability cannot show through (Design/Archive/Collision.md 7).
     std::sort(m_candidateScratch.begin(), m_candidateScratch.end(), [](const Neighbour& _a, const Neighbour& _b)
               { return (_a.proximityMetres != _b.proximityMetres) ? _a.proximityMetres < _b.proximityMetres : _a.id < _b.id; });
 
@@ -521,7 +521,7 @@ float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _poi
   {
     // Somebody else's ship is dropped the way a stale id already is. The rest of the list is still
     // steered, and an order that loses every ship returns the facing it was given, exactly as an
-    // empty list does (Design/Hostiles.md 4.3).
+    // empty list does (Design/Archive/Hostiles.md 4.3).
     if (id < m_ships.size() && m_ships[id].factionId == _issuerFaction)
       chosen.push_back(id);
   }
@@ -577,7 +577,7 @@ float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _poi
     ship.order = OrderState::Moving;
     // An explicit order outranks a standing behavior, and it travels at the hull's own speed: a
     // patrol left running underneath one would take the ship back to its ring the moment the order
-    // finished (Design/Hostiles.md 5.1).
+    // finished (Design/Archive/Hostiles.md 5.1).
     ship.orderSpeedCapMetresPerSec = 0.0f;
     m_patrols[id].active = false;
 

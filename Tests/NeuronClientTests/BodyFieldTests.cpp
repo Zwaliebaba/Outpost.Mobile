@@ -56,7 +56,7 @@ public:
   {
     // The whole feature rests on this. A body is a seed and a class; if two fields built from one
     // description could differ, a server could not describe a world in sixteen bytes and a screenshot
-    // could not be reproduced (Design/PlanetRenderer.md 10).
+    // could not be reproduced (Design/Archive/PlanetRenderer.md 10).
     const Neuron::BodyDesc desc = OneContinent();
     const Neuron::BodyField field(desc);
     const Neuron::BodyField twin(desc);
@@ -165,7 +165,7 @@ public:
   {
     // One flat landscape was one hemisphere, equator to pole, so the ramp's top row has to appear at
     // both ends of the axis and the equator has to read as its own altitude. The cap term is even in
-    // the latitude, which is what buys the second pole for nothing (Design/PlanetRenderer.md 5.6).
+    // the latitude, which is what buys the second pole for nothing (Design/Archive/PlanetRenderer.md 5.6).
     Neuron::BodyDesc desc = OneContinent();
     desc.outsideHeight = 0.01f; // dry: a pole under water would be colder than a summit for a duller reason
     desc.tiles[0].centre = XMFLOAT3(0.0f, 1.0f, 0.0f);

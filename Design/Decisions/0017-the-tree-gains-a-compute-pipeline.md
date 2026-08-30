@@ -8,7 +8,7 @@ Date: 2026-08-29
 Every pipeline in this tree until now has been a graphics pipeline: a vertex shader, a pixel shader,
 an input assembler and a render target. The body generator asked for something else. Generating a
 planet is a few hundred thousand independent evaluations of the same pure function, which is what a
-GPU is for, and `Design/PlanetRenderer.md` §17 found every stage of it portable.
+GPU is for, and `Design/Archive/PlanetRenderer.md` §17 found every stage of it portable.
 
 Adding it is not just a shader. It is a new kind of build item (`FxCompile` with `ShaderType`
 `Compute`), a root signature with no input assembler in it, UAV resources and the barriers they

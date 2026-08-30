@@ -1,6 +1,6 @@
 # Work order — QUIC transport slice 2: the composition root boots over QUIC
 
-Implements slice 2 of [`QuicTransport.md`](QuicTransport.md) §13: `Outpost.exe` opens a
+Implements slice 2 of [`QuicTransport.md`](../QuicTransport.md) §13: `Outpost.exe` opens a
 `QuicListener` and a `QuicTransport` to it on `127.0.0.1`, wires the simulation and the view to the
 two QUIC ends, and falls back to the loopback pair with a logged reason when it cannot (design
 §6, §12 decision 2).

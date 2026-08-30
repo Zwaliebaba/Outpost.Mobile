@@ -21,7 +21,7 @@ namespace Neuron
 // than positions and the billboards are expanded in the vertex shader, so nothing about the sky
 // changes when the camera moves and there is nothing to rebuild. The three draws are the three
 // textures -- nebulosity, stars, flares -- and between them the pass changes one descriptor
-// (Design/Skybox.md 6).
+// (Design/Archive/Skybox.md 6).
 //
 // It has its own root signature for the reason the effect and body passes have their own: the
 // scene's carries no descriptor table and no sampler, and adding both would touch every draw in the

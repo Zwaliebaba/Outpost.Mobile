@@ -12,7 +12,7 @@ namespace Neuron
 {
 // The height of a planet or an asteroid at a direction: the source's amplitude law sampled in three
 // dimensions, continents as spherical caps that max-merge, craters and pads as flatten areas, and
-// polar caps (Design/PlanetRenderer.md 5).
+// polar caps (Design/Archive/PlanetRenderer.md 5).
 //
 // The constructor draws every random number the body needs -- once, in a fixed order -- and flattens
 // the description into a BodyParams. After it returns, Height and Climate are pure functions of a
@@ -22,7 +22,7 @@ namespace Neuron
 //
 // Device-free by construction: Pcg32, Noise3 and DirectXMath, and nothing else. The day the
 // simulation needs a planet's surface -- a colony pad that must be flat, a ray against terrain --
-// this file moves to NeuronCore as a move rather than a rewrite (Design/PlanetRenderer.md 4).
+// this file moves to NeuronCore as a move rather than a rewrite (Design/Archive/PlanetRenderer.md 4).
 class BodyField
 {
 public:
@@ -46,7 +46,7 @@ public:
 
   // The height the colour ramp is indexed by: the real height plus the polar lift, in metres, so
   // that a pole reads as cold as a summit does and the equator reads as its own altitude
-  // (Design/PlanetRenderer.md 5.6). Equal to _height exactly when polarStrength is zero.
+  // (Design/Archive/PlanetRenderer.md 5.6). Equal to _height exactly when polarStrength is zero.
   [[nodiscard]] float Climate(const DirectX::XMFLOAT3& _d, float _height) const noexcept;
 
   // The field's maximum over the grid, in metres, measured while constructing -- or the

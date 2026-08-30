@@ -75,7 +75,7 @@ private:
   // Which of this update's leaves were deaths. A despawned ship the subscriber held always turns up
   // in Left() -- InterestTests::ADespawnedShipLeavesTheSet is that guarantee -- so the world's
   // despawn log intersected with Left() is exactly the set that died in view; the rest merely went
-  // out of range (Design/Hostiles.md 4.4).
+  // out of range (Design/Archive/Hostiles.md 4.4).
   //
   // Left() is sorted (ADR 0010) and the log is a handful of handles, so this is a walk of the log
   // with a binary search into Left(). The log is drained on every due update rather than only on the
@@ -103,7 +103,7 @@ private:
   //
   // Its own, not every ship's. That distinction was free while every ship was the subscriber's and
   // stopped being the moment a hostile base existed: four hostiles 1.2 km out drag an unfiltered
-  // centroid some 690 m toward the enemy, which moves what the player is sent (Design/Hostiles.md 6).
+  // centroid some 690 m toward the enemy, which moves what the player is sent (Design/Archive/Hostiles.md 6).
   //
   // Accumulated as offsets from the first own ship rather than by averaging fields, so a fleet
   // straddling a sector boundary has a center between its ships and not a sector away.

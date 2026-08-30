@@ -14,7 +14,7 @@ float4 main(VsOut i) : SV_Target
 
   // The file has one mip and the tree generates none, so at distance a 128-texel line pattern under
   // one pixel sparkles. Rather than build a mip chain, the outline fades out as the cell shrinks --
-  // the same fwidth device the ground grid anti-aliases itself with (Design/PlanetRenderer.md 6.3).
+  // the same fwidth device the ground grid anti-aliases itself with (Design/Archive/PlanetRenderer.md 6.3).
   float fade = saturate(1.0 - length(fwidth(i.uv)) * overlayParams.y);
 
   // Both channels carry tex.a, so the additive blend adds exactly nothing where there is no line.

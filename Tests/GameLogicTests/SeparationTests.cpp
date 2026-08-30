@@ -52,7 +52,7 @@ public:
   {
     // A hundred ships on one point is the case that makes the per-tick clamp load-bearing.
     // Unclamped, the correction is as large as the overlap, a Jacobi solve applies all of them at
-    // once, and the fleet explodes rather than unpacking (Design/Collision.md 9, 16).
+    // once, and the fleet explodes rather than unpacking (Design/Archive/Collision.md 9, 16).
     Game::World world;
     std::vector<Game::ShipId> ships;
     std::uint32_t noise = 1u;
@@ -226,7 +226,7 @@ public:
   {
     // Decision 2 of the design review: no hull on a Stargate. Four capsules approximating a ring
     // would be real narrow-phase cost on every pair every tick, for an object players fly through
-    // on purpose (Design/Collision.md 18).
+    // on purpose (Design/Archive/Collision.md 18).
     Game::World world;
     const Game::ShipId gate = world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Stargate));
     const Game::ShipId ship = world.SpawnShip(Game::LocalPos(0.0f, -400.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor));

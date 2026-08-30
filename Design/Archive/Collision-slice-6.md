@@ -1,13 +1,13 @@
 # Work order — Collision slice 6: interest management
 
-Implements slice 6 of [`Collision.md`](../Collision.md) §19: a snapshot carries what one subscriber can
+Implements slice 6 of [`Collision.md`](Collision.md) §19: a snapshot carries what one subscriber can
 see rather than the whole world, with entering and leaving derived rather than diffed by the client,
 and distant entities updated less often than near ones.
 
 **Layers:** `GameLogic` and `Outpost`, plus their suites.
 **Depends on:** slice 2 (`QueryCircle`, the cell decomposition, the static/dynamic split) and slice
 2b (the transport, the wire format, the client that reads a snapshot).
-**Blocks:** nothing. This is the last slice in `Design/Collision.md`.
+**Blocks:** nothing. This is the last slice in `Design/Archive/Collision.md`.
 
 ---
 
@@ -161,7 +161,7 @@ comes from instead.
 | `GameLogic/WorldSnapshot.h` | The record, the fragmenting writer, the reassembling receiver |
 | `GameLogic/ShipState.h` | `ShipHandle`, and why a wire uses one |
 | `Outpost/WorldSimulation.h` | The tick where both directions already happen, in order |
-| `Design/Collision.md` §1 | The distinction between what is reused and what is new |
+| `Design/Archive/Collision.md` §1 | The distinction between what is reused and what is new |
 
 ---
 

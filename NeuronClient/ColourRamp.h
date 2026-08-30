@@ -12,7 +12,7 @@ namespace Neuron
 // A 64x64 colour lookup, read off a DDS and kept in system memory as floats. It is the port of the
 // source's landscape palettes: the X axis is slope, flat on the left and cliff on the right, and the
 // Y axis is climate height, the summit on row 0 and sea level on row 63
-// (Design/PlanetRenderer.md 6.1).
+// (Design/Archive/PlanetRenderer.md 6.1).
 //
 // It is a lookup table and never a texture. The colour of a body is baked into its vertices on the
 // CPU, one colour per triangle, because a pixel-shader lookup would lose the per-triangle dither

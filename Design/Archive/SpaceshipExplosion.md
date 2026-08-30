@@ -377,7 +377,7 @@ the client *can* know is that a ship it was drawing is no longer in the snapshot
 left in `m_carryScratch` whose handle was not matched is a ship that vanished.
 
 So the trigger is: **a `ShipView` that is not carried explodes at the last place it was drawn.**
-*(Superseded by Design/Hostiles.md §4.4: a ship that is not carried has either died or left the
+*(Superseded by Design/Archive/Hostiles.md §4.4: a ship that is not carried has either died or left the
 interest radius, and the wire now says which. `ExplodeTheLost` consumes the update's destroyed list
 and drops a bare departure silently. The rest of this section stands.)*
 For that `ShipView` needs two fields it does not have — the last world matrix it was drawn with
@@ -440,7 +440,7 @@ shimmer at distance, mip generation is a slice of its own.
 - **Sound, damage, and any simulation of death.** Out of scope by the owner's decision and the
   rulebook; the trigger in §9 is what stands in.
 - **A destroy event on the wire.** The client infers the despawn. *(Landed since, in
-  Design/Hostiles.md §4.4: the interest update states a death as distinct from a departure, because
+  Design/Archive/Hostiles.md §4.4: the interest update states a death as distinct from a departure, because
   the first ship living at the edge of the interest radius made the inference produce phantom
   explosions. A cause or a killer would extend the same list.)*
 - **The `Starburst.dds` one-frame flash.** The source document's §8 lists it as an improvement,
@@ -488,10 +488,10 @@ order.
 
 | # | Slice | Layer | Depends on | Status | Work order |
 |---|---|---|---|---|---|
-| 1 | `Pcg32`, tests, ADR 0012 | `NeuronCore` | — | landed | [slice 1](Archive/SpaceshipExplosion-slice-1.md) |
-| 2 | `FxVertex`, `MeshShatter`, `SpriteParticles`, tests | `NeuronClient` | 1 | landed | [slice 2](Archive/SpaceshipExplosion-slice-2.md) |
-| 3 | `FxRenderer`, `UploadColourTexture`, two shader pairs | `NeuronClient` | 2 | landed | [slice 3](Archive/SpaceshipExplosion-slice-3.md) |
-| 4 | `ShipExplosion`, the trigger, F4, `EXPLOSION_*` tuning | `Outpost` | 3 | landed | [slice 4](Archive/SpaceshipExplosion-slice-4.md) |
+| 1 | `Pcg32`, tests, ADR 0012 | `NeuronCore` | — | landed | [slice 1](SpaceshipExplosion-slice-1.md) |
+| 2 | `FxVertex`, `MeshShatter`, `SpriteParticles`, tests | `NeuronClient` | 1 | landed | [slice 2](SpaceshipExplosion-slice-2.md) |
+| 3 | `FxRenderer`, `UploadColourTexture`, two shader pairs | `NeuronClient` | 2 | landed | [slice 3](SpaceshipExplosion-slice-3.md) |
+| 4 | `ShipExplosion`, the trigger, F4, `EXPLOSION_*` tuning | `Outpost` | 3 | landed | [slice 4](SpaceshipExplosion-slice-4.md) |
 
 The record slice 1 wrote is **0012**, not the 0011 this table asked for: 0011 was taken by the NMO
 record between this document being written and slice 1 landing, and records are never renumbered.

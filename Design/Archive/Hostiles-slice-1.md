@@ -144,7 +144,7 @@ subscriber's") is still true until slice 3 spawns a hostile, and slice 3 owns th
 | `Outpost/WorldSimulation.h` | `PublishInterest` and `ApplyIncomingOrders`, the only two call sites the adapter changes |
 | `Tests/GameLogicTests/SnapshotTests.cpp` | `CaptureTransport`, `OneShipRoundTripsFieldForField` — the round-trip pattern |
 | `Tests/GameLogicTests/InterestTests.cpp` | `AnUpdateUpsertsAndALeaveRemoves` — how a `WriteInterest` update is driven through a loopback and asserted on |
-| `Design/Hostiles.md` §4, §8, §9, §11 | the field, the gate, the destroyed list, and why each is shaped as it is |
+| `Design/Archive/Hostiles.md` §4, §8, §9, §11 | the field, the gate, the destroyed list, and why each is shaped as it is |
 | ADR 0005, 0008, 0009, 0010 | handles not ids; the wire lives here; the record is a reviewable list; interest sets are sorted vectors |
 
 ---
@@ -193,7 +193,7 @@ Tests in `Tests/GameLogicTests/`, sentence-named, a why-comment each:
   index: **allegiance is identity on the wire, not a relation** (design §4.1, §13 decision 2) and
   **command authority is gated in the simulation, not the adapter** (design §4.3). Both turn down
   alternatives someone will propose again.
-- `Design/Hostiles.md` §14 marks slice 1 `landed`; this file moves to `Design/Archive/`.
+- `Design/Archive/Hostiles.md` §14 marks slice 1 `landed`; this file moves to `Design/Archive/`.
 
 ---
 

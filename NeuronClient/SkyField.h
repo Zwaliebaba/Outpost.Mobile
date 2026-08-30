@@ -46,7 +46,7 @@ struct SkyMesh
 // **It is generated once and never again.** Nothing about a star changes when the camera moves, so
 // the whole sky is a static vertex buffer and the per-frame cost of it is three draw calls. The
 // twinkle is the one thing that animates, and it animates in the vertex shader out of numbers baked
-// into the vertex, so it costs no CPU work either (Design/Skybox.md 6).
+// into the vertex, so it costs no CPU work either (Design/Archive/Skybox.md 6).
 //
 // **What makes it look like a sky rather than scattered dots** is four things, and they are the
 // whole of section 5 of the design:

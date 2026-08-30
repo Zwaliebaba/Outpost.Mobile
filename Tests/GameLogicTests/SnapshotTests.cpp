@@ -160,7 +160,7 @@ public:
   {
     // The distinction the client's explosion hangs on. Until now a leave meant both, so a hostile
     // patrol crossing the edge of the interest radius detonated on screen while it was alive and
-    // well (Design/Hostiles.md 4.4).
+    // well (Design/Archive/Hostiles.md 4.4).
     //
     // The split is WorldSimulation's, which lives in the executable and has no suite, so the rule is
     // restated here against the same two inputs: the world's despawn log, and the interest set's

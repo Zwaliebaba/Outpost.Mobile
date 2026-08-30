@@ -5,7 +5,7 @@ Date: 2026-08-29
 
 ## Context
 
-Slice 8 gave `WorldPos` the `int64` sector pair `Design/Collision.md` §3 specifies, taking it from
+Slice 8 gave `WorldPos` the `int64` sector pair `Design/Archive/Collision.md` §3 specifies, taking it from
 8 bytes to 24. `SpatialIndex::Cell` holds one, so `Cell` went from **24 bytes to 48** — a doubling
 of the hottest array in the simulation, the one every neighbour query walks.
 

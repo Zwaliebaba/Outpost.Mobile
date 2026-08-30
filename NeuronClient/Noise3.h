@@ -9,14 +9,14 @@
 namespace Neuron
 {
 // Seeded Perlin-style gradient noise in three dimensions. Header-only, device-free, and the whole
-// of what a body's shape is made of (Design/PlanetRenderer.md 5.2).
+// of what a body's shape is made of (Design/Archive/PlanetRenderer.md 5.2).
 //
 // The permutation is shuffled out of a Pcg32 rather than being the reference implementation's
 // published static table. A fixed table is an unseeded constant hiding in a header: every body in
 // the game would sample one function and differ only by where it started reading. Shuffled, two
 // Noise3 built from generators seeded alike are the same function and two seeded differently are
 // different functions -- on every machine and every build, which is what lets a world be described
-// by a seed (Design/PlanetRenderer.md 10).
+// by a seed (Design/Archive/PlanetRenderer.md 10).
 //
 // Sample is pure float arithmetic -- multiply, add, floor, compare -- with no library call in it, so
 // it carries that guarantee on its own rather than inheriting whichever vendor's libm was linked.
@@ -47,7 +47,7 @@ public:
   }
 
   // Adopts a permutation shuffled elsewhere. BodyParams carries one because a compute kernel would
-  // read it from there (Design/PlanetRenderer.md 17.3); adopting means the block and the noise the
+  // read it from there (Design/Archive/PlanetRenderer.md 17.3); adopting means the block and the noise the
   // CPU evaluates are one table by construction, rather than two copies that have to be kept equal.
   explicit Noise3(std::span<const std::uint32_t, PERMUTATION_SIZE> _permutation) noexcept
   {
@@ -92,13 +92,13 @@ public:
     const float x11 =
       Lerp(Grad(m_permutation[ab + 1u], x, y - 1.0f, z - 1.0f), Grad(m_permutation[bb + 1u], x - 1.0f, y - 1.0f, z - 1.0f), u);
 
-    // The reference's output spans [-1, 1]; the amplitude law in Design/PlanetRenderer.md 5.2 was
+    // The reference's output spans [-1, 1]; the amplitude law in Design/Archive/PlanetRenderer.md 5.2 was
     // written against a diamond-square displacement of half that, so halve it here and nowhere else.
     return Lerp(Lerp(x00, x10, v), Lerp(x01, x11, v), w) * 0.5f;
   }
 
   // For a consumer that has to carry the same function elsewhere -- BodyParams, and through it the
-  // compute kernel of Design/PlanetRenderer.md 17.
+  // compute kernel of Design/Archive/PlanetRenderer.md 17.
   [[nodiscard]] std::span<const std::uint32_t, PERMUTATION_SIZE> Permutation() const noexcept
   {
     return std::span<const std::uint32_t, PERMUTATION_SIZE>(m_permutation, PERMUTATION_SIZE);

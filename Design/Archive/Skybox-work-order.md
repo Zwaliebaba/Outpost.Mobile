@@ -1,6 +1,6 @@
 # Work order — the sky
 
-One slice. Implements the whole of `Design/Skybox.md`.
+One slice. Implements the whole of `Design/Archive/Skybox.md`.
 
 ## Scope
 
@@ -10,7 +10,7 @@ One slice. Implements the whole of `Design/Skybox.md`.
    rounding rules. `static_assert` the size and every offset, because `SkyRenderer` spells them by
    hand.
 2. `NeuronClient/SkyField.{h,cpp}` — `SkyField::Build(const Desc&, SkyMesh&)`, device-free and
-   deterministic in `Desc::seed` alone. Produces the three layers of `Design/Skybox.md` 4 in
+   deterministic in `Desc::seed` alone. Produces the three layers of `Design/Archive/Skybox.md` 4 in
    `SkyLayer` order and contiguously, following the four rules of section 5.
    `SkyField::TemperatureColour` is public because a test pins it.
 3. `NeuronClient/Shaders/Sky.hlsli`, `SkyVS.hlsl`, `SkyPS.hlsl` — the quad is built in the vertex

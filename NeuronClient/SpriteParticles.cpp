@@ -128,7 +128,7 @@ void SpriteParticles::Build(SpriteBlend _blend, const XMFLOAT3& _cameraRight, co
       // Deliberate, and it looks like a bug: with a source alpha of zero the source term vanishes
       // and the frame becomes dest * (1 - src.rgb), so a light sprite *darkens* what is behind it.
       // That destination term is what draws. Give this an alpha and the smoke turns into fog.
-      // Design/SpaceshipExplosion.md 7.
+      // Design/Archive/SpaceshipExplosion.md 7.
       const float fade = alpha / PEAK_ALPHA;
       r *= fade;
       g *= fade;

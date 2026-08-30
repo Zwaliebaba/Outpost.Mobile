@@ -33,7 +33,7 @@ ship flies straight through a rock.
   is not that. The cost of being wrong here is a slice; the cost of a wire field that turns out to
   be dead is every version of the protocol that carries it.
 - **An immovable `HullSpec` row per asteroid.** The cheapest route to ships routing around rocks:
-  the collision machinery of `Design/Collision.md` already handles a capsule that never moves, and
+  the collision machinery of `Design/Archive/Collision.md` already handles a capsule that never moves, and
   `PlanRoute` would avoid one for free. Rejected *for now* rather than on principle — nothing in the
   game asks a ship to avoid a rock yet, and a `Structure` row per asteroid is a simulation change
   made for a screenshot. **This is the recorded route in**: when a body first has to be flown

@@ -19,7 +19,7 @@ namespace
 // count of stars brighter than m goes as 10^(0.6m), so inverting that over this range is what makes
 // faint stars ordinary and a first-magnitude star rare. A uniform draw over the same range produces
 // a sky of identical dots, which is the single most common way a generated star field gives itself
-// away (Design/Skybox.md 5.1).
+// away (Design/Archive/Skybox.md 5.1).
 constexpr float MAGNITUDE_BRIGHTEST = -1.0f;
 constexpr float MAGNITUDE_FAINTEST = 6.5f;
 constexpr float MAGNITUDE_COUNT_SLOPE = 0.6f;

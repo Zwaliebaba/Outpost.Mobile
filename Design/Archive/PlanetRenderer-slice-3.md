@@ -40,7 +40,7 @@ New, and this design's own:
 // VERTEX_AND_CONSTANT_BUFFER. _outStaging has to outlive the copy, which has only been recorded:
 // release it after the list has run. This is the path for a buffer the GPU reads every frame and
 // the CPU never touches again; SceneRenderer::UploadMesh's upload-heap shortcut is for a few
-// thousand triangles, not seven megabytes read twice a frame (Design/PlanetRenderer.md 7.1).
+// thousand triangles, not seven megabytes read twice a frame (Design/Archive/PlanetRenderer.md 7.1).
 void UploadStaticBuffer(GpuDevice& _gpu, std::span<const std::uint8_t> _bytes, GpuPtr<ID3D12Resource>& _outBuffer,
                         GpuPtr<ID3D12Resource>& _outStaging);
 ```
@@ -201,7 +201,7 @@ so.
 | `NeuronClient/ScreenImage.cpp` | The load-and-upload sequence for one texture |
 | `NeuronClient/Shaders/Scene.hlsli`, `ScenePS.hlsl` | `row_major`, the cbuffer layout, the lighting line `BodyPS` reproduces |
 | `Design/Archive/SpaceshipExplosion-slice-3.md` §5 | The five surprises — `put()` asserts, heaps per list, the depth view — all apply here unchanged |
-| `Design/PlanetRenderer.md` §7, §6.3 | The passes, the shaders, the alpha-mask rule, the fade |
+| `Design/Archive/PlanetRenderer.md` §7, §6.3 | The passes, the shaders, the alpha-mask rule, the fade |
 
 ---
 

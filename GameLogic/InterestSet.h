@@ -14,7 +14,7 @@ class World;
 
 // What one subscriber can see, and what changed since it last looked.
 //
-// Design/Collision.md 1 names this as the spatial index's second customer and is careful about what
+// Design/Archive/Collision.md 1 names this as the spatial index's second customer and is careful about what
 // it costs: QueryCircle, the cell decomposition and the static/dynamic split are reused unchanged,
 // while the subscription set, the enter/leave delta and the priority accumulator are new. This is
 // that new part, and nothing in SpatialIndex changed to accommodate it.

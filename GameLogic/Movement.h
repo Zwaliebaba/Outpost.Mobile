@@ -13,7 +13,7 @@ namespace Game
 // neighbour when they are wanted: by the time the intent pass runs, the neighbour's own live speed
 // and heading may already have been advanced, and reading them would make the answer depend on
 // array order. Copying is what makes the tick a Jacobi solve rather than a Gauss-Seidel one
-// (Design/Collision.md 6).
+// (Design/Archive/Collision.md 6).
 struct Neighbour
 {
   ShipId id = INVALID_SHIP_ID;
@@ -67,7 +67,7 @@ struct MotionIntent
 // are turn-rate limited and cannot strafe, so adopting it would mean either replacing a motion model
 // that already works and is tested, or spending every tick fighting the limiter that clamps ORCA's
 // chosen velocity into something the hull can do. Context steering handles the constraint natively,
-// because only reachable headings are scored in the first place (Design/Collision.md 10).
+// because only reachable headings are scored in the first place (Design/Archive/Collision.md 10).
 //
 // This signature is the seam: if ORCA is ever wanted, it goes behind it and nothing above or below
 // moves.

@@ -8,7 +8,7 @@ Date: 2026-08-30
 Every body in the scene was generated: a cube-sphere height field from seeded Perlin noise, coloured
 per triangle off a ramp, with a wire-frame outline over it and — for a body whose height outside its
 continents fell below zero — a sphere of water inside it, a dipped coastline and a culled sea floor.
-`Design/PlanetRenderer.md` is the whole of it and it is a lot of machinery: `BodyField`,
+`Design/Archive/PlanetRenderer.md` is the whole of it and it is a lot of machinery: `BodyField`,
 `BodyMeshBuilder`, `ColourRamp`, a catalogue of six world classes, and a compute bake in
 `BodyBake.hlsli` that mirrors `BodyField` term for term so a GPU can produce the same bytes (`0017`,
 `0020`).
@@ -76,5 +76,7 @@ it is a slice of its own, with its own equivalence run, not a tidy-up to fold in
 - **The map has no mip chain**, because this tree generates none. A world small on screen will
   sparkle. That is the same debt `TriangleOutline.dds` carries, and the outline works around it with
   an `fwidth` fade that a surface map has no equivalent for.
-- `Design/PlanetRenderer.md` now describes one of the two kinds of body. It stays as the document
-  the rock path is reviewed against.
+- `Design/Archive/PlanetRenderer.md` now describes one of the two kinds of body. It stays as the
+  document the rock path is reviewed against; its §5.5, §6.2 and slice 5 describe the sea this
+  record deletes, and are read against this record rather than corrected. It sits in `Archive/`
+  because all six of its slices landed, not because it stopped being current.

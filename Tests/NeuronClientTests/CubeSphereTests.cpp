@@ -72,7 +72,7 @@ public:
     // This is what makes the sphere seamless, and it is a bit-for-bit claim rather than a tolerance
     // one: the height is a function of the direction, so two faces that agree exactly on the
     // direction cannot disagree at all on the height, and any tolerance here would let a seam of one
-    // last bit through (Design/PlanetRenderer.md 5.1).
+    // last bit through (Design/Archive/PlanetRenderer.md 5.1).
     //
     // The check is the count rather than an index-by-index walk, because two faces traverse their
     // shared edge in whichever directions their own orientations give them. A shared edge is n

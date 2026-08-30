@@ -7,7 +7,7 @@ v2.0's defaults were put to the owner and taken on 2026-08-29 (§15).
 This document adapts the **Neuron Mesh Object (NMO)** format proposal from the Interstellar
 Outpost tree (`InterstellarOutpost.dx12`, *"Neuron Mesh Object (NMO): Format Design"*, revision
 2026-08-27) into this repository, under this repository's rules — the same porting posture as
-[SpaceshipExplosion.md](SpaceshipExplosion.md), which brought that tree's destruction effect
+[SpaceshipExplosion.md](Archive/SpaceshipExplosion.md), which brought that tree's destruction effect
 across. The source document designed a binary model format derived from Microsoft's CMO, extended
 with per-submesh bone animation and named markers, for a D3D9 engine migrating a 516-model `.pie`
 corpus. This tree needs the same *kind* of format for a different reason: its ships are OBJ
@@ -45,7 +45,7 @@ Constraints first, per this tree's porting convention. Each shaped the format be
 | Non-indexed draws; `GpuMesh` is one VB and a count | [`RenderTypes.h:32`](../NeuronClient/RenderTypes.h), `SceneRenderer.cpp:171` | The file is indexed (§3); the *loader* expands to triangle soup until an indexed pipeline is worth its slice (§14). Format ≠ renderer capability. |
 | Exhaust positions are recovered by union-find clustering of faces carrying the `thruster` material | [`ObjParser.cpp:118-136`](../NeuronClient/ObjParser.cpp), `ObjParser.h:19` | The heuristic runs in the shipping loader on every boot and yields anonymous points. Markers make it *authored* data: named, typed, coloured, oriented — the heuristic's one legitimate home is a converter that runs once (§13). |
 | The exhaust glow colour is a placeholder — every ship flies on `SELECTED_COLOUR` | `WorldView.cpp:728` | The Exhaust marker's colour field is the value that replaces it, per model, per nozzle (§9). |
-| The explosion effect shatters `MeshData`'s retained triangle soup | [SpaceshipExplosion.md](SpaceshipExplosion.md) §2 | The NMO loader must keep producing `MeshData`-shaped soup; the shatter, picking and bounds consumers never learn the format changed (§13). |
+| The explosion effect shatters `MeshData`'s retained triangle soup | [SpaceshipExplosion.md](Archive/SpaceshipExplosion.md) §2 | The NMO loader must keep producing `MeshData`-shaped soup; the shatter, picking and bounds consumers never learn the format changed (§13). |
 | Simulation sizes are authored numbers, never derived from meshes | AGENTS.md §2, [ADR 0002](Decisions/0002-content-readers-live-with-their-consumer.md), [`HullSpec.h`](../GameLogic/HullSpec.h) | Markers are presentation data, read by the client. If combat simulation ever needs gun positions, they arrive in GameLogic as authored numbers — generated *offline* from `.nmo` by a tool at most, never read from the mesh at runtime (§9). |
 | Content errors are diagnostics, never crashes | AGENTS.md §5, `ObjParser.h:9` | The loader validates and rejects with a reason; it never repairs, asserts or throws on content (§5.12). |
 | Left-handed `(east, up, north)`, `LH` everywhere; hulls' bow lands on +Z | AGENTS.md §5, `ObjParser.h:13` | The file is stored in render space directly (§5.2). The Blender add-on owns the axis conversion, in one self-inverse function (§11). |
@@ -666,7 +666,7 @@ interiors collapse.
 - One read (`BinaryFile::ReadFile`), validate per §5.12, then parse the named records once into
   compact tables and expand geometry into `MeshData` — indexed → soup, material `baseColour`
   baked into vertex colour, exactly the shape every current consumer holds
-  ([SpaceshipExplosion.md](SpaceshipExplosion.md) §2 depends on it). The in-place-view design the
+  ([SpaceshipExplosion.md](Archive/SpaceshipExplosion.md) §2 depends on it). The in-place-view design the
   source document specifies stays available for the day the renderer goes indexed; nothing in the
   layout prevents it, which is the point of the alignment rules.
 - A `.nmo` that fails validation traces the failing rule and returns false; `MeshLibrary` skips

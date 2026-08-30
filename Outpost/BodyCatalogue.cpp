@@ -66,7 +66,7 @@ BodyDesc RandomBody(std::uint64_t _seed, float _radiusMetres)
   // 3. The relief. heightScale is what the roughness law measures a height against and desiredHeight
   //    is what the tile is rescaled to, and they are drawn as one number: the rescale divides the
   //    first back out, so two different values would make the second the only one that showed
-  //    (Design/PlanetRenderer.md 5.2, 5.3).
+  //    (Design/Archive/PlanetRenderer.md 5.2, 5.3).
   const float relief = Between(rng, BODY_ASTEROID_HEIGHT_SCALE_MIN, BODY_ASTEROID_HEIGHT_SCALE_MAX);
   desc.heightScale = relief;
 

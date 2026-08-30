@@ -13,7 +13,7 @@ inline constexpr ShipId INVALID_SHIP_ID = 0xFFFFFFFFu;
 // of its own -- "hostile" is the client's word, never the wire's, which is what lets standings,
 // diplomacy or a spoofed transponder arrive later as a mapping change rather than as a new field.
 // It is not an NPC flag and must not become one: a client cannot tell a player's ship from an NPC's,
-// which is the correct amount of knowledge (Design/Hostiles.md 4.1).
+// which is the correct amount of knowledge (Design/Archive/Hostiles.md 4.1).
 using FactionId = std::uint8_t;
 inline constexpr FactionId FACTION_PLAYER = 0;
 inline constexpr FactionId FACTION_HOSTILE = 1;
@@ -24,7 +24,7 @@ inline constexpr FactionId FACTION_HOSTILE = 1;
 // is that despawn moves the last ship into the freed slot, so any id stored across a tick boundary
 // silently retargets to a stranger -- and the place that hurts is a snapshot delta baseline, where
 // the symptom is not a crash but one ship smoothly interpolating into a different ship while a
-// player watches (Design/Collision.md 6).
+// player watches (Design/Archive/Collision.md 6).
 //
 // So: anything that stores a reference across a tick boundary, or sends one over a wire, stores a
 // ShipHandle; anything iterating within a tick uses the index. Resolving is one indexed load and a
@@ -74,20 +74,20 @@ struct ShipState
 
   // The single point the intent layer steers at. Before pathfinding this was always the ordered
   // destination; with a planner in front of it, it is the current waypoint of a route and the
-  // planner changes *which point* is steered at, never *how* (Design/Collision.md 12).
+  // planner changes *which point* is steered at, never *how* (Design/Archive/Collision.md 12).
   WorldPos steerTargetPos;
   float orderFacingRad = 0.0f;
   bool orderHasFacing = false;
 
   // A ceiling on the speed an order asks for; 0 is uncapped. It is a property of the order, not of
   // the hull -- the same Interceptor cruises at 10 m/s on patrol and burns at 34 m/s under a player
-  // -- and it is intent, so it stays off the wire beside steerTargetPos (Design/Hostiles.md 5.4).
+  // -- and it is intent, so it stays off the wire beside steerTargetPos (Design/Archive/Hostiles.md 5.4).
   float orderSpeedCapMetresPerSec = 0.0f;
 
   // The heading the avoidance pass committed to last tick. It is the one piece of state the
   // steering carries between ticks, and it is what stops a plain per-tick argmax chattering when
   // two candidate headings score within noise of each other. Simulation state, so it goes over the
-  // wire like everything else here (Design/Collision.md 10).
+  // wire like everything else here (Design/Archive/Collision.md 10).
   float avoidHeadingRad = 0.0f;
 
   // Last tick's acceleration. Simulation output, read by the view to drive thruster response --

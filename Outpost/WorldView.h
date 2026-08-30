@@ -146,7 +146,7 @@ public:
   // Which faction this client is, which is session identity no library can know: the composition
   // root supplies it. What it decides here is what may be selected -- and therefore what may be
   // ordered, since an order carries the selection. The simulation refuses somebody else's ship
-  // anyway (Design/Hostiles.md 4.3); this is the affordance telling the same truth.
+  // anyway (Design/Archive/Hostiles.md 4.3); this is the affordance telling the same truth.
   void SetOwnFaction(Game::FactionId _faction) noexcept
   {
     m_ownFaction = _faction;

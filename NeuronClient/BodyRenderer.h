@@ -72,7 +72,7 @@ public:
   // Records the bake of one body straight into a new default-heap buffer: three dispatches, two UAV
   // barriers, and a transition to VERTEX_AND_CONSTANT_BUFFER. Usable after the list runs, exactly
   // like UploadBody, and returning the same kind of handle -- the two producers make the same
-  // vertices and everything downstream of them is identical (Design/PlanetRenderer.md 17).
+  // vertices and everything downstream of them is identical (Design/Archive/PlanetRenderer.md 17).
   //
   // _gridPower is the body's, and the caller passes the ramp its class uses; the ocean is not baked,
   // because three thousand triangles through the scene pass buy nothing from a kernel.
@@ -104,7 +104,7 @@ public:
 
   // Two entry points rather than one that does both, so a caller draws every body's terrain and then
   // every body's outline: one pipeline switch per pass rather than two per body, and the outline of
-  // one body tests against the depth of another (Design/PlanetRenderer.md 7.3).
+  // one body tests against the depth of another (Design/Archive/PlanetRenderer.md 7.3).
   void DrawMain(GpuDevice& _gpu, BodyHandle _body, const DirectX::XMFLOAT4X4& _world);
   void DrawOverlay(GpuDevice& _gpu, BodyHandle _body, const DirectX::XMFLOAT4X4& _world);
 

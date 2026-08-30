@@ -11,7 +11,7 @@ a parser has no game semantics and no graphics API, so it belongs in the layer e
 `MeshData` in Core on a different argument: a mesh is also collision geometry, which the server
 will need.
 
-That argument does not hold against the collision design ([`Design/Collision.md`](../Collision.md)
+That argument does not hold against the collision design ([`Design/Archive/Collision.md`](../Archive/Collision.md)
 §4–5). Collision shapes are to be **authored** capsules in a `HullSpec` table in GameLogic, and
 deriving them from mesh bounds is explicitly rejected there — it would drag wingtips and antennae
 into the hull and put the collision shape in the renderer's reach. Today the only consumer of a

@@ -7,7 +7,7 @@ be a design argues where it should instruct.
 | Document | Question it answers | Where |
 |---|---|---|
 | Rules | *What are the rules right now?* | the conformance file at the repository root |
-| Design | *What are we building, and what shape does it have?* | `Design/<topic>.md` |
+| Design | *What are we building, and what shape does it have?* | `Design/<topic>.md` while a slice is still open, `Design/Archive/` once they have all landed |
 | Work order | *What exactly do I do next, and when am I done?* | `Design/<topic>-work-order.md`, or `Design/<topic>-slice-N.md` when a design yields several |
 | Decision record | *Why did it go this way, and what lost?* | `Design/Decisions/NNNN-<slug>.md` |
 
@@ -38,8 +38,19 @@ acceptance list at the end.
 
 A work order is finished when its pull request merges, and it then moves to `Design/Archive/` in
 the same commit that marks the slice landed in its design. It is kept, not deleted: code comments
-and decision records cite work orders by section, and the citations are meant to be followed. A
-design never moves — it stays the document later changes are reviewed against.
+and decision records cite work orders by section, and the citations are meant to be followed.
+
+A design moves the same way, and for the same reason, once **every slice in its list has landed**.
+It is still the document later changes are reviewed against — archiving is not retirement, and a
+design in `Design/Archive/` is cited exactly as often as it was before. What the move says is that
+`Design/` holds only what is unfinished: a reader who wants to know what is still open reads the
+directory listing rather than seven slice tables. A design with one open slice does not move, even
+if the rest landed a month ago.
+
+The move costs the retarget of every citation, which is the honest price and is paid in the same
+commit. Nothing else changes in the document — a design is never rewritten to match what was built;
+where the code diverged, the decision record says so and the design keeps its argument. Sections of
+an archived design that a later record supersedes stay as they were, with the record naming them.
 
 ## Decision records
 

@@ -259,7 +259,7 @@ void Hud::DrawDebug(TextRenderer& _text, const Layout& _layout, const Frame& _fr
                      line);
 
   // The bodies. Generation time is the number that decides a later slice: the design will move the
-  // whole build onto the GPU when boot or a reseed stops feeling instant (Design/PlanetRenderer.md 17).
+  // whole build onto the GPU when boot or a reseed stops feeling instant (Design/Archive/PlanetRenderer.md 17).
   std::snprintf(line, sizeof(line), "BODIES %u%sBODY TRIS %u%sGEN %.1f MS", static_cast<unsigned>(_frame.stats.bodyCount), SEPARATOR,
                 _frame.stats.bodyTriangles, SEPARATOR, static_cast<double>(_frame.stats.bodyGenerationMs));
   width = advance * static_cast<float>(std::strlen(line));
@@ -361,7 +361,7 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
   // Blips, colored by allegiance. The server states whose a ship is and this is where the client
   // turns that identity into a relation: anything that is not the viewer's own draws red, and an
   // immovable hull draws at the larger dot so a base reads bigger than a fighter without pretending
-  // to scale (Design/Hostiles.md 7). The hull table is how a station is told from a ship, so no wire
+  // to scale (Design/Archive/Hostiles.md 7). The hull table is how a station is told from a ship, so no wire
   // field had to be invented for it.
   {
     const std::span<const Game::ShipSnapshot>& ships = _ships;

@@ -12,7 +12,7 @@
 //
 // A culled cell writes six degenerate vertices at the origin rather than being skipped. A shader
 // cannot delete a triangle, and a degenerate has no area, rasterises nothing, and costs no
-// ExecuteIndirect (Design/PlanetRenderer.md 17.1).
+// ExecuteIndirect (Design/Archive/PlanetRenderer.md 17.1).
 //
 // Two locals are named differently from the C++ they mirror: `triangle` and `centroid` are HLSL
 // keywords -- the geometry-shader input primitive and the interpolation modifier -- so the loop

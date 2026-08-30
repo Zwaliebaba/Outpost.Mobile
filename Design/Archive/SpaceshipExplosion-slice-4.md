@@ -32,7 +32,7 @@ same numbers slice 2's `Desc` defaults carry — this is where they become *name
 ```cpp
 // --- ship explosion ----------------------------------------------------------------------------
 // The source values from Interstellar Outpost's Building::Destroy, read as metres and seconds and
-// scaled per ship by max(halfExtents) / EXPLOSION_REFERENCE_HALF_SIZE (Design/SpaceshipExplosion.md 3).
+// scaled per ship by max(halfExtents) / EXPLOSION_REFERENCE_HALF_SIZE (Design/Archive/SpaceshipExplosion.md 3).
 inline constexpr float EXPLOSION_REFERENCE_HALF_SIZE = 10.0f;
 inline constexpr float EXPLOSION_INTENSITY = 100.0f;           // Building::Destroy(_intensity)
 inline constexpr int EXPLOSION_HULL_COPIES = 3;
@@ -208,7 +208,7 @@ the sprite passes run after because they do not write depth and must see the rin
 ### 2.5 Project files and documents
 
 `Outpost.vcxproj` and `.filters` gain `ShipExplosion.h/.cpp`. No asset change: the textures are
-already `<Image>` items (design §11). `Design/SpaceshipExplosion.md` §14 marks the four slices
+already `<Image>` items (design §11). `Design/Archive/SpaceshipExplosion.md` §14 marks the four slices
 `landed` in each one's pull request, this one last; `AGENTS.md`'s "Deliberately not here yet"
 paragraph is checked — it says no combat and no damage model, both of which stay true; nothing
 in it becomes false.
@@ -330,7 +330,7 @@ screenshots that match by eye. The seed formula is in §2.3; the pull request st
   particular, since nothing there was touched.
 - `git diff --stat` shows no file under `GameLogic/`, `NeuronCore/`, `NeuronClient/`,
   `NeuronServer/`.
-- `Design/SpaceshipExplosion.md` §14 marks slice 4 `landed`. Design §13 has no open question;
+- `Design/Archive/SpaceshipExplosion.md` §14 marks slice 4 `landed`. Design §13 has no open question;
   if building this raised one, it is recorded there rather than settled silently in code.
 - `AGENTS.md` checked; no sentence made false.
 

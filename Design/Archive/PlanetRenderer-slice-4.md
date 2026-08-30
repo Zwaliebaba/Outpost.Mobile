@@ -31,7 +31,7 @@ After "world look", in the file's style. Every number from design §3, §5.4, §
 ```cpp
 // --- planets and asteroids ---------------------------------------------------------------------
 // Bodies are presentation only, placed by the composition root, metre-scale inside the existing
-// frustum (Design/PlanetRenderer.md 3, 14). Every length is a fraction of the body's radius unless
+// frustum (Design/Archive/PlanetRenderer.md 3, 14). Every length is a fraction of the body's radius unless
 // the name carries a unit.
 inline constexpr float BODY_PLANET_RADIUS_MIN_METRES = 400.0f;
 inline constexpr float BODY_PLANET_RADIUS_MAX_METRES = 1200.0f;
@@ -201,7 +201,7 @@ rock until then.
 ### 2.6 Project files and documents
 
 `Outpost.vcxproj` and `.filters` gain `BodyCatalogue.h/.cpp`. No asset change: the ramps and
-the outline are `<Image>` items already. `Design/PlanetRenderer.md` §15 marks slices 1–4
+the outline are `<Image>` items already. `Design/Archive/PlanetRenderer.md` §15 marks slices 1–4
 `landed`; `AGENTS.md`'s "What is actually here" paragraph gains a clause — "procedurally
 generated planets and asteroids as presentation" — because the sentence describing the game
 would otherwise be false (AGENTS.md §14's own rule).
@@ -310,7 +310,7 @@ skipping the two planets locally; not committed).
 - `git diff --stat` shows no file under `GameLogic/`, `NeuronCore/`, `NeuronClient/`,
   `NeuronServer/`.
 - The decision record exists and the index lists it.
-- `Design/PlanetRenderer.md` §15 marks slice 4 `landed`; this file and slices 1–3's move to
+- `Design/Archive/PlanetRenderer.md` §15 marks slice 4 `landed`; this file and slices 1–3's move to
   `Design/Archive/` if they have not already.
 - `AGENTS.md`'s "What is actually here" updated (§2.6).
 

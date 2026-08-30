@@ -121,7 +121,7 @@ touched.
 | `NeuronClient/BodyRenderer.cpp` (slice 3) | The root-signature and PSO idioms, `UploadStaticBuffer`, the heap |
 | `NeuronClient/GpuHelpers.cpp` | `HeapProps`, `BufferDesc`, `Transition` |
 | `NeuronClient/GpuDevice.h` | `ExecuteAndWait`, `CommandList` |
-| `Design/PlanetRenderer.md` §17 | The analysis, the shape, the acceptance rule |
+| `Design/Archive/PlanetRenderer.md` §17 | The analysis, the shape, the acceptance rule |
 
 ---
 

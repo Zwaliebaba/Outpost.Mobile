@@ -19,7 +19,7 @@ enum class CubeFace : std::uint8_t
 inline constexpr std::uint32_t CUBE_FACE_COUNT = 6;
 
 // The six-face grid a body is sampled on: sample (face, x, z) to a unit direction, with the usual
-// tangent warp so the cells are close to equal area (Design/PlanetRenderer.md 5.1).
+// tangent warp so the cells are close to equal area (Design/Archive/PlanetRenderer.md 5.1).
 //
 // A cube-sphere rather than a latitude/longitude sphere because the grid stays regular -- the
 // neighbour rule for sea-level culling, one outline quad per cell and the per-cell dither seed all
@@ -51,7 +51,7 @@ struct CubeSphere
   //
   // Opposite faces wind opposite ways under this scheme -- a quad on PosY and the same quad on NegY
   // cross-product to +Y and -Y respectively. That is deliberate and costs nothing: the mesh builder
-  // flips a triangle normal to face outward anyway (Design/PlanetRenderer.md 8.2), and buying
+  // flips a triangle normal to face outward anyway (Design/Archive/PlanetRenderer.md 8.2), and buying
   // consistent winding here would mean mirroring three of the six faces and losing the edge identity
   // above, which is the property that actually matters.
   [[nodiscard]] static constexpr DirectX::XMFLOAT3 Direction(CubeFace _face, std::uint32_t _x, std::uint32_t _z,

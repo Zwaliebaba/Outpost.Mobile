@@ -20,7 +20,7 @@ public:
     // tick stays under the smallest capsule radius in the table, and the point of writing it as a
     // gate rather than as arithmetic in a document is that the day someone adds a 90 m/s
     // Interceptor or a 300 m/s missile, the suite goes red naming the hull -- rather than the hull
-    // going through another hull in a live match six months later (Design/Collision.md 11).
+    // going through another hull in a live match six months later (Design/Archive/Collision.md 11).
     //
     // Parameterised on TICK_HZ, never on a baked 1/60: lowering the tick rate for an MMO server
     // multiplies this ratio, and it has to go red loudly rather than quietly halve the margin.
@@ -53,7 +53,7 @@ public:
   {
     // The horizon derivation divides by the turn rate, so a default-constructed spec with a zero
     // one divides by zero on first use. A default has to be the ship the tree already has, not an
-    // inert one (Design/Collision.md 5).
+    // inert one (Design/Archive/Collision.md 5).
     const Game::HullSpec spec;
     Assert::IsTrue(spec.maxTurnRateRadPerSec > 0.0f, L"a default hull cannot turn");
     Assert::IsTrue(spec.maxSpeedMetresPerSec > 0.0f, L"a default hull cannot move");
@@ -112,7 +112,7 @@ public:
   {
     // A world-layout constraint arriving out of a collision table: sharding by space needs a ghost
     // zone at least as wide as the widest query, so this number is the floor on region size and it
-    // is far cheaper to know now than after a map exists (Design/Collision.md 10).
+    // is far cheaper to know now than after a map exists (Design/Archive/Collision.md 10).
     constexpr float REGION_GHOST_BUDGET_METRES = 700.0f;
     float widest = 0.0f;
     std::uint32_t widestHull = 0;

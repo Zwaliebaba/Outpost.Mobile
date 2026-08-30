@@ -1,6 +1,6 @@
 # Work order — Collision slice 2b: the loopback transport
 
-Implements slice 2b of [`Collision.md`](../Collision.md) §19: the client half stops reading
+Implements slice 2b of [`Collision.md`](Collision.md) §19: the client half stops reading
 `Game::World` and starts reading a snapshot that arrived through a `Transport`, with configurable
 artificial latency and loss in the loopback.
 

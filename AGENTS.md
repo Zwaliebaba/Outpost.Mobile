@@ -32,7 +32,7 @@ equirectangular map, sampled per pixel off the direction so it has no seam, whil
 seeded low-poly heightfield on a cube-sphere with one flat colour per triangle from a colour ramp and
 a wire-frame outline over the top. Behind them is a procedurally generated star field: a seeded
 catalogue of stars, dust clouds and a galactic band, uploaded once and expanded into billboards in
-the vertex shader (`Design/Skybox.md`). F5 reseeds the lot, sky included; all of it is presentation
+the vertex shader (`Design/Archive/Skybox.md`). F5 reseeds the lot, sky included; all of it is presentation
 only and a ship flies straight through a rock (`Design/Decisions/0016`). There is no ground: the scene pass draws no plane and has no grid
 (`Design/Decisions/0025`), and the flat y = 0 plane a move order lands on is arithmetic in `Camera`
 rather than geometry. D3D12 renderer, WM_POINTER input covering mouse and touch, a main-screen HUD
@@ -244,7 +244,7 @@ Three rules `.clang-tidy` structurally cannot state, so check them by eye:
 | `NeuronClient/Shaders/` | HLSL (§3). DXC compiles it, as shader model 6.7 DXIL, into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
 | `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). |
 | `Tools/` | Content tools, stdlib Python only: the NMO ship-mesh codec and Blender add-on (`BlenderNmo/`), the OBJ→NMO converter (`ObjToNmo.py`), and their tests (`Nmo*Test.py` — the codec test needs bare python3, the Blender one the `bpy` wheel). [`Design/NmoFormat.md`](Design/NmoFormat.md) is the format; nothing here is engine code, and no `.vcxproj` names it. |
-| `Design/` | Designs, work orders, `Screenprints/`, `Archive/` for landed work orders, and `Design/Decisions/` — the architecture decision records (§9). Its `README.md` says which document is which and how a slice moves from a design into the tree (§7). |
+| `Design/` | Designs with a slice still open, `Screenprints/`, `Archive/` for designs whose slices have all landed and for the work orders that landed them, and `Design/Decisions/` — the architecture decision records (§9). An archived design is still the document its area is reviewed against and is cited from code as before; `Design/` itself is the list of what is unfinished. Its `README.md` says which document is which and how a slice moves from a design into the tree (§7). |
 | `.github/` | CI (§6) and the pull request template every slice answers (§7). |
 
 The dependency rules are hard, and each of them is one thing this structure buys:

@@ -16,7 +16,7 @@ namespace
 // answer backwards the moment speeds differ: a ship 200 m away closing at 68 m/s matters more than
 // one 40 m away closing at 2 m/s, and it matters more the wider the speed spread becomes. A
 // neighbour that is not converging is ignored no matter how close it currently is, which is what
-// lets ships pass each other closely and calmly (Design/Collision.md 10).
+// lets ships pass each other closely and calmly (Design/Archive/Collision.md 10).
 [[nodiscard]] float ThreatAlong(const Neighbour& _neighbour, const HullSpec& _hull, float _velocityX, float _velocityZ,
                                 float _speedMetresPerSec) noexcept
 {
@@ -51,7 +51,7 @@ namespace
 //
 // Without it, avoidance is symmetric and both parties steer: measured on a fighter crossing a
 // Carrier's bow, the capital left its track by 121 m to the fighter's 124, which is a Carrier
-// swerving for an Interceptor and reads as a bug to anyone watching it (Design/Collision.md 9, 16).
+// swerving for an Interceptor and reads as a bug to anyone watching it (Design/Archive/Collision.md 9, 16).
 [[nodiscard]] float YieldShare(float _ownAuthority, const Neighbour& _neighbour) noexcept
 {
   return SeparationSharesFor(_ownAuthority, false, _neighbour.avoidanceAuthority, _neighbour.immovable).a;
@@ -81,7 +81,7 @@ MotionIntent SolveOrder(const ShipState& _ship, const HullSpec& _hull) noexcept
       // And never faster than the order asked for. The one place the cap is applied: AvoidNeighbours
       // only ever sheds speed and IntegrateShip only chases the intent, so it holds through both
       // without either learning of it. A zero cap is arithmetic this line already performed, which
-      // is what keeps an uncapped world bit-identical (Design/Hostiles.md 5.4).
+      // is what keeps an uncapped world bit-identical (Design/Archive/Hostiles.md 5.4).
       if (_ship.orderSpeedCapMetresPerSec > 0.0f)
         intent.desiredSpeedMetresPerSec = std::min(intent.desiredSpeedMetresPerSec, _ship.orderSpeedCapMetresPerSec);
     }
@@ -126,7 +126,7 @@ MotionIntent AvoidNeighbours(const ShipState& _ship, const HullSpec& _hull, Moti
     // oscillate -- the pedestrian sidewalk dance, very visible at fleet scale. Break it with a rule
     // rather than a tie-break on ShipId: give way to starboard. It needs no shared state, neither
     // party has to know the other's id, and it reads on screen as seamanship rather than as jitter,
-    // which is not an accident -- the problem is the same one (Design/Collision.md 9).
+    // which is not an accident -- the problem is the same one (Design/Archive/Collision.md 9).
     //
     // The weight is continuous in bearing, in closing rate and in the threat itself, and that is
     // not tidiness. A bare predicate -- inside the cone and closing -- is a step of a third of the

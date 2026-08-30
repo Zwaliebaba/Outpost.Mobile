@@ -59,7 +59,7 @@ void UploadColourTexture(GpuDevice& _gpu, std::uint32_t _widthPx, std::uint32_t 
 // SceneRenderer::UploadMesh's upload-heap shortcut is the other one, and its comment still argues
 // correctly for a hull: a few thousand triangles do not justify a staging copy. A planet is seven
 // megabytes the input assembler reads twice a frame, and in an upload heap that is system memory
-// pulled across PCIe at every draw (Design/PlanetRenderer.md 7.1).
+// pulled across PCIe at every draw (Design/Archive/PlanetRenderer.md 7.1).
 void UploadStaticBuffer(GpuDevice& _gpu, std::span<const std::uint8_t> _bytes, GpuPtr<ID3D12Resource>& _outBuffer,
                         GpuPtr<ID3D12Resource>& _outStaging);
 } // namespace Neuron

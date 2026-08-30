@@ -51,7 +51,7 @@ public:
     // The test that protects the MMO property. Every pass reads a start-of-tick snapshot and writes
     // its corrections to scratch, so the same fleet spawned in a different array order must produce
     // the same run -- and the day someone writes a pass that mutates in place, this is what catches
-    // it rather than a replay failing months later (Design/Collision.md 16).
+    // it rather than a replay failing months later (Design/Archive/Collision.md 16).
     //
     // Positions are jittered rather than laid out on a lattice, and deliberately so. ShipId is the
     // documented tie-break on the neighbour sort, and a permutation renames every ship, so a fleet
@@ -108,7 +108,7 @@ public:
   {
     // The log is the publisher's, not the tick's. An interest update happens once every six ticks,
     // so a log cleared by Step would lose every death that did not fall on the tick an update
-    // happened to land on (Design/Hostiles.md 4.4).
+    // happened to land on (Design/Archive/Hostiles.md 4.4).
     Game::World world;
     std::vector<Game::ShipHandle> doomed;
     for (int at = 0; at < 3; ++at)

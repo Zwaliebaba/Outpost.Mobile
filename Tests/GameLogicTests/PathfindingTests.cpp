@@ -34,7 +34,7 @@ public:
   {
     // What the total A* tie-break buys, and the reason it is (f, g, cellIndex) rather than (f, g).
     // Two cells with equal cost must still order the same way, or a recorded game replays down a
-    // different route (Design/Collision.md 12).
+    // different route (Design/Archive/Collision.md 12).
     const float clearance = Game::HullSpecOf(Game::HullId::Corvette).BoundingRadiusMetres() + Game::PATH_CLEARANCE_MARGIN_METRES;
     const std::vector<Game::PathGrid::Obstacle> obstacles = {
       {Game::LocalPos(0.0f, 0.0f), 251.77f}, {Game::LocalPos(560.0f, 120.0f), 251.77f}, {Game::LocalPos(-400.0f, -300.0f), 131.61f}};
@@ -120,7 +120,7 @@ public:
     // The case local steering provably cannot solve, and therefore the test that proves this phase
     // earned its place. A ship in the bottom of a U has to travel away from its destination to get
     // out, and the information that says so -- that the way around is left, not right -- is not
-    // available locally at any tuning (Design/Collision.md 12, 16).
+    // available locally at any tuning (Design/Archive/Collision.md 12, 16).
     Game::World world;
     SpawnPocket(world);
     const Game::ShipId ship = world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));

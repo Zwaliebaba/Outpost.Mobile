@@ -121,7 +121,7 @@ own-faction ship at all returns `WorldPos{}` as an empty world does today.
 - `Outpost/Hud.h`'s `Frame` comment: `contacts` is real; `sector` already is.
 - `Outpost/ViewTuning.h` header (2.1), `WorldSimulation::SubscriberCentre` (2.3),
   `WorldView::ExplodeTheLost` (2.4), `Hud.cpp`'s blip comment (2.5).
-- `Design/SpaceshipExplosion.md` §9/§12 if either says the explosion consumes every leave or that
+- `Design/Archive/SpaceshipExplosion.md` §9/§12 if either says the explosion consumes every leave or that
   no destroy event exists: one sentence pointing at `Hostiles.md` §4.4.
 
 ### 2.7 What this slice deliberately does **not** do
@@ -146,7 +146,7 @@ own-faction ship at all returns `WorldPos{}` as an empty world does today.
 | `GameLogic/HullSpec.h` | `HullSpecOf(hullId).immovable` — how the HUD tells a station from a ship without a new wire field |
 | `GameLogic/WorldSnapshot.h` (slice 1) | `ShipSnapshot::factionId`, `SnapshotReceiver::Destroyed()` |
 | `Outpost/Assets/Meshes/Structure.obj`, `Interceptor.obj` | shipped, never loaded until now |
-| `Design/Hostiles.md` §6, §7, §11, §12 | the scene, the display rules, the choices, the edges |
+| `Design/Archive/Hostiles.md` §6, §7, §11, §12 | the scene, the display rules, the choices, the edges |
 
 ---
 
@@ -178,7 +178,7 @@ Not visual:
   edits, because no `GameLogic` file does.
 - `git diff --stat` shows no path under `GameLogic/`; the pull request says so.
 - No decision record is due (the three the feature owes landed with slices 1 and 2); say so.
-- `Design/Hostiles.md` §14 marks slice 3 `landed`; this file moves to `Design/Archive/`; the
+- `Design/Archive/Hostiles.md` §14 marks slice 3 `landed`; this file moves to `Design/Archive/`; the
   `AGENTS.md` sentence has changed.
 
 ---

@@ -24,7 +24,7 @@ namespace Game
 // server count. Lowering it is not a free knob: at 20 Hz an Interceptor covers 1.70 m per tick
 // against a 1.115 m capsule radius and two of them pass straight through each other. The
 // tunnelling test is parameterised on this value rather than on a baked 1/60 precisely so that
-// the day it moves, the suite goes red naming the hulls (Design/Collision.md 11).
+// the day it moves, the suite goes red naming the hulls (Design/Archive/Collision.md 11).
 inline constexpr float TICK_HZ = 60.0f;
 inline constexpr float TICK_DT = 1.0f / TICK_HZ;
 
@@ -39,7 +39,7 @@ inline constexpr float TICK_DT = 1.0f / TICK_HZ;
 // which is a replay divergence with no visible cause. The static_assert below is load-bearing.
 //
 // 8192 m gives 8192 / 2^24 = 0.49 mm of local precision, uniform in every sector rather than
-// decaying with distance from an origin, across a universe of +/-10^19 m (Design/Collision.md 3).
+// decaying with distance from an origin, across a universe of +/-10^19 m (Design/Archive/Collision.md 3).
 inline constexpr float SECTOR_SIZE_METRES = 8192.0f;
 
 // Halving a power of two is exact, so a value is one exactly when repeated halving lands on 1.
@@ -67,7 +67,7 @@ static_assert(IsPowerOfTwoMetres(SECTOR_SIZE_METRES), "SECTOR_SIZE_METRES must b
 // Arrival tolerance as a fraction of the hull's own bounding radius, with a floor for the smallest
 // hulls. It cannot be one constant: 3.5 m is a sensible tolerance for a 3.5 m Interceptor and an
 // unreachable one for a 107 m Carrier, which would be asked to stop within a thirtieth of its own
-// length (Design/Collision.md 13).
+// length (Design/Archive/Collision.md 13).
 inline constexpr float ARRIVAL_RADIUS_FRACTION = 0.35f;
 inline constexpr float ARRIVAL_RADIUS_MIN_METRES = 1.5f;
 inline constexpr float STOP_DAMPING_HALF_LIFE = 0.16f; // seconds
@@ -153,7 +153,7 @@ inline constexpr float SEPARATION_QUERY_MARGIN_METRES = 4.0f;
 // The fraction of a contact's overlap a pair resolves in one tick. A Jacobi solve applies every
 // correction at once, so anything approaching 1 overshoots and rings.
 //
-// Jacobi is the deliberate trade (Design/Collision.md 6): Gauss-Seidel converges faster and is
+// Jacobi is the deliberate trade (Design/Archive/Collision.md 6): Gauss-Seidel converges faster and is
 // order-dependent, which is precisely the property this design spends effort to avoid.
 //
 // The cost lands on one shape, and it is worth stating exactly rather than as "slow", because the
@@ -200,7 +200,7 @@ inline constexpr float SEPARATION_PAIR_CLOSE_FRACTION = 0.25f;
 // It buys a second thing that matters more: it *is* the prediction error budget. Avoidance is
 // server-only and unpredicted, so the worst the client can be wrong by has to be a number rather
 // than an unbounded one. At 0.5 an Interceptor may be displaced 0.56 m per tick -- 33 m/s, about
-// its own top speed, which is the most that can be called a budget (Design/Collision.md 9, 10).
+// its own top speed, which is the most that can be called a budget (Design/Archive/Collision.md 9, 10).
 inline constexpr float SEPARATION_CLAMP_FRACTION = 0.5f;
 
 // How many times the separation solve runs per tick, and the largest correction that still counts
@@ -278,7 +278,7 @@ inline constexpr int FORMATION_SHAPE = 1; // FormationShape::Wedge
 
 // --- patrol ------------------------------------------------------------------------------------
 // How many waypoints a patrol ring has. In the contract: it changes which points a patrolling ship
-// steers at, and therefore the whole shape of the run (Design/Hostiles.md 5.2).
+// steers at, and therefore the whole shape of the run (Design/Archive/Hostiles.md 5.2).
 //
 // The ring radius and the cruise speed are deliberately not here. They are inputs to AssignPatrol,
 // passed by whoever assigns the patrol, the way a spawn position is passed to SpawnShip -- content,
@@ -293,7 +293,7 @@ inline constexpr std::uint32_t PATROL_RING_WAYPOINTS = 12;
 // The update rate is counted in ticks rather than hertz for the reason latency is: a wall clock
 // makes the result depend on how fast the machine ran, and 10 Hz is then a thing a test can assert
 // rather than approximate. Six ticks against a 60 Hz tick is the middle of the 5-20 Hz band
-// Design/Collision.md 1 asks for.
+// Design/Archive/Collision.md 1 asks for.
 inline constexpr std::uint32_t INTEREST_UPDATE_EVERY_TICKS = 6;
 inline constexpr float INTEREST_RADIUS_METRES = 2000.0f;
 

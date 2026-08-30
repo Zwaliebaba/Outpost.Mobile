@@ -9,7 +9,7 @@ namespace Neuron
 {
 namespace
 {
-// The source's compensatedHeightScale, verbatim (Design/PlanetRenderer.md 5.2):
+// The source's compensatedHeightScale, verbatim (Design/Archive/PlanetRenderer.md 5.2):
 //   amp = heightScale * 30.7 * e^(-6.5 * fractalDimension) * 15.353 * e^(-3.1 * lowlandSmoothing)
 // Two exponentials that fall steeply, so a tenth on either parameter is a visible change in how much
 // terrain there is. They are the source's numbers and are not to be rounded.
@@ -72,7 +72,7 @@ constexpr float CLIMATE_DITHER_CELLS = 256.0f;
 // the last bit; their double results differ in the last bit of a double, which is twenty-nine bits
 // below the first bit a float can tell apart, so the narrowed answer is the same float on every
 // machine. That is what makes the pinned height in BodyFieldTests a replay key rather than one
-// machine's opinion (Design/PlanetRenderer.md 10).
+// machine's opinion (Design/Archive/PlanetRenderer.md 10).
 [[nodiscard]] float Pow(float _base, float _exponent) noexcept
 {
   return static_cast<float>(std::pow(static_cast<double>(_base), static_cast<double>(_exponent)));
@@ -178,7 +178,7 @@ BodyParams BodyField::ParamsFor(const BodyDesc& _desc)
   BodyParams params;
   Pcg32 rng(_desc.seed);
 
-  // The draw order is the determinism guarantee (Design/PlanetRenderer.md 10), and it is this: the
+  // The draw order is the determinism guarantee (Design/Archive/PlanetRenderer.md 10), and it is this: the
   // seed offset, then the noise permutation, and nothing else. The tile and flatten centres are not
   // drawn here -- the catalogue that wrote the description drew them from its own generator. Insert
   // a draw into the middle of this and every body in the game becomes a different body.
@@ -279,7 +279,7 @@ void BodyField::MeasureTiles() noexcept
 
   // The tile's maximum is measured with its edge fade already applied, because the fade is part of
   // what the tile contributes; scaling by a maximum found without it would leave a tile whose peak is
-  // on the rim short of its desired height. This is the reduction Design/PlanetRenderer.md 17.1
+  // on the rim short of its desired height. This is the reduction Design/Archive/PlanetRenderer.md 17.1
   // names -- on the CPU it is a loop over the same grid the mesh will be built on.
   float peak[BodyParams::MAX_TILES] = {};
   const std::uint32_t samples = CubeSphere::SamplesPerSide(static_cast<std::uint32_t>(m_params.outsideMaxHeightGrid.z));

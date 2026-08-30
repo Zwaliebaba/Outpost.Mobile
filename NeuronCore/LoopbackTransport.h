@@ -12,7 +12,7 @@ namespace Neuron
 // It is the first implementation of the seam Transport.h declares, and it exists for two reasons.
 // The first is structural: from here the client half reaches the world only through datagrams, so
 // the day a socket replaces this class neither half notices. The second is that it is an
-// instrument. Several open questions in Design/Collision.md -- whether ships should hard-block,
+// instrument. Several open questions in Design/Archive/Collision.md -- whether ships should hard-block,
 // whether avoidance can be predicted, how large the separation clamp should be -- are questions
 // about how a correction feels under lag, and none of them is answerable without lag in the loop.
 //

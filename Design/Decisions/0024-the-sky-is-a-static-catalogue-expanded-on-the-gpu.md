@@ -46,7 +46,7 @@ Nothing else changes. `SpriteParticles` keeps building on the CPU, because its p
 - **A procedural pixel shader over a fullscreen triangle.** No vertex data at all. Lost because it
   leaves the three authored textures (`Glow`, `Starburst`, `CloudyGlow`) unused and makes per-star
   shape — a flare with rays, a cloud with structure — much harder than sampling a picture of one.
-  `Design/Skybox.md` 2 has the longer argument.
+  `Design/Archive/Skybox.md` 2 has the longer argument.
 - **Bake a cubemap at boot.** Cheapest steady state. Lost because it adds a render-to-texture path
   the tree has no precedent for, and fixes resolution at bake time.
 - **Instancing instead of six vertices per quad.** Would cut the buffer by a third. Lost for now

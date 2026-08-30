@@ -41,7 +41,7 @@ way `SpriteParticles` does. That is `Design/Decisions/0024`.
 
 ## 3. Shape
 
-Three files, mirroring how the planets are built (`Design/PlanetRenderer.md` 7):
+Three files, mirroring how the planets are built (`Design/Archive/PlanetRenderer.md` 7):
 
 | | |
 |---|---|
@@ -186,3 +186,11 @@ happens and nothing else can be read into it.
 
 One. It landed whole because the generator and the renderer are useless apart, and because the
 tuning that makes it look like a sky cannot be judged until it is on screen.
+
+| # | Slice | Layer | Depends on | Status | Work order |
+|---|---|---|---|---|---|
+| 1 | `SkyVertex`, `SkyField`, the three shaders, `SkyRenderer`, the tuning block, the draw in `WorldView`, `SkyFieldTests` | `NeuronClient` + `Outpost` | — | landed | [the sky](Skybox-work-order.md) |
+
+Two decision records were due and landed with it: *the sky is a static catalogue expanded on the
+GPU* ([0024](../Decisions/0024-the-sky-is-a-static-catalogue-expanded-on-the-gpu.md)) and *there is no
+ground plane* ([0025](../Decisions/0025-there-is-no-ground-plane.md)).

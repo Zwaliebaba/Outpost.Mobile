@@ -5,7 +5,7 @@ Date: 2026-08-29
 
 ## Context
 
-[`Design/Collision.md`](../Collision.md) §6 identifies the hazard correctly. `ShipId` is a dense
+[`Design/Archive/Collision.md`](../Archive/Collision.md) §6 identifies the hazard correctly. `ShipId` is a dense
 array index, which is what makes iteration cheap and is why it stays; despawn is swap-and-pop, so
 the last ship moves into the freed slot and any id stored across a tick boundary silently retargets
 to a stranger. Nothing in the tree stores one across a tick today, which is exactly why the fix is
