@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GpuDevice.h"
+#include "HandleStore.h"
 #include "RenderTypes.h"
 
 #include <span>
@@ -60,6 +61,19 @@ public:
   // instanced draws together.
   void DrawMeshInstanced(GpuDevice& _gpu, MeshHandle _mesh, std::span<const MeshInstance> _instances);
 
+  // Retires a mesh: the handle stops resolving at once and the buffer is released at the next
+  // DiscardStaging, which is the first point the GPU is known to be done with it. False if the
+  // handle was already stale, so a double free is a no-op that says so rather than a second release
+  // of a buffer the slot's new occupant now owns (ADR 0046).
+  bool FreeMesh(MeshHandle _mesh) noexcept;
+
+  // How many meshes are live. Not the slot count: a store that has freed anything has more slots
+  // than meshes, and the slots are what make a handle survive the resource.
+  [[nodiscard]] std::uint32_t MeshCount() const noexcept
+  {
+    return m_meshSlots.LiveCount();
+  }
+
   // Releases the staging buffers UploadMesh recorded copies from. Call after the GpuDevice bracket
   // those uploads were recorded into has run, never before -- the copies read them.
   void DiscardStaging() noexcept;
@@ -85,7 +99,15 @@ private:
   GpuPtr<ID3D12PipelineState> m_scenePso;
   GpuPtr<ID3D12PipelineState> m_instancedPso;
   GpuPtr<ID3D12PipelineState> m_decalPso; // alpha blended
+  // Indexed by slot, never by handle: HandleStore is what turns one into the other, and what stops a
+  // handle to a freed mesh reaching the mesh that took its place (ADR 0046).
   std::vector<GpuMesh> m_meshes;
+  HandleStore m_meshSlots;
+
+  // Buffers whose handles have been retired, held until DiscardStaging. A mesh freed while the GPU
+  // is still drawing with it must not be released on the spot, and DiscardStaging is already the
+  // call that means "the bracket has run".
+  std::vector<GpuPtr<ID3D12Resource>> m_retired;
   MeshHandle m_unitQuad = INVALID_MESH;
 
   // Held only until the bracket the copies were recorded into has run; DiscardStaging drops them.

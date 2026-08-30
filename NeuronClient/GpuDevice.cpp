@@ -102,9 +102,29 @@ void GpuDevice::Init(HWND _hwnd)
   // it" holds from the start, and every uploader brackets itself with BeginUploads.
   check_hresult(m_cmd->Close());
 
+  // The upload bracket's own allocator. Without it BeginUploads reset allocator 0, which is also
+  // frame 0's, and had to drain the whole GPU first to make that legal (ADR 0046).
+  check_hresult(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_uploadAllocator.put())));
+
   check_hresult(m_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(m_fence.put())));
   m_fenceEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
   if (!m_fenceEvent)
+    throw_last_error();
+
+  // The copy queue: its own queue, allocator, list and fence. A COPY-type command list can record
+  // copies and nothing else -- no dispatch, no draw, and no barrier into a shader-resource state --
+  // which is exactly the set of work that was making a load block a frame.
+  D3D12_COMMAND_QUEUE_DESC cqd = {};
+  cqd.Type = D3D12_COMMAND_LIST_TYPE_COPY;
+  cqd.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+  check_hresult(m_device->CreateCommandQueue(&cqd, IID_PPV_ARGS(m_copyQueue.put())));
+  check_hresult(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COPY, IID_PPV_ARGS(m_copyAllocator.put())));
+  check_hresult(
+    m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_COPY, m_copyAllocator.get(), nullptr, IID_PPV_ARGS(m_copyList.put())));
+  check_hresult(m_copyList->Close()); // closed unless a caller opened it, exactly as m_cmd is
+  check_hresult(m_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(m_copyFence.put())));
+  m_copyEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+  if (!m_copyEvent)
     throw_last_error();
 
   CreateSizedResources();
@@ -116,10 +136,16 @@ void GpuDevice::Shutdown()
   // a failure and an exception on the way out loses the real one.
   if (m_device)
     WaitForGpu();
+  WaitForCopies(); // a copy still in flight is holding a staging buffer this is about to release
   if (m_fenceEvent)
   {
     CloseHandle(m_fenceEvent);
     m_fenceEvent = nullptr;
+  }
+  if (m_copyEvent)
+  {
+    CloseHandle(m_copyEvent);
+    m_copyEvent = nullptr;
   }
 }
 
@@ -203,17 +229,22 @@ void GpuDevice::WaitForGpu()
 
 void GpuDevice::BeginUploads()
 {
-  // Allocator 0 is the boot allocator, and it is also frame 0's. Resetting an allocator the GPU is
-  // still reading is undefined behaviour, so this drains first rather than assuming it is idle.
+  // This bracket has an allocator of its own now, so what it waits for is its own previous batch
+  // and not every frame in flight.
   //
-  // The assumption used to hold and no longer does. Every call was at boot, back to back, each one
-  // after an ExecuteAndWait that had already drained; the first caller to open a batch *after a
-  // frame had been drawn* -- F5, which regenerates every body -- would have reset allocator 0 with
-  // frame 0's commands possibly still in flight. A drain here is free at boot, where nothing is in
-  // flight, and correct everywhere else.
-  WaitForGpu();
-  check_hresult(m_allocators[0]->Reset());
-  check_hresult(m_cmd->Reset(m_allocators[0].get(), nullptr));
+  // It used to reset allocator 0, which is also frame 0's, and therefore had to drain the whole GPU
+  // first: resetting an allocator the GPU is still reading is undefined behaviour. That drain was
+  // free at boot, where nothing is in flight, and was the cost of every mid-session bake -- F5,
+  // which regenerates every body (ADR 0046).
+  //
+  // The list may be reset the moment it has been submitted; it is the allocator that has to wait.
+  if (m_fence->GetCompletedValue() < m_uploadFenceValue)
+  {
+    check_hresult(m_fence->SetEventOnCompletion(m_uploadFenceValue, m_fenceEvent));
+    WaitForSingleObject(m_fenceEvent, INFINITE);
+  }
+  check_hresult(m_uploadAllocator->Reset());
+  check_hresult(m_cmd->Reset(m_uploadAllocator.get(), nullptr));
 }
 
 void GpuDevice::ExecuteAndWait()
@@ -221,7 +252,57 @@ void GpuDevice::ExecuteAndWait()
   check_hresult(m_cmd->Close());
   ID3D12CommandList* lists[] = {m_cmd.get()};
   m_queue->ExecuteCommandLists(1, lists);
-  WaitForGpu();
+
+  // Still a wait, and deliberately: what this bracket carries is a compute bake whose output the
+  // very next thing reads, and a readback the CPU is about to look at. The drain this slice removed
+  // is the one at the *other* end -- BeginUploads no longer waits for frames before it can start
+  // (ADR 0046). Recorded against this bracket's own fence value so the next BeginUploads knows
+  // exactly what it is waiting for.
+  m_uploadFenceValue = ++m_fenceNext;
+  check_hresult(m_queue->Signal(m_fence.get(), m_uploadFenceValue));
+  if (m_fence->GetCompletedValue() < m_uploadFenceValue)
+  {
+    check_hresult(m_fence->SetEventOnCompletion(m_uploadFenceValue, m_fenceEvent));
+    WaitForSingleObject(m_fenceEvent, INFINITE);
+  }
+  for (std::uint32_t i = 0; i < FRAME_COUNT; ++i)
+    m_fenceValues[i] = m_uploadFenceValue;
+}
+
+void GpuDevice::BeginCopies()
+{
+  // The previous batch's allocator, and nothing else. A frame on the graphics queue is not waited
+  // for and does not have to be: this is a different queue.
+  WaitForCopies();
+  check_hresult(m_copyAllocator->Reset());
+  check_hresult(m_copyList->Reset(m_copyAllocator.get(), nullptr));
+}
+
+void GpuDevice::SubmitCopies()
+{
+  check_hresult(m_copyList->Close());
+  ID3D12CommandList* lists[] = {m_copyList.get()};
+  m_copyQueue->ExecuteCommandLists(1, lists);
+  m_copyFenceValue = m_copyFenceValue + 1;
+  check_hresult(m_copyQueue->Signal(m_copyFence.get(), m_copyFenceValue));
+
+  // The GPU waits, not the CPU. Everything the copy queue touched decays to COMMON when this
+  // ExecuteCommandLists completes, and the first graphics use promotes it back out of COMMON for
+  // free -- which is why there is no barrier on either side of a copy recorded into this list.
+  check_hresult(m_queue->Wait(m_copyFence.get(), m_copyFenceValue));
+}
+
+std::uint64_t GpuDevice::CompletedCopyFence() const noexcept
+{
+  return m_copyFence ? m_copyFence->GetCompletedValue() : 0;
+}
+
+void GpuDevice::WaitForCopies()
+{
+  if (!m_copyFence || m_copyFence->GetCompletedValue() >= m_copyFenceValue)
+    return;
+  check_hresult(m_copyFence->SetEventOnCompletion(m_copyFenceValue, m_copyEvent));
+  WaitForSingleObject(m_copyEvent, INFINITE);
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE GpuDevice::BackBufferView() const noexcept

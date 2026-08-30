@@ -1,5 +1,6 @@
 #pragma once
 
+#include "HandleStore.h"
 #include "RenderTypes.h"
 
 #include "BodyParams.h"
@@ -128,12 +129,34 @@ public:
     return m_planetReady;
   }
 
+  // Live bodies, not slots. A store that has freed anything has more slots than bodies, and the
+  // slots are what let a handle outlive the resource it named (ADR 0046).
   [[nodiscard]] std::uint32_t BodyCount() const noexcept
   {
-    return static_cast<std::uint32_t>(m_bodies.size());
+    return m_bodySlots.LiveCount();
   }
 
+  // The high-water mark. Ten F5 reseeds must not move it, which is the number this slice is
+  // measured by: before the store, every reseed left the scene it replaced on the GPU
+  // (Design/MmoScalabilityReview.md G3).
+  [[nodiscard]] std::uint32_t BodySlotCount() const noexcept
+  {
+    return m_bodySlots.SlotCount();
+  }
+
+  // Retires a body. The handle stops resolving at once; the buffer is released at the next
+  // DiscardStaging, which is the first point the GPU is known to be done with it. False if the
+  // handle was already stale.
+  bool FreeBody(BodyHandle _body) noexcept;
+
+  // Retires every one. What F5 does before it bakes the next scene.
+  void FreeAllBodies() noexcept;
+
 private:
+  // Takes a slot and puts a finished body in it. Both producers -- the compute bake and the CPU
+  // upload -- end here, so there is one place that knows how the array is grown (ADR 0046).
+  BodyHandle Place(GpuMesh&& _mesh);
+
   void CreatePipelines(GpuDevice& _gpu);
   void CreateBakePipelines(GpuDevice& _gpu);
   void Draw(GpuDevice& _gpu, ID3D12PipelineState* _pso, BodyHandle _body, const DirectX::XMFLOAT4X4& _world, std::uint32_t _srvSlot);
@@ -162,7 +185,10 @@ private:
   GpuPtr<ID3D12PipelineState> m_bakePso;
   std::uint32_t m_srvStride = 0;
 
+  // Indexed by slot, never by handle.
   std::vector<GpuMesh> m_bodies;
+  HandleStore m_bodySlots;
+  std::vector<GpuPtr<ID3D12Resource>> m_retired;         // released at DiscardStaging, for m_staging's reason
   std::vector<GpuPtr<ID3D12Resource>> m_staging;         // until DiscardStaging
   std::vector<GpuPtr<ID3D12DescriptorHeap>> m_bakeHeaps; // one per bake, alive until its list has run
   bool m_outlineReady = false;

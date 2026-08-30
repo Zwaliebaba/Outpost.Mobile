@@ -44,6 +44,49 @@ public:
   // resource upload that needs the copy engine finishes before the first frame.
   void ExecuteAndWait();
 
+  // --- the copy queue --------------------------------------------------------------------------
+  //
+  // A batch of pure copies, on a queue of its own. Buffer and texture uploads belong here; a bake
+  // does not, because a compute dispatch is not a copy and a COPY queue cannot run one -- which is
+  // why the direct-queue bracket above stays rather than being replaced (ADR 0046).
+  //
+  // What it buys is that the CPU no longer blocks on a load. BeginUploads used to drain the whole
+  // GPU because it reset frame 0's allocator; this bracket has its own allocator on its own queue,
+  // so it waits only for the previous batch of copies and never for a frame.
+  void BeginCopies();
+
+  // Closes, submits, signals the copy fence, and makes the GRAPHICS queue wait on it. The CPU is
+  // not blocked: that is the whole point of the pair.
+  //
+  // No resource barrier is written on either side of a copy recorded here, and that is documented
+  // behaviour rather than an omission. Everything a copy queue touches decays to COMMON when its
+  // ExecuteCommandLists completes, and a buffer or texture in COMMON is promoted implicitly on its
+  // first graphics use -- to VERTEX_AND_CONSTANT_BUFFER, to PIXEL_SHADER_RESOURCE -- for free.
+  // Writing the barriers by hand would be both unnecessary and illegal: a COPY queue cannot express
+  // a transition to a shader-resource state at all
+  // ("Using Resource Barriers to Synchronize Resource States in Direct3D 12", implicit transitions).
+  void SubmitCopies();
+
+  // The list BeginCopies opened. Only copies may be recorded into it.
+  [[nodiscard]] ID3D12GraphicsCommandList* CopyList() const noexcept
+  {
+    return m_copyList.get();
+  }
+
+  // The value the last SubmitCopies signalled, and how far the copy queue has actually got. A
+  // caller holding a staging buffer releases it once the second has reached the first; nothing may
+  // release one before that, because the copy has only been recorded.
+  [[nodiscard]] std::uint64_t LastCopyFence() const noexcept
+  {
+    return m_copyFenceValue;
+  }
+
+  [[nodiscard]] std::uint64_t CompletedCopyFence() const noexcept;
+
+  // Blocks until every submitted copy has run. Shutdown and resize need it; a load does not, and a
+  // load calling it would give back exactly what this queue was added to save.
+  void WaitForCopies();
+
   [[nodiscard]] ID3D12Device* Device() const noexcept
   {
     return m_device.get();
@@ -91,11 +134,28 @@ private:
   GpuPtr<ID3D12Resource> m_backBuffers[FRAME_COUNT];
   GpuPtr<ID3D12Resource> m_depth;
   GpuPtr<ID3D12CommandAllocator> m_allocators[FRAME_COUNT];
+
+  // The direct-queue upload bracket's own allocator, so BeginUploads stops resetting frame 0's.
+  // That reset is what forced it to drain the whole GPU first: an allocator may not be reset while
+  // the GPU is still reading what it holds, and allocator 0 is a frame's. With one of its own the
+  // bracket waits for the previous upload batch instead of for every frame in flight (ADR 0046).
+  GpuPtr<ID3D12CommandAllocator> m_uploadAllocator;
+  std::uint64_t m_uploadFenceValue = 0;
+
   GpuPtr<ID3D12GraphicsCommandList> m_cmd;
   GpuPtr<ID3D12Fence> m_fence;
   HANDLE m_fenceEvent = nullptr;
   std::uint64_t m_fenceValues[FRAME_COUNT] = {};
   std::uint64_t m_fenceNext = 0;
+
+  // The copy queue and everything that belongs to it. Its own fence, because the graphics fence
+  // counts frames and a copy that waited on that would be waiting for a frame.
+  GpuPtr<ID3D12CommandQueue> m_copyQueue;
+  GpuPtr<ID3D12CommandAllocator> m_copyAllocator;
+  GpuPtr<ID3D12GraphicsCommandList> m_copyList;
+  GpuPtr<ID3D12Fence> m_copyFence;
+  HANDLE m_copyEvent = nullptr;
+  std::uint64_t m_copyFenceValue = 0;
   std::uint32_t m_frameIndex = 0;
   std::uint32_t m_rtvStride = 0;
 };

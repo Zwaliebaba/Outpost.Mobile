@@ -308,13 +308,16 @@ void UploadStaticBuffer(GpuDevice& _gpu, std::span<const std::uint8_t> _bytes, G
   std::memcpy(dst, _bytes.data(), static_cast<size_t>(bytes));
   _outStaging->Unmap(0, nullptr);
 
-  ID3D12GraphicsCommandList* cmd = _gpu.CommandList();
+  // The COPY queue's list, not the graphics one, and with no barrier on either side. The copy
+  // promotes the buffer out of COMMON implicitly; everything a copy queue touches decays back to
+  // COMMON when its ExecuteCommandLists completes; and the first graphics use promotes it to
+  // VERTEX_AND_CONSTANT_BUFFER for free. The barrier that used to be here is not merely unnecessary
+  // on this queue, it is illegal on it -- a COPY list supports COMMON, COPY_DEST and COPY_SOURCE
+  // and nothing else (ADR 0046, and "Using Resource Barriers to Synchronize Resource States in
+  // Direct3D 12" on implicit transitions).
+  //
+  // So this is bracketed by GpuDevice::BeginCopies and SubmitCopies, never by BeginUploads.
+  ID3D12GraphicsCommandList* cmd = _gpu.CopyList();
   cmd->CopyBufferRegion(_outBuffer.get(), 0, _outStaging.get(), 0, bytes);
-
-  // From COPY_DEST, which the copy above promoted it to, and not from COMMON: a barrier out of the
-  // state the resource is actually in is the one D3D12 wants.
-  const D3D12_RESOURCE_BARRIER toVertices =
-    Transition(_outBuffer.get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
-  cmd->ResourceBarrier(1, &toVertices);
 }
 } // namespace Neuron
