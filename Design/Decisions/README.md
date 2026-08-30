@@ -59,3 +59,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0024](0024-the-sky-is-a-static-catalogue-expanded-on-the-gpu.md) | The sky is a static catalogue, expanded into billboards on the GPU | accepted |
 | [0025](0025-there-is-no-ground-plane.md) | There is no ground plane, and the scene pass has no grid | accepted |
 | [0026](0026-despawn-delivery-is-cursored.md) | The despawn log is read by cursor, not drained | accepted |
+| [0027](0027-there-is-no-fallback-link.md) | There is no fallback link: Outpost opens QUIC or does not start | accepted |

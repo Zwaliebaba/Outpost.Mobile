@@ -38,10 +38,13 @@ rather than geometry. D3D12 renderer, WM_POINTER input covering mouse and touch,
 drawn through one overlay pipeline (bitmap font atlases, coverage-mask icons, untextured quads),
 textured FX pipelines for the explosion's fragments and sprites, a two-pass body pipeline, an
 additive sky pass, OBJ/MTL hulls, DXC-compiled shader model 6.7 shaders.
-`Transport` has a QUIC implementation over MsQuic, and the game boots on it: `Outpost.exe` listens
-and dials across `127.0.0.1`, so every frame of every run crosses a real network stack, and it falls
-back to the loopback with a logged reason when it cannot (`Design/QuicTransport.md`). The boot line
-in the event log says which one it got.
+`Transport` has a QUIC implementation over MsQuic, and the game boots on it and only on it:
+`Outpost.exe` listens and dials across `127.0.0.1`, so every frame of every run crosses a real
+network stack. There is no fallback — a boot that cannot open the wire says which stage refused and
+stops, rather than running on a second path nobody is testing (`Design/Decisions/0027`). The
+`LINK | QUIC` line in the event log is what a good boot looks like. `LoopbackTransport` is still in
+`NeuronCore`, now as what the tests drive: it is the only way to drop or delay a datagram on
+purpose.
 
 **Deliberately not here yet**, so nobody goes looking for it: no audio, no combat, no economy, no
 damage model, no save format, no content pipeline beyond OBJ and DDS, and no configuration file —

@@ -1,6 +1,6 @@
 # 0021 — The network transport is MsQuic, and the seam stays datagram-shaped
 
-Status: accepted
+Status: accepted; one consequence superseded in part by [0027](0027-there-is-no-fallback-link.md)
 Date: 2026-08-29
 
 ## Context
@@ -32,6 +32,10 @@ QUIC DATAGRAM frame is a datagram: unreliable, unordered, bounded. The mapping i
 keeps its tick-counted latency as the instrument it was built to be
 (`Design/Archive/Collision-slice-2b.md` §2.1). The loopback is not deleted: it is the fallback when
 QUIC cannot open, and it is the only place a reproducible latency measurement can be taken.
+
+> Superseded in part by ADR 0027 (2026-08-30). The loopback is still not deleted and is still the
+> only place a reproducible latency or loss measurement can be taken — but it is no longer the
+> fallback, because there is no longer a fallback. The rest of this record stands.
 
 ## Alternatives considered
 
