@@ -23,6 +23,7 @@
 #include "HullSpec.h"
 #include "Collision.h"
 #include "PathGrid.h"
+#include "PathIslands.h"
 #include "SpatialIndex.h"
 #include "InterestSet.h"
 #include "Formation.h"
@@ -30,3 +31,4 @@
 #include "Movement.h"
 #include "World.h"
 #include "WorldSnapshot.h"
+#include "Publisher.h"

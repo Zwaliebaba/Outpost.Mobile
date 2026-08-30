@@ -14,16 +14,21 @@ namespace Neuron
 // The server end of the seam, and the half a loopback never needed: it opens a port, accepts a
 // connection, and yields a QuicTransport for it.
 //
-// It binds 127.0.0.1 and nothing else, by design (Design/QuicTransport.md 5 and 11): there is no
+// It binds 127.0.0.1 and nothing else, by design (Design/Archive/QuicTransport.md 5 and 11): there is no
 // NAT traversal here, no public port and no firewall prompt, so the address is not a parameter. A
 // port of 0 takes an ephemeral one, which is how the tests avoid fighting over a number, and Port()
 // reports what was bound.
 //
-// One client is what this design serves (Design/QuicTransport.md 10). Desc::backlog is a number
-// rather than a promise, so that the day there are N clients it is a number that changes and not a
-// class that gets rewritten: the transports it hands connections to are pre-allocated by Start, on
-// the owning thread, because the accept itself arrives on an MsQuic worker and a worker allocates
-// nothing.
+// Desc::backlog is how many connections it can carry AT ONCE, not how many it will ever accept. A
+// slot whose connection has closed is recycled in Poll and serves the next client, so a server does
+// not die by attrition after backlog logins (ADR 0031, review finding E3). The transports are
+// pre-allocated by Start on the owning thread, because the accept itself arrives on an MsQuic worker
+// and a worker allocates nothing.
+//
+// Sizing is the caller's, through Desc::transport, and worth doing deliberately at scale: every slot
+// holds its rings for the life of the listener, so backlog x (two datagram rings + two reliable
+// rings) is the memory a listener costs before anybody connects. At the defaults that is about
+// 800 KB a slot.
 class QuicListener final
 {
 public:
@@ -40,7 +45,7 @@ public:
   QuicListener& operator=(const QuicListener&) = delete;
 
   // False and Reason() when the port is taken or MsQuic refuses -- never an assert, because the
-  // composition root's fallback to the loopback reads it and carries on (Design/QuicTransport.md 6).
+  // composition root's fallback to the loopback reads it and carries on (Design/Archive/QuicTransport.md 6).
   [[nodiscard]] bool Start(QuicApi& _api, std::uint16_t _port, const Desc& _desc);
 
   // Closes the listener, which waits for its own callbacks, and then every connection it accepted.
@@ -50,13 +55,20 @@ public:
   // The bound port, which is the only way to learn it after a Start on port 0.
   [[nodiscard]] std::uint16_t Port() const noexcept;
 
-  // Owning thread: moves what the workers accepted into Accepted(). The transports themselves are
-  // polled by whoever took them, exactly as a client end is.
+  // Owning thread: moves what the workers accepted into Accepted(), and recycles the slots whose
+  // connections have closed. The transports themselves are polled by whoever took them, exactly as a
+  // client end is.
   void Poll();
 
-  // Every connection accepted so far, oldest first. The listener owns them; they are valid until
-  // Stop.
+  // Every LIVE connection, oldest first. The listener owns them, and a pointer stays valid until the
+  // Poll that finds its connection closed -- after which the transport is still alive but belongs to
+  // the pool again, so a caller that holds one across a Poll must be prepared to find it gone from
+  // this span (ADR 0031).
   [[nodiscard]] std::span<QuicTransport* const> Accepted() const noexcept;
+
+  // How many slots have been recycled since Start. Diagnostics: it is the number of clients that
+  // have come and gone, and it is what says the pool is being reused rather than exhausted.
+  [[nodiscard]] std::uint32_t RecycledCount() const noexcept;
 
   [[nodiscard]] const char* Reason() const noexcept;
 
@@ -65,9 +77,13 @@ private:
   // name MsQuic types.
   friend struct QuicListenerCallbacks;
 
-  // On an MsQuic worker. Takes the next unused transport out of the backlog and gives it the
-  // connection; false when the backlog is exhausted, which MsQuic turns into a refusal.
+  // On an MsQuic worker. Takes a free transport out of the pool and gives it the connection; false
+  // when every slot is carrying one, which MsQuic turns into a refusal.
   [[nodiscard]] bool OnNewConnection(void* _connection);
+
+  // Owning thread, from Poll: returns the slots whose connections have closed to the free list, and
+  // resets their transports so the next accept finds them as Start left them.
+  void RecycleClosed();
 
   void SetReason(const char* _format, ...) noexcept;
 
@@ -84,8 +100,20 @@ private:
   // the lock. Both are reserved to the backlog in Start, so neither grows on a worker.
   std::mutex m_acceptLock;
   std::vector<std::uint32_t> m_pending;
-  std::uint32_t m_adopted = 0;
+
+  // Free slots, not a high-water mark. A counter that only rose is what made backlog a lifetime
+  // budget instead of a concurrency one (ADR 0031). Taken from the back, so a slot that has just
+  // been recycled is the next one used and the pool stays warm.
+  std::vector<std::uint32_t> m_freeSlots;
+
+  // Parallel: m_accepted is what Accepted() spans, m_acceptedSlot is which pool slot each came from,
+  // so a closed connection can be given back without searching the pool for its pointer.
   std::vector<QuicTransport*> m_accepted;
+  std::vector<std::uint32_t> m_acceptedSlot;
+
+  // What each pooled transport is rebuilt with when its slot is recycled.
+  QuicTransport::Desc m_transportDesc;
+  std::uint32_t m_recycled = 0;
 
   char m_reason[QUIC_REASON_BYTES] = {};
 };

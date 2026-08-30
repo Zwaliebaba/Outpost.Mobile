@@ -650,7 +650,7 @@ interiors collapse.
   (`WorldView.cpp:728`). Slice 3 replaces the points with `Exhaust` marker positions and the
   constant with the marker's colour; intensity handling (`THRUSTER_*` in `ViewTuning.h`) is
   unchanged — the marker colours the effect, the view still animates it.
-- **NavLight** — new in slice 3: one `DrawGlow` pip per marker, colour from the marker, blinking
+- **NavLight** — new in slice 3: one glow pip per marker, colour from the marker, blinking
   on `param0`/`param1` against real time (presentation state, so it lives in `WorldView`, not the
   simulation — AGENTS.md §5).
 - **Gun** — carried by the format and the add-on now; consumed when combat arrives. The boundary

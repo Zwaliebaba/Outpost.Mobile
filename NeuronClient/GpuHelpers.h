@@ -55,11 +55,16 @@ void UploadColourTexture(GpuDevice& _gpu, std::uint32_t _widthPx, std::uint32_t 
 // VERTEX_AND_CONSTANT_BUFFER. _outStaging has to outlive the copy, which has only been recorded:
 // release it after the list has run, never before.
 //
-// This is the path for a buffer the GPU reads every frame and the CPU never touches again.
-// SceneRenderer::UploadMesh's upload-heap shortcut is the other one, and its comment still argues
-// correctly for a hull: a few thousand triangles do not justify a staging copy. A planet is seven
-// megabytes the input assembler reads twice a frame, and in an upload heap that is system memory
-// pulled across PCIe at every draw (Design/Archive/PlanetRenderer.md 7.1).
+// This is the path for a buffer the GPU reads every frame and the CPU never touches again. A planet
+// is seven megabytes the input assembler reads twice a frame, and in an upload heap that is system
+// memory pulled across PCIe at every draw (Design/Archive/PlanetRenderer.md 7.1).
+//
+// `SceneRenderer::UploadMesh` used to be the counter-example and is now a caller. The argument that
+// kept it on the upload-heap shortcut -- a few thousand triangles do not justify a staging copy --
+// weighed the upload and not the reading, and it held only for the fleet it was written against.
+// The hulls in this tree average 32 kB: a hundred ships is 0.3 GB/s of vertex fetch and the
+// argument stands, five hundred is 1.4 and two thousand is 5.6, which does not
+// (Design/MmoScalabilityReview.md G2).
 void UploadStaticBuffer(GpuDevice& _gpu, std::span<const std::uint8_t> _bytes, GpuPtr<ID3D12Resource>& _outBuffer,
                         GpuPtr<ID3D12Resource>& _outStaging);
 } // namespace Neuron

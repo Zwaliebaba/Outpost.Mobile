@@ -13,12 +13,14 @@
 #include "Camera.h"
 #include "FxRenderer.h"
 #include "FxVertex.h"
+#include "GlowBillboards.h"
 #include "MeshLibrary.h"
 #include "PointerTracker.h"
 #include "SceneRenderer.h"
 #include "SkyRenderer.h"
 #include "SpriteParticles.h"
 #include "TextRenderer.h"
+#include "ViewCulling.h"
 
 #include "Pcg32.h"
 
@@ -86,6 +88,10 @@ public:
     DirectX::XMFLOAT3X3 tumble{1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
     DirectX::XMFLOAT3 tumbleRadPerSec{0.0f, 0.0f, 0.0f};
     std::uint32_t triangleCount = 0; // for the F1 readout only
+    // The sphere the frustum test uses: the body's radius stretched by its longest ellipsoid axis
+    // and raised by its tallest terrain. Both are fractions of the radius in BodyDesc, and both are
+    // known on either bake path, so this is the extent rather than a guess at it.
+    float boundingRadiusMetres = 0.0f;
   };
 
   // One ship's presentation state, parallel to the latest snapshot's ships and indexed the same
@@ -102,7 +108,10 @@ public:
     float restY = 0.0f;                              // lifts the hull so its lowest vertex rests on the ground
     DirectX::XMFLOAT3 pickCentre{0.0f, 0.0f, 0.0f};  // mesh bounds centre, in local space
     DirectX::XMFLOAT3 halfExtents{1.0f, 1.0f, 1.0f}; // mesh half-size about that centre
-    std::vector<DirectX::XMFLOAT3> thrusterLocals;   // one point per exhaust nozzle
+    // Whether the last Render submitted this hull. Set by the frustum test there and read by the
+    // plume, so a trail is not built for a ship nobody can see.
+    bool visible = true;
+    std::vector<DirectX::XMFLOAT3> thrusterLocals; // one point per exhaust nozzle
 
     // One ring buffer per exhaust, nozzle-major: nozzle n owns [n * TRAIL_SAMPLES, (n + 1) *
     // TRAIL_SAMPLES), newest at trailHead. Every nozzle is sampled on the same tick, so the head
@@ -292,6 +301,16 @@ public:
   }
 
   // For the debug readout: how much of the effect is live right now.
+  // For the debug readout: what frustum culling kept and what it skipped, last frame.
+  [[nodiscard]] std::uint32_t SubmittedCount() const noexcept
+  {
+    return m_submittedCount;
+  }
+  [[nodiscard]] std::uint32_t CulledCount() const noexcept
+  {
+    return m_culledCount;
+  }
+
   [[nodiscard]] int ExplosionCount() const noexcept
   {
     return static_cast<int>(m_explosions.size());
@@ -317,7 +336,10 @@ public:
   }
 
 private:
-  void DrawFeedback(Neuron::SceneRenderer& _renderer, Neuron::GpuDevice& _gpu);
+  // Takes the frame because the thruster plume it ends with goes through the effect pass, and
+  // FxRenderer::Begin wants the lighting the scene was drawn under. The decals themselves do not
+  // need it -- they are shaped entirely in the pixel shader from root constants.
+  void DrawFeedback(Neuron::SceneRenderer& _renderer, Neuron::GpuDevice& _gpu, const Neuron::SceneFrame& _frame);
   [[nodiscard]] int PickShip(float _xPx, float _yPx) const;
 
   // Whether record _index is one this client may take hold of. Every selection path goes through it:
@@ -357,6 +379,11 @@ private:
   std::vector<Game::ShipHandle> m_handles;
   std::vector<Game::WorldPos> m_orderPositions; // gathered for FormationHeading when an order is sent
   std::vector<ShipView> m_carryScratch;
+
+  // One reliable message's worth, kept so a pump allocates nothing. Sized on first use rather than
+  // at Init, because MAX_RELIABLE_BYTES is eight kilobytes and a view that never sees a departure
+  // should not carry it.
+  std::vector<std::uint8_t> m_reliableScratch;
   std::vector<Game::ShipHandle> m_carryHandles;
 
   // Indexed by Game::HullId. A hull with no mesh registered simply is not drawn, which is the same
@@ -378,6 +405,40 @@ private:
   Neuron::SpriteParticles m_particles;
   std::vector<Neuron::FxVertex> m_fxFragmentVerts;
   std::vector<Neuron::FxVertex> m_fxSpriteVerts;
+
+  // The thruster plume, gathered before it is turned into quads. Two vectors rather than one
+  // because what the view decides (where each glow is, how big, how bright) and how a quad faces
+  // the camera are different jobs, and only the second is worth a test.
+  std::vector<Neuron::GlowSample> m_glowSamples;
+  std::vector<Neuron::FxVertex> m_fxGlowVerts;
+
+  // What the last Render submitted and what it skipped, so the saving is read off the screen rather
+  // than inferred.
+  std::uint32_t m_submittedCount = 0;
+  std::uint32_t m_culledCount = 0;
+
+  // Decided once per body per frame and reused by the terrain and outline passes.
+  std::vector<bool> m_bodyVisible;
+
+  // The visible hulls, grouped by the mesh they draw with, so a fleet sharing a hull is one draw
+  // (Design/MmoScalabilityReview.md G2). A plain vector rather than a map: there are ten meshes in
+  // the game and a linear scan over ten beats a hash on every ship, and it keeps the draw order
+  // stable across frames, which a hash does not.
+  struct MeshBucket
+  {
+    Neuron::MeshHandle mesh = Neuron::INVALID_MESH;
+    std::vector<Neuron::MeshInstance> instances;
+  };
+  std::vector<MeshBucket> m_meshBuckets;
+
+  // The bucket for a mesh, made on first sight. Buckets are kept across frames and only their
+  // contents cleared, so a steady fleet allocates nothing after the first frame.
+  [[nodiscard]] std::vector<Neuron::MeshInstance>& Bucket(Neuron::MeshHandle _mesh);
+
+  // This frame's frustum, built at the top of Render. Held rather than passed because DrawFeedback
+  // is a second pass over the same frame and rebuilding it there would be a second chance for the
+  // two to disagree about what is on screen.
+  DirectX::BoundingFrustum m_frustum;
   // Smoke is shed once a frame rather than once per death, so it cannot use a per-explosion seed
   // and does not need one: what a replay wants reproducible is the shatter, and that is seeded from
   // the ship's handle and the tick it died on.

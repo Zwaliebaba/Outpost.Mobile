@@ -4,9 +4,11 @@ One file per decision that shaped the tree, written when the decision was made, 
 reversed. AGENTS.md states the rules as they stand; this folder is why they stand, and what was
 turned down on the way.
 
-Numbered in order of writing, never renumbered: `NNNN-short-slug.md`. A record is never edited
-into a different decision — a change of mind is a new record that names the one it supersedes,
-and the old one gets `Status: superseded by NNNN`.
+Numbered in order of writing, never renumbered: `NNNN-short-slug.md`. The one thing that can move
+a number is a collision, and only in one direction: two branches that both claimed `NNNN` merge,
+the record already on the trunk keeps it and the arriving one moves up, citations and all, in the
+merge commit. A record is never edited into a different decision — a change of mind is a new record
+that names the one it supersedes, and the old one gets `Status: superseded by NNNN`.
 
 ## Template
 
@@ -59,3 +61,11 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0024](0024-the-sky-is-a-static-catalogue-expanded-on-the-gpu.md) | The sky is a static catalogue, expanded into billboards on the GPU | accepted |
 | [0025](0025-there-is-no-ground-plane.md) | There is no ground plane, and the scene pass has no grid | accepted |
 | [0026](0026-a-world-is-a-picture-and-a-rock-is-generated.md) | A world is a picture, a rock is generated, and the sea is gone | accepted |
+| [0027](0027-despawn-delivery-is-cursored.md) | The despawn log is read by cursor, not drained | accepted |
+| [0028](0028-there-is-no-fallback-link.md) | There is no fallback link: Outpost opens QUIC or does not start | accepted |
+| [0029](0029-departures-and-orders-take-the-reliable-lane.md) | Departures and orders take the reliable lane; positions stay datagrams | accepted |
+| [0030](0030-the-publisher-lives-in-gamelogic.md) | The publisher lives in GameLogic, and serves N subscribers | accepted |
+| [0031](0031-listener-slots-are-recycled.md) | Listener slots are recycled, so backlog means concurrency | accepted |
+| [0032](0032-the-dialing-end-owns-the-lanes-stream.md) | The dialing end owns the reliable lane's stream | accepted |
+| [0033](0033-pathfinding-is-islands-on-a-world-fixed-lattice.md) | Pathfinding is islands of architecture, on a lattice fixed to the world | accepted |
+| [0034](0034-a-routes-version-is-the-whole-worlds.md) | A route's version is the whole world's, not its island's | accepted |

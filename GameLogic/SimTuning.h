@@ -82,7 +82,7 @@ inline constexpr float STOPPED_SPEED = 0.01f;
 // The cap on the derived per-hull avoidance horizon. In the contract: it changes which neighbours
 // are considered at all. Uncapped, a Carrier's horizon is 39 s and its query circle 2.7 km, which
 // makes the neighbour cap meaningless and sets a floor on region size measured in tens of
-// kilometres. At 8 s the widest query in the table is the Carrier's 647 m (Collision.md 10).
+// kilometres. At 8 s the widest query in the table is the Carrier's 655 m (Collision.md 10).
 inline constexpr float AVOID_HORIZON_MAX_SEC = 8.0f;
 
 // How far outside the touching distance a closing neighbour still counts as a threat. Everything
@@ -237,16 +237,29 @@ static_assert(IsSectorAlignedCellSize(PATH_CELL_SIZE_METRES),
               "a path cell must not straddle a sector boundary (Design/Archive/Collision-slice-8.md 2.2)");
 inline constexpr float PATH_CLEARANCE_MARGIN_METRES = 8.0f;
 
+// How many path cells span a sector on one axis: 8,192 / 32 = 256. Derived rather than tuned -- it
+// is the two values above divided, and there is nothing to choose -- and exact because the assert
+// on the cell size says it is a power of two no larger than a sector. That exactness is what lets a
+// cell's index be a pure function of a position: the sector pair contributes whole cells and the
+// local offset contributes the rest, with no cell straddling the join (PathGrid.h, PathCellX;
+// Design/Archive/RegionalPathfinding.md 3.1).
+inline constexpr std::int64_t PATH_CELLS_PER_SECTOR = static_cast<std::int64_t>(SECTOR_SIZE_METRES / PATH_CELL_SIZE_METRES);
+static_assert(static_cast<float>(PATH_CELLS_PER_SECTOR) * PATH_CELL_SIZE_METRES == SECTOR_SIZE_METRES,
+              "a sector must be a whole number of path cells across");
+
 // How far off its planned leg a follower may drift before the route is re-planned. Never per tick:
 // a plan is a pure function of the static set and the two endpoints, and re-running it every tick
 // would cost everything and change nothing.
 inline constexpr float PATH_REPLAN_DEVIATION_METRES = 64.0f;
 
-// How much open ground the grid keeps around the architecture in it, so a route always has room to
-// go round the outside, and the ceiling on how many cells that may come to. Past the ceiling the
-// grid declines to build and steering falls back to what it did before pathfinding existed --
-// coarsening the cells instead would change recorded outcomes as a side effect of where someone
-// put a building.
+// How much open ground a grid keeps around the architecture in it, so a route always has room to go
+// round the outside, and the ceiling on how many cells that may come to. Both are per *island* now
+// (PathIslands.h), which is what turned the ceiling from a cliff into a local one: it was reachable
+// by two stations 20 km apart, and it is now reachable only by a single island genuinely 16 km
+// across. Past it that island declines to build and steering across it falls back to what it did
+// before pathfinding existed, while its neighbours keep routing -- coarsening the cells instead
+// would change recorded outcomes as a side effect of where someone put a building
+// (Design/Archive/RegionalPathfinding.md 3.3).
 inline constexpr float PATH_GRID_MARGIN_METRES = 512.0f;
 inline constexpr int PATH_GRID_MAX_CELLS_PER_AXIS = 512;
 

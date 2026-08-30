@@ -24,6 +24,21 @@ public:
     return 0;
   }
 
+  // The reliable lane, captured separately so a test can see which lane a message took -- which is
+  // the whole of what slice 3b changed (ADR 0029).
+  [[nodiscard]] bool SendReliable(const std::uint8_t* _bytes, std::uint32_t _count) override
+  {
+    if (_count > Neuron::MAX_RELIABLE_BYTES || refuseReliable)
+      return false;
+    sentReliable.emplace_back(_bytes, _bytes + _count);
+    return true;
+  }
+
+  [[nodiscard]] std::uint32_t ReceiveReliable(std::uint8_t*, std::uint32_t) override
+  {
+    return 0;
+  }
+
   void Poll() override {}
 
   [[nodiscard]] Neuron::ConnectionState State() const override
@@ -32,8 +47,21 @@ public:
   }
 
   std::vector<std::vector<std::uint8_t>> sent;
+  std::vector<std::vector<std::uint8_t>> sentReliable;
   std::size_t refuseFrom = static_cast<std::size_t>(-1); // refuse once this many have been sent
+  bool refuseReliable = false;
 };
+
+// Both lanes, in the order the writer used them: departures go on the reliable lane now (ADR 0029),
+// so a test that fed only `sent` would be asserting against half the update -- which is exactly how
+// this suite went red when the lane landed.
+void FeedBothLanes(Game::SnapshotReceiver& _receiver, const CaptureTransport& _link)
+{
+  for (const std::vector<std::uint8_t>& message : _link.sentReliable)
+    (void)_receiver.Accept(message);
+  for (const std::vector<std::uint8_t>& datagram : _link.sent)
+    (void)_receiver.Accept(datagram);
+}
 
 Game::ShipId SpawnAt(Game::World& _world, float _x, float _z, Game::HullId _hull = Game::HullId::Corvette,
                      Game::FactionId _faction = Game::FACTION_PLAYER)
@@ -180,8 +208,7 @@ public:
     CaptureTransport link;
     const Game::ShipHandle both[] = {doomedHandle, departingHandle};
     Assert::IsTrue(writer.WriteInterest(world, both, {}, {}, link) > 0, L"the first update did not send");
-    for (const std::vector<std::uint8_t>& datagram : link.sent)
-      (void)receiver.Accept(datagram);
+    FeedBothLanes(receiver, link);
     Assert::AreEqual(static_cast<std::size_t>(2), receiver.Latest().ships.size(), L"the client did not take both ships");
     Assert::IsTrue(receiver.Destroyed().empty(), L"an update that killed nothing reported a death");
 
@@ -197,7 +224,7 @@ public:
     std::vector<Game::ShipHandle> left;
     for (const Game::ShipHandle handle : interest.Left())
     {
-      if (Holds(world.DespawnLog(), handle))
+      if (Holds(world.DespawnsSince(0), handle))
         destroyed.push_back(handle);
       else
         left.push_back(handle);
@@ -206,9 +233,10 @@ public:
     Assert::AreEqual(static_cast<std::size_t>(1), left.size(), L"exactly one of the two merely departed");
 
     link.sent.clear();
+    link.sentReliable.clear();
     Assert::IsTrue(writer.WriteInterest(world, {}, left, destroyed, link) > 0, L"the second update did not send");
-    for (const std::vector<std::uint8_t>& datagram : link.sent)
-      (void)receiver.Accept(datagram);
+    Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"the departures did not take the reliable lane");
+    FeedBothLanes(receiver, link);
 
     Assert::IsTrue(receiver.Latest().ships.empty(), L"the client kept a ship it was told about losing");
     Assert::AreEqual(static_cast<std::size_t>(1), receiver.Destroyed().size(), L"the update did not state exactly one death");
@@ -360,7 +388,9 @@ public:
     Assert::IsTrue(Game::WriteMoveOrder(sent, transport), L"the order did not send");
 
     Game::MoveOrder got;
-    Assert::IsTrue(Game::ReadMoveOrder(transport.sent[0], got), L"the order did not decode");
+    Assert::AreEqual(static_cast<std::size_t>(1), transport.sentReliable.size(), L"the order did not take the reliable lane");
+    Assert::IsTrue(transport.sent.empty(), L"the order also went out as a datagram");
+    Assert::IsTrue(Game::ReadMoveOrder(transport.sentReliable[0], got), L"the order did not decode");
     Assert::AreEqual(sent.ships.size(), got.ships.size(), L"the order lost ships");
     for (std::size_t at = 0; at < sent.ships.size(); ++at)
       Assert::IsTrue(sent.ships[at] == got.ships[at], L"an ordered ship changed identity");
@@ -388,7 +418,9 @@ public:
     Assert::IsTrue(world.DespawnShip(doomedHandle), L"the despawn failed");
 
     Game::MoveOrder got;
-    Assert::IsTrue(Game::ReadMoveOrder(transport.sent[0], got), L"the order did not decode");
+    Assert::AreEqual(static_cast<std::size_t>(1), transport.sentReliable.size(), L"the order did not take the reliable lane");
+    Assert::IsTrue(transport.sent.empty(), L"the order also went out as a datagram");
+    Assert::IsTrue(Game::ReadMoveOrder(transport.sentReliable[0], got), L"the order did not decode");
     Assert::AreEqual(Game::INVALID_SHIP_ID, world.Resolve(got.ships[0]), L"a dead ship's handle resolved to something");
 
     // The survivor is still there, but swap-and-pop moved it into the freed slot, so its id is not
@@ -400,6 +432,145 @@ public:
     Assert::IsTrue(world.HandleOf(resolved) == otherHandle, L"the handle resolved to a stranger");
   }
 
+  TEST_METHOD(EveryDepartureSurvivesEveryDatagramBeingLost)
+  {
+    // The row this slice exists for, and the one that retires finding E1 in
+    // Design/MmoScalabilityReview.md: with the datagram lane dropping everything, a client is still
+    // told about every leave and every death. Before slice 3b those lists rode in the first snapshot
+    // fragment, so this test could not have passed -- a lost fragment was a ghost ship for the rest
+    // of the match, and nothing repeated it.
+    Neuron::LoopbackTransport server;
+    Neuron::LoopbackTransport client;
+    Neuron::LoopbackTransport::Desc desc;
+    desc.dropOneInN = 1; // no datagram survives
+    Neuron::LoopbackTransport::Connect(server, client, desc);
+
+    Game::World world;
+    const Game::ShipId leaving = SpawnAt(world, 0.0f, 0.0f);
+    const Game::ShipId dying = SpawnAt(world, 50.0f, 0.0f);
+    const Game::ShipHandle leavingHandle = world.HandleOf(leaving);
+    const Game::ShipHandle dyingHandle = world.HandleOf(dying);
+
+    server.AdvanceTo(0);
+    client.AdvanceTo(0);
+
+    Game::SnapshotWriter writer;
+    const std::array<Game::ShipHandle, 1> left{leavingHandle};
+    const std::array<Game::ShipHandle, 1> destroyed{dyingHandle};
+    (void)writer.WriteInterest(world, {}, left, destroyed, server);
+    Assert::AreEqual(0u, writer.RefusedLeaveCount(), L"the lane refused the departure message");
+
+    server.Poll();
+    client.Poll();
+
+    Game::SnapshotReceiver receiver;
+    std::array<std::uint8_t, Neuron::MAX_DATAGRAM_BYTES> datagram{};
+    Assert::AreEqual(0u, client.Receive(datagram.data(), static_cast<std::uint32_t>(datagram.size())),
+                     L"a datagram survived dropOneInN = 1, so this test is not testing what it claims");
+
+    std::vector<std::uint8_t> message(Neuron::MAX_RELIABLE_BYTES, 0u);
+    const std::uint32_t size = client.ReceiveReliable(message.data(), Neuron::MAX_RELIABLE_BYTES);
+    Assert::IsTrue(size > 0, L"the departure message did not survive the datagram lane being dead");
+    Assert::IsTrue(receiver.Accept(std::span<const std::uint8_t>(message.data(), size)), L"the receiver refused the departure message");
+
+    Assert::AreEqual(static_cast<std::size_t>(1), receiver.Destroyed().size(), L"the client was not told about exactly one death");
+    Assert::IsTrue(Holds(receiver.Destroyed(), dyingHandle), L"the client was told the wrong ship died");
+  }
+
+  TEST_METHOD(AnOrderSurvivesEveryDatagramBeingLost)
+  {
+    // The other half of the same finding: a dropped order is a click the player made and the game
+    // ignored, and no amount of interpolation covers that up.
+    Neuron::LoopbackTransport client;
+    Neuron::LoopbackTransport server;
+    Neuron::LoopbackTransport::Desc desc;
+    desc.dropOneInN = 1;
+    Neuron::LoopbackTransport::Connect(client, server, desc);
+    client.AdvanceTo(0);
+    server.AdvanceTo(0);
+
+    Game::MoveOrder order;
+    order.ships.push_back(Game::ShipHandle{3u, 1u});
+    order.destination = Game::LocalPos(120.0f, -40.0f);
+    order.hasFacing = true;
+    order.facingRad = 0.5f;
+    Assert::IsTrue(Game::WriteMoveOrder(order, client), L"the order was refused");
+
+    client.Poll();
+    server.Poll();
+
+    std::vector<std::uint8_t> message(Neuron::MAX_RELIABLE_BYTES, 0u);
+    const std::uint32_t size = server.ReceiveReliable(message.data(), Neuron::MAX_RELIABLE_BYTES);
+    Assert::IsTrue(size > 0, L"the order did not survive the datagram lane being dead");
+
+    Game::MoveOrder received;
+    Assert::IsTrue(Game::ReadMoveOrder(std::span<const std::uint8_t>(message.data(), size), received), L"the order did not parse");
+    Assert::AreEqual(static_cast<std::size_t>(1), received.ships.size(), L"the order lost its ship");
+    Assert::IsTrue(received.hasFacing, L"the order lost its facing");
+  }
+
+  TEST_METHOD(ALeaveArrivingBeforeItsShipIsHarmless)
+  {
+    // The two lanes have no ordering between them, so a departure can overtake the update that would
+    // have introduced the ship. Removing a handle the receiver does not hold is a no-op, which is
+    // what makes either order safe -- and this is the test that says so rather than the comment.
+    Game::World world;
+    const Game::ShipId ship = SpawnAt(world, 0.0f, 0.0f);
+    const Game::ShipHandle handle = world.HandleOf(ship);
+
+    CaptureTransport link;
+    Game::SnapshotWriter writer;
+    const std::array<Game::ShipHandle, 1> left{handle};
+    (void)writer.WriteInterest(world, {}, left, {}, link);
+    Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"the departure did not go on the reliable lane");
+
+    Game::SnapshotReceiver receiver;
+    Assert::IsTrue(receiver.Accept(link.sentReliable[0]), L"the receiver refused a departure for a ship it never held");
+    Assert::IsTrue(receiver.Latest().ships.empty(), L"a departure for an unknown ship added one");
+  }
+
+  TEST_METHOD(DeparturesDoNotRideInTheSnapshotAnyMore)
+  {
+    // The structural half of the change: nothing about a leave is on the datagram lane, so a
+    // fragment's size no longer depends on how many ships left this update.
+    Game::World world;
+    for (int at = 0; at < 3; ++at)
+      (void)SpawnAt(world, static_cast<float>(at) * 40.0f, 0.0f);
+    const Game::ShipHandle gone = world.HandleOf(0);
+
+    CaptureTransport withDepartures;
+    Game::SnapshotWriter a;
+    const std::array<Game::ShipHandle, 1> left{gone};
+    (void)a.WriteInterest(world, {}, left, {}, withDepartures);
+
+    CaptureTransport withNone;
+    Game::SnapshotWriter b;
+    (void)b.WriteInterest(world, {}, {}, {}, withNone);
+
+    Assert::AreEqual(withNone.sent.size(), withDepartures.sent.size(), L"a departure changed how many datagrams an update took");
+    Assert::AreEqual(withNone.sent[0].size(), withDepartures.sent[0].size(), L"a departure changed the size of a snapshot fragment");
+    Assert::AreEqual(static_cast<std::size_t>(1), withDepartures.sentReliable.size(), L"the departure did not take the reliable lane");
+    Assert::IsTrue(withNone.sentReliable.empty(), L"an update with nothing to state sent a departure message anyway");
+  }
+
+  TEST_METHOD(ARefusedDepartureIsCounted)
+  {
+    // Nothing repeats a refused leave, so the gap has to be visible. A number that should be zero
+    // is worth more than a comment saying it should be.
+    Game::World world;
+    const Game::ShipId ship = SpawnAt(world, 0.0f, 0.0f);
+    const Game::ShipHandle handle = world.HandleOf(ship);
+
+    CaptureTransport link;
+    link.refuseReliable = true;
+
+    Game::SnapshotWriter writer;
+    const std::array<Game::ShipHandle, 1> left{handle};
+    (void)writer.WriteInterest(world, {}, left, {}, link);
+    Assert::AreEqual(1u, writer.RefusedLeaveCount(), L"a refused departure was not counted");
+    Assert::IsTrue(link.sentReliable.empty(), L"a refused lane still captured a message");
+  }
+
   TEST_METHOD(AnOversizedOrderIsRefused)
   {
     Game::MoveOrder tooMany;
@@ -407,8 +578,9 @@ public:
     tooMany.destination = Game::LocalPos(0.0f, 0.0f);
 
     CaptureTransport transport;
-    Assert::IsFalse(Game::WriteMoveOrder(tooMany, transport), L"an order larger than a datagram was sent");
-    Assert::IsTrue(transport.sent.empty(), L"a refused order still put bytes on the wire");
+    Assert::IsFalse(Game::WriteMoveOrder(tooMany, transport), L"an order larger than the cap was sent");
+    Assert::IsTrue(transport.sent.empty(), L"a refused order still put bytes on the datagram lane");
+    Assert::IsTrue(transport.sentReliable.empty(), L"a refused order still put bytes on the reliable lane");
 
     Game::MoveOrder empty;
     Assert::IsFalse(Game::WriteMoveOrder(empty, transport), L"an order with no ships was sent");

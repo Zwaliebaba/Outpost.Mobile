@@ -134,6 +134,20 @@ inline constexpr float THRUSTER_GLOW_RADIUS = 6.0f;
 inline constexpr float THRUSTER_GLOW_FALLOFF = 2.2f;
 inline constexpr int TRAIL_SAMPLES = 32; // half a second of history at the tick rate
 
+// --- frustum culling ----------------------------------------------------------------------------
+// What is not on screen is not submitted (Design/MmoScalabilityReview.md G2). Both numbers below
+// buy the same thing: a test that errs towards drawing, because a wasted draw costs a fraction of a
+// millisecond and a wrongly culled hull is a ship that vanishes.
+//
+// The pad is added to every bounding sphere. A hull's sphere is its mesh bounds, which is tight, and
+// a ship straddling the edge of the screen is exactly where a tight sphere shows: the thruster plume
+// trails behind the hull and is not in its bounds at all, so the pad is a trail length with room
+// over.
+inline constexpr float CULL_RADIUS_PAD_METRES = 24.0f;
+// A body's own relief and ellipsoid stretch are already in its bounding radius, so this only covers
+// the outline pass sitting a little proud of the terrain.
+inline constexpr float CULL_BODY_RADIUS_SCALE = 1.05f;
+
 // --- snapshot interpolation --------------------------------------------------------------------
 // The server publishes at 1/INTEREST_UPDATE_EVERY_TICKS of the tick rate, so the view cannot draw
 // the latest record and stay smooth: it draws the world as it stood INTERP_DELAY_TICKS ago, which

@@ -183,6 +183,8 @@
     <ClInclude Include="Movement.h" />
     <ClInclude Include="Collision.h" />
     <ClInclude Include="PathGrid.h" />
+    <ClInclude Include="PathIslands.h" />
+    <ClInclude Include="Publisher.h" />
     <ClInclude Include="SpatialIndex.h" />
     <ClInclude Include="World.h" />
   </ItemGroup>
@@ -194,6 +196,8 @@
     <ClCompile Include="Movement.cpp" />
     <ClCompile Include="Collision.cpp" />
     <ClCompile Include="PathGrid.cpp" />
+    <ClCompile Include="PathIslands.cpp" />
+    <ClCompile Include="Publisher.cpp" />
     <ClCompile Include="SpatialIndex.cpp" />
     <ClCompile Include="WorldSnapshot.cpp" />
     <ClCompile Include="InterestSet.cpp" />

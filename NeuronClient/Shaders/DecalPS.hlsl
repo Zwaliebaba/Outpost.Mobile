@@ -1,15 +1,11 @@
 #include "Decal.hlsli"
 
+// Rings and order markers. The thruster glow used to branch out of here on decalParams.z, one draw
+// per billboard; it is batched into the effect ring now and its arithmetic moved, unchanged, to
+// FxGlowPS.
 float4 main(VsOut i) : SV_Target
 {
   float d = length(i.local);
-
-  if (decalParams.z > 0.5) // thruster glow: soft radial falloff, no edge
-  {
-    float glow = pow(saturate(1.0 - d), max(1.0, decalParams.y));
-    clip(glow - 0.002);
-    return float4(decalColour.rgb, glow * decalColour.a);
-  }
 
   // Ring, antialiased against its own screen-space width so it stays crisp at any zoom and never
   // thins away to nothing.
