@@ -188,9 +188,10 @@ from it; it is not a singleton and there is no global.
 design (§11: no NAT, no exposure). `QUIC_LISTENER_EVENT_NEW_CONNECTION` arrives on a worker; the
 handler hands the `HQUIC` to a `QuicTransport` the listener pre-allocated for the purpose and
 calls `ConnectionSetConfiguration`. `QuicListener::Poll()` on the owning thread moves accepted
-transports into `Accepted()`, a span the root drains. One pre-allocated transport in this design;
-`Desc::backlog` names the number so the day there are N clients it is a number and not a
-rewrite.
+transports into `Accepted()`, a span the root drains, and gives back the slots whose connections
+have closed so they serve the next client (ADR 0030). `Desc::backlog` is therefore how many
+connections the listener carries **at once**, not how many it will ever accept; it defaults to one
+because that is what this executable needs, and a server changes the number.
 
 The port is `constexpr std::uint16_t OUTPOST_QUIC_PORT = 30081` in `Outpost/OutpostApp.cpp`, at
 the composition root and nowhere lower: there is no configuration file, and a number the game needs
@@ -426,7 +427,7 @@ plan they are cut from, and it is written to the decisions in §12.
 | 1.1 | `QuicApi.h/.cpp` | `Desc { idleTimeoutMs, keepAliveMs, handshakeTimeoutMs, allowUnvalidatedPeer }`, `Open`/`Close`/`Reason`/`IsOpen`. One `MsQuicOpen2`, one registration, two configurations on `QUIC_ALPN = "outpost-1"` with `DatagramReceiveEnabled` and `PeerBidiStreamCount = 1`. The header names no MsQuic type; the `.cpp` includes `<msquic.h>` and `<msquic.hpp>` after `pch.h`. |
 | 1.2 | `DevCertificate.h/.cpp` | `Acquire`/`Release`/`Context`/`Reason`. Persisted NCrypt RSA-2048 key `Outpost.Dev.Quic`, `CertCreateSelfSignCertificate` for `CN=Outpost Development`, handed over as `QUIC_CREDENTIAL_TYPE_CERTIFICATE_CONTEXT`. Fail-closed diagnostics, never a throw. |
 | 1.3 | `QuicTransport.h/.cpp` | `Endpoint`, `Desc { capacityDatagrams = 256 }`, `Connect`, `Close`, the four overrides, `DroppedCount`, `MaxSendLength`. The state table of §4.1; the two rings and one lock of §4.2; the static callback that allocates nothing and calls no MsQuic API; the bounded destructor wait. |
-| 1.4 | `QuicListener.h/.cpp` | `Desc { backlog = 1, transport }`, `Start(api, port)` on `127.0.0.1` only (port 0 = ephemeral), `Stop`, `Port`, `Poll`, `Accepted`, `Reason`. `NEW_CONNECTION` adopts a pre-allocated transport; an exhausted backlog refuses. |
+| 1.4 | `QuicListener.h/.cpp` | `Desc { backlog = 1, transport }`, `Start(api, port)` on `127.0.0.1` only (port 0 = ephemeral), `Stop`, `Port`, `Poll`, `Accepted`, `Reason`. `NEW_CONNECTION` adopts a pre-allocated transport; an exhausted backlog refuses. (Slot recycling came later, ADR 0030.) |
 | 1.5 | `NeuronCore.h`, `.vcxproj`, `.filters` | Three umbrella includes after `LoopbackTransport.h`; eight files registered; `QuicTransportTests.cpp` registered in `NeuronCoreTests` under `Tests`. |
 | 1.6 | `Tests/NeuronCoreTests/QuicTransportTests.cpp` | The ten tests of the work order §4, each over a real localhost connection with a bounded `FrameClock` wait. |
 | 1.7 | `Design/Decisions/0018…0020`, `AGENTS.md` §2, §5 | The three records and their index rows; "no code references it yet" and "what remains is a socket" rewritten in the same commit. |

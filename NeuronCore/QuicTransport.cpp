@@ -348,6 +348,13 @@ void QuicTransport::Reserve(QuicApi& _api, const Desc& _desc)
   m_maxSendLength.store(0u, std::memory_order_relaxed);
   m_handshakeDone.store(false, std::memory_order_relaxed);
   m_datagramSendEnabled.store(false, std::memory_order_relaxed);
+
+  // Back to Disconnected, which matters only on the second call: QuicListener re-Reserves a
+  // transport whose connection has closed so the slot can serve another client (ADR 0030), and one
+  // that still reported Closed would be a pooled transport lying about being finished. On the first
+  // call this is the value it already had.
+  m_state.store(ConnectionState::Disconnected, std::memory_order_relaxed);
+  m_reason[0] = '\0';
 }
 
 bool QuicTransport::Adopt(void* _connection)

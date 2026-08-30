@@ -466,6 +466,119 @@ public:
     Assert::IsFalse(SendByte(*server, 1), L"a closed end accepted a datagram");
   }
 
+  TEST_METHOD(ASlotIsRecycledWhenItsClientLeaves)
+  {
+    // The defect this retires: the listener used to count accepts and never give a slot back, so
+    // backlog was a budget for the life of the process rather than a concurrency limit. A server
+    // that had seen backlog logins refused everybody until restart, silently (ADR 0030, review E3).
+    Neuron::QuicApi api;
+    Neuron::QuicApi::Desc apiDesc;
+    apiDesc.allowUnvalidatedPeer = true;
+    Assert::IsTrue(api.Open(apiDesc), Widen(api.Reason()).c_str());
+
+    // Its own, because Pair's clock belongs to Pair and these two tests drive a bare listener.
+    Neuron::FrameClock clock;
+    Neuron::QuicListener listener;
+    Neuron::QuicListener::Desc listenerDesc;
+    listenerDesc.backlog = 1; // one at a time, and this test connects three times through it
+    Assert::IsTrue(listener.Start(api, 0, listenerDesc), Widen(listener.Reason()).c_str());
+
+    for (int round = 0; round < 3; ++round)
+    {
+      Neuron::QuicTransport client;
+      Assert::IsTrue(client.Connect(api, {"127.0.0.1", listener.Port()}, {}), Widen(client.Reason()).c_str());
+
+      const std::int64_t start = clock.Now();
+      bool up = false;
+      while (clock.ElapsedMs(start, clock.Now()) < static_cast<float>(Neuron::QUIC_HANDSHAKE_TIMEOUT_MS))
+      {
+        listener.Poll();
+        client.Poll();
+        if (!listener.Accepted().empty())
+          listener.Accepted()[0]->Poll();
+        if (!listener.Accepted().empty() && client.State() == Neuron::ConnectionState::Connected)
+        {
+          up = true;
+          break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+      Assert::IsTrue(up, L"a connection did not come up on a recycled slot");
+
+      // The client leaves. The listener has to notice and take its slot back, or the next round
+      // finds the backlog exhausted.
+      client.Close();
+      const std::int64_t left = clock.Now();
+      while (!listener.Accepted().empty() && clock.ElapsedMs(left, clock.Now()) < static_cast<float>(Neuron::QUIC_HANDSHAKE_TIMEOUT_MS))
+      {
+        listener.Poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+      Assert::IsTrue(listener.Accepted().empty(), L"a closed connection was still listed as accepted");
+    }
+
+    Assert::AreEqual(3u, listener.RecycledCount(), L"the slot was not recycled once per client");
+    listener.Stop();
+    api.Close();
+  }
+
+  TEST_METHOD(AFullBacklogRefusesAndRecovers)
+  {
+    // The other half: while every slot is carrying a connection the listener refuses, and it starts
+    // accepting again the moment one is given back. Refusing is correct; refusing for ever is not.
+    Neuron::QuicApi api;
+    Neuron::QuicApi::Desc apiDesc;
+    apiDesc.allowUnvalidatedPeer = true;
+    Assert::IsTrue(api.Open(apiDesc), Widen(api.Reason()).c_str());
+
+    // Its own, because Pair's clock belongs to Pair and these two tests drive a bare listener.
+    Neuron::FrameClock clock;
+    Neuron::QuicListener listener;
+    Neuron::QuicListener::Desc listenerDesc;
+    listenerDesc.backlog = 1;
+    Assert::IsTrue(listener.Start(api, 0, listenerDesc), Widen(listener.Reason()).c_str());
+
+    Neuron::QuicTransport first;
+    Assert::IsTrue(first.Connect(api, {"127.0.0.1", listener.Port()}, {}), Widen(first.Reason()).c_str());
+    const std::int64_t start = clock.Now();
+    while (listener.Accepted().empty() && clock.ElapsedMs(start, clock.Now()) < static_cast<float>(Neuron::QUIC_HANDSHAKE_TIMEOUT_MS))
+    {
+      listener.Poll();
+      first.Poll();
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    Assert::IsFalse(listener.Accepted().empty(), L"the first connection was never accepted");
+    Assert::AreEqual(0u, listener.RecycledCount(), L"nothing had left yet");
+
+    // A second dial while the one slot is busy. Connect itself succeeds -- it only starts a
+    // handshake -- and the listener's refusal is what stops it reaching Connected.
+    {
+      Neuron::QuicTransport second;
+      Assert::IsTrue(second.Connect(api, {"127.0.0.1", listener.Port()}, {}), Widen(second.Reason()).c_str());
+      const std::int64_t busy = clock.Now();
+      while (clock.ElapsedMs(busy, clock.Now()) < 250.0f)
+      {
+        listener.Poll();
+        second.Poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+      Assert::AreEqual(static_cast<std::size_t>(1), listener.Accepted().size(), L"a full backlog accepted a second connection");
+      second.Close();
+    }
+
+    first.Close();
+    const std::int64_t left = clock.Now();
+    while (!listener.Accepted().empty() && clock.ElapsedMs(left, clock.Now()) < static_cast<float>(Neuron::QUIC_HANDSHAKE_TIMEOUT_MS))
+    {
+      listener.Poll();
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    Assert::AreEqual(1u, listener.RecycledCount(), L"the slot was not given back after its client left");
+
+    listener.Stop();
+    api.Close();
+  }
+
   TEST_METHOD(ARefusedListenerReportsWhy)
   {
     // The fallback in Design/QuicTransport.md 6 depends on this being a diagnostic. A listener that
