@@ -99,7 +99,7 @@ private:
   void CreatePipeline(GpuDevice& _gpu);
   void LoadFont(GpuDevice& _gpu, FontId _font, const std::wstring& _fileName);
   void LoadImage(GpuDevice& _gpu, ImageId _image, const std::wstring& _fileName);
-  [[nodiscard]] D3D12_CPU_DESCRIPTOR_HANDLE SrvHandle(std::uint32_t _slot) const noexcept;
+  [[nodiscard]] D3D12_CPU_DESCRIPTOR_HANDLE SrvHandle(GpuDevice& _gpu, std::uint32_t _slot) const noexcept;
 
   // Every shape this pass draws is one quad, so they share the split into two triangles and the run
   // bookkeeping. Corners are top-left, top-right, bottom-left, bottom-right of the quad's own axes,
@@ -108,13 +108,13 @@ private:
 
   GpuPtr<ID3D12RootSignature> m_rootSignature;
   GpuPtr<ID3D12PipelineState> m_pso;
-  GpuPtr<ID3D12DescriptorHeap> m_srvHeap; // one slot per font in FontId order, then one per image
+  // Shared-heap slots: one per font in FontId order, then one per image.
+  std::uint32_t m_slots[FONT_COUNT + MAX_IMAGES] = {};
   GpuPtr<ID3D12Resource> m_vb[GpuDevice::FRAME_COUNT];
   std::uint8_t* m_vbCpu[GpuDevice::FRAME_COUNT] = {};
   BitmapFont m_fonts[FONT_COUNT];
   ScreenImage m_images[MAX_IMAGES];
   std::vector<TextVertex> m_verts;
   std::vector<Batch> m_batches;
-  std::uint32_t m_srvStride = 0;
 };
 } // namespace Neuron

@@ -276,6 +276,110 @@ void UploadColourTexture(GpuDevice& _gpu, std::uint32_t _widthPx, std::uint32_t 
   _gpu.Device()->CreateShaderResourceView(_outTexture.get(), &srv, _srv);
 }
 
+void UploadDdsTexture(GpuDevice& _gpu, const DdsImage& _image, D3D12_CPU_DESCRIPTOR_HANDLE _srv, GpuPtr<ID3D12Resource>& _outTexture,
+                      GpuPtr<ID3D12Resource>& _outStaging)
+{
+  _outTexture = nullptr;
+  _outStaging = nullptr;
+  if (_image.Empty())
+    return;
+
+  D3D12_RESOURCE_DESC td = {};
+  td.Dimension =
+    (_image.dimension == DdsImage::Dimension::Texture3D) ? D3D12_RESOURCE_DIMENSION_TEXTURE3D : D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+  td.Alignment = 0;
+  td.Width = _image.widthPx;
+  td.Height = _image.heightPx;
+  td.DepthOrArraySize = static_cast<UINT16>((_image.dimension == DdsImage::Dimension::Texture3D) ? _image.depth : _image.arraySize);
+  td.MipLevels = static_cast<UINT16>(_image.mipCount);
+  td.Format = _image.format;
+  td.SampleDesc.Count = 1;
+  td.SampleDesc.Quality = 0;
+  td.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+  td.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+  D3D12_HEAP_PROPERTIES hp = HeapProps(D3D12_HEAP_TYPE_DEFAULT);
+  check_hresult(_gpu.Device()->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &td, D3D12_RESOURCE_STATE_COMMON, nullptr,
+                                                       IID_PPV_ARGS(_outTexture.put())));
+
+  const UINT subresourceCount = static_cast<UINT>(_image.subresources.size());
+  std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> footprints(subresourceCount);
+  std::vector<UINT> rowCounts(subresourceCount);
+  std::vector<std::uint64_t> rowBytes(subresourceCount);
+  std::uint64_t totalBytes = 0;
+  _gpu.Device()->GetCopyableFootprints(&td, 0, subresourceCount, 0, footprints.data(), rowCounts.data(), rowBytes.data(), &totalBytes);
+
+  hp = HeapProps(D3D12_HEAP_TYPE_UPLOAD);
+  const D3D12_RESOURCE_DESC ud = BufferDesc(totalBytes);
+  check_hresult(_gpu.Device()->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &ud, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                                                       IID_PPV_ARGS(_outStaging.put())));
+
+  // The file's rows are packed at its own pitch; the footprint's rows sit at D3D12's aligned pitch.
+  // The repack is the whole difference between the two layouts, row by row, slice by slice.
+  std::uint8_t* dst = nullptr;
+  D3D12_RANGE noRead = {0, 0};
+  check_hresult(_outStaging->Map(0, &noRead, reinterpret_cast<void**>(&dst)));
+  for (UINT at = 0; at < subresourceCount; ++at)
+  {
+    const DdsImage::Subresource& sub = _image.subresources[at];
+    const D3D12_PLACED_SUBRESOURCE_FOOTPRINT& footprint = footprints[at];
+    for (UINT depth = 0; depth < footprint.Footprint.Depth; ++depth)
+    {
+      for (UINT row = 0; row < rowCounts[at]; ++row)
+      {
+        std::memcpy(dst + footprint.Offset + (static_cast<size_t>(depth) * rowCounts[at] + row) * footprint.Footprint.RowPitch,
+                    _image.data.data() + sub.offset + static_cast<size_t>(depth) * sub.slicePitchBytes +
+                      static_cast<size_t>(row) * sub.rowPitchBytes,
+                    static_cast<size_t>(rowBytes[at]));
+      }
+    }
+  }
+  _outStaging->Unmap(0, nullptr);
+
+  // Into whatever copy bracket the caller opened, with no barriers -- see the header. The graphics
+  // queue is made to wait by the caller's SubmitCopies, so a draw cannot outrun the pixels.
+  ID3D12GraphicsCommandList* cmd = _gpu.CopyList();
+  for (UINT at = 0; at < subresourceCount; ++at)
+  {
+    D3D12_TEXTURE_COPY_LOCATION copyDst = {};
+    copyDst.pResource = _outTexture.get();
+    copyDst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    copyDst.SubresourceIndex = at;
+    D3D12_TEXTURE_COPY_LOCATION copySrc = {};
+    copySrc.pResource = _outStaging.get();
+    copySrc.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+    copySrc.PlacedFootprint = footprints[at];
+    cmd->CopyTextureRegion(&copyDst, 0, 0, 0, &copySrc, nullptr);
+  }
+
+  D3D12_SHADER_RESOURCE_VIEW_DESC srv = {};
+  srv.Format = _image.format;
+  srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+  if (_image.isCubeMap)
+  {
+    srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+    srv.TextureCube.MostDetailedMip = 0;
+    srv.TextureCube.MipLevels = _image.mipCount;
+    srv.TextureCube.ResourceMinLODClamp = 0.0f;
+  }
+  else if (_image.dimension == DdsImage::Dimension::Texture3D)
+  {
+    srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE3D;
+    srv.Texture3D.MostDetailedMip = 0;
+    srv.Texture3D.MipLevels = _image.mipCount;
+    srv.Texture3D.ResourceMinLODClamp = 0.0f;
+  }
+  else
+  {
+    srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srv.Texture2D.MostDetailedMip = 0;
+    srv.Texture2D.MipLevels = _image.mipCount;
+    srv.Texture2D.PlaneSlice = 0;
+    srv.Texture2D.ResourceMinLODClamp = 0.0f;
+  }
+  _gpu.Device()->CreateShaderResourceView(_outTexture.get(), &srv, _srv);
+}
+
 void UploadStaticBuffer(GpuDevice& _gpu, std::span<const std::uint8_t> _bytes, GpuPtr<ID3D12Resource>& _outBuffer,
                         GpuPtr<ID3D12Resource>& _outStaging)
 {

@@ -99,7 +99,8 @@ private:
   GpuPtr<ID3D12PipelineState> m_spriteDarkPso;
   GpuPtr<ID3D12PipelineState> m_spriteAddPso;
   GpuPtr<ID3D12PipelineState> m_glowPso;
-  GpuPtr<ID3D12DescriptorHeap> m_srvHeap; // slot 0 fragment, 1 sprite, 2 flash
+  // Slots in the device's shared heap: 0 fragment, 1 sprite, 2 flash, allocated for the run.
+  std::uint32_t m_slots[TEXTURE_COUNT] = {};
   GpuPtr<ID3D12Resource> m_textures[TEXTURE_COUNT];
   // Held only until Init's ExecuteAndWait has run the copies that read them; released there.
   GpuPtr<ID3D12Resource> m_staging[TEXTURE_COUNT];
@@ -108,7 +109,6 @@ private:
   std::uint32_t m_ringOffsetVerts = 0;
   std::uint32_t m_ringFrameIndex = 0xFFFFFFFFu; // no frame yet, so the first Begin resets the ring
   std::uint32_t m_droppedVerts = 0;
-  std::uint32_t m_srvStride = 0;
   bool m_ready = false;     // every texture loaded
   bool m_ringReady = false; // the pipelines and the vertex ring exist
 };

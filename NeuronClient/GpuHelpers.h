@@ -44,6 +44,25 @@ class GpuDevice;
 void UploadCoverageTexture(GpuDevice& _gpu, std::uint32_t _widthPx, std::uint32_t _heightPx, const ByteBuffer& _coverage,
                            D3D12_CPU_DESCRIPTOR_HANDLE _srv, GpuPtr<ID3D12Resource>& _outTexture, GpuPtr<ID3D12Resource>& _outStaging);
 
+// Records the upload of a whole DdsImage -- every mip of every slice, in whatever format the file
+// holds, block-compressed included -- and writes an SRV that states the real mip count. This is
+// what retires the top-mip-only paths for colour textures: the file's subresources are already in
+// D3D12 order, so the walk is footprints, a repack of rows into the staging buffer, and one
+// CopyTextureRegion per subresource (Design/MmoScalabilityReview.md G4).
+//
+// The copies ride the COPY queue and are recorded into whatever bracket the caller opened --
+// GpuDevice::BeginCopies and SubmitCopies, exactly as UploadStaticBuffer asks, because the load
+// sites already hold that bracket open around a whole batch of resources. No barrier on either
+// side, for the same reason as the buffers: decay to COMMON when the batch completes, implicit
+// promotion to a shader-readable state on first sample (ADR 0044). _outStaging has to outlive the
+// copy: release it once GpuDevice::CompletedCopyFence has reached the LastCopyFence of the batch
+// -- at boot, WaitForCopies and then release, or the direct queue's own wait covers it.
+//
+// Cube maps and volumes are carried by the same walk and declared untested: no shipped asset is
+// either, and the trace at load is where the first one will announce itself.
+void UploadDdsTexture(GpuDevice& _gpu, const DdsImage& _image, D3D12_CPU_DESCRIPTOR_HANDLE _srv, GpuPtr<ID3D12Resource>& _outTexture,
+                      GpuPtr<ID3D12Resource>& _outStaging);
+
 // The same, for one BGRA8 texture: _pixels is four bytes a texel, B G R A, rows tightly packed --
 // what DdsImage::TopMipAsBgra hands back. Deliberately a second function rather than a format
 // parameter on the one above: the coverage upload exists because the overlay draws coverage and
