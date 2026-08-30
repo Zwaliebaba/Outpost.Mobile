@@ -51,9 +51,14 @@ void UploadCoverageTexture(GpuDevice& _gpu, std::uint32_t _widthPx, std::uint32_
 void UploadColourTexture(GpuDevice& _gpu, std::uint32_t _widthPx, std::uint32_t _heightPx, const ByteBuffer& _pixels,
                          D3D12_CPU_DESCRIPTOR_HANDLE _srv, GpuPtr<ID3D12Resource>& _outTexture, GpuPtr<ID3D12Resource>& _outStaging);
 
-// Records the copy of _bytes into a new DEFAULT-heap buffer and its transition to
-// VERTEX_AND_CONSTANT_BUFFER. _outStaging has to outlive the copy, which has only been recorded:
-// release it after the list has run, never before.
+// Records the copy of _bytes into a new DEFAULT-heap buffer, on the COPY queue: bracket it with
+// GpuDevice::BeginCopies and SubmitCopies, not with BeginUploads. There is no transition to
+// VERTEX_AND_CONSTANT_BUFFER any more and there must not be -- the buffer decays to COMMON when the
+// copy queue's submission completes and the first draw promotes it out again for free, and a COPY
+// list cannot express that barrier in any case (ADR 0044).
+//
+// _outStaging has to outlive the copy, which has only been recorded: release it once
+// GpuDevice::CompletedCopyFence has reached the LastCopyFence of the batch, never before.
 //
 // This is the path for a buffer the GPU reads every frame and the CPU never touches again. A planet
 // is seven megabytes the input assembler reads twice a frame, and in an upload heap that is system

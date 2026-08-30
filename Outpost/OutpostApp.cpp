@@ -180,8 +180,10 @@ void OutpostApp::Init(HINSTANCE _instance)
   m_view.SetSkyRenderer(m_skyRenderer, skyTuning);
   // Hull vertices go to default heaps (SceneRenderer::UploadMesh), so their copies are recorded
   // rather than written, and something has to run them. One bracket for all of them, not one each.
+  m_gpu.BeginCopies();
   m_gpu.BeginUploads();
   LoadHullMeshes();
+  m_gpu.SubmitCopies();
   m_gpu.ExecuteAndWait();
   m_sceneRenderer.DiscardStaging();
 
@@ -214,6 +216,7 @@ void OutpostApp::Init(HINSTANCE _instance)
   skyDesc.starTexture = TEXTURE_DIR + L"Glow.dds";
   skyDesc.burstTexture = TEXTURE_DIR + L"Starburst.dds";
 
+  m_gpu.BeginCopies();
   m_gpu.BeginUploads();
   m_bodyRenderer.Init(m_gpu, bodyDesc);
   m_skyRenderer.Init(m_gpu, skyDesc);
@@ -226,6 +229,7 @@ void OutpostApp::Init(HINSTANCE _instance)
   }
   SpawnStartingBodies(BODY_START_SEED);
   BuildSky(SKY_SEED);
+  m_gpu.SubmitCopies();
   m_gpu.ExecuteAndWait();
   m_bodyRenderer.DiscardStaging();
   m_skyRenderer.DiscardStaging();
@@ -473,11 +477,23 @@ void OutpostApp::BuildSky(std::uint64_t _seed)
 void OutpostApp::ReseedBodies()
 {
   m_view.ClearBodies();
+
+  // The scene is now released rather than left on the GPU. What F5 cost before this was the memory
+  // of every scene it had ever replaced -- BodyRenderer only ever appended, so a handle was an index
+  // and nothing could say a body was finished with (Design/MmoScalabilityReview.md G3, ADR 0044).
+  // The buffers themselves go at DiscardStaging below, which is the first point the GPU is known to
+  // be done with them.
+  m_bodyRenderer.FreeAllBodies();
   ++m_bodyRerollCount;
 
+  m_gpu.BeginCopies();
   m_gpu.BeginUploads();
   SpawnStartingBodies(BODY_START_SEED + m_bodyRerollCount);
   BuildSky(SKY_SEED + m_bodyRerollCount);
+  // Copies first, always: SubmitCopies enqueues the graphics queue's wait on the copy fence, so any
+  // direct-queue work submitted after it is correctly ordered behind the copies and any submitted
+  // before it is not (ADR 0044).
+  m_gpu.SubmitCopies();
   m_gpu.ExecuteAndWait();
   m_bodyRenderer.DiscardStaging();
   m_skyRenderer.DiscardStaging();

@@ -61,12 +61,17 @@ void SceneRenderer::Init(GpuDevice& _gpu)
   CreateDecalPipelines(_gpu);
   CreateInstanceRing(_gpu);
 
-  // The quad's vertices go to a default heap now, so its copy has to be recorded into a list and
-  // run. Bracketed here rather than left to the caller because this is the only upload Init does --
-  // the same shape TextRenderer::Init already has.
-  _gpu.BeginUploads();
+  // The quad's vertices go to a default heap, so its copy has to be recorded into a list and run.
+  // The COPY list since ADR 0044, which is what UploadStaticBuffer records into now. Bracketed here
+  // rather than left to the caller because this is the only upload Init does.
+  //
+  // And waited for, which a load path otherwise must not do: the quad is drawn by the first frame
+  // and DiscardStaging below releases the staging buffer the copy reads from. Boot is the one place
+  // where blocking costs nothing, because there is no frame in flight to block behind.
+  _gpu.BeginCopies();
   m_unitQuad = UploadMesh(_gpu, BuildUnitQuad());
-  _gpu.ExecuteAndWait();
+  _gpu.SubmitCopies();
+  _gpu.WaitForCopies();
   DiscardStaging();
 }
 
@@ -86,6 +91,9 @@ void SceneRenderer::CreateInstanceRing(GpuDevice& _gpu)
 void SceneRenderer::DiscardStaging() noexcept
 {
   m_staging.clear();
+  // The same call and the same reason: both hold resources the GPU may still have been reading when
+  // the caller let go of them, and this is the point the caller says it has stopped.
+  m_retired.clear();
 }
 
 void SceneRenderer::CreateScenePipeline(GpuDevice& _gpu)
@@ -165,13 +173,23 @@ void SceneRenderer::CreateDecalPipelines(GpuDevice& _gpu)
 
 MeshHandle SceneRenderer::UploadMesh(GpuDevice& _gpu, const std::vector<MeshVertex>& _verts)
 {
+  // The slot first, because the payload array is indexed by it and a full store has to be reported
+  // before anything is created. A content load that cannot find a slot logs and carries on, which
+  // is AGENTS.md 5's rule for content rather than a special case here.
+  const HandleStore::Allocation slot = m_meshSlots.Alloc();
+  if (slot.handle == HandleStore::INVALID_HANDLE)
+  {
+    DebugTrace("mesh store is full; this mesh is not drawn\n");
+    return INVALID_MESH;
+  }
+  if (slot.slot >= m_meshes.size())
+    m_meshes.resize(slot.slot + 1);
+  m_meshes[slot.slot] = GpuMesh{};
+
   GpuMesh mesh = {};
   const std::uint64_t bytes = static_cast<std::uint64_t>(_verts.size()) * sizeof(MeshVertex);
   if (bytes == 0)
-  {
-    m_meshes.push_back(std::move(mesh));
-    return static_cast<MeshHandle>(m_meshes.size() - 1);
-  }
+    return slot.handle; // an empty mesh is a live handle that draws nothing, as it always was
 
   // A default heap, through a staging copy the caller's upload bracket runs. This used to be an
   // upload heap with a straight memcpy, and the comment beside it argued -- correctly, for the fleet
@@ -192,8 +210,18 @@ MeshHandle SceneRenderer::UploadMesh(GpuDevice& _gpu, const std::vector<MeshVert
   mesh.vbv.SizeInBytes = static_cast<UINT>(bytes);
   mesh.vbv.StrideInBytes = sizeof(MeshVertex);
   mesh.vertexCount = static_cast<std::uint32_t>(_verts.size());
-  m_meshes.push_back(std::move(mesh));
-  return static_cast<MeshHandle>(m_meshes.size() - 1);
+  m_meshes[slot.slot] = std::move(mesh);
+  return slot.handle;
+}
+
+bool SceneRenderer::FreeMesh(MeshHandle _mesh) noexcept
+{
+  const std::uint32_t slot = m_meshSlots.Free(_mesh);
+  if (slot == HandleStore::INVALID_SLOT)
+    return false;
+  m_retired.push_back(std::move(m_meshes[slot].vb));
+  m_meshes[slot] = GpuMesh{};
+  return true;
 }
 
 void SceneRenderer::BeginScene(GpuDevice& _gpu, const SceneFrame& _frame)
@@ -227,9 +255,10 @@ void SceneRenderer::BeginScene(GpuDevice& _gpu, const SceneFrame& _frame)
 
 void SceneRenderer::DrawMesh(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _livery, float _highlight)
 {
-  if (_mesh >= m_meshes.size() || m_meshes[_mesh].vertexCount == 0)
+  const std::uint32_t mesh = m_meshSlots.SlotOf(_mesh);
+  if (mesh == HandleStore::INVALID_SLOT || m_meshes[mesh].vertexCount == 0)
     return;
-  const GpuMesh& mesh = m_meshes[_mesh];
+  const GpuMesh& drawn = m_meshes[mesh];
   const float base[4] = {_livery.r, _livery.g, _livery.b, _highlight};
 
   ID3D12GraphicsCommandList* cmd = _gpu.CommandList();
@@ -239,13 +268,14 @@ void SceneRenderer::DrawMesh(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::X
   cmd->SetPipelineState(m_scenePso.get());
   cmd->SetGraphicsRoot32BitConstants(0, 16, &_world, 0);
   cmd->SetGraphicsRoot32BitConstants(1, 4, base, 0);
-  cmd->IASetVertexBuffers(0, 1, &mesh.vbv);
-  cmd->DrawInstanced(mesh.vertexCount, 1, 0, 0);
+  cmd->IASetVertexBuffers(0, 1, &drawn.vbv);
+  cmd->DrawInstanced(drawn.vertexCount, 1, 0, 0);
 }
 
 void SceneRenderer::DrawMeshInstanced(GpuDevice& _gpu, MeshHandle _mesh, std::span<const MeshInstance> _instances)
 {
-  if (_mesh >= m_meshes.size() || m_meshes[_mesh].vertexCount == 0 || _instances.empty())
+  const std::uint32_t mesh = m_meshSlots.SlotOf(_mesh);
+  if (mesh == HandleStore::INVALID_SLOT || m_meshes[mesh].vertexCount == 0 || _instances.empty())
     return;
 
   const std::uint32_t wanted = static_cast<std::uint32_t>(_instances.size());
@@ -270,12 +300,12 @@ void SceneRenderer::DrawMeshInstanced(GpuDevice& _gpu, MeshHandle _mesh, std::sp
   instanceView.SizeInBytes = static_cast<UINT>(count * sizeof(MeshInstance));
   instanceView.StrideInBytes = sizeof(MeshInstance);
 
-  const D3D12_VERTEX_BUFFER_VIEW views[2] = {m_meshes[_mesh].vbv, instanceView};
+  const D3D12_VERTEX_BUFFER_VIEW views[2] = {m_meshes[mesh].vbv, instanceView};
 
   ID3D12GraphicsCommandList* cmd = _gpu.CommandList();
   cmd->SetPipelineState(m_instancedPso.get());
   cmd->IASetVertexBuffers(0, 2, views);
-  cmd->DrawInstanced(m_meshes[_mesh].vertexCount, count, 0, 0);
+  cmd->DrawInstanced(m_meshes[mesh].vertexCount, count, 0, 0);
 
   m_instanceOffset += count;
 }
@@ -293,7 +323,8 @@ void SceneRenderer::BeginDecals(GpuDevice& _gpu, const DirectX::XMFLOAT4X4& _vie
 void SceneRenderer::DrawDecal(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _colour, float _thickness,
                               float _fill)
 {
-  if (_mesh >= m_meshes.size() || m_meshes[_mesh].vertexCount == 0 || _colour.a <= 0.001f)
+  const std::uint32_t mesh = m_meshSlots.SlotOf(_mesh);
+  if (mesh == HandleStore::INVALID_SLOT || m_meshes[mesh].vertexCount == 0 || _colour.a <= 0.001f)
     return;
   const float colour[4] = {_colour.r, _colour.g, _colour.b, _colour.a};
   const float params[4] = {_thickness, _fill, 0.0f, 0.0f};
@@ -303,8 +334,8 @@ void SceneRenderer::DrawDecal(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::
   cmd->SetGraphicsRoot32BitConstants(0, 16, &_world, 0);
   cmd->SetGraphicsRoot32BitConstants(1, 4, colour, 0);
   cmd->SetGraphicsRoot32BitConstants(1, 4, params, 4);
-  cmd->IASetVertexBuffers(0, 1, &m_meshes[_mesh].vbv);
-  cmd->DrawInstanced(m_meshes[_mesh].vertexCount, 1, 0, 0);
+  cmd->IASetVertexBuffers(0, 1, &m_meshes[mesh].vbv);
+  cmd->DrawInstanced(m_meshes[mesh].vertexCount, 1, 0, 0);
 }
 
 } // namespace Neuron

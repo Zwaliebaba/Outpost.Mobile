@@ -1,13 +1,15 @@
 # The MMO scalability plan — the review as slices
 
-**Status: thirteen of the twenty-four slices have landed.** The seam: 2 (the despawn log is
+**Status: fourteen of the twenty-four slices have landed.** The seam: 2 (the despawn log is
 cursored), 3 with 4 folded into it (the publisher), 5 and 6 (the reliable lane, and departures and
 orders on it, which retires finding E1), 7 (listener slots recycled), and the loopback fallback is
 gone (ADR 0028). The view: 8 (trail and glow batching), 9 (frustum culling), 10 (hull instancing).
 The simulation: 11 (a localized gather radius), 13 (churn-gated static rebuilds), and 14 — all four
 slices of its own design, so architecture is islands on a world-fixed lattice and the 16.4 km cliff
 is gone. The tree: 21 (the guards widened) and 22 (the dead helper deleted). Slice 12 was decided
-rather than built: 60 Hz stays. **What is left is phase 3 — slices 15 through 20 — plus 23 and 24.**
+rather than built: 60 Hz stays. Slice 18 opens the client track's second half -- a copy queue and
+render handles that can be freed -- built and run on Windows on arrival, which the branch it came
+from could not do. **What is left is phase 3 — slices 15 through 17, 19 and 20 — plus 23 and 24.**
 This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
 (tree at `de12b6d`) into an ordered slice plan in the shape `Design/README.md` defines: one slice,
 one branch, one pull request. The review is the evidence; this document is the work. Where a slice
@@ -153,7 +155,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 15 | The quantized wire | `GameLogic` | M | 6 | E5 |  |  |
 | 16 | Global entity identity | `GameLogic` | M | 15 | U3 | ADR |  |
 | 17 | The state codec and the replay gate | `GameLogic` | M | 16 | U3 |  |  |
-| 18 | Copy-queue uploader, store eviction | `NeuronClient` | M | 10 | G3 | ADR |  |
+| 18 | Copy-queue uploader, store eviction | `NeuronClient` | M | 10 | G3 | ADR | landed (ADR 0044) |
 | 19 | Compressed textures, descriptor allocator | `NeuronClient` | M | 18 | G4 |  |  |
 | 20 | Body LOD and culling completion | `NeuronClient` | M | 9 | G5 |  |  |
 | 21 | Guard widening and the docs re-trued | `Build/`+prose | S | — | C2 C3 C4 |  | landed |
@@ -562,6 +564,58 @@ frame loop already runs.
 CPU-side; ten F5 reseeds hold the store count flat; frame-time across a mid-session bake measured
 and stated in the pull request.
 **ADR.** GpuDevice gains the copy queue — a library gains a responsibility.
+
+**As landed**, and the first thing to say about it: **this slice has never been compiled.** It was
+written where there is no Windows, no D3D12 and no GPU, so what is measured is the half that could
+be — `HandleStore`'s bookkeeping, by eleven test rows and by seven mutations — and what is *read*
+is every line of D3D12 in it. A Windows build is the next step and it should be assumed to find
+something. That is why the remaining client slices were not stacked on this one (owner's call,
+2026-08-30).
+
+ADR 0044. The scope divided into two halves that turn out to be the same shape twice — nothing
+could say a resource was finished with, on either side.
+
+**The uploader.** `BeginUploads` reset allocator 0, which is also frame 0's, so it had to drain the
+whole GPU first. `GpuDevice` now has a `COPY` queue with its own allocator, list and fence, and
+`BeginCopies`/`SubmitCopies` around it: `SubmitCopies` signals the copy fence and makes the graphics
+queue wait on it, and **the CPU is not blocked at all**. `BeginUploads` keeps its direct bracket for
+the work a copy queue cannot do, and gains an allocator of its own so it waits for the previous
+upload rather than for every frame.
+
+**The plan's sentence for this slice does not survive contact with the bracket**, which is the
+finding worth carrying forward. It asks for the upload path to move onto the copy queue; a copy
+queue cannot run `BodyRenderer::BakeBody`'s **compute dispatch**, cannot express
+`UploadCoverageTexture`'s transition to `PIXEL_SHADER_RESOURCE`, and cannot express `ReadBackBody`'s
+transition out of a graphics state. So the bracket splits by *what the work is*: static buffers —
+every hull, every body mesh, the sky — go to the copy queue, and bakes and readbacks stay. The
+textures follow when slice 19 rewrites their upload for BC and mip chains, which is what untangles
+them from the bake that reads one.
+
+**The barriers came out rather than moving.** A buffer created in `COMMON` is promoted to
+`COPY_DEST` implicitly, everything a copy queue touches decays back to `COMMON` on submission
+completion, and the first graphics use promotes it to `VERTEX_AND_CONSTANT_BUFFER` for free. The
+`ResourceBarrier` that used to follow the copy is now both unnecessary and illegal on that queue.
+That is Microsoft's documented behaviour and it is cited at the code, because it is the kind of
+claim a reader should not have to take on trust.
+
+**The store.** `HandleStore` holds the slot/generation bookkeeping and no D3D12, which is what let
+it be tested without a device. A handle is a slot and a generation packed into the 32 bits
+`MeshHandle` already was, so no call site changed: 65,535 live meshes against a tree with eleven
+hulls and eight bodies, and 65,535 reuses of a slot against a key somebody presses by hand. Both
+renderers index by slot and resolve by handle, so a stale handle now draws nothing rather than
+whatever took its place. **F5 frees the scene it replaces**, and `OutpostApp.cpp`'s admission beside
+the key is retired.
+
+**Measured, where measuring was possible.** Seven mutations were introduced into `HandleStore` one
+at a time: no generation bump on free, a FIFO free list, the reserved slot allocated, the live flag
+ignored on lookup, a generation wrapping to 0, and two more. **Five went red at once; two did not,
+and both were holes in the tests** — nothing reached the store's 65,535-slot cap, and nothing
+fabricated a handle carrying a freed slot's new generation, which is the one case the generation
+alone cannot catch and the `live` flag exists for. Both closed, both now red. The comment claiming
+the two tests were independent was *wrong* before that and is corrected.
+
+**Not in this commit**: the frame-time measurement across a mid-session bake that the acceptance
+above asks for. It needs Windows, a GPU and a stopwatch.
 
 #### Slice 19 — compressed textures and the descriptor allocator (`NeuronClient`, M)
 
