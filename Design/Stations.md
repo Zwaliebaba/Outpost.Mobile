@@ -641,7 +641,18 @@ The faction-to-tint mapping generalizes from a branch to a table the day it hold
 | `FACTION_VANGUARD`, mask bit clear | `VANGUARD_SHIP_COLOUR` — an azure, with `VANGUARD_ACCENT_COLOUR` for exhaust and trails | `HUD_VANGUARD_BLUE`, derived from the accent the way the red is |
 
 The mask row outranks the Vanguard row: turn criminal and the law turns red — hulls, plumes and
-dots together, one mapping change, which is ADR 0013 doing precisely what it promised. Station
+dots together, one mapping change, which is ADR 0013 doing precisely what it promised.
+
+**How the scene column is actually painted** is no longer this document's to say. NMO's
+[slice 5](NmoFormat-slice-5.md) replaces the whole-hull tint with liveries: a material declares
+whether it is the model's paint or the faction's ([NmoFormat.md](NmoFormat.md) §5.5), and only the
+declared surfaces take the faction's colour. Three consequences for the table above, none of them
+to its precedence, which stands exactly as written and is the part that mattered: the scene column
+becomes **one** constant per faction rather than a ship colour and an accent colour, because the
+accent falls out of the shade ladder; `VANGUARD_SHIP_COLOUR`/`VANGUARD_ACCENT_COLOUR` are therefore
+spelled `LIVERY_VANGUARD` when they land; and exhausts are liveried by the same lookup rather than
+by a constant of their own. The overview column is untouched — the minimap answers friend-or-enemy
+and deliberately does not follow a livery (slice 5 §2.6). Station
 records draw at `HUD_MINIMAP_STRUCTURE_DOT_PX` like any structure.
 
 **Marks** are the new thing: the minimap draws every station of the root-supplied layout — a

@@ -71,7 +71,7 @@ constexpr std::uint16_t OUTPOST_QUIC_PORT = 30081;
 // each of them keeps one.
 [[noreturn]] void ThrowLinkFailure(const char* _stage, const char* _reason)
 {
-  const std::string message = std::format("Outpost could not open its link: {} ({}).", _stage, _reason);
+  const std::string message = std::format("Outpost: Frontier could not open its link: {} ({}).", _stage, _reason);
   throw winrt::hresult_error(E_FAIL, winrt::to_hstring(message));
 }
 
@@ -86,7 +86,7 @@ static_assert(std::size(HULL_NAMES) == Game::HULL_COUNT, "the HUD's hull names h
 void OutpostApp::Init(HINSTANCE _instance)
 {
   AppWindow::Desc windowDesc;
-  windowDesc.title = L"Outpost";
+  windowDesc.title = L"Outpost: Frontier";
   windowDesc.className = L"OutpostWindow";
   m_window.Create(windowDesc, _instance);
 

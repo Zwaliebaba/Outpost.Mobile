@@ -35,7 +35,7 @@ int WINAPI wWinMain(HINSTANCE _instance, HINSTANCE, LPWSTR, int)
     app.Shutdown();
     const winrt::hstring message = error.message();
     Neuron::DebugTrace(L"fatal: {}\n", std::wstring_view(message));
-    MessageBoxW(nullptr, message.c_str(), L"Outpost", MB_OK | MB_ICONERROR);
+    MessageBoxW(nullptr, message.c_str(), L"Outpost: Frontier", MB_OK | MB_ICONERROR);
     return 1;
   }
   catch (const std::exception& error)
@@ -44,7 +44,7 @@ int WINAPI wWinMain(HINSTANCE _instance, HINSTANCE, LPWSTR, int)
     Neuron::DebugTrace("fatal: {}\n", error.what());
     wchar_t wide[512] = {};
     MultiByteToWideChar(CP_UTF8, 0, error.what(), -1, wide, static_cast<int>(std::size(wide)));
-    MessageBoxW(nullptr, wide, L"Outpost", MB_OK | MB_ICONERROR);
+    MessageBoxW(nullptr, wide, L"Outpost: Frontier", MB_OK | MB_ICONERROR);
     return 1;
   }
 }

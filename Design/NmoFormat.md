@@ -271,6 +271,7 @@ enum class NmoRenderFlags : std::uint32_t
   DoubleSided = 0x1,                 // do not backface-cull (moot while the renderer culls nothing)
   AlphaBlend = 0x2,                  // draw in the blended overlay pass
   Additive = 0x4,                    // draw in the additive overlay pass
+  RaceTinted = 0x8,                  // baseColour is a shade, not a colour: the faction supplies the hue
 };
 
 struct NmoMaterial
@@ -284,8 +285,29 @@ static_assert(sizeof(NmoMaterial) == 48, "NMO material size");
 ```
 
 The current engine bakes `baseColour` into vertex colour at load, exactly as `ObjParser` bakes
-`Kd` today; `emissiveColour` and the flags wait for the renderer that wants them. The Blender
-mapping is §11.
+`Kd` today; `emissiveColour` and the first three flags wait for the renderer that wants them. The
+Blender mapping is §11.
+
+**`RaceTinted` — whose colour a material is.** A hull is painted by two authorities. Its structure
+— plating, canopy glass — is the *model's*, identical on every ship of that class whoever flies it.
+Its livery — the panels and trim that say whose ship this is — is the *faction's*, and the same
+model has to wear azure for Core Vanguard Command, red for the Vandal Collective, or whatever a
+player picked. A material declares which authority owns it, and it is a material property rather
+than a name the loader recognises because "the material called `plate` is the liveried one" is a
+convention a renamed material breaks silently, where a flag is authored, round-tripped and visible
+in the file.
+
+On a `RaceTinted` material `baseColour` is **a shade, not a colour**: the value says *how bright*
+this surface is relative to the livery, and the hue is discarded. The engine's rule is one
+multiply — `albedo = liveryColour.rgb × baseColour.rgb` — so a material authored greyscale comes
+out as the livery at that brightness, which is why the shipping corpus authors these greyscale
+(§13) and why a colour left in one is a trap for the next reader rather than a preview. Materials
+without the flag are drawn exactly as authored and never see a livery at all.
+
+Which faction supplies the hue is not the file's business and is deliberately absent from it: a
+mesh knows it has a liveried panel, not who is flying it. The mapping from faction to colour is
+the client's, and lives where the rest of that mapping already does
+([Stations.md](Stations.md) §9.3).
 
 ### 5.6 Buffers
 
@@ -471,7 +493,7 @@ struct NmoMarker
   DirectX::XMFLOAT4 colour;          // linear RGBA; (1,1,1,1) when the kind has no colour
   float param0;                      // kind-specific, 0 default
   float param1;                      // kind-specific, 0 default
-  std::uint32_t flags;               // 0 in v2.0
+  std::uint32_t flags;               // NmoMarkerFlags bitmask
   std::uint32_t reserved[2];         // 0
 };
 static_assert(sizeof(NmoMarker) == 72, "NMO marker size");
@@ -490,6 +512,28 @@ Kinds defined by v2.0, and the fields each consumes:
 | `Exhaust` | position, orientation (+Z = plume direction), scale (nozzle radius, m), **colour** (plume/glow, RGB × intensity in a) | Replaces the clustered `attachPoints` and the hard-coded `SELECTED_COLOUR` glow (§9) |
 | `NavLight` | position, scale (light size, m), **colour**, param0 (blink period s; 0 = steady), param1 (blink phase, fraction of the period) | New; drawn by the view as a small glow, blinking on real time |
 | `Gun` | position, orientation (+Z = muzzle direction), scale (calibre hint, m) | Effects anchor (muzzle flash, projectile spawn visual). Simulation truth stays authored in GameLogic (§9) |
+
+**Marker flags**, and why a marker needs the same distinction a material does:
+
+```cpp
+enum class NmoMarkerFlags : std::uint32_t
+{
+  None = 0,
+  RaceTinted = 0x1,                  // colour is a shade; the faction supplies the hue (§5.5)
+};
+```
+
+An exhaust plume is livery — every ship of a faction burns the faction's colour, and a green plume
+on a red hull is the bug this bit exists to prevent. A navigation light is emphatically *not*: port
+red and starboard green are a convention older than any faction in this game, and liveried they
+would turn red-on-red for the Vandal Collective and blue-on-blue for the Vanguard, which is the
+convention destroyed rather than themed. So the bit is per marker and authored, with the defaults
+that make the common case free: **`Exhaust` is authored `RaceTinted`, `NavLight` and `Gun` are
+not.** They are defaults for a tool to write, not rules a loader enforces — a beacon an artist
+wants in faction colour sets the bit, and a faction whose ships burn white clears it.
+
+The rule on a flagged marker is §5.5's, unchanged: `colour.rgb` is a shade, multiplied by the
+livery, and its `a` goes on meaning intensity either way.
 
 **Spaces.** `position` is mesh space at bind pose — the same space as vertices, so a tool places
 markers on the model and coordinates copy through. A bound marker (`parentBone >= 0`) follows its
@@ -562,6 +606,15 @@ tests keep testing the right rule when the fixture changes.
 - **Major bump (breaking).** Anything else — including any new `NmoIndexFormat`/
   `NmoVertexFormat`/`NmoSkinFormat` value or clip-payload shape, because a v2.0 loader cannot use
   a payload it cannot interpret.
+
+`NmoRenderFlags::RaceTinted` and `NmoMarkerFlags::RaceTinted` are the first bits this policy would
+govern, and they are in **v2.0 rather than a 2.1** on the one ground that makes that honest: the
+format has no consumer yet. Slice 1 shipped a codec and a corpus, not a reader, so there is no
+build in existence that would ignore the bits and no file in existence that depends on their
+absence — the fixture bytes are unchanged, the struct sizes are unchanged, and the corpus is
+regenerated from `Art/` anyway. Had an engine reader shipped first, this would have been a minor
+bump by the rule above and nothing else about it would differ. The day one has shipped, that
+latitude is gone.
 
 ---
 
@@ -649,7 +702,10 @@ interiors collapse.
   `ShipView::thrusterLocals` (`WorldView.cpp:100`) and every glow draws `SELECTED_COLOUR`
   (`WorldView.cpp:728`). Slice 3 replaces the points with `Exhaust` marker positions and the
   constant with the marker's colour; intensity handling (`THRUSTER_*` in `ViewTuning.h`) is
-  unchanged — the marker colours the effect, the view still animates it.
+  unchanged — the marker colours the effect, the view still animates it. Where the marker is
+  `RaceTinted` (§5.10, and every shipped exhaust is) that colour is a shade and the view multiplies
+  it by the flying faction's livery, so one authored plume burns azure, red or the player's own
+  without a second marker.
 - **NavLight** — new in slice 3: one glow pip per marker, colour from the marker, blinking
   on `param0`/`param1` against real time (presentation state, so it lives in `WorldView`, not the
   simulation — AGENTS.md §5).
@@ -750,6 +806,36 @@ source document's converter philosophy, at one-fiftieth the corpus size. `.pie` 
 machinery (roles tables, canonical-name passes, corpus surveys) has no counterpart here and is
 dropped entirely.
 
+### 13.1 The material vocabulary, and which half of it is livery
+
+The corpus authors five material names (`Stargate` adds a sixth, `aperture`, which follows
+`accent`), and they divide exactly as §5.5 divides authority. This is the authoring convention the
+GLB carries and `Art/Meshes/GlbToNmo.py` writes into the file:
+
+| Material | `RaceTinted` | `baseColour` | Why |
+|---|---|---|---|
+| `hull` | no | `0.27 0.27 0.27` | Structural plating. Neutral grey, and it is the ship's own |
+| `glass` | no | `0.12 0.12 0.12` | Canopy. Dark enough to read as a window against the hull |
+| `plate` | **yes** | `0.45 0.45 0.45` | The painted panels — the biggest liveried area |
+| `accent` | **yes** | `0.80 0.80 0.80` | Trim: the stripe that names the faction at distance |
+| `thruster` | **yes** | `1.00 1.00 1.00` | Nozzles, the brightest thing on an unlit hull |
+
+The three liveried rows are greyscale on purpose, per §5.5 — they are a **brightness ladder**, and
+that ladder is the whole content of them: plate reads as body, accent as trim, thruster as hot, at
+every livery and in the same order. A hue painted into one would be discarded by the multiply and
+would mislead whoever opened the file next.
+
+The two generic rows are much lighter than the corpus carried before the flag existed (`hull` was
+`0.024 0.027 0.025`, near black). They had to be. Those values were authored against a renderer
+that lerped 55 % of a light tint over the whole hull, which lifted them to a mid grey on screen;
+nothing lifts them now, so the authored value is the final one, and it is the *rendered* brightness
+that has to be preserved rather than the number. `glass` is pulled well under `hull` deliberately:
+the two rendered three units apart before, so a canopy was invisible and the tint was hiding it.
+
+The liveried shades are absolute, not relative to a faction: `livery × 1.0` is the livery at full
+strength, which is what a nozzle should be. A faction colour is therefore authored at the
+brightness its thrusters should burn, and every other liveried surface falls out of the ladder.
+
 ## 14. Slices
 
 1. **Tools and specification** *(accompanies this document; no engine change)* — §4's `Tools/`
@@ -765,12 +851,23 @@ dropped entirely.
 4. **Content swap** *(Assets)* — hulls re-exported per §13 with authored markers; OBJ files and
    `ObjParser`'s clustering retire (parser itself may stay for dev import); the
    `SpaceshipExplosion` and picking paths re-verified over the new loader's soup.
-5. **Articulated parts** *(later, own design note)* — pose evaluation, per-submesh transforms in
+5. **Liveries** *(NeuronClient shaders, Outpost)* — the visible half of `RaceTinted` (§5.5,
+   §5.10): the scene shader stops tinting a whole hull and multiplies the flagged surfaces by the
+   flying faction's colour, the faction-to-colour mapping becomes the table
+   [Stations.md](Stations.md) §9.3 describes, and exhaust plumes follow it. Its work order is
+   [NmoFormat-slice-5.md](NmoFormat-slice-5.md).
+6. **Articulated parts** *(later, own design note)* — pose evaluation, per-submesh transforms in
    the renderer, the first animated turret/dish; where indexed drawing and GPU skinning earn
    their slices, they hang off this one.
 
-Slices 2→3→4 are ordered; 5 is independent after 2. One slice per layer at a time, per the loop
+Slices 2→3→4→5 are ordered; 6 is independent after 2. One slice per layer at a time, per the loop
 in [Design/README.md](README.md).
+
+**On the numbering.** The work orders in `Design/` renumbered 3 and 4 against this list — the
+content swap was brought in front of the marker consumers, and
+[NmoFormat-slice-3.md](NmoFormat-slice-3.md) §2.7 says why. Each work order names the slice of
+this list it implements, so the two numberings can be reconciled by reading either file's opening
+paragraph. The livery slice is 5 in both.
 
 ## 15. Decisions taken with the owner (2026-08-29)
 

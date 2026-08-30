@@ -17,8 +17,8 @@ class AppWindow
 public:
   struct Desc
   {
-    std::wstring title = L"Outpost";
-    std::wstring className = L"OutpostWindow";
+    std::wstring title = L"Neuron";
+    std::wstring className = L"NeuronWindow";
     int widthPx = 1600;
     int heightPx = 900;
   };

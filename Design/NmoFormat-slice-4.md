@@ -160,8 +160,15 @@ screenshots and state the final numbers in the pull request** — that is what t
 - **No marker direction.** Nothing reads a marker's orientation. The plume is drawn along the path
   the nozzle travelled, as it is today, not along the marker's `+Z` — and the hulls' exhaust
   markers carry an identity rotation that lands on `+Y` anyway ([slice 3](NmoFormat-slice-3.md) §5).
-  Aiming a plume is slice 5's problem, after the content is fixed.
+  Aiming a plume is a later slice's problem, after the content is fixed.
 - **No emissive materials.** Still carried, still unread.
+- **No livery.** An `Exhaust` marker's colour is drawn exactly as authored here, and every shipped
+  one is `RaceTinted` (`NmoFormat.md` §5.10) — which means it is a *shade*, and every plume in this
+  slice's screenshots burns a greyscale version of itself. That is expected and it is not a bug to
+  chase: [slice 5](NmoFormat-slice-5.md) multiplies it by the flying faction's colour, and it is
+  the slice that makes the whole corpus stop being grey. Do not "fix" it here by reading a faction
+  colour early — the plume and the hull must start being liveried in the same commit or the two
+  disagree on screen.
 - **No `GameLogic`, `NeuronServer` or `NeuronCore` file.** None of this crosses the seam.
 - **No new pipeline.** Nav lights reuse the FX glow the plume already batches into.
 - **No `SceneRenderer` change.**

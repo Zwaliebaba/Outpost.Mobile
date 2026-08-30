@@ -17,6 +17,15 @@ inline constexpr ShipId INVALID_SHIP_ID = 0xFFFFFFFFu;
 using FactionId = std::uint8_t;
 inline constexpr FactionId FACTION_PLAYER = 0;
 inline constexpr FactionId FACTION_HOSTILE = 1;
+// Core Vanguard Command -- CVC, the Vanguard -- the government of known space (Design/Stations.md 4).
+// It spawns nothing yet: what needs it now is the client's livery table, which paints a hull by the
+// faction the wire states and therefore has to be able to name all three. The id is the wire's, so
+// it is declared with the other two rather than in the client, and it is 2 because Stations.md 4.1
+// says 2 -- a value the server will start using is not one to renumber later.
+//
+// Stations.md 4.1 also renames FACTION_HOSTILE to FACTION_VANDAL, same value, every caller in one
+// commit. That rename is Stations' to make; this line does not pre-empt it.
+inline constexpr FactionId FACTION_VANGUARD = 2;
 
 // A reference to a ship that survives a despawn.
 //

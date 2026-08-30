@@ -16,7 +16,7 @@
   <mp:PhoneIdentity PhoneProductId="61c8544b-6ac1-4a02-83f3-0b30d855f70c" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
   <Properties>
-    <DisplayName>Outpost</DisplayName>
+    <DisplayName>Outpost: Frontier</DisplayName>
     <PublisherDisplayName>zwali</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
@@ -35,8 +35,8 @@
       Executable="$targetnametoken$.exe"
       EntryPoint="$targetentrypoint$">
       <uap:VisualElements
-        DisplayName="Outpost"
-        Description="Outpost"
+        DisplayName="Outpost: Frontier"
+        Description="Outpost: Frontier — a real-time fleet game in open space"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png">

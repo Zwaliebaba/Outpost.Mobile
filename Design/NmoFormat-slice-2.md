@@ -30,7 +30,7 @@ The C++ blocks of [`NmoFormat.md`](NmoFormat.md) §5.1–§5.10, transcribed ver
 `NMO_FILE_MAGIC` through `NMO_NO_BONE`, `NmoFileHeader`, `NmoMeshRef`, `NmoMeshHeader`,
 `NmoRenderFlags`, `NmoMaterial`, `NmoBufferHeader`, `NmoIndexFormat`/`NmoVertexFormat`/
 `NmoSkinFormat`, `NmoVertex`, `NmoSkinVertex`, `NmoMeshExtents`, `NmoSubMesh`, `NmoBone`,
-`NmoClip`, `NmoSrtTrack`, the three key structs, `NmoMarker`.
+`NmoClip`, `NmoSrtTrack`, the three key structs, `NmoMarkerFlags`, `NmoMarker`.
 
 **Every `static_assert` in §5 is copied with it.** They are the specification, not a nicety: the
 struct sizes are what make "read the header, then index the array" legal at all, and a silent
@@ -64,6 +64,10 @@ struct MeshMarker
   DirectX::XMFLOAT4 colour{1.0f, 1.0f, 1.0f, 1.0f};       // linear RGBA
   float param0 = 0.0f;
   float param1 = 0.0f;
+  // colour is a shade and the faction supplies the hue (NmoFormat.md 5.10). Carried as a bool
+  // rather than the file's flag word because one bit is defined and a consumer asking "is this
+  // liveried" should not be asking it to bitmask arithmetic.
+  bool raceTinted = false;
 };
 ```
 
@@ -79,7 +83,40 @@ all: the thruster glow keeps working, unchanged, from data that is now authored 
 clustered. Slice 4 replaces its one consumer with the marker list and deletes the field. Say so at
 the declaration, so nobody mistakes it for a permanent second spelling of the same thing.
 
-`BoundsCentre`, `HalfExtents`, `RestY`, `Empty` and `MeshVertex` are untouched.
+`BoundsCentre`, `HalfExtents`, `RestY` and `Empty` are untouched. **`MeshVertex` gains one field**,
+and it is the only vertex-format change this design makes:
+
+```cpp
+struct MeshVertex
+{
+  float px, py, pz;
+  float r, g, b;
+  // 0 for a surface the model paints, 1 for one the faction paints (NmoFormat.md 5.5). It is a
+  // float and not a bit because it is a vertex attribute the input assembler has to hand the
+  // shader, and it is per vertex and not per draw because both kinds of surface are on one hull
+  // and this renderer draws a hull in one call.
+  //
+  // The initialiser is load-bearing: it is what lets every existing MeshVertex{x,y,z,r,g,b} in the
+  // tree go on compiling and mean "the model's own paint", which is the right answer for all of
+  // them -- the ground quad, the decals, and every vertex ObjParser will emit until slice 3
+  // deletes it.
+  float race = 0.0f;
+};
+```
+
+The value is constant across a triangle — a triangle belongs to one submesh, a submesh to one
+material — so nothing interpolates across a material seam and the pixel stage sees exactly 0 or 1.
+
+Growing the format reaches three places, all in this layer, and none of them changes what is on
+screen this slice: `SCENE_ELEMENTS` in `SceneRenderer.cpp` gains a fourth element
+(`"RACE", 0, DXGI_FORMAT_R32_FLOAT, 0, 24`), and `Scene.hlsli`'s `VsIn`/`VsOut` gain `float race`
+with both vertex shaders passing it through. `ScenePS` **does not read it yet** — that is slice 5,
+and until then this is a channel that is carried and ignored, which is exactly what makes it safe
+to land here. The unit quad and `ObjParser` need no edit at all, which is the initialiser earning
+its place.
+
+`MeshShatter` reads `MeshVertex::r/g/b` and is unaffected: it copies colours it does not
+interpret. Slice 5 is where a shard learns whose paint it was wearing.
 
 ### 2.3 `NeuronClient/NmoReader.h/.cpp` — validate, then expand
 
@@ -117,6 +154,16 @@ widen `U16` or copy `U32`, add `baseVertex`, and emit a `MeshVertex` from that `
 position and its colour, **modulated by the submesh material's `baseColour`**:
 
 > `MeshVertex.rgb = NmoVertex.colour.rgb / 255 × material.baseColour.rgb`
+>
+> `MeshVertex.race = (material.renderFlags & NmoRenderFlags::RaceTinted) ? 1.0f : 0.0f`
+
+The second line is the whole of this slice's livery work, and it is one line because the format
+put the answer where the answer belongs. A submesh has exactly one material, so the flag is read
+once per submesh and written to every vertex the submesh emits — no name matching, no lookup, no
+heuristic. On a flagged material `baseColour` is a shade rather than a colour
+([NmoFormat.md](NmoFormat.md) §5.5) and the multiply above still applies unchanged: the shade
+lands in `rgb`, the livery multiplies it in the pixel shader in slice 5, and a build that never
+gets slice 5 draws the shade as a grey ship, which is a legible wrong rather than a black one.
 
 That rule is not cosmetic and it is worth the comment it needs. The two conversion paths in
 `Tools/` fill these two fields differently: the Blender export writes white vertices and puts the
@@ -135,9 +182,10 @@ them over the same vertices and §5.12 clause 3 has already proved the section i
 /`boundsMax` take `boxMin`/`boxMax`.
 
 Markers: for every submesh, in submesh then file order, resolve the kind string to `MarkerKind`
-once, hash the name once, and append. Bone-bound markers (`parentBone >= 0`) are read and kept
-with their position as the file states it — this engine has no pose evaluation until slice 5, and
-a marker on a bone at bind pose is where the bind pose puts it.
+once, hash the name once, resolve `flags & NmoMarkerFlags::RaceTinted` into `MeshMarker::raceTinted`
+once, and append. Bone-bound markers (`parentBone >= 0`) are read and kept with their position as
+the file states it — this engine has no pose evaluation until slice 6, and a marker on a bone at
+bind pose is where the bind pose puts it.
 
 Skin buffers, bone tables and clips are **validated and skipped**. Nothing in this engine consumes
 them yet, and a file that carries a rig this reader silently ignored is better than one it refused;
@@ -209,12 +257,17 @@ cheapest real-world corruption there is — is rejected rather than read.
 - **No `ObjParser` change**, and no deletion. That is slice 3.
 - **No pose evaluation, no skinning, no indexed drawing.** Bones and clips are validated and
   skipped; `SceneRenderer` keeps taking triangle soup.
-- **No emissive, no render flags.** `NmoMaterial::emissiveColour` and `NmoRenderFlags` are read
-  and validated, and no consumer sees them. The hulls carry real emissive values (the thruster
-  material's is `(0.27, 0.807, 0.01)` at strength 1.3 on the Corvette); a pass that uses them is
-  its own slice against its own design.
-- **No `MeshShatter`, `WorldView` or `ShipExplosion` edit.** They hold `MeshData` and this slice
-  only adds a field to it.
+- **No emissive.** `NmoMaterial::emissiveColour` is read and validated, and no consumer sees it.
+  The hulls carry real emissive values (the thruster material's is `(0.27, 0.807, 0.01)` at
+  strength 1.3 on the Corvette); a pass that uses them is its own slice against its own design.
+  Note that those values are *green*, which the livery makes wrong the same way the base colours
+  were wrong — whichever slice lights them re-authors them as shades first.
+- **No livery, though the flag is read.** `RaceTinted` reaches `MeshVertex::race` and
+  `MeshMarker::raceTinted` and stops there: no shader multiplies by anything, no faction supplies a
+  colour, and the hulls draw in the greyscale shades the corpus authors. `DoubleSided`,
+  `AlphaBlend` and `Additive` reach nothing at all. Slice 5 is the visible half.
+- **No `MeshShatter`, `WorldView` or `ShipExplosion` edit.** They hold `MeshData`, and the field
+  this slice adds to `MeshVertex` is one `MeshShatter` copies without interpreting.
 
 ---
 
@@ -250,8 +303,13 @@ Decided by tests, because everything here is (Design/README.md):
   the pull request says so.
 - A code read, stated in the report: every file-derived length is computed in 64 bits before it is
   used to index or size anything, and no path allocates from a count that has not been capped.
+- **The game still looks exactly as it did.** `MeshVertex` grew and the input layout grew with it,
+  so the check is a screenshot beside one from before the slice: same hulls, same colours, same
+  ground. A wrong stride shows up as geometry exploding, and a shader that reads the new channel
+  by accident shows up as a black ship; neither is subtle, and both are this slice's bug.
 - No decision record is due — the format, its home and its tooling were all decided by
-  [ADR 0011](Decisions/0011-ship-meshes-are-nmo-and-its-tools-are-python.md). Say so.
+  [ADR 0011](Decisions/0011-ship-meshes-are-nmo-and-its-tools-are-python.md), and the record that
+  owes for liveries is slice 5's, where the rule becomes visible. Say so.
 - `Design/NmoFormat.md` §14 marks slice 2 landed; this file moves to `Design/Archive/`.
 
 ---

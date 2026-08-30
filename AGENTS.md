@@ -1,9 +1,10 @@
-# Outpost — how to work here
+# Outpost: Frontier — how to work here
 
 Conformance rules for anyone, human or agent, writing code in this repository.
 
-Outpost is a Windows game built on the **Neuron** engine libraries. The engine and the game are
-separate on purpose: `Neuron*` is meant to carry more than one game, and the day it stops being
+**Outpost: Frontier** is a Windows game built on the **Neuron** engine libraries. The title is the
+game; `Outpost` is what the executable, its project and its namespace are called, and code is not
+renamed to carry the subtitle. The engine and the game are separate on purpose: `Neuron*` is meant to carry more than one game, and the day it stops being
 able to is the day it stopped being an engine. Most of the rules below exist to hold that line.
 
 **This tree is greenfield. Nothing is grandfathered** — the rules apply to every line.
@@ -278,7 +279,14 @@ does not have.
 | `Design/` | Designs with a slice still open, `Screenprints/`, `Archive/` for designs whose slices have all landed and for the work orders that landed them, and `Design/Decisions/` — the architecture decision records (§9). An archived design is still the document its area is reviewed against and is cited from code as before; `Design/` itself is the list of what is unfinished. Its `README.md` says which document is which and how a slice moves from a design into the tree (§7). |
 | `.github/` | CI (§6) and the pull request template every slice answers (§7). |
 
-**On the name.** The repository is `Outpost.Mobile`; Outpost is a Windows game and nothing in this
+**On the names.** The game is **Outpost: Frontier**. The subtitle lives where a person reads it —
+the window title, the MSIX display name, the error dialog captions, [`README.md`](README.md) — and
+nowhere else: the executable, the project, the namespace, the window class, the QUIC registration
+and the development certificate are all spelled `Outpost`, because they are identifiers rather than
+a title, and renaming them buys nothing and breaks a key already on somebody's machine. Add the
+subtitle to a string only when it is going to be displayed.
+
+The repository is `Outpost.Mobile`; the game is a Windows one and nothing in this
 document says otherwise. The name is historical. What is actually mobile-adjacent in the tree is
 `WM_POINTER` touch input, MSIX packaging, and the ARM64 configurations §6 records as unverified —
 there is no phone target, and no plan stated anywhere for one. Read the name as a repository
