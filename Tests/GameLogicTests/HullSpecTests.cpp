@@ -132,5 +132,97 @@ public:
                      .c_str());
     Logger::WriteMessage(std::format(L"widest query radius: {} at {:.0f} m\n", HULL_NAMES[widestHull], widest).c_str());
   }
+
+  TEST_METHOD(ThePreFilterNeverCutsInsideWhatAvoidanceCanReach)
+  {
+    // The gather rejects a candidate on PairRelevanceRadiusMetres before building its record. That
+    // is only a saving and not a behaviour change while the filter reaches at least as far as the
+    // furthest-reaching consumer of the neighbour list -- Movement.cpp's ThreatAlong -- or the ship
+    // it belonged to stops being avoided.
+    //
+    // This is the row that caught the first two attempts. Writing an immovable neighbour off as a
+    // separation problem cut a fighter's sight of a Structure from 497 m to 115 m; and the query's
+    // own avoid term was 8 m short of the clearance ThreatAlong tests against, which never showed
+    // because the hull table's worst case buys slack that a localised radius takes away.
+    //
+    // Checked over every subset of the hull table, because the query's numbers are maxima over what
+    // is *present* and the worst case is whichever world makes those maxima smallest.
+    constexpr std::uint32_t SUBSETS = 1u << Game::HULL_COUNT;
+    for (std::uint32_t mask = 1; mask < SUBSETS; ++mask)
+    {
+      Game::NeighbourhoodExtent extent;
+      for (std::uint32_t hull = 0; hull < Game::HULL_COUNT; ++hull)
+      {
+        if ((mask & (1u << hull)) == 0)
+          continue;
+        const Game::HullSpec& spec = Game::HULL_SPECS[hull];
+        if (!spec.collidable)
+          continue;
+        if (spec.immovable)
+          extent.largestStaticRadiusMetres = std::max(extent.largestStaticRadiusMetres, spec.BoundingRadiusMetres());
+        else
+        {
+          extent.largestMobileRadiusMetres = std::max(extent.largestMobileRadiusMetres, spec.BoundingRadiusMetres());
+          extent.fastestSpeedMetresPerSec = std::max(extent.fastestSpeedMetresPerSec, spec.maxSpeedMetresPerSec);
+        }
+      }
+
+      for (std::uint32_t a = 0; a < Game::HULL_COUNT; ++a)
+      {
+        if ((mask & (1u << a)) == 0 || !Game::HULL_SPECS[a].collidable)
+          continue;
+        const float query = Game::QueryRadiusMetres(Game::HULL_SPECS[a], extent);
+        for (std::uint32_t b = 0; b < Game::HULL_COUNT; ++b)
+        {
+          if ((mask & (1u << b)) == 0 || !Game::HULL_SPECS[b].collidable)
+            continue;
+          // What the gather filters on: the pair's reach, clamped to the query that found it,
+          // because beyond the query the index returned nothing to reject.
+          const float filter = std::min(Game::PairRelevanceRadiusMetres(Game::HULL_SPECS[a], Game::HULL_SPECS[b]), query);
+
+          // ThreatAlong's own reach, spelled out here rather than borrowed, so this row fails if
+          // either formula drifts away from the other.
+          const Game::HullSpec& own = Game::HULL_SPECS[a];
+          const Game::HullSpec& other = Game::HULL_SPECS[b];
+          const float horizon = Game::ThreatHorizonSec(own, other.BoundingRadiusMetres(), own.maxSpeedMetresPerSec);
+          const float reach = (own.maxSpeedMetresPerSec + other.maxSpeedMetresPerSec) * horizon + own.BoundingRadiusMetres() +
+                              other.BoundingRadiusMetres() + Game::AVOID_MARGIN_METRES;
+          const float effective = std::min(reach, query);
+
+          Assert::IsTrue(filter + 0.001f >= effective,
+                         std::format(L"{} beside {} is filtered at {:.1f} m but is still a threat at {:.1f} m", HULL_NAMES[a],
+                                     HULL_NAMES[b], filter, effective)
+                           .c_str());
+        }
+      }
+    }
+  }
+
+  TEST_METHOD(AWorldOfFightersDoesNotPayForACarrier)
+  {
+    // What the localisation buys. The table's worst case sizes a region's ghost zone and is not
+    // going anywhere; what a tick pays is the neighbourhood actually around it
+    // (Design/MmoScalabilityReview.md U2).
+    const Game::HullSpec& fighter = Game::HullSpecOf(Game::HullId::Interceptor);
+
+    Game::NeighbourhoodExtent fightersOnly;
+    fightersOnly.largestMobileRadiusMetres = fighter.BoundingRadiusMetres();
+    fightersOnly.fastestSpeedMetresPerSec = fighter.maxSpeedMetresPerSec;
+
+    const float whole = Game::QueryRadiusMetres(fighter);
+    const float local = Game::QueryRadiusMetres(fighter, fightersOnly);
+    Assert::IsTrue(local < whole, L"a world with nothing but fighters in it still paid the whole table's radius");
+    Logger::WriteMessage(std::format(L"fighters-only query radius: {:.0f} m against the table's {:.0f} m ({:.0f}% of the area)\n", local,
+                                     whole, 100.0f * (local * local) / (whole * whole))
+                           .c_str());
+
+    // And the ceiling still holds: adding anything back can only widen it, never narrow it.
+    Game::NeighbourhoodExtent withACarrier = fightersOnly;
+    const Game::HullSpec& carrier = Game::HullSpecOf(Game::HullId::Carrier);
+    withACarrier.largestMobileRadiusMetres = std::max(withACarrier.largestMobileRadiusMetres, carrier.BoundingRadiusMetres());
+    withACarrier.fastestSpeedMetresPerSec = std::max(withACarrier.fastestSpeedMetresPerSec, carrier.maxSpeedMetresPerSec);
+    Assert::IsTrue(Game::QueryRadiusMetres(fighter, withACarrier) >= local, L"a Carrier arriving narrowed the query radius");
+    Assert::IsTrue(Game::QueryRadiusMetres(fighter, withACarrier) <= whole + 0.001f, L"a present-set radius exceeded the whole table's");
+  }
 };
 } // namespace GameLogicTests

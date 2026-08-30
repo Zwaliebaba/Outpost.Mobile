@@ -217,22 +217,94 @@ inline constexpr HullSpec HULL_SPECS[HULL_COUNT] = {
   return (wanted < AVOID_HORIZON_MAX_SEC) ? wanted : AVOID_HORIZON_MAX_SEC;
 }
 
-// How wide a circle this hull has to ask the index for.
+// The largest and fastest things a query could have to find.
+//
+// The hull table's own maxima are the ceiling, and that ceiling is what sizes a region's ghost zone.
+// What is actually in a world at a given moment is usually far less -- a skirmish between fighters
+// pays the Carrier's 655 m because a Carrier exists in the table, not because one is there
+// (Design/MmoScalabilityReview.md U2). A gather asks for the second; region sizing asks for the
+// first; they are the same arithmetic over different numbers, which is why there is one function.
+struct NeighbourhoodExtent
+{
+  float largestMobileRadiusMetres = 0.0f;
+  float largestStaticRadiusMetres = 0.0f;
+  float fastestSpeedMetresPerSec = 0.0f;
+};
+
+[[nodiscard]] constexpr NeighbourhoodExtent WholeHullTableExtent() noexcept
+{
+  return NeighbourhoodExtent{.largestMobileRadiusMetres = LargestMobileBoundingRadiusMetres(),
+                             .largestStaticRadiusMetres = LargestStaticBoundingRadiusMetres(),
+                             .fastestSpeedMetresPerSec = FastestHullSpeedMetresPerSec()};
+}
+
+// How wide a circle this hull has to ask the index for, against a stated neighbourhood.
 //
 // The first term is avoidance: what can close on it inside its own look-ahead. The second is
-// separation against architecture, which the first does not cover -- a Structure's centre sits
-// 251 m from its own skin, so a hull that only queried its avoidance radius could be inside one
-// and never see it. The larger of the two is the honest answer and it is the Carrier's 647 m,
-// which is what keeps a region's ghost zone a sane width (Collision.md 10).
-[[nodiscard]] constexpr float QueryRadiusMetres(const HullSpec& _hull) noexcept
+// separation, which the first does not cover -- a Structure's centre sits 251 m from its own skin,
+// so a hull that only queried its avoidance radius could be inside one and never see it. The larger
+// of the two is the honest answer (Collision.md 10).
+//
+// The separation term takes the widest thing present of *either* kind. On the hull table as it
+// stands that is the Structure's 251 m and the value is unchanged, but a world with no architecture
+// in it must still separate its ships from each other, and reading only the static maximum there
+// would return a radius narrower than a pair of Carriers need.
+[[nodiscard]] constexpr float QueryRadiusMetres(const HullSpec& _hull, const NeighbourhoodExtent& _extent) noexcept
 {
   const float ownRadius = _hull.BoundingRadiusMetres();
   // The same horizon the avoidance pass will use against the largest thing that can move, so a hull
   // is never asked to steer around something the query never showed it.
-  const float horizon = ThreatHorizonSec(_hull, LargestMobileBoundingRadiusMetres(), _hull.maxSpeedMetresPerSec);
-  const float closing = (_hull.maxSpeedMetresPerSec + FastestHullSpeedMetresPerSec()) * horizon;
-  const float avoid = closing + ownRadius + LargestMobileBoundingRadiusMetres();
-  const float separate = ownRadius + LargestStaticBoundingRadiusMetres() + SEPARATION_QUERY_MARGIN_METRES;
+  const float horizon = ThreatHorizonSec(_hull, _extent.largestMobileRadiusMetres, _hull.maxSpeedMetresPerSec);
+  const float closing = (_hull.maxSpeedMetresPerSec + _extent.fastestSpeedMetresPerSec) * horizon;
+  // AVOID_MARGIN_METRES is part of this sum because it is part of the clearance ThreatAlong tests
+  // against: a neighbour whose closest approach lands inside own + other + margin still scores, so a
+  // query that stopped at own + other would be exactly that margin short of finding it.
+  //
+  // It was missing until slice 11 and nothing showed, because the largest mobile radius in the table
+  // (a Carrier's 107 m) buys an Interceptor far more slack than eight metres. Narrowing this to what
+  // is present is what took the slack away and made the omission visible -- an 8 m band at the edge
+  // of every query in which a neighbour existed and was not returned.
+  const float avoid = closing + ownRadius + _extent.largestMobileRadiusMetres + AVOID_MARGIN_METRES;
+  const float widest = (_extent.largestStaticRadiusMetres > _extent.largestMobileRadiusMetres) ? _extent.largestStaticRadiusMetres
+                                                                                               : _extent.largestMobileRadiusMetres;
+  const float separate = ownRadius + widest + SEPARATION_QUERY_MARGIN_METRES;
   return (avoid > separate) ? avoid : separate;
+}
+
+// The table's worst case: the Carrier's 655 m, and the floor on how wide a region's ghost zone has
+// to be. A world-layout number, not a per-tick one.
+[[nodiscard]] constexpr float QueryRadiusMetres(const HullSpec& _hull) noexcept
+{
+  return QueryRadiusMetres(_hull, WholeHullTableExtent());
+}
+
+// How far apart these two hulls can be and still matter to each other. This is what lets a candidate
+// be rejected before its record is built, so it has to be at least as far as any consumer of the
+// neighbour list can reach, and it is derived from the furthest-reaching one rather than guessed.
+//
+// That consumer is Movement.cpp's ThreatAlong, which ignores a neighbour whose closest approach
+// stays outside `own + other + AVOID_MARGIN_METRES` or falls beyond the horizon. The pair can close
+// at most their combined top speeds over that horizon, so this sum is exactly the distance from
+// which one can still come to matter to the other. Separation and blocking both need mere capsule
+// overlap, which is well inside it.
+//
+// The immovable case is *not* special. A Structure has no speed, but a fighter closing on one at
+// 34 m/s has to see it from most of 500 m away or it never begins the turn -- writing this as a
+// separation problem, which is what its 251 m radius makes it look like, cuts that to 115 m and the
+// fighter flies into the station. Measured, not reasoned: the shortcut was written and the numbers
+// said otherwise.
+//
+// It is never wider than the query that found the pair, because the query's numbers are maxima over
+// what is present and these are a member of that set. GameLogicTests checks that over every ordered
+// pair and every subset of the hull table rather than leaving it as an argument.
+[[nodiscard]] constexpr float PairRelevanceRadiusMetres(const HullSpec& _hull, const HullSpec& _other) noexcept
+{
+  const float ownRadius = _hull.BoundingRadiusMetres();
+  const float otherRadius = _other.BoundingRadiusMetres();
+  const float horizon = ThreatHorizonSec(_hull, otherRadius, _hull.maxSpeedMetresPerSec);
+  const float closing = (_hull.maxSpeedMetresPerSec + _other.maxSpeedMetresPerSec) * horizon;
+  const float reach = closing + ownRadius + otherRadius + AVOID_MARGIN_METRES;
+  const float separate = ownRadius + otherRadius + SEPARATION_QUERY_MARGIN_METRES;
+  return (reach > separate) ? reach : separate;
 }
 } // namespace Game

@@ -71,7 +71,7 @@ struct WorldPos
 //
 // Exact while the two positions are within 2^24 sectors of each other -- 1.4 * 10^11 m -- and
 // approximate beyond that. Nothing in this design goes near the limit: the query radius caps at
-// 647 m (Design/Collision.md 10), an order of magnitude inside a single sector, so no interaction
+// 655 m (Design/Collision.md 10), an order of magnitude inside a single sector, so no interaction
 // spans even two.
 [[nodiscard]] inline float OffsetX(const WorldPos& _from, const WorldPos& _to) noexcept
 {

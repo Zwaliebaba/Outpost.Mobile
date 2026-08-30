@@ -335,12 +335,28 @@ void World::RebuildIndex()
 {
   RebuildStaticIfDirty();
 
+  // The neighbourhood's extent rides along with the rebuild, which already walks every ship. It is
+  // what stops a skirmish between fighters paying the Carrier's query radius because a Carrier
+  // exists in the hull table (Design/MmoScalabilityReview.md U2).
+  //
+  // Maxima over what is *present*, so every one of them is an upper bound on any neighbour a query
+  // can return, which is what makes the narrower radius correct rather than merely smaller. The
+  // static maximum comes from the static store, which is rebuilt on its own cadence and is walked
+  // above by RebuildStaticIfDirty.
+  m_extent = NeighbourhoodExtent{};
+  for (const SpatialIndex::Entry& entry : m_staticEntries)
+    m_extent.largestStaticRadiusMetres = std::max(m_extent.largestStaticRadiusMetres, entry.boundingRadiusMetres);
+
   m_dynamicEntries.clear();
   for (ShipId id = 0; id < m_ships.size(); ++id)
   {
     const HullSpec& hull = HullSpecOf(m_ships[id].hullId);
     if (!hull.immovable && hull.collidable)
+    {
       m_dynamicEntries.push_back({id, m_ships[id].prevPos, hull.BoundingRadiusMetres()});
+      m_extent.largestMobileRadiusMetres = std::max(m_extent.largestMobileRadiusMetres, hull.BoundingRadiusMetres());
+      m_extent.fastestSpeedMetresPerSec = std::max(m_extent.fastestSpeedMetresPerSec, hull.maxSpeedMetresPerSec);
+    }
   }
   m_index.RebuildDynamic(m_dynamicEntries);
 }
@@ -353,6 +369,8 @@ void World::GatherNeighbours()
     m_neighbourStart[id + 1] = m_neighbourStart[id] + HullSpecOf(m_ships[id].hullId).neighbourCap;
   m_neighbours.assign(m_neighbourStart[count], Neighbour{});
   m_neighbourCount.assign(count, 0);
+  m_gatheredCandidates = 0;
+  m_queriedCandidates = 0;
 
   for (ShipId id = 0; id < count; ++id)
   {
@@ -361,27 +379,48 @@ void World::GatherNeighbours()
     if (!hull.collidable)
       continue;
 
-    m_index.QueryCircle(ship.prevPos, QueryRadiusMetres(hull), m_queryScratch);
+    const float queryRadius = QueryRadiusMetres(hull, m_extent);
+    m_index.QueryCircle(ship.prevPos, queryRadius, m_queryScratch);
     m_candidateScratch.clear();
+    m_queriedCandidates += m_queryScratch.size();
     for (const ShipId other : m_queryScratch)
     {
       if (other == id)
         continue;
       const ShipState& neighbour = m_ships[other];
+      const HullSpec& neighbourHull = HullSpecOf(neighbour.hullId);
+
+      // The offsets and the squared distance first, because the pair can be rejected on those
+      // alone. The query radius is one circle wide enough for the worst pairing in the
+      // neighbourhood; most pairs in it are nowhere near that, and a fighter beside a fighter has
+      // no business paying a sqrt, two trigonometric calls and a 40-byte record for a hull it
+      // cannot reach. PairRelevanceRadiusMetres is never wider than the query that found this
+      // candidate, so nothing the query was right to return is dropped here.
+      const float offsetX = OffsetX(ship.prevPos, neighbour.prevPos);
+      const float offsetZ = OffsetZ(ship.prevPos, neighbour.prevPos);
+      const float distanceSquared = offsetX * offsetX + offsetZ * offsetZ;
+      // Clamped to the query, because beyond it the index returned nothing and there is nothing to
+      // reject. That clamp is what makes the filter provably behaviour-preserving without asking
+      // anything of the query's own formula: the query decides what exists, this decides what is
+      // worth a record, and it is never the narrower of the two by accident.
+      const float relevance = std::min(PairRelevanceRadiusMetres(hull, neighbourHull), queryRadius);
+      if (distanceSquared > relevance * relevance)
+        continue;
+
       Neighbour record;
       record.id = other;
-      record.offsetX = OffsetX(ship.prevPos, neighbour.prevPos);
-      record.offsetZ = OffsetZ(ship.prevPos, neighbour.prevPos);
+      record.offsetX = offsetX;
+      record.offsetZ = offsetZ;
       record.velocityX = std::sin(neighbour.prevHeading) * neighbour.speed;
       record.velocityZ = std::cos(neighbour.prevHeading) * neighbour.speed;
-      const HullSpec& neighbourHull = HullSpecOf(neighbour.hullId);
       record.boundingRadiusMetres = neighbourHull.BoundingRadiusMetres();
       record.avoidanceAuthority = AvoidanceAuthorityOf(neighbourHull, neighbour.order);
       record.immovable = neighbourHull.immovable;
-      record.distanceSquared = record.offsetX * record.offsetX + record.offsetZ * record.offsetZ;
-      record.proximityMetres = std::sqrt(record.distanceSquared) - record.boundingRadiusMetres;
+      record.distanceSquared = distanceSquared;
+      record.proximityMetres = std::sqrt(distanceSquared) - record.boundingRadiusMetres;
       m_candidateScratch.push_back(record);
     }
+    m_gatheredCandidates += m_candidateScratch.size();
 
     // Every candidate from the covering ring, then sorted, and only then truncated. Truncating
     // cell by cell would make cell size part of the replay contract and it could never be retuned

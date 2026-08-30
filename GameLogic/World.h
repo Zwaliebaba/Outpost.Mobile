@@ -135,6 +135,27 @@ public:
   // What a ship sensed this tick. Empty before the first Step.
   [[nodiscard]] std::span<const Neighbour> NeighboursOf(ShipId _id) const noexcept;
 
+  // How many candidates the last gather built a record for, across the whole fleet, and how many the
+  // index returned before the pair filter looked at them. The query is over-inclusive by design, so
+  // the gap between these two is the work the filter is not doing; the second number grows with the
+  // widest pairing in the neighbourhood and the first with how crowded it actually is
+  // (Design/MmoScalabilityReview.md U2).
+  [[nodiscard]] std::uint64_t GatheredCandidateCount() const noexcept
+  {
+    return m_gatheredCandidates;
+  }
+  [[nodiscard]] std::uint64_t QueriedCandidateCount() const noexcept
+  {
+    return m_queriedCandidates;
+  }
+
+  // What the last gather asked the index for, so a test can see the radius narrow rather than infer
+  // it from a timing.
+  [[nodiscard]] const NeighbourhoodExtent& Extent() const noexcept
+  {
+    return m_extent;
+  }
+
   // The remaining waypoints of a ship's planned route, current one first. Server-side only: a path
   // is never wire data, and a client sees the resulting motion through snapshots like any other
   // (Design/Collision.md 12). Exposed for tests and for a debug overlay.
@@ -255,6 +276,15 @@ private:
   // has stopped growing.
   std::vector<SpatialIndex::Entry> m_staticEntries;
   std::vector<SpatialIndex::Entry> m_dynamicEntries;
+
+  // The largest and fastest hulls actually in this world, recomputed as the index rebuilds and read
+  // by the gather. Not the hull table's maxima: those size a region's ghost zone and are the
+  // ceiling, not the bill (Design/MmoScalabilityReview.md U2).
+  NeighbourhoodExtent m_extent;
+
+  // Counted per tick and reset by each gather: a readout, never read by the simulation.
+  std::uint64_t m_gatheredCandidates = 0;
+  std::uint64_t m_queriedCandidates = 0;
   std::vector<ShipId> m_queryScratch;
   std::vector<Neighbour> m_candidateScratch;
   std::vector<Neighbour> m_neighbours;         // flat, one run per ship

@@ -82,7 +82,7 @@ inline constexpr float STOPPED_SPEED = 0.01f;
 // The cap on the derived per-hull avoidance horizon. In the contract: it changes which neighbours
 // are considered at all. Uncapped, a Carrier's horizon is 39 s and its query circle 2.7 km, which
 // makes the neighbour cap meaningless and sets a floor on region size measured in tens of
-// kilometres. At 8 s the widest query in the table is the Carrier's 647 m (Collision.md 10).
+// kilometres. At 8 s the widest query in the table is the Carrier's 655 m (Collision.md 10).
 inline constexpr float AVOID_HORIZON_MAX_SEC = 8.0f;
 
 // How far outside the touching distance a closing neighbour still counts as a threat. Everything

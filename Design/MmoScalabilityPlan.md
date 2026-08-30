@@ -132,7 +132,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 8 | Trail and glow batching | `NeuronClient`+`Outpost` | S | — | G1 |  |   landed |
 | 9 | Frustum culling | `NeuronClient`+`Outpost` | S | — | G2 |  |   landed |
 | 10 | Hull instancing | `NeuronClient`+`Outpost` | M | 9 | G2 |  |  |
-| 11 | Localized gather radius, threat pre-filter | `GameLogic` | M | — | U2 |  |  |
+| 11 | Localized gather radius, threat pre-filter | `GameLogic` | M | — | U2 |  |   landed |
 | 12 | The tick-rate decision | `GameLogic` | S | — | E7 | ADR | decided: 60 Hz stays |
 | 13 | Churn-gated static rebuilds | `GameLogic` | S | — | U4 |  | landed |
 | 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR |  |
@@ -355,6 +355,39 @@ day it comes, per ADR 0022's confinement rule).
 **Acceptance.** The agreement test still passes at two cell sizes; the replay gate green; a new
 benchmark row asserting gathered-candidate count tracks local density, with the N=5,000 sweep
 number in the pull request beside ADR 0007's baseline.
+
+**As landed**, the pre-pass is not a new one: `SpatialIndex`'s rebuild already walked every entry
+and `World::RebuildIndex` already walked every ship, so `NeighbourhoodExtent` — the largest mobile
+radius, the largest static radius and the fastest speed *present* — rides along for nothing.
+`QueryRadiusMetres` takes it; the no-argument overload stays, spelling the hull table's worst case,
+because that number sizes a region's ghost zone and is a world-layout constant rather than a
+per-tick one. A fighters-only world drops from **595 m to 151 m — 6% of the area**.
+
+The per-region version the order describes is *not* what landed, and the reason is worth recording:
+it is circular. The radius chooses the covering cells and the cells determine the radius, so a large
+hull just outside the chosen set is exactly the case that breaks it. A fixed point over per-cell
+maxima would resolve that and is a slice of its own.
+
+**Two defects the localisation exposed**, both latent and both masked by the slack the table's
+worst case was buying:
+
+1. `QueryRadiusMetres`'s avoid term omitted `AVOID_MARGIN_METRES`, which is part of the clearance
+   `ThreatAlong` actually tests against. Every query was 8 m short of its own threat test — an outer
+   band in which a neighbour existed and was not returned. Invisible while the term carried a
+   Carrier's 107 m against an Interceptor's 8.7 m; not invisible once it carries what is present.
+   The table's worst case moves 647 m → **655 m**, still inside the 700 m ghost-zone budget, and the
+   four places that stated 647 are re-trued.
+2. The pre-filter's first draft wrote an immovable neighbour off as a separation problem, which is
+   what `QueryRadiusMetres`'s own two-term split reads like. `ThreatAlong` scores statics: a fighter
+   closing on a Structure at 34 m/s must see it from 497 m, and the shortcut cut that to **115 m**.
+   Measured, not reasoned — the shortcut was written, and the harness said otherwise.
+
+The filter that landed is `min(pair reach, query radius)`. Clamping is what makes it
+behaviour-preserving without asking anything of the query's formula: the query decides what exists,
+the filter decides what is worth a 40-byte record and a `sqrt`, and it can never be the narrower of
+the two by accident. Verified exhaustively — every ordered hull pair against every subset of the
+table, 23,040 combinations, checking both that the filter never cuts inside `ThreatAlong`'s reach
+and that it is genuinely narrower than the query (it is, in 22,374 of them).
 
 #### Slice 12 — the tick-rate decision (`GameLogic`, now S + ADR)
 
