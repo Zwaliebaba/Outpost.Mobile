@@ -76,3 +76,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0039](0039-standings-are-simulation-state-stated-per-subscriber.md) | Standings are simulation state, stated per subscriber | accepted |
 | [0040](0040-a-departure-carries-a-cause.md) | A departure carries a cause on the wire | accepted |
 | [0041](0041-the-protector-response-reacts-to-stated-acts.md) | The protector response reacts to stated acts, not senses | accepted |
+| [0043](0043-the-tick-rate-is-fixed-at-60-hz.md) | The tick rate is fixed at 60 Hz, and capacity is bought elsewhere | accepted |
