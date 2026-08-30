@@ -12,6 +12,7 @@
 #include <winrt/Windows.ApplicationModel.Activation.h>
 
 #include "RenderTypes.h"
+#include "HandleStore.h"
 #include "MeshData.h"
 #include "Noise3.h"
 #include "CubeSphere.h"

@@ -186,6 +186,7 @@
     </ClCompile>
     <ClCompile Include="CameraTests.cpp" />
     <ClCompile Include="DdsImageTests.cpp" />
+    <ClCompile Include="HandleStoreTests.cpp" />
     <ClCompile Include="NmoReaderTests.cpp" />
     <ClCompile Include="MeshShatterTests.cpp" />
     <ClCompile Include="SpriteParticlesTests.cpp" />

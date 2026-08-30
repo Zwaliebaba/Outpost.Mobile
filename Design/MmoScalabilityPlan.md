@@ -1,14 +1,18 @@
 # The MMO scalability plan — the review as slices
 
-**Status: fourteen of the twenty-four slices have landed.** The seam: 2 (the despawn log is
+**Status: eighteen of the twenty-four slices have landed.** The seam: 2 (the despawn log is
 cursored), 3 with 4 folded into it (the publisher), 5 and 6 (the reliable lane, and departures and
 orders on it, which retires finding E1), 7 (listener slots recycled), and the loopback fallback is
 gone (ADR 0028). The view: 8 (trail and glow batching), 9 (frustum culling), 10 (hull instancing).
 The simulation: 11 (a localized gather radius), 13 (churn-gated static rebuilds), and 14 — all four
 slices of its own design, so architecture is islands on a world-fixed lattice and the 16.4 km cliff
 is gone. The tree: 21 (the guards widened) and 22 (the dead helper deleted). Slice 12 was decided
-rather than built: 60 Hz stays. Phase 3 has opened with 15: the ship record is 47 bytes and a
-fragment carries 23 of them instead of 13. **What is left is slices 16 through 20, plus 23 and 24.**
+rather than built — 60 Hz stays — and its record is written at last (ADR 0045). Phase 3 has opened
+with 15: the ship record is 47 bytes and a fragment carries 23 of them instead of 13. Slice 18
+opens the client track's second half -- a copy queue and render handles that can be freed -- built
+and run on Windows on arrival, which the branch it came from could not do. Slice 23 has taken its
+first project, and slice 24 is in: a root is told what to be by a file rather than by a rebuild.
+**What is left is slices 16, 17, 19 and 20, plus slice 23's promotion commit.**
 This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
 (tree at `de12b6d`) into an ordered slice plan in the shape `Design/README.md` defines: one slice,
 one branch, one pull request. The review is the evidence; this document is the work. Where a slice
@@ -107,22 +111,24 @@ Named here so no slice takes them silently:
    what a future change would have to re-earn, and that the per-shard multiplier is now a sizing
    input rather than an open question. Substepping stays un-built and un-needed.
 3. ~~**How a dedicated server is told what to be**~~ — **taken 2026-08-30: a configuration file, read
-   by the composition root alone.** This does not bend AGENTS.md §5: that rule bans `argv` and the
+   by the composition root alone; built as slice 24, ADR 0043.** This does not bend AGENTS.md §5: that rule bans `argv` and the
    environment, and says configuration is loaded by the composition root, which is exactly what a
    file read there is. Libraries keep receiving plain `Desc` structs and still never read a file
    themselves. It needs a format, a hand-written parser (§1 R7 — no generators), the fail-closed
    rule §5 already requires of anything parsing content, and a decision record. It is a slice of its
    own, not yet cut, and it is what gates a second process.
-4. **`FactionId` stays u8 for now** (256 factions). Fine while factions are identities; revisit in
-   slice 16's record if player corporations are to become factions, because that is the last cheap
-   moment to widen it.
+4. ~~**`FactionId` stays u8 for now**~~ — **answered by slice 16's record: it stays u8, and the
+   premise was wrong.** A corporation is a membership and a faction is an identity every client maps
+   to a relation (ADR 0013), so making one the other puts ten thousand rows into a table that is
+   quadratic in its own size. Widening the id alone would buy nothing while `FACTION_LIMIT` is 8 and
+   the wire's `hostileMask` is a byte; the three move together or not at all (ADR 0044).
 
 ## 5. Deliberately left out
 
 The same fences the review drew. No combat, economy, or content systems — this plan makes the
 engine able to carry them, not build them. No second-process migration. The seam and the
-machinery are ready and §4 decision 3 is now taken, so slice 24 cuts the configuration file a
-headless root would read — but the second process itself, and whatever runs it, stays out of this
+machinery are ready and §4 decision 3 is taken and built, so slice 24 cut the configuration file a
+headless root reads — but the second process itself, and whatever runs it, stays out of this
 plan. No 3D simulation: the plane is a product decision
 (ADR 0016, `WorldPos.h`), and nothing here spends effort for or against it. No audio. Release CI
 and the R11 documentation pass stay where AGENTS.md already tracks them.
@@ -148,19 +154,22 @@ Findings reference `MmoScalabilityReview.md`.
 | 9 | Frustum culling | `NeuronClient`+`Outpost` | S | — | G2 |  | landed |
 | 10 | Hull instancing | `NeuronClient`+`Outpost` | M | 9 | G2 |  | landed |
 | 11 | Localized gather radius, threat pre-filter | `GameLogic` | M | — | U2 |  | landed |
-| 12 | The tick-rate decision | `GameLogic` | S | — | E7 | ADR | decided: 60 Hz stays |
+| 12 | The tick-rate decision | `GameLogic` | S | — | E7 | ADR | [landed](Decisions/0045-the-tick-rate-is-fixed-at-60-hz.md) |
 | 13 | Churn-gated static rebuilds | `GameLogic` | S | — | U4 |  | landed |
 | 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR | landed, all four slices of [its design](Archive/RegionalPathfinding.md) |
 | 15 | The quantized wire | `GameLogic` | M | 6 | E5 | ADR | [landed](Archive/QuantizedWire-work-order.md) |
 | 16 | Global entity identity | `GameLogic` | M | 15 | U3 | ADR |  |
 | 17 | The state codec and the replay gate | `GameLogic` | M | 16 | U3 |  |  |
-| 18 | Copy-queue uploader, store eviction | `NeuronClient` | M | 10 | G3 | ADR |  |
+| 18 | Copy-queue uploader, store eviction | `NeuronClient` | M | 10 | G3 | ADR | landed (ADR 0044) |
 | 19 | Compressed textures, descriptor allocator | `NeuronClient` | M | 18 | G4 |  |  |
 | 20 | Body LOD and culling completion | `NeuronClient` | M | 9 | G5 |  |  |
 | 21 | Guard widening and the docs re-trued | `Build/`+prose | S | — | C2 C3 C4 |  | landed |
 | 22 | Legacy helper cleanup | `NeuronCore` | S | — | C1 |  | landed |
-| 23 | clang-tidy widens a project | `.github/` | S | — | C2 |  |  |
-| 24 | The server configuration file | `Outpost` | M | — | — | ADR | cuttable since §4.3 |
+rather than built: 60 Hz stays. Slice 18 opens the client track's second half -- a copy queue and
+render handles that can be freed -- built and run on Windows on arrival, which the branch it came
+from could not do. Slice 23 has taken its first project, and slice 24 is in: a root is told what to
+be by a file rather than by a rebuild. **What is left is phase 3 — slices 15 through 17, 19 and
+20 — plus slice 23's promotion commit.**
 
 **Quick wins:** slices 1, 7, 13, 21 and 22 are each a sitting, depend on nothing, and retire real
 findings; any idle track starts with its nearest one.
@@ -446,6 +455,13 @@ question. No code, and `SimTuning.h` is untouched.
 **Acceptance.** The decision record; the tunneling suite green at the chosen rate; the replay gate
 green; `TUNNEL_HEADROOM`'s margin restated in the record.
 
+**Landed** as [ADR 0045](Decisions/0045-the-tick-rate-is-fixed-at-60-hz.md), five months after the
+decision was taken and one slice after this plan started citing it as taken — which is the drift this
+plan exists to catch, found by reading its own status table against `Design/Decisions/`. No code, and
+`SimTuning.h` is untouched as the scope said; what the record adds over the scope is the
+substepping-versus-slower-tick comparison, because "60 Hz stays" is only half a decision without the
+thing it was chosen over.
+
 #### Slice 13 — churn-gated static rebuilds (`GameLogic`, S)
 
 **Scope.** `SpawnShip`/`DespawnShip` dirty the static index only when the hull is immovable (the
@@ -600,6 +616,59 @@ CPU-side; ten F5 reseeds hold the store count flat; frame-time across a mid-sess
 and stated in the pull request.
 **ADR.** GpuDevice gains the copy queue — a library gains a responsibility.
 
+**As landed**, it was written where there is no Windows, no D3D12 and no GPU, so on its first branch
+what was measured was the half that could be — `HandleStore`'s bookkeeping, by eleven test rows and
+by seven mutations — and every line of D3D12 in it was read rather than run. That is why the
+remaining client slices were not stacked on it (owner's call, 2026-08-30). **Re-landed on its own
+branch the same day, it was built and run on Windows before merging:** Debug|x64 compiles clean on
+the first attempt, the game boots over the copy queue (hulls, bodies, sky), two F5 reseeds exercise
+the mid-session path, and every suite passes with `HandleStoreTests` in it.
+
+ADR 0044. The scope divided into two halves that turn out to be the same shape twice — nothing
+could say a resource was finished with, on either side.
+
+**The uploader.** `BeginUploads` reset allocator 0, which is also frame 0's, so it had to drain the
+whole GPU first. `GpuDevice` now has a `COPY` queue with its own allocator, list and fence, and
+`BeginCopies`/`SubmitCopies` around it: `SubmitCopies` signals the copy fence and makes the graphics
+queue wait on it, and **the CPU is not blocked at all**. `BeginUploads` keeps its direct bracket for
+the work a copy queue cannot do, and gains an allocator of its own so it waits for the previous
+upload rather than for every frame.
+
+**The plan's sentence for this slice does not survive contact with the bracket**, which is the
+finding worth carrying forward. It asks for the upload path to move onto the copy queue; a copy
+queue cannot run `BodyRenderer::BakeBody`'s **compute dispatch**, cannot express
+`UploadCoverageTexture`'s transition to `PIXEL_SHADER_RESOURCE`, and cannot express `ReadBackBody`'s
+transition out of a graphics state. So the bracket splits by *what the work is*: static buffers —
+every hull, every body mesh, the sky — go to the copy queue, and bakes and readbacks stay. The
+textures follow when slice 19 rewrites their upload for BC and mip chains, which is what untangles
+them from the bake that reads one.
+
+**The barriers came out rather than moving.** A buffer created in `COMMON` is promoted to
+`COPY_DEST` implicitly, everything a copy queue touches decays back to `COMMON` on submission
+completion, and the first graphics use promotes it to `VERTEX_AND_CONSTANT_BUFFER` for free. The
+`ResourceBarrier` that used to follow the copy is now both unnecessary and illegal on that queue.
+That is Microsoft's documented behaviour and it is cited at the code, because it is the kind of
+claim a reader should not have to take on trust.
+
+**The store.** `HandleStore` holds the slot/generation bookkeeping and no D3D12, which is what let
+it be tested without a device. A handle is a slot and a generation packed into the 32 bits
+`MeshHandle` already was, so no call site changed: 65,535 live meshes against a tree with eleven
+hulls and eight bodies, and 65,535 reuses of a slot against a key somebody presses by hand. Both
+renderers index by slot and resolve by handle, so a stale handle now draws nothing rather than
+whatever took its place. **F5 frees the scene it replaces**, and `OutpostApp.cpp`'s admission beside
+the key is retired.
+
+**Measured, where measuring was possible.** Seven mutations were introduced into `HandleStore` one
+at a time: no generation bump on free, a FIFO free list, the reserved slot allocated, the live flag
+ignored on lookup, a generation wrapping to 0, and two more. **Five went red at once; two did not,
+and both were holes in the tests** — nothing reached the store's 65,535-slot cap, and nothing
+fabricated a handle carrying a freed slot's new generation, which is the one case the generation
+alone cannot catch and the `live` flag exists for. Both closed, both now red. The comment claiming
+the two tests were independent was *wrong* before that and is corrected.
+
+**Not in this commit**: the frame-time measurement across a mid-session bake that the acceptance
+above asks for. It needs Windows, a GPU and a stopwatch.
+
 #### Slice 19 — compressed textures and the descriptor allocator (`NeuronClient`, M)
 
 **Scope.** The upload path accepts what `DdsImage` already parses: BC formats and mip chains, via a
@@ -706,6 +775,25 @@ sitting each; NeuronCore follows slice 22 so the sweep meets a clean file.
 **Acceptance.** Two green runs, then the promotion commit; AGENTS.md §6's scope sentence updated
 in the same commit.
 
+**As landed**, NeuronServer joined the step **advisory**: the exit code is GameLogic's count alone,
+so a finding in NeuronServer is printed and the job stays green. The promotion commit is owed and is
+one line — `exit $counts['GameLogic']` grows a `+ $counts['NeuronServer']` — after two runs on the
+runner come back clean.
+
+The step now walks a list of projects rather than one directory, so the third joins as one entry
+rather than as a second copy of the loop. Its file list is still read off disk, for the reason the
+test-suite list is: a file a later slice adds is checked the day it lands.
+
+**Measured before landing, not asserted**: `clang-tidy 18` on Linux over `ServerHost.cpp` — which
+reaches `ServerHost.h` and `Simulation.h` through the header filter — reports nothing at all. That
+is why NeuronServer was the project to take next, along with being the smallest, headless, and one
+of only two that do not reach the D3D12 headers. It is *not* why it gates: the runner ships the
+VS-bundled LLVM 22, and `.clang-tidy`'s own status block records that the newer one has already seen
+a defect the older one did not. "Clean" is always clean under something, and the something that
+counts is the runner.
+
+NeuronCore is next, and slice 22 swept its one header for exactly this.
+
 #### Slice 24 — the server configuration file (`Outpost`, M + ADR)
 
 **Scope.** The shape a headless composition root reads its port, backlog, world seed and subscriber
@@ -720,6 +808,38 @@ read once at boot is the whole of it.
 asserting (§5's rule for anything parsing content); every value the current `Outpost.exe` hard-codes
 can be expressed; the existing boot is unchanged when no file is present. A decision record for the
 format and for why a file does not bend §5.
+
+**As landed**, the file is `Outpost/Assets/Server.cfg` — deployed beside the executable in the shape
+every mesh and font already uses — and it carries five keys, each with a consumer today: `port`,
+`backlog`, `interestRadiusMetres`, `interestUpdateEveryTicks`, `ordersPerTick`. The `shard` key the
+first landing carried went with slice 16, whose `World::ConfigureShard` is its only consumer; it
+returns with that slice. Work order:
+[`ServerConfig-work-order.md`](Archive/ServerConfig-work-order.md); ADR 0043.
+
+**"Fails closed" turned out to be two rules, not one**, and the split is the useful part of the
+slice. The parser applies *nothing* on a refusal — so half the admin's file and half the defaults,
+with nothing saying which, is a state that cannot exist — and it decides nothing about what to do
+next. The root decides: this one logs `CONFIG REFUSED` and boots on the defaults, because a typo in
+a tuning file should not be a black screen, while a headless root prints the same message and exits
+non-zero. Same parser, two roots.
+
+**An unknown key is a refusal**, which is the one design choice a reader will want argued: ignoring
+it turns `prot = 40000` into a silent revert to 30081, and that looks exactly like the file working.
+
+**The world seed is not in the file**, and this table's sentence for it is why that is stated rather
+than quietly dropped. Nothing reads one: `UniverseLayout` exists (ADR 0037) and is not wired into
+the root, and the two seeds the root does hold are presentation, live in `ViewTuning.h`, and are
+tunable at any time by the rule that separates that header from `SimTuning.h`. A knob with no reader
+is a knob to explain and then remove.
+
+**Verified by harness, not by suite.** `Outpost` has none — ADR 0014's standing assumption, the one
+slices 1, 8, 9 and 10 also made. The parser compiles on Linux unmodified, so the harness runs the
+shipped translation unit rather than a copy: every refusal the order names, the shipped file parsing
+to exactly the defaults, and 200,000 fuzzed inputs under ASan and UBSan without a throw, an abort or
+a silent refusal. 200,127 checks, none failing.
+
+**What it retires**: `OUTPOST_QUIC_PORT` as a literal in three places, and §4 decision 3 as an open
+question. What it does not: the headless executable itself, which stays out of this plan (§5).
 
 ---
 

@@ -212,6 +212,7 @@
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="OutpostApp.h" />
+    <ClInclude Include="ServerConfig.h" />
     <ClInclude Include="ShipExplosion.h" />
     <ClInclude Include="WorldView.h" />
     <ClInclude Include="WorldSimulation.h" />
@@ -226,6 +227,7 @@
     </ClCompile>
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="OutpostApp.cpp" />
+    <ClCompile Include="ServerConfig.cpp" />
     <ClCompile Include="ShipExplosion.cpp" />
     <ClCompile Include="WorldView.cpp" />
     <ClCompile Include="BodyCatalogue.cpp" />
@@ -278,6 +280,10 @@
     the Windows App SDK Nuget package has not yet been restored.
   -->
   <ItemGroup>
+    <None Include="Assets\Server.cfg">
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</DeploymentContent>
+    </None>
     <None Include="Assets\Fonts\EditorFont.dds">
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</DeploymentContent>

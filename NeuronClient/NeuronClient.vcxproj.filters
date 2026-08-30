@@ -81,6 +81,9 @@
     <ClInclude Include="GpuHelpers.h">
       <Filter>Render</Filter>
     </ClInclude>
+    <ClInclude Include="HandleStore.h">
+      <Filter>Render</Filter>
+    </ClInclude>
     <ClInclude Include="GpuDevice.h">
       <Filter>Render</Filter>
     </ClInclude>
@@ -153,6 +156,9 @@
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="GpuHelpers.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="HandleStore.cpp">
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="GpuDevice.cpp">
