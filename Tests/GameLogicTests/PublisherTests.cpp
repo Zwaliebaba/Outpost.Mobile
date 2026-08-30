@@ -8,11 +8,13 @@ namespace
 {
 // Its own copy rather than a shared one: both suites keep theirs in an anonymous namespace, which is
 // what the tree does instead of a test-support header nobody owns.
-[[nodiscard]] bool Holds(std::span<const Game::ShipHandle> _set, Game::ShipHandle _handle)
+// The wire's sets are identities since ADR 0047, so this asks the wire's question. A handle names a
+// ship inside one World and never leaves it.
+[[nodiscard]] bool Holds(std::span<const Game::EntityId> _set, Game::EntityId _entity)
 {
-  for (const Game::ShipHandle held : _set)
+  for (const Game::EntityId held : _set)
   {
-    if (held == _handle)
+    if (held == _entity)
       return true;
   }
   return false;
@@ -156,6 +158,7 @@ public:
     const Game::ShipId doomed = SpawnAt(world, 0.0f, 0.0f);
     (void)SpawnAt(world, 40.0f, 0.0f);
     const Game::ShipHandle doomedHandle = world.HandleOf(doomed);
+    const Game::EntityId doomedEntity = world.EntityIdOf(doomed);
 
     Link a;
     Link b;
@@ -196,8 +199,8 @@ public:
       b.DrainInto(viewB);
     }
 
-    Assert::IsTrue(Holds(viewA.Destroyed(), doomedHandle), L"the first subscriber was not told about the death");
-    Assert::IsTrue(Holds(viewB.Destroyed(), doomedHandle), L"the second subscriber lost the death to the first one's read");
+    Assert::IsTrue(Holds(viewA.Destroyed(), doomedEntity), L"the first subscriber was not told about the death");
+    Assert::IsTrue(Holds(viewB.Destroyed(), doomedEntity), L"the second subscriber lost the death to the first one's read");
   }
 
   TEST_METHOD(OrdersPastTheBudgetWaitTheirTurnAndTheTickIsCounted)
@@ -220,7 +223,7 @@ public:
 
     link.Pump(0);
     Game::MoveOrder order;
-    order.ships.push_back(handle);
+    order.ships.push_back(world.EntityIdOf(ship));
     order.destination = Game::LocalPos(500.0f, 0.0f);
     for (int at = 0; at < 5; ++at)
       Assert::IsTrue(Game::WriteMoveOrder(order, link.client), L"the order was refused by the lane");
@@ -273,7 +276,7 @@ public:
 
     Assert::IsTrue(view.Destroyed().empty(), L"a late subscriber was told about a death that preceded it");
     Assert::AreEqual(static_cast<std::size_t>(1), view.Latest().ships.size(), L"the late subscriber did not get the surviving ship");
-    Assert::IsTrue(view.Latest().ships[0].handle == survivor, L"the late subscriber got the wrong ship");
+    Assert::IsTrue(view.Latest().ships[0].entity == world.EntityIdOf(world.Resolve(survivor)), L"the late subscriber got the wrong ship");
   }
 
   TEST_METHOD(RemovingASubscriberDoesNotStrandTheLog)

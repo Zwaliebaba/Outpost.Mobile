@@ -49,7 +49,12 @@ class World;
 // NPCs in one faction, nothing on the wire changes (Design/Archive/Hostiles.md 4.2).
 struct ShipSnapshot
 {
-  ShipHandle handle; // not ShipId -- that is an array index, and despawn moves it (ADR 0005)
+  // Who this is, not where it is. A ShipHandle would have been enough while there was one World; an
+  // id is what survives being handed between two, and it is what a client may key its own state on
+  // without that state evaporating at a shard boundary (ADR 0047). The server still uses handles
+  // everywhere a reference outlives a tick -- ADR 0005 is untouched -- and the publisher is where
+  // the two currencies meet.
+  EntityId entity = INVALID_ENTITY_ID;
 
   // The four quantized fields, decoded back to the types the view already reads. A position is
   // within 6.25 cm of the simulation's and an angle within pi/2^16 of it, and a decoded heading is
@@ -90,10 +95,11 @@ struct WorldSnapshot
   std::vector<ShipSnapshot> ships;
 };
 
-// What one move order carries up the wire.
+// What one move order carries up the wire. Ids, not handles: the client has never been given a
+// handle and could not interpret one (ADR 0047).
 struct MoveOrder
 {
-  std::vector<ShipHandle> ships;
+  std::vector<EntityId> ships;
   WorldPos destination;
   float facingRad = 0.0f;
   bool hasFacing = false;
@@ -103,8 +109,8 @@ struct MoveOrder
 // kind, a write/read pair, handles resolved in the adapter and a faction gate in World (ADR 0014).
 struct DockOrder
 {
-  std::vector<ShipHandle> ships;
-  ShipHandle station; // the station's structure
+  std::vector<EntityId> ships;
+  EntityId station = INVALID_ENTITY_ID; // the station's structure
 };
 
 // How many ships fit in one datagram of each kind. Derived from MAX_DATAGRAM_BYTES rather than
@@ -137,16 +143,20 @@ public:
   // your view" and nothing more, which is what it always meant, so a client can stop inferring a
   // death from an absence (Design/Archive/Hostiles.md 4.4). A handle belongs in one list, never both; the
   // caller decides which and the writer does not check.
-  std::uint32_t WriteInterest(const World& _world, std::span<const ShipHandle> _sent, std::span<const ShipHandle> _left,
-                              std::span<const ShipHandle> _destroyed, std::span<const ShipHandle> _docked, Neuron::Transport& _transport,
+  //
+  // _sent are handles because the writer resolves them against the world to build records; the three
+  // departure lists are ids because they name ships that are already gone, which is why the despawn
+  // log carries one (ADR 0047).
+  std::uint32_t WriteInterest(const World& _world, std::span<const ShipHandle> _sent, std::span<const EntityId> _left,
+                              std::span<const EntityId> _destroyed, std::span<const EntityId> _docked, Neuron::Transport& _transport,
                               FactionId _viewer = FACTION_PLAYER);
 
   // The leave and destroyed lists, as one message on the reliable lane. Public because a caller
   // that is not sending an interest update -- a subscriber leaving, a world shutting down -- still
   // has departures to state. Returns false when the lane refused it, which is a full lane or one
   // that is not up yet, and never a partial send.
-  bool WriteLeaves(std::uint64_t _tick, std::span<const ShipHandle> _left, std::span<const ShipHandle> _destroyed,
-                   std::span<const ShipHandle> _docked, Neuron::Transport& _transport);
+  bool WriteLeaves(std::uint64_t _tick, std::span<const EntityId> _left, std::span<const EntityId> _destroyed,
+                   std::span<const EntityId> _docked, Neuron::Transport& _transport);
 
   // How many leave messages the lane has refused. Nothing repeats a refused one, so this is the
   // count of departures a subscriber was never told about -- a number that should be zero, and a
@@ -228,7 +238,7 @@ public:
 
   // The handles the last applied update said were destroyed, as distinct from those that merely left
   // this subscriber's view. Valid until the next update applies; empty for a full snapshot.
-  [[nodiscard]] std::span<const ShipHandle> Destroyed() const noexcept
+  [[nodiscard]] std::span<const EntityId> Destroyed() const noexcept
   {
     return m_destroyed;
   }
@@ -244,7 +254,7 @@ public:
   // The handles the last applied departure message said had docked: gone from the world, but not
   // dead. The client removes the hull silently -- no explosion, no shake, no SHIP LOST -- which is
   // the entire reason a departure carries a cause (ADR 0040).
-  [[nodiscard]] std::span<const ShipHandle> Docked() const noexcept
+  [[nodiscard]] std::span<const EntityId> Docked() const noexcept
   {
     return m_docked;
   }
@@ -269,17 +279,17 @@ public:
 private:
   void AbandonInProgress() noexcept;
   void Apply();
-  void Remove(ShipHandle _gone);
+  void Remove(EntityId _gone);
   [[nodiscard]] bool AcceptLeaves(std::span<const std::uint8_t> _message);
 
   // What arrived in the update being assembled, held until every fragment is in. Applying as
   // fragments land would leave the world half-updated if one never arrived.
   std::vector<ShipSnapshot> m_pendingUpserts;
-  std::vector<ShipHandle> m_leaveScratch;     // one departure message, read before any of it applies
-  std::vector<ShipHandle> m_destroyedScratch; // the same, for the deaths in it
-  std::vector<ShipHandle> m_dockedScratch;    // and for the dockings
-  std::vector<ShipHandle> m_destroyed;        // deaths since the consumer last cleared them
-  std::vector<ShipHandle> m_docked;           // dockings since the consumer last cleared them
+  std::vector<EntityId> m_leaveScratch;     // one departure message, read before any of it applies
+  std::vector<EntityId> m_destroyedScratch; // the same, for the deaths in it
+  std::vector<EntityId> m_dockedScratch;    // and for the dockings
+  std::vector<EntityId> m_destroyed;        // deaths since the consumer last cleared them
+  std::vector<EntityId> m_docked;           // dockings since the consumer last cleared them
   std::uint64_t m_lastLeaveTick = 0;
   std::uint8_t m_hostileMask = 0;
   WorldSnapshot m_latest;
@@ -291,6 +301,24 @@ private:
   std::uint32_t m_dropped = 0;
   bool m_hasSnapshot = false;
 };
+
+// The authoritative state, as against the view of it.
+//
+// A snapshot exists to WITHHOLD -- steerTargetPos, the order's facing and speed cap, the avoidance
+// heading, and every intent table beside m_ships -- so the snapshot path structurally cannot carry a
+// save or a handoff, and until now nothing else could either (Design/MmoScalabilityReview.md U3).
+// These two carry all of it, at full fidelity: this is a save, so the wire's 0.125 m lattice and its
+// turns16 have no business here and every position is a whole WorldPos.
+//
+// What is written and what is rebuilt is argued in Design/Archive/WorldState-work-order.md 2. The
+// short version: everything Step READS is written, and everything Step DERIVES -- the spatial index,
+// the path islands, the neighbourhood extent, every scratch vector -- is rebuilt from what was.
+//
+// Read refuses and changes nothing on a buffer that is truncated, that carries the wrong magic, or
+// that carries a format byte this build does not know. It never throws and never asserts, which is
+// AGENTS.md 5's rule for anything parsing content and the discipline SnapshotReceiver already keeps.
+void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes);
+[[nodiscard]] bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld);
 
 // Orders travel the other way. Written by the client half, read and applied by the server half.
 [[nodiscard]] bool WriteMoveOrder(const MoveOrder& _order, Neuron::Transport& _transport);

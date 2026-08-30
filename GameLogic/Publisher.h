@@ -158,11 +158,13 @@ private:
   std::vector<std::uint32_t> m_freeSlots;
 
   // Scratch, reused so a tick allocates nothing once the subscriber list has stopped growing.
+  // Handles on the way in, ids on the way out: the interest set deals in references into this world
+  // and the wire deals in identities, and SplitTheLost is where the two meet (ADR 0047).
   std::vector<ShipHandle> m_sendScratch;
-  std::vector<ShipHandle> m_leftScratch;
-  std::vector<ShipHandle> m_destroyedScratch;
-  std::vector<ShipHandle> m_dockedScratch;
-  std::vector<ShipHandle> m_statedScratch; // destroyed and docked merged, to subtract from Left()
+  std::vector<ShipHandle> m_departedScratch; // sorted handles of everything the log said left, any cause
+  std::vector<EntityId> m_leftScratch;
+  std::vector<EntityId> m_destroyedScratch;
+  std::vector<EntityId> m_dockedScratch;
   std::vector<ShipId> m_resolvedScratch;
   std::vector<std::uint8_t> m_messageScratch;
 };
