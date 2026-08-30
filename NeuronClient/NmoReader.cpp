@@ -783,8 +783,8 @@ bool ValidateMesh(const Cursor& _cursor, const MeshView& _mesh)
 // with no colour attribute produces and so what every hull authored in a modelling package looks
 // like, while ObjToNmo.py bakes Kd into both. Under this multiply the first is exactly right and
 // the second comes out squared -- which is the correct trade, because the shipping corpus is the
-// first kind and the OBJ converter retires with the OBJ hulls rather than being taught a third
-// convention. If a converted OBJ hull ever looks dark, this is why.
+// first kind and ObjToNmo.py is now the OBJ path's record rather than the content pipeline
+// (Design/Decisions/0035). If a converted OBJ hull ever looks dark, this is why.
 MeshVertex ToMeshVertex(const NmoVertex& _vertex, const XMFLOAT4& _baseColour, float _race) noexcept
 {
   const float r = static_cast<float>(_vertex.colour & 0xFFu) / COLOUR_MAX;

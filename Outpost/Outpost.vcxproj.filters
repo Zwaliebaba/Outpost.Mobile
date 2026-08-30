@@ -178,66 +178,6 @@
     <None Include="packages.config">
       <Filter>Project Files</Filter>
     </None>
-    <None Include="Assets\Meshes\Battleship.mtl">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Battleship.obj">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Bomber.mtl">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Bomber.obj">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Carrier.mtl">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Carrier.obj">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Corvette.obj">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Frigate.obj">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Hauler.obj">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Interceptor.obj">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Miner.obj">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Stargate.obj">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Structure.obj">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Corvette.mtl">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Frigate.mtl">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Hauler.mtl">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Interceptor.mtl">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Miner.mtl">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Stargate.mtl">
-      <Filter>Assets\Meshes</Filter>
-    </None>
-    <None Include="Assets\Meshes\Structure.mtl">
-      <Filter>Assets\Meshes</Filter>
-    </None>
     <None Include="Assets\Fonts\EditorFont.dds">
       <Filter>Assets\Fonts</Filter>
     </None>

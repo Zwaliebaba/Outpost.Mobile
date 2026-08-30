@@ -855,10 +855,16 @@ brightness its thrusters should burn, and every other liveried surface falls out
    [Archive/NmoFormat-slice-2.md](Archive/NmoFormat-slice-2.md).
 3. **Marker consumers** *(Outpost)* — `MeshLibrary` loads `.nmo` when present (OBJ fallback
    stays); `ShipView` takes exhaust positions/colours from `Exhaust` markers; nav-light pips with
-   blink; screenshots at two window sizes.
-4. **Content swap** *(Assets)* — hulls re-exported per §13 with authored markers; OBJ files and
-   `ObjParser`'s clustering retire (parser itself may stay for dev import); the
-   `SpaceshipExplosion` and picking paths re-verified over the new loader's soup.
+   blink; screenshots at two window sizes. **Landed fourth**, as
+   [Archive/NmoFormat-slice-4.md](Archive/NmoFormat-slice-4.md).
+4. **Content swap** *(Assets)* — **landed third.** Hulls re-exported per §13 with authored markers;
+   OBJ files and `ObjParser`'s clustering retire (parser itself may stay for dev import); the
+   `SpaceshipExplosion` and picking paths re-verified over the new loader's soup. What actually
+   landed diverges from §13 in three ways that
+   [ADR 0035](Decisions/0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md) records: the
+   corpus is authored as GLB rather than converted from OBJ, no fallback was written, and
+   `ObjParser` was deleted rather than kept. Its work order is
+   [Archive/NmoFormat-slice-3.md](Archive/NmoFormat-slice-3.md).
 5. **Liveries** *(NeuronClient shaders, Outpost)* — the visible half of `RaceTinted` (§5.5,
    §5.10): the scene shader stops tinting a whole hull and multiplies the flagged surfaces by the
    flying faction's colour, the faction-to-colour mapping becomes the table

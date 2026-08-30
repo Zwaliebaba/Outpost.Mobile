@@ -94,7 +94,7 @@ declares. `Build/CheckProjectFiles.py` checks the parts of that a build can chec
 
 Renderer specifics: D3D12, shader model 6.7 DXIL compiled by DXC, one overlay pipeline for the HUD,
 textured FX pipelines for the explosion, a two-pass body pipeline, an additive sky pass, and hulls
-authored as OBJ and shipped as the tree's own NMO format.
+authored as GLB and shipped as the tree's own NMO format.
 
 ---
 

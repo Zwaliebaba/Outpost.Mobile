@@ -6,7 +6,7 @@ namespace Neuron
 MeshHandle MeshLibrary::Load(GpuDevice& _gpu, SceneRenderer& _renderer, const std::wstring& _dir, const std::wstring& _name)
 {
   Entry entry;
-  if (!ObjParser::Load(_dir, _name, entry.data))
+  if (!NmoReader::Load(_dir, _name, entry.data))
   {
     DebugTrace(L"mesh {} could not be loaded\n", _name);
     return INVALID_MESH;

@@ -25,7 +25,6 @@
 #include "SkyField.h"
 #include "MeshShatter.h"
 #include "SpriteParticles.h"
-#include "ObjParser.h"
 #include "NmoFile.h"
 #include "NmoReader.h"
 #include "DdsImage.h"

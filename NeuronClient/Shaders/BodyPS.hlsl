@@ -3,9 +3,10 @@
 float4 main(VsOut i) : SV_Target
 {
   // The normal arrives per triangle from the mesh builder and is *not* faced towards the eye the way
-  // ScenePS faces its derivative normal. ScenePS has to, because the OBJ import reverses winding;
-  // here the builder guarantees the normal points outward, so the far side of a sphere comes out
-  // correctly dark rather than lit as if it were the near side (Design/Archive/PlanetRenderer.md 7.2).
+  // ScenePS faces its derivative normal. ScenePS has to, because it takes what it has from a
+  // derivative and cannot tell which side it is on; here the builder guarantees the normal points
+  // outward, so the far side of a sphere comes out correctly dark rather than lit as if it were
+  // the near side (Design/Archive/PlanetRenderer.md 7.2).
   float3 n = normalize(i.normal);
   float lambert = saturate(dot(n, normalize(lightDirAmbient.xyz)));
 

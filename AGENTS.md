@@ -40,7 +40,7 @@ ground: the scene pass draws no plane and has no grid
 rather than geometry. D3D12 renderer, WM_POINTER input covering mouse and touch, a main-screen HUD
 drawn through one overlay pipeline (bitmap font atlases, coverage-mask icons, untextured quads),
 textured FX pipelines for the explosion's fragments and sprites, a two-pass body pipeline, an
-additive sky pass, OBJ/MTL hulls, DXC-compiled shader model 6.7 shaders.
+additive sky pass, NMO hulls, DXC-compiled shader model 6.7 shaders.
 `Transport` has a QUIC implementation over MsQuic, and the game boots on it and only on it:
 `Outpost.exe` listens and dials across `127.0.0.1`, so every frame of every run crosses a real
 network stack. There is no fallback — a boot that cannot open the wire says which stage refused and
@@ -50,7 +50,7 @@ stops, rather than running on a second path nobody is testing (`Design/Decisions
 purpose.
 
 **Deliberately not here yet**, so nobody goes looking for it: no audio, no combat, no economy, no
-damage model, no save format, no content pipeline beyond OBJ and DDS, and no configuration file —
+damage model, no save format, no content pipeline beyond NMO and DDS, and no configuration file —
 tuning is `constexpr` in `SimTuning.h`, `HullSpec.h` and `ViewTuning.h` (§5). The hostiles above
 have no weapons and no senses: the patrol is a metronome that never reacts to anything, and the
 station cannot be destroyed. The networking stops well short of a network: one client, one process,
@@ -275,7 +275,7 @@ does not have.
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
 | `NeuronClient/Shaders/` | HLSL (§3). DXC compiles it, as shader model 6.7 DXIL, into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
 | `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). |
-| `Tools/` | Content tools, stdlib Python only: the NMO ship-mesh codec and Blender add-on (`BlenderNmo/`), the OBJ→NMO converter (`ObjToNmo.py`), and their tests (`Nmo*Test.py` — the codec test needs bare python3, the Blender one the `bpy` wheel). [`Design/NmoFormat.md`](Design/NmoFormat.md) is the format; nothing here is engine code, and no `.vcxproj` names it. |
+| `Tools/` | Content tools, stdlib Python only: the NMO ship-mesh codec and Blender add-on (`BlenderNmo/`), the OBJ→NMO converter (`ObjToNmo.py`), and their tests (`Nmo*Test.py` — the codec test needs bare python3, the Blender one the `bpy` wheel). [`Design/NmoFormat.md`](Design/NmoFormat.md) is the format; nothing here is engine code, and no `.vcxproj` names it. The shipping corpus is *not* converted here: the hulls are authored as GLB in `Art/Meshes/` and converted by `Art/Meshes/GlbToNmo.py`, which sits beside them because that is where an artist looks for it ([ADR 0035](Design/Decisions/0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md)). `ObjToNmo.py` stays as the OBJ path's record and the Blender test's fixture source. |
 | `Design/` | Designs with a slice still open, `Screenprints/`, `Archive/` for designs whose slices have all landed and for the work orders that landed them, and `Design/Decisions/` — the architecture decision records (§9). An archived design is still the document its area is reviewed against and is cited from code as before; `Design/` itself is the list of what is unfinished. Its `README.md` says which document is which and how a slice moves from a design into the tree (§7). |
 | `.github/` | CI (§6) and the pull request template every slice answers (§7). |
 

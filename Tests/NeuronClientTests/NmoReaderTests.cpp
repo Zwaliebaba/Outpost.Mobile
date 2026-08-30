@@ -849,6 +849,38 @@ public:
     ExpectRejected(bytes, L"two marker names that hash alike loaded");
   }
 
+  // --- MeshData's own rules ---------------------------------------------------------------------
+  // These two came from ObjParserTests, which was deleted with the parser. Neither ever mentioned
+  // ObjParser: they guard the degenerate-extent rule every consumer of a mesh divides by or scales
+  // with, and they belong with whichever reader fills those bounds.
+
+  TEST_METHOD(EmptyBoundsAreUsable)
+  {
+    const Neuron::MeshData mesh;
+    const XMFLOAT3 extents = mesh.HalfExtents();
+    Assert::IsTrue(extents.x > 0.0f && extents.y > 0.0f && extents.z > 0.0f, L"an empty mesh has a zero extent");
+    Assert::AreEqual(0.0f, mesh.RestY(), 1e-5f, L"an empty mesh does not rest on the ground plane");
+  }
+
+  TEST_METHOD(BoundsGiveTheCentreAndTheLift)
+  {
+    Neuron::MeshData mesh;
+    mesh.boundsMin = XMFLOAT3(-2.0f, -3.0f, -10.0f);
+    mesh.boundsMax = XMFLOAT3(2.0f, 5.0f, 10.0f);
+
+    const XMFLOAT3 centre = mesh.BoundsCentre();
+    Assert::AreEqual(0.0f, centre.x, 1e-5f, L"centre x");
+    Assert::AreEqual(1.0f, centre.y, 1e-5f, L"centre y");
+    Assert::AreEqual(0.0f, centre.z, 1e-5f, L"centre z");
+
+    const XMFLOAT3 extents = mesh.HalfExtents();
+    Assert::AreEqual(2.0f, extents.x, 1e-5f, L"half extent x");
+    Assert::AreEqual(4.0f, extents.y, 1e-5f, L"half extent y");
+    Assert::AreEqual(10.0f, extents.z, 1e-5f, L"half extent z");
+
+    Assert::AreEqual(3.0f, mesh.RestY(), 1e-5f, L"the lift does not put the lowest vertex on y = 0");
+  }
+
   TEST_METHOD(AMinimalFileWithDistinctNamesStillLoads)
   {
     // The control for the two tests above: the builder makes a file the reader accepts, so their

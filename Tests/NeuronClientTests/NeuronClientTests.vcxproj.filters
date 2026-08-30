@@ -26,9 +26,6 @@
     <ClCompile Include="DdsImageTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
-    <ClCompile Include="ObjParserTests.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
     <ClCompile Include="NmoReaderTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
