@@ -1,0 +1,152 @@
+#pragma once
+
+#include "InterestSet.h"
+#include "ShipState.h"
+#include "WorldPos.h"
+#include "WorldSnapshot.h"
+
+#include "Transport.h"
+
+#include <cstdint>
+#include <span>
+#include <vector>
+
+namespace Game
+{
+class World;
+
+// The server's side of the seam, for N subscribers rather than one.
+//
+// It lives in GameLogic, and ADR 0008's three-way elimination is why -- re-run rather than cited,
+// because the answer is not obvious and the record's own reasoning is what settles it. NeuronServer
+// never names GameLogic, so it cannot hold an InterestSet. Outpost could, and does today, but then
+// the executable owns the fan-out and the day there are two executables it is in the wrong one.
+// GameLogic owns both types being tabled and already depends on NeuronCore, so it may include
+// Transport.h. Same test AGENTS.md 2 applies to content readers: the code lives with what it is
+// about (ADR 0029).
+//
+// What this class is NOT: it is not a session layer. It does not know who a subscriber is, how it
+// authenticated, or when it should go away -- a subscriber is a transport and a faction that
+// somebody hands in. Deciding that is the composition root's, and for a dedicated server it needs a
+// configuration story that does not exist yet (MmoScalabilityPlan.md 4, decision 3).
+//
+// Everything here is outside the replay contract. It changes what is sent, never what is simulated,
+// which is what lets a server retune a radius or a phase mid-match and still replay the recording.
+class Publisher
+{
+public:
+  // A stable reference to one subscriber. Slot plus generation for the same reason ShipHandle is
+  // (ADR 0005): removal swaps the last entry down, so a bare index would silently retarget.
+  struct Handle
+  {
+    std::uint32_t slot = 0;
+    std::uint32_t generation = 0; // 0 is never issued, so a default handle is null
+  };
+
+  struct Desc
+  {
+    // The wire to this subscriber. The publisher does not own it and it must outlive the entry.
+    Neuron::Transport* transport = nullptr;
+
+    // Whose orders this subscriber may give. The simulation gates the order itself (ADR 0014); this
+    // is what the publisher passes it, not a second authority check.
+    FactionId faction = FACTION_PLAYER;
+
+    // Its own, so a spectator or a distant region can be given a different one without touching
+    // anybody else's. Defaults to the tuning header's.
+    InterestSet::Desc interest;
+
+    // The ceiling on orders read from this subscriber in one tick. A client saturating its send rate
+    // otherwise converts wire bytes into formation solves and route planning at a leverage no other
+    // message has (Design/MmoScalabilityReview.md E6).
+    std::uint32_t ordersPerTick = 8;
+
+    // Where it is looking, until SetCentre says otherwise.
+    WorldPos centre;
+  };
+
+  // Adds a subscriber and returns its handle. Its phase is assigned here, from the slot it takes, so
+  // that consecutive subscribers land on consecutive ticks and nothing has to be told to spread.
+  Handle Add(const Desc& _desc);
+
+  // Removes one. False if the handle was already stale. Its cursor stops holding the despawn log
+  // back on the next Publish.
+  bool Remove(Handle _handle);
+
+  void SetCentre(Handle _handle, const WorldPos& _centre) noexcept;
+
+  [[nodiscard]] std::uint32_t Count() const noexcept
+  {
+    return static_cast<std::uint32_t>(m_subscribers.size());
+  }
+
+  // Reads every subscriber's orders, under its budget, and applies them to the world. Call once per
+  // tick, before the world steps: an order that arrives this frame is meant for this tick.
+  void ApplyOrders(World& _world);
+
+  // Sends every subscriber that is due its update, then trims the despawn log to the minimum cursor
+  // across all of them. Call once per tick, after the world steps.
+  //
+  // Non-const because the trim is a write. Nothing else here touches the world, and a Publish that
+  // took a const reference and cast it away would be hiding exactly the mutation that matters.
+  void Publish(World& _world);
+
+  // Diagnostics, per subscriber. Both should be zero and are worth watching if they are not: orders
+  // dropped for budget, and departures the reliable lane refused.
+  [[nodiscard]] std::uint32_t DroppedOrderCount(Handle _handle) const noexcept;
+  [[nodiscard]] std::uint32_t RefusedLeaveCount(Handle _handle) const noexcept;
+
+  // Which tick within the update period a subscriber is due on. Exposed so a test can assert the
+  // spread rather than infer it.
+  [[nodiscard]] std::uint32_t PhaseOf(Handle _handle) const noexcept;
+
+private:
+  struct Subscriber
+  {
+    Neuron::Transport* transport = nullptr;
+    FactionId faction = FACTION_PLAYER;
+    std::uint32_t ordersPerTick = 8;
+    std::uint32_t phase = 0;
+    std::uint64_t despawnCursor = 0;
+    std::uint32_t droppedOrders = 0;
+    WorldPos centre;
+    InterestSet interest;
+    SnapshotWriter writer;
+  };
+
+  struct Slot
+  {
+    std::uint32_t subscriber = INVALID_SUBSCRIBER;
+    std::uint32_t generation = 0;
+  };
+
+  static constexpr std::uint32_t INVALID_SUBSCRIBER = 0xFFFFFFFFu;
+
+  [[nodiscard]] Subscriber* Resolve(Handle _handle) noexcept;
+  [[nodiscard]] const Subscriber* Resolve(Handle _handle) const noexcept;
+
+  // One subscriber's update: the interest walk, the split of what left from what died, and the two
+  // messages. Everything WorldSimulation used to do for its single subscriber, per entry.
+  void PublishOne(const World& _world, Subscriber& _subscriber);
+
+  // The departures in _subscriber's Left() that were deaths. The world's despawn log intersected
+  // with what this subscriber was holding -- so a death nobody could see is told to nobody, and a
+  // ship that merely flew out of range is not reported destroyed (Design/Hostiles.md 4.4).
+  void SplitTheLost(const World& _world, Subscriber& _subscriber);
+
+  // Dense, because iteration order is array order and nothing here may depend on a pointer or a
+  // hash (AGENTS.md 5). Removal swap-and-pops and the slot table repairs the handles, exactly as
+  // World does it for ships.
+  std::vector<Subscriber> m_subscribers;
+  std::vector<std::uint32_t> m_subscriberSlot; // parallel to m_subscribers
+  std::vector<Slot> m_slots;
+  std::vector<std::uint32_t> m_freeSlots;
+
+  // Scratch, reused so a tick allocates nothing once the subscriber list has stopped growing.
+  std::vector<ShipHandle> m_sendScratch;
+  std::vector<ShipHandle> m_leftScratch;
+  std::vector<ShipHandle> m_destroyedScratch;
+  std::vector<ShipId> m_resolvedScratch;
+  std::vector<std::uint8_t> m_messageScratch;
+};
+} // namespace Game

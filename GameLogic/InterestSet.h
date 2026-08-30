@@ -38,7 +38,13 @@ public:
 
   // True on the ticks an update is due. The rate is counted in ticks rather than seconds so that a
   // measurement reproduces and a test can assert "ten updates in sixty ticks" exactly.
-  [[nodiscard]] bool IsDueOn(std::uint64_t _tick) const noexcept;
+  //
+  // _phase is which tick within the period this subscriber is due on, and it exists so that N of
+  // them do not all come due together: without it every subscriber's query, sort and egress lands on
+  // the same tick, and the server's worst frame is the period times its average one
+  // (Design/MmoScalabilityReview.md E4). Zero is the old behavior and the right default for the one
+  // subscriber that has no siblings to avoid.
+  [[nodiscard]] bool IsDueOn(std::uint64_t _tick, std::uint32_t _phase = 0) const noexcept;
 
   // Recomputes the set around _centre and works out what changed. Call only on a due tick.
   void Update(const World& _world, const WorldPos& _centre);

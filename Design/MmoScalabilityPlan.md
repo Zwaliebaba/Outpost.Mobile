@@ -2,7 +2,7 @@
 
 **Status: slices 2, 5 and 6 have landed — the despawn log is cursored, the seam has a reliable
 lane, and departures and orders travel on it, which retires finding E1. The loopback fallback is
-gone (ADR 0027). Slice 3, the publisher, is next.** This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
+gone (ADR 0027). Slice 3, the publisher, has landed with slice 4 folded into it.** This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
 (tree at `de12b6d`) into an ordered slice plan in the shape `Design/README.md` defines: one slice,
 one branch, one pull request. The review is the evidence; this document is the work. Where a slice
 already has a design in the tree — the reliable lane lives in [`QuicTransport.md`](QuicTransport.md)
@@ -114,8 +114,8 @@ Findings reference `MmoScalabilityReview.md`.
 |---|---|---|---|---|---|---|---|
 | 1 | Ghost backstop: periodic full refresh | `Outpost` | S | — | E1 interim |  | dropped: 5–6 scheduled |
 | 2 | Sequence-cursored despawn delivery | `GameLogic` | M | — | E2 | ADR | [landed](DespawnCursors-work-order.md) |
-| 3 | The publisher: subscriber table, phases, budgets | `GameLogic` | M | 2 | E2 E4 E6 | ADR |  |
-| 4 | The root joins the publisher | `Outpost` | S | 3 | E2 |  |  |
+| 3 | The publisher: subscriber table, phases, budgets | `GameLogic` | M | 2 | E2 E4 E6 | ADR | [landed](Publisher-work-order.md) |
+| 4 | The root joins the publisher | `Outpost` | S | 3 | E2 |  | folded into 3 |
 | 5 | Reliable lane on both transports (= QuicTransport 3a) | `NeuronCore` | M | — | E1 |  | [landed](ReliableLane-work-order.md) |
 | 6 | Leaves, destroys, orders go reliable (= QuicTransport 3b) | `GameLogic` | M | 5 | E1 | ADR | [landed](ReliableFormat-work-order.md) |
 | 7 | Listener slot reclamation, per-role rings | `NeuronCore` | S | — | E3 |  |  |

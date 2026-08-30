@@ -30,3 +30,4 @@
 #include "Movement.h"
 #include "World.h"
 #include "WorldSnapshot.h"
+#include "Publisher.h"

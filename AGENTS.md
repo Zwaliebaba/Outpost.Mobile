@@ -54,8 +54,11 @@ station cannot be destroyed. The networking stops well short of a network: one c
 `127.0.0.1` only, and a self-signed certificate the client does not validate. The wire has two lanes
 and the format chooses by asking whether a later message makes a lost one right (`ADR 0028`):
 positions are datagrams and heal themselves, while departures and move orders take the reliable
-lane and cannot be lost. What remains missing is the far end of it — one client, one process, and no
-second machine to be on the other side of.
+lane and cannot be lost. The seam serves N subscribers now rather than one: `Game::Publisher` holds
+a table of them, each with its own interest set, writer, faction, phase, order budget and despawn
+cursor (ADR 0029). What remains missing is the far end — this executable adds exactly one entry,
+there is no second machine to be on the other side of it, and no decided way to tell a headless
+build what to be.
 The client sees the world through the seam, filtered to what one subscriber can see (§2).
 Where the HUD shows a number the simulation does not yet have, it is a placeholder supplied by the
 composition root, and it says so at the definition.
@@ -241,7 +244,7 @@ Three rules `.clang-tidy` structurally cannot state, so check them by eye:
 | Path | What it is |
 |---|---|
 | `NeuronCore/` | Engine primitives shared by every layer — zero game semantics, no graphics API, headless (below). Diagnostics, file IO, framerate-independent easing, the frame clock, the seeded `Pcg32` (ADR 0012), and `Transport`. No content readers: those live with their consumer (below). |
-| `GameLogic/` | The deterministic simulation, namespace `Game`. `World`, `ShipState`, `WorldPos`, `HullSpec`, `Movement`, `Collision`, `SpatialIndex`, `PathGrid`, `Formation`, `SimTuning`. Depends on NeuronCore only. |
+| `GameLogic/` | The deterministic simulation, namespace `Game`. `World`, `ShipState`, `WorldPos`, `HullSpec`, `Movement`, `Collision`, `SpatialIndex`, `PathGrid`, `Formation`, `Patrol`, `SimTuning`, `InterestSet`, `WorldSnapshot` (the wire format, ADR 0008) and `Publisher` (the fan-out to N subscribers, ADR 0029). Depends on NeuronCore only. |
 | `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, the explosion's `FxRenderer`/`MeshShatter`/`SpriteParticles`, and the content readers `DdsImage`, `ObjParser`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
 | `Outpost/` | The executable: composition root, presentation state, the HUD and its event log, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |

@@ -61,3 +61,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0026](0026-despawn-delivery-is-cursored.md) | The despawn log is read by cursor, not drained | accepted |
 | [0027](0027-there-is-no-fallback-link.md) | There is no fallback link: Outpost opens QUIC or does not start | accepted |
 | [0028](0028-departures-and-orders-take-the-reliable-lane.md) | Departures and orders take the reliable lane; positions stay datagrams | accepted |
+| [0029](0029-the-publisher-lives-in-gamelogic.md) | The publisher lives in GameLogic, and serves N subscribers | accepted |

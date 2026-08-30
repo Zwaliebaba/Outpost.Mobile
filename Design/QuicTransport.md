@@ -331,10 +331,9 @@ leaves owed:
   what a dedicated server would start, and it lives in the headless library. TLS 1.3 comes with
   the connection — encryption was unaddressed in every design so far. Connection migration and
   path validation are QUIC's, not ours.
-- **Owed.** One client: `WorldSimulation` holds one `Transport*`, one `InterestSet`, one
-  subscriber faction. N clients is a `WorldSimulation` change — a table of `{transport, interest
-  set, faction}` — and belongs to a design of its own; the listener's `backlog` is the only
-  concession made here. A second process needs a headless composition root, which AGENTS.md §5
+- **Paid since.** N clients. `Game::Publisher` is that table, and it landed as slice 3 of
+  `Design/MmoScalabilityPlan.md`, with a record for where it lives (ADR 0029). `WorldSimulation`
+  holds a publisher with one entry in it; a dedicated server calls `Add` per accepted connection. A second process needs a headless composition root, which AGENTS.md §5
   forbids configuring by argv, so it needs a decision on how a server is told what to be. Both
   are named in §11 and neither is scheduled.
 
