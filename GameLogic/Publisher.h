@@ -23,7 +23,7 @@ class World;
 // the executable owns the fan-out and the day there are two executables it is in the wrong one.
 // GameLogic owns both types being tabled and already depends on NeuronCore, so it may include
 // Transport.h. Same test AGENTS.md 2 applies to content readers: the code lives with what it is
-// about (ADR 0029).
+// about (ADR 0030).
 //
 // What this class is NOT: it is not a session layer. It does not know who a subscriber is, how it
 // authenticated, or when it should go away -- a subscriber is a transport and a faction that
@@ -67,7 +67,7 @@ public:
     // Where in the world's despawn log this subscriber starts reading. A subscriber joining a
     // running world passes World::DespawnHead(), so it is told about deaths from now on and about
     // none of the ships it never held; zero means "everything the log still holds" and is right only
-    // for a subscriber present from the first tick (ADR 0026).
+    // for a subscriber present from the first tick (ADR 0027).
     //
     // It is a field rather than something Add works out for itself, because Add has no World and
     // giving it one to read a single number would be a dependency for a default.

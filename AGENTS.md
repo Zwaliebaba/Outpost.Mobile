@@ -26,13 +26,14 @@ ship is the player's: an enemy station sits 1.2 km northeast with three Intercep
 ring around it, drawn red in the scene and on the minimap and counted as contacts, and they cannot
 be selected or ordered — the simulation refuses an order from the wrong faction and the client does
 not offer one.
-There is still no combat. Two procedurally generated planets and six asteroids share the sky with
-the fleet — seeded low-poly heightfields on cube-spheres, one flat colour per triangle from a
-colour ramp, a wire-frame outline over the top, spinning or tumbling — and behind them a
-procedurally generated star field: a seeded catalogue of stars, dust clouds and a galactic band,
-uploaded once and expanded into billboards in the vertex shader (`Design/Skybox.md`). F5 reseeds
-the lot, sky included; all of it is presentation only and a ship flies straight through a rock
-(`Design/Decisions/0016`). There is no ground: the scene pass draws no plane and has no grid
+There is still no combat. One world and six asteroids share the sky with the fleet, and they are
+made two different ways (`Design/Decisions/0026`): the world is a smooth sphere wearing an authored
+equirectangular map, sampled per pixel off the direction so it has no seam, while a rock is still a
+seeded low-poly heightfield on a cube-sphere with one flat colour per triangle from a colour ramp and
+a wire-frame outline over the top. Behind them is a procedurally generated star field: a seeded
+catalogue of stars, dust clouds and a galactic band, uploaded once and expanded into billboards in
+the vertex shader (`Design/Skybox.md`). F5 reseeds the lot, sky included; all of it is presentation
+only and a ship flies straight through a rock (`Design/Decisions/0016`). There is no ground: the scene pass draws no plane and has no grid
 (`Design/Decisions/0025`), and the flat y = 0 plane a move order lands on is arithmetic in `Camera`
 rather than geometry. D3D12 renderer, WM_POINTER input covering mouse and touch, a main-screen HUD
 drawn through one overlay pipeline (bitmap font atlases, coverage-mask icons, untextured quads),
@@ -41,7 +42,7 @@ additive sky pass, OBJ/MTL hulls, DXC-compiled shader model 6.7 shaders.
 `Transport` has a QUIC implementation over MsQuic, and the game boots on it and only on it:
 `Outpost.exe` listens and dials across `127.0.0.1`, so every frame of every run crosses a real
 network stack. There is no fallback — a boot that cannot open the wire says which stage refused and
-stops, rather than running on a second path nobody is testing (`Design/Decisions/0027`). The
+stops, rather than running on a second path nobody is testing (`Design/Decisions/0028`). The
 `LINK | QUIC` line in the event log is what a good boot looks like. `LoopbackTransport` is still in
 `NeuronCore`, now as what the tests drive: it is the only way to drop or delay a datagram on
 purpose.
@@ -52,11 +53,11 @@ tuning is `constexpr` in `SimTuning.h`, `HullSpec.h` and `ViewTuning.h` (§5). T
 have no weapons and no senses: the patrol is a metronome that never reacts to anything, and the
 station cannot be destroyed. The networking stops well short of a network: one client, one process,
 `127.0.0.1` only, and a self-signed certificate the client does not validate. The wire has two lanes
-and the format chooses by asking whether a later message makes a lost one right (`ADR 0028`):
+and the format chooses by asking whether a later message makes a lost one right (`ADR 0029`):
 positions are datagrams and heal themselves, while departures and move orders take the reliable
 lane and cannot be lost. The seam serves N subscribers now rather than one: `Game::Publisher` holds
 a table of them, each with its own interest set, writer, faction, phase, order budget and despawn
-cursor (ADR 0029). What remains missing is the far end — this executable adds exactly one entry,
+cursor (ADR 0030). What remains missing is the far end — this executable adds exactly one entry,
 there is no second machine to be on the other side of it, and no decided way to tell a headless
 build what to be.
 The client sees the world through the seam, filtered to what one subscriber can see (§2).
@@ -259,7 +260,7 @@ does not have.
 | Path | What it is |
 |---|---|
 | `NeuronCore/` | Engine primitives shared by every layer — zero game semantics, no graphics API, headless (below). Diagnostics, file IO, framerate-independent easing, the frame clock, the seeded `Pcg32` (ADR 0012), and `Transport`. No content readers: those live with their consumer (below). |
-| `GameLogic/` | The deterministic simulation, namespace `Game`. `World`, `ShipState`, `WorldPos`, `HullSpec`, `Movement`, `Collision`, `SpatialIndex`, `PathGrid`, `Formation`, `Patrol`, `SimTuning`, `InterestSet`, `WorldSnapshot` (the wire format, ADR 0008) and `Publisher` (the fan-out to N subscribers, ADR 0029). Depends on NeuronCore only. |
+| `GameLogic/` | The deterministic simulation, namespace `Game`. `World`, `ShipState`, `WorldPos`, `HullSpec`, `Movement`, `Collision`, `SpatialIndex`, `PathGrid`, `Formation`, `Patrol`, `SimTuning`, `InterestSet`, `WorldSnapshot` (the wire format, ADR 0008) and `Publisher` (the fan-out to N subscribers, ADR 0030). Depends on NeuronCore only. |
 | `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, the explosion's `FxRenderer`/`MeshShatter`/`SpriteParticles` and the `GlowBillboards` the thruster plume is built with, `ViewCulling` (the camera's frustum and the sphere test everything drawn is gated on), the planet pipeline (`CubeSphere`, `Noise3`, `BodyDesc`/`BodyParams`/`BodyField`, `BodyMeshBuilder`, `BodyRenderer`, `ColourRamp` — see [`Design/PlanetRenderer.md`](Design/PlanetRenderer.md)), the star field (`SkyField`, `SkyRenderer`, `SkyVertex` — [`Design/Skybox.md`](Design/Skybox.md)), and the content readers `DdsImage`, `ObjParser`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
 | `Outpost/` | The executable: composition root, presentation state, the HUD and its event log, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |
@@ -713,8 +714,9 @@ When to write one — any of these, and in the same commit as the change:
 - a project, a third-party dependency, a toolset pin or a build setting is added or removed;
 - an approach is rejected that a reasonable person will propose again.
 
-Rules for the records themselves: numbered in order of writing and never renumbered; never
-edited into a different decision — a change of mind is a new record that supersedes the old one,
+Rules for the records themselves: numbered in order of writing and never renumbered, except when
+two branches claimed the same number and meet — the one already on the trunk keeps it, the arriving
+one moves up with its citations, in the merge commit; never edited into a different decision — a change of mind is a new record that supersedes the old one,
 and the old one stays with its status changed; and the index in the README lists every one. A
 record is a page, not a paper: if it needs more than that, the design document it came from is
 where the rest goes, and the record links to it.

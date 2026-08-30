@@ -145,7 +145,7 @@ inline constexpr int TRAIL_SAMPLES = 32; // half a second of history at the tick
 // over.
 inline constexpr float CULL_RADIUS_PAD_METRES = 24.0f;
 // A body's own relief and ellipsoid stretch are already in its bounding radius, so this only covers
-// the ocean shell and the outline pass sitting a little proud of the terrain.
+// the outline pass sitting a little proud of the terrain.
 inline constexpr float CULL_BODY_RADIUS_SCALE = 1.05f;
 
 // --- snapshot interpolation --------------------------------------------------------------------
@@ -244,7 +244,6 @@ inline constexpr float BODY_PLANET_RADIUS_MAX_METRES = 1200.0f;
 // among. Design/PlanetRenderer.md 3 carries the same numbers and the same sentence.
 inline constexpr float BODY_ASTEROID_RADIUS_MIN_METRES = 3.0f;
 inline constexpr float BODY_ASTEROID_RADIUS_MAX_METRES = 24.0f;
-inline constexpr std::uint32_t BODY_PLANET_GRID_POWER = 6;   // 65 samples a side, 49 152 triangles
 inline constexpr std::uint32_t BODY_ASTEROID_GRID_POWER = 5; // 33 a side
 
 inline constexpr float BODY_PLANET_SPIN_SEC = 240.0f; // one turn
@@ -268,19 +267,11 @@ inline constexpr float BODY_ASTEROID_CRATER_HALF_WIDTH_MAX_RAD = 0.26f;
 inline constexpr float BODY_ASTEROID_CRATER_DEPTH_MIN = 0.04f;
 inline constexpr float BODY_ASTEROID_CRATER_DEPTH_MAX = 0.12f;
 
-inline constexpr float BODY_PLANET_HEIGHT_SCALE_MIN = 0.03f;
-inline constexpr float BODY_PLANET_HEIGHT_SCALE_MAX = 0.12f;
-inline constexpr int BODY_PLANET_TILES_MIN = 1;
-inline constexpr int BODY_PLANET_TILES_MAX = 4;
-inline constexpr float BODY_PLANET_TILE_HALF_WIDTH_MIN_RAD = 0.44f; // 25 degrees
-inline constexpr float BODY_PLANET_TILE_HALF_WIDTH_MAX_RAD = 1.22f; // 70 degrees
-inline constexpr float BODY_PLANET_TILE_EDGE_FRACTION = 0.25f;
-inline constexpr float BODY_PLANET_OUTSIDE_HEIGHT_WET = -0.02f;
-inline constexpr float BODY_PLANET_OUTSIDE_HEIGHT_DRY = 0.01f;
+// The height outside every tile. It was a pair -- below zero for an ocean world, above it for a dry
+// one -- and the wet value went with the sea (Design/Decisions/0026).
+inline constexpr float BODY_OUTSIDE_HEIGHT = 0.01f;
 inline constexpr float BODY_FRACTAL_DIMENSION = 0.8f;
 inline constexpr float BODY_LOWLAND_SMOOTHING = 1.2f;
-inline constexpr float BODY_CAP_NOISE = 0.1f;
-inline constexpr float BODY_POLAR_GEOMETRY = 0.15f;
 inline constexpr Neuron::BodyOverlayParams BODY_OVERLAY{1.2f, 4.0f, 0.5f, 40.0f};
 
 // Which producer makes a body's vertices. Both are alive and both make the same mesh; the CPU one is
@@ -326,13 +317,14 @@ inline constexpr std::uint64_t BODY_START_SEED = 0x4F75747031ull; // "Outp1"
 // across and whose moon is half that:
 //
 //   planet  23 deg left of north, 43.7 deg down  -> 5.0 km of slant range, 19.6 deg across
-//           centred at (489, 335) of a 1600x900 client, 393 px wide
-//   moon    23 deg right of north, 38.0 deg down -> 3.8 km of slant range, 12.9 deg across
-//           centred at (1145, 223), 258 px wide -- its right limb stops 41 px short of the minimap
 //
-// Both stay wholly on screen at 16:9 and at 4:3, and with the camera pulled back to
-// CAMERA_MAX_ZOOM. The far limb of the farther one is 6 574 m away at the worst pitch and yaw the
-// camera allows, which leaves 1.4 km of headroom under CAMERA_FAR_PLANE.
+// There was a moon 23 degrees the other way, and it is gone: it was switched off while the look was
+// being settled and then had nothing to wear, because a world is a picture now and there is one
+// picture. Bringing it back is a second map and one more call beside the one below.
+//
+// It stays wholly on screen at 16:9 and at 4:3, and with the camera pulled back to CAMERA_MAX_ZOOM.
+// Its far limb is 5.9 km away at the worst pitch and yaw the camera allows, which leaves two
+// kilometres of headroom under CAMERA_FAR_PLANE.
 //
 // A depth is metres, not radii: what is being aimed at is an angle on the screen, and the seeded
 // radius must not be able to move it. Both sit high on the screen while being far below the fleet in
@@ -340,11 +332,20 @@ inline constexpr std::uint64_t BODY_START_SEED = 0x4F75747031ull; // "Outp1"
 inline constexpr float BODY_START_PLANET_BEARING_DEG = -23.0f;
 inline constexpr float BODY_START_PLANET_DISTANCE_METRES = 3500.0f;
 inline constexpr float BODY_START_PLANET_DEPTH_METRES = 3300.0f; // below the fleet's plane
-inline constexpr float BODY_START_MOON_BEARING_DEG = 23.0f;
-inline constexpr float BODY_START_MOON_DISTANCE_METRES = 2900.0f;
-inline constexpr float BODY_START_MOON_DEPTH_METRES = 2200.0f;
-inline constexpr float BODY_START_MOON_RADIUS_FRACTION = 0.5f; // of the planet's
 inline constexpr int BODY_START_ASTEROIDS = 6;
+
+// **The world wears a picture rather than a generated surface.** BodyMeshBuilder::BuildSphere makes
+// a smooth sphere and PlanetPS samples Terrain\Planet1.dds off the direction, so neither the height
+// field, the colour ramp nor the wire-frame outline runs for it. Everything that decides what a
+// *generated* body looks like still runs for the six asteroids; this is a second kind of body beside
+// that one, not a replacement for it (Design/Decisions/0026).
+//
+// Left as a switch rather than hard-wired because the generated path is still there and still
+// tested, and turning this off is how it gets looked at again.
+inline constexpr bool BODY_PLANET_TEXTURED = true;
+// Its tessellation. Sixty-four cells a side is 49 152 triangles, the same as a generated planet, and
+// puts a silhouette segment at about five pixels with the world framed as it is above.
+inline constexpr std::uint32_t BODY_PLANET_SPHERE_GRID_POWER = 6;
 inline constexpr float BODY_START_ASTEROID_RING_MIN_METRES = 150.0f;
 inline constexpr float BODY_START_ASTEROID_RING_MAX_METRES = 400.0f;
 

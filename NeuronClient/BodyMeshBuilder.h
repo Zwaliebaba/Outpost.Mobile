@@ -3,7 +3,6 @@
 #include "BodyField.h"
 #include "ColourRamp.h"
 #include "FxVertex.h"
-#include "MeshData.h"
 
 #include <DirectXMath.h>
 
@@ -16,7 +15,6 @@ namespace Neuron
 struct BodyBuildStats
 {
   std::uint32_t trianglesEmitted = 0;
-  std::uint32_t trianglesCulled = 0; // sea level, slice 5; always zero until then
   float maxHeightMetres = 0.0f;
 };
 
@@ -36,13 +34,6 @@ public:
   // game's tuning header because it is not content -- it is what this code does with nothing.
   static constexpr DirectX::XMFLOAT3 BODY_FALLBACK_GREY{0.5f, 0.5f, 0.5f};
 
-  // The three numbers of Design/PlanetRenderer.md 5.5, as fractions of the radius. They are the
-  // engine's port of the source's 0.3 and -10 on a 2 000-unit map, not a game's tuning: what they
-  // encode is the ratio the source's coastline was built at, and a class that wanted a different
-  // shoreline would change its heights, not these.
-  static constexpr float BODY_SHORE_THRESHOLD = 0.0003f; // a corner below this is a coast
-  static constexpr float BODY_SHORE_DIP = -0.01f;        // and is pushed to here, under the water
-
   // The width of the map the source's colour constants were tuned on. The dither strength below is
   // an expression in height, and it bends at the heights a 2 000-unit map had, so a height that is a
   // fraction of a radius here is multiplied up into those units before it goes in. This is the one
@@ -50,21 +41,26 @@ public:
   // out to have no fixed point (Design/PlanetRenderer.md 5.2).
   static constexpr float SOURCE_MAP_SIZE = 2000.0f;
 
-  // Appends _field's terrain to _outTerrain and, for a body whose outsideHeight is below zero, its
-  // ocean sphere to _outOcean. A null _ramp bakes BODY_FALLBACK_GREY and traces once.
+  // Appends _field's terrain to _outTerrain. A null _ramp bakes BODY_FALLBACK_GREY and traces once.
   //
-  // The ocean is MeshVertex and not FxVertex because it goes through SceneRenderer::DrawMesh: it
-  // needs no texture, no normal and no pipeline of its own, and the scene pass's derivative shading
-  // gives it the same facets as everything else (Design/PlanetRenderer.md 5.5). A dry body leaves
-  // _outOcean untouched and its terrain is bitwise what it was before the ocean existed, which is a
-  // test rather than a claim.
-  static void Build(const BodyField& _field, const ColourRamp* _ramp, std::vector<FxVertex>& _outTerrain,
-                    std::vector<MeshVertex>& _outOcean, const DirectX::XMFLOAT3& _oceanColour, BodyBuildStats& _outStats);
+  // Every body this builds is a rock. There was a second kind -- an ocean world, whose sea floor was
+  // culled, whose coast was dipped under a sphere of water and which got that sphere as a second
+  // mesh -- and it went when the one world that used it started wearing a picture instead
+  // (Design/Decisions/0026). What is left is the path a dry body always took, unchanged: the pinned
+  // vertex hash in BodyMeshTests is the same literal it was before an ocean existed anywhere here.
+  static void Build(const BodyField& _field, const ColourRamp* _ramp, std::vector<FxVertex>& _outTerrain, BodyBuildStats& _outStats);
 
-  // The ocean sphere on its own, for a caller that produced its terrain some other way. It needs no
-  // height at all -- sea level is the radius -- so it takes the block rather than the field, and the
-  // compute bake can have its water without building a field to get it.
-  static void BuildOcean(const BodyParams& _params, const DirectX::XMFLOAT3& _oceanColour, std::vector<MeshVertex>& _outOcean);
+  // A smooth sphere in the body vertex format, for a world whose surface is a picture rather than a
+  // generated height field. Two things differ from Build's output and both are the point:
+  //
+  //   - the normal is per *vertex*, not per triangle, so the globe shades smoothly. On a sphere the
+  //     direction to a point is exactly its normal, so there is nothing to compute for it;
+  //   - there is no uv. An equirectangular map cannot be carried on the vertex without a seam --
+  //     the triangle that straddles longitude pi interpolates u from 1 back to 0 and smears the
+  //     whole map backwards across itself -- so PlanetPS derives it per pixel from the direction.
+  //
+  // No field, no ramp, no ocean and no height: a sphere of this radius is the whole of it.
+  static void BuildSphere(float _radiusMetres, std::uint32_t _gridPower, std::vector<FxVertex>& _outSphere);
 
   // Seeds one triangle's colour dither. Integer throughout -- no float anywhere in it -- so that the
   // grain is reproducible in HLSL, where integer arithmetic is exact on every GPU and float

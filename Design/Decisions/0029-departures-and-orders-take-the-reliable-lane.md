@@ -1,4 +1,4 @@
-# 0028 — Departures and orders take the reliable lane; positions stay datagrams
+# 0029 — Departures and orders take the reliable lane; positions stay datagrams
 
 Status: accepted
 Date: 2026-08-30

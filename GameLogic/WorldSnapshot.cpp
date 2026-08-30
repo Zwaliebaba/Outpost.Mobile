@@ -194,7 +194,7 @@ std::uint32_t ShipsPerSnapshotFragment() noexcept
 }
 
 // Still derived from the datagram bound, though an order now travels on the reliable lane and could
-// be MAX_RELIABLE_BYTES long (ADR 0028). Keeping the smaller cap is deliberate: it is the number
+// be MAX_RELIABLE_BYTES long (ADR 0029). Keeping the smaller cap is deliberate: it is the number
 // every existing test and the client's selection logic already agree on, and raising it is a wire
 // change with nobody asking for it. The day a formation of more than this many ships is orderable,
 // it moves -- and it moves as its own slice, because the cap is what stops one click from becoming

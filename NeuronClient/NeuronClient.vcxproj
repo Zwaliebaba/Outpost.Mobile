@@ -380,6 +380,16 @@
       <HeaderFileOutput>CompiledShaders\SkyPS.h</HeaderFileOutput>
       <VariableName>g_pSkyPS</VariableName>
     </FxCompile>
+    <FxCompile Include="Shaders\PlanetVS.hlsl">
+      <ShaderType>Vertex</ShaderType>
+      <HeaderFileOutput>CompiledShaders\PlanetVS.h</HeaderFileOutput>
+      <VariableName>g_pPlanetVS</VariableName>
+    </FxCompile>
+    <FxCompile Include="Shaders\PlanetPS.hlsl">
+      <ShaderType>Pixel</ShaderType>
+      <HeaderFileOutput>CompiledShaders\PlanetPS.h</HeaderFileOutput>
+      <VariableName>g_pPlanetPS</VariableName>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <!-- Included by the .hlsl files above rather than compiled on their own. FXC tracks
@@ -391,6 +401,7 @@
     <None Include="Shaders\Text.hlsli" />
     <None Include="Shaders\Fx.hlsli" />
     <None Include="Shaders\Sky.hlsli" />
+    <None Include="Shaders\Planet.hlsli" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\NeuronCore\NeuronCore.vcxproj">

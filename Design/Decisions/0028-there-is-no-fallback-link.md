@@ -1,4 +1,4 @@
-# 0027 — There is no fallback link
+# 0028 — There is no fallback link
 
 Status: accepted
 Date: 2026-08-30

@@ -46,7 +46,7 @@ private:
   // Opens the QUIC link both halves will talk over: library, listener, client, and a bounded wait for
   // the handshake. False means the game runs on the loopback instead, and the reason is already in
   // the event log by the time it returns.
-  // Opens the one wire the halves meet on, or throws naming what refused (ADR 0027). Not
+  // Opens the one wire the halves meet on, or throws naming what refused (ADR 0028). Not
   // [[nodiscard]] because it no longer answers a question: it either returns having connected both
   // ends, or it does not return.
   void OpenQuicLink();
@@ -117,7 +117,7 @@ private:
   Neuron::QuicTransport* m_serverQuic = nullptr; // the listener's, once accepted
 
   // Whether there is a link to close. Not "whether it is QUIC" -- there is only one wire now
-  // (ADR 0027) -- but Shutdown still runs after a boot that threw partway, and must not close a
+  // (ADR 0028) -- but Shutdown still runs after a boot that threw partway, and must not close a
   // library that was never opened.
   bool m_linkOpen = false;
 

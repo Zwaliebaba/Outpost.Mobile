@@ -41,7 +41,7 @@ Publisher::Handle Publisher::Add(const Desc& _desc)
 
   // Whatever the caller said. Zero -- the default -- is "everything the log still holds", which is
   // right for a subscriber present from the first tick and wrong for one joining a running world;
-  // that caller passes World::DespawnHead() (ADR 0026).
+  // that caller passes World::DespawnHead() (ADR 0027).
   added.despawnCursor = _desc.openingDespawnCursor;
 
   m_subscriberSlot.push_back(slot);
@@ -123,7 +123,7 @@ void Publisher::ApplyOrders(World& _world)
       continue;
     subscriber.transport->Poll();
 
-    // Both lanes, budget shared between them. Orders travel reliably now (ADR 0028); the datagram
+    // Both lanes, budget shared between them. Orders travel reliably now (ADR 0029); the datagram
     // lane is still drained because a client whose stream is not up yet is still a client, and
     // dropping its clicks silently would be a worse answer than reading them.
     std::uint32_t read = 0;
@@ -177,7 +177,7 @@ void Publisher::Publish(World& _world)
   }
 
   // Then, and only then, the log may forget. The minimum across every subscriber is what is safe to
-  // drop -- anything newer is still owed to whichever one is furthest behind (ADR 0026). With no
+  // drop -- anything newer is still owed to whichever one is furthest behind (ADR 0027). With no
   // subscribers at all the head is the minimum, because nobody is owed anything.
   std::uint64_t minimum = _world.DespawnHead();
   for (const Subscriber& subscriber : m_subscribers)

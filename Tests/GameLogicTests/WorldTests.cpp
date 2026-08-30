@@ -141,7 +141,7 @@ public:
   {
     // The property the drain could not express, and the reason this slice exists: with one shared
     // drain, whichever publisher ran first consumed the log and the second never heard the death
-    // (ADR 0026).
+    // (ADR 0027).
     Game::World world;
     std::vector<Game::ShipHandle> doomed;
     for (int at = 0; at < 3; ++at)

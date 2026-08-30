@@ -1,4 +1,4 @@
-# 0029 — The publisher lives in GameLogic
+# 0030 — The publisher lives in GameLogic
 
 Status: accepted
 Date: 2026-08-30
@@ -71,7 +71,7 @@ self-evident and the reasoning is the useful part:
   accident: the writer carries `m_nextSnapshotId`, and a shared one would interleave two
   subscribers' fragment ids and make every reassembly ambiguous.
 - The despawn log is trimmed once per tick to the minimum cursor across subscribers, which is what
-  ADR 0026 built the cursors for. A removed subscriber stops holding the log back immediately.
+  ADR 0027 built the cursors for. A removed subscriber stops holding the log back immediately.
 - Order budgets are per subscriber per tick, and what is over budget stays queued rather than being
   discarded — it is read next tick, and the *tick* is counted. Nothing is thrown away, because
   throwing away an order is throwing away a click the player made; a client that never stops sending

@@ -2,7 +2,7 @@
 
 **Status: slices 2, 5 and 6 have landed — the despawn log is cursored, the seam has a reliable
 lane, and departures and orders travel on it, which retires finding E1. The loopback fallback is
-gone (ADR 0027). Slice 3, the publisher, has landed with slice 4 folded into it, and slice 7 with it.** This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
+gone (ADR 0028). Slice 3, the publisher, has landed with slice 4 folded into it, and slice 7 with it.** This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
 (tree at `de12b6d`) into an ordered slice plan in the shape `Design/README.md` defines: one slice,
 one branch, one pull request. The review is the evidence; this document is the work. Where a slice
 already has a design in the tree — the reliable lane lives in [`QuicTransport.md`](QuicTransport.md)
@@ -184,7 +184,7 @@ joining late sees only deaths after its cursor; the replay gate untouched (the l
 
 **Landed.** Work order: [`DespawnCursors-work-order.md`](DespawnCursors-work-order.md). `DespawnLog()`
 and `ClearDespawnLog()` became `DespawnHead()`, `DespawnsSince(cursor)` and
-`TrimDespawnsBefore(cursor)`; `WorldSimulation` holds one cursor; ADR 0026 records why. Three
+`TrimDespawnsBefore(cursor)`; `WorldSimulation` holds one cursor; ADR 0027 records why. Three
 `GameLogicTests` rows replace the one that drained.
 
 #### Slice 3 — the publisher (`GameLogic`, M)
@@ -299,8 +299,9 @@ does not fail — it builds a frustum pointing the other way and empties the scr
 test row exists for that alone.
 
 Culled: **hulls** (the win — thousands of draws), the **selection and hover rings** that belong to
-them, **bodies** (one decision per body, reused by the ocean, terrain and outline passes so they
-cannot disagree and leave a hole), the **shock rings**, and the **plume**, which follows its hull.
+them, **bodies** (one decision per body, reused by the terrain and outline passes so they cannot
+disagree and leave an outline hanging where its land was culled), the **shock rings**, and the
+**plume**, which follows its hull.
 The minimap is untouched, as the order requires: it draws from the snapshot and never asks what is
 on screen.
 
@@ -458,7 +459,7 @@ work order, per `Design/README.md`'s "design (if non-trivial)". This plan only f
 after slice 13, before any content spreads architecture past one grid. The `FindPath`/waypoint seam
 and the route follower are the interfaces that design must keep.
 
-**The design is written** ([`RegionalPathfinding.md`](RegionalPathfinding.md), ADR 0032), which is
+**The design is written** ([`RegionalPathfinding.md`](RegionalPathfinding.md), ADR 0033), which is
 what this slice was: it yields four slices of its own, listed in its §9, and none of them is
 implemented here. What the writing turned up is worth carrying back:
 

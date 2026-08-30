@@ -246,6 +246,7 @@
     <Image Include="Assets\Terrain\LandscapeLaunchpad.dds" />
     <Image Include="Assets\Terrain\LandscapeMine.dds" />
     <Image Include="Assets\Terrain\LandscapeMine2.dds" />
+    <Image Include="Assets\Terrain\Planet1.dds" />
     <Image Include="Assets\Textures\CloudyGlow.dds" />
     <Image Include="Assets\Textures\Fuel.dds" />
     <Image Include="Assets\Textures\Glow.dds" />

@@ -219,7 +219,7 @@ void WorldView::ExplodeTheLost(std::uint64_t _tick)
   }
 
   // Drawn, so the receiver may forget them. Deaths accumulate across every message in a drain now
-  // that departures have their own lane, and nothing else clears them (ADR 0028).
+  // that departures have their own lane, and nothing else clears them (ADR 0029).
   m_receiver.ClearDestroyed();
 }
 
@@ -798,8 +798,8 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
 
   XMFLOAT4X4 world;
 
-  // The bodies' world matrices, built here because the ocean needs them before the hulls and the
-  // terrain needs the same ones after. One transform per body per frame, not two.
+  // The bodies' world matrices. One transform per body per frame, not two: the terrain pass and
+  // the outline pass over the same body want exactly the same matrix.
   m_bodyWorlds.clear();
   for (const BodyView& body : m_bodies)
   {
@@ -810,32 +810,20 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     m_bodyWorlds.push_back(bodyWorld);
   }
 
-  // The oceans, in the opaque pass and before the hulls. They go through the scene pass, so they are
-  // in the depth buffer by the time the terrain draws over them; the coast dips below sea level, so
-  // the shore hides behind the water rather than meeting it edge-on (Design/PlanetRenderer.md 5.5).
-  // The same world matrix as the terrain, spin included, so the sea turns with the land.
-  //
   // Visibility is decided once per body, here, and the terrain and outline passes below reuse it:
-  // three passes over the same spheres would be three chances for them to disagree, and a body whose
-  // sea drew but whose land did not is a hole in the world.
+  // two passes over the same spheres would be two chances for them to disagree, and a body whose
+  // outline drew but whose land did not is a wireframe hanging in empty space.
   m_bodyVisible.clear();
   for (std::size_t i = 0; i < m_bodies.size(); ++i)
   {
     const XMFLOAT3 centre(ViewX(m_bodies[i].centre), m_bodies[i].centreY, ViewZ(m_bodies[i].centre));
     const float radius = m_bodies[i].boundingRadiusMetres * CULL_BODY_RADIUS_SCALE;
-    m_bodyVisible.push_back(Neuron::IsSphereVisible(frustum, centre, radius));
-  }
-
-  for (std::size_t i = 0; i < m_bodies.size(); ++i)
-  {
-    if (!m_bodyVisible[i])
-    {
+    const bool visible = Neuron::IsSphereVisible(frustum, centre, radius);
+    m_bodyVisible.push_back(visible);
+    if (visible)
+      ++m_submittedCount;
+    else
       ++m_culledCount;
-      continue;
-    }
-    ++m_submittedCount;
-    if (m_bodies[i].ocean != INVALID_MESH)
-      _renderer.DrawMesh(_gpu, m_bodies[i].ocean, m_bodyWorlds[i], m_bodies[i].oceanColour, 0.0f);
   }
 
   const std::span<const Game::ShipSnapshot> state = Ships();
@@ -915,19 +903,26 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
 
   // The bodies: every terrain, then every outline. Two passes rather than two draws per body, so
   // there is one pipeline switch per pass and body A's outline tests against body B's depth
-  // (Design/PlanetRenderer.md 7.3). They go after the hulls because the ocean, when slice 5 lands
-  // it, goes through the scene pass and has to be in the depth buffer before the coast dips into it.
+  // (Design/PlanetRenderer.md 7.3).
   if (m_bodyRenderer != nullptr && !m_bodies.empty())
   {
-    // The matrices were built above, before the oceans drew: the two passes here want exactly the
-    // ones the water used, not ones recomputed from a spin that has not moved since.
     m_bodyRenderer->Begin(_gpu, frame.viewProj, frame.lightDir, frame.ambient, frame.cameraPos, BODY_OVERLAY);
     for (std::size_t i = 0; i < m_bodies.size(); ++i)
-      if (m_bodyVisible[i])
+    {
+      if (!m_bodyVisible[i])
+        continue;
+      if (m_bodies[i].textured)
+        m_bodyRenderer->DrawPlanet(_gpu, m_bodies[i].terrain, m_bodyWorlds[i]);
+      else
         m_bodyRenderer->DrawMain(_gpu, m_bodies[i].terrain, m_bodyWorlds[i]);
+    }
+    // The outline belongs to a generated body. Over a textured one it reads as a cage drawn on a
+    // photograph, so a textured world is skipped here rather than being given a fainter one.
     for (std::size_t i = 0; i < m_bodies.size(); ++i)
-      if (m_bodyVisible[i])
+    {
+      if (m_bodyVisible[i] && !m_bodies[i].textured)
         m_bodyRenderer->DrawOverlay(_gpu, m_bodies[i].terrain, m_bodyWorlds[i]);
+    }
   }
 
   // Hull fragments before the decals: they are blended but write depth, so a shard occludes what is

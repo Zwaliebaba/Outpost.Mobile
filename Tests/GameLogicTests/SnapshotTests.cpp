@@ -25,7 +25,7 @@ public:
   }
 
   // The reliable lane, captured separately so a test can see which lane a message took -- which is
-  // the whole of what slice 3b changed (ADR 0028).
+  // the whole of what slice 3b changed (ADR 0029).
   [[nodiscard]] bool SendReliable(const std::uint8_t* _bytes, std::uint32_t _count) override
   {
     if (_count > Neuron::MAX_RELIABLE_BYTES || refuseReliable)
@@ -52,7 +52,7 @@ public:
   bool refuseReliable = false;
 };
 
-// Both lanes, in the order the writer used them: departures go on the reliable lane now (ADR 0028),
+// Both lanes, in the order the writer used them: departures go on the reliable lane now (ADR 0029),
 // so a test that fed only `sent` would be asserting against half the update -- which is exactly how
 // this suite went red when the lane landed.
 void FeedBothLanes(Game::SnapshotReceiver& _receiver, const CaptureTransport& _link)

@@ -23,7 +23,7 @@ namespace Outpost
 //
 // What it no longer owns is the fan-out. An interest set, a writer, a faction and a despawn cursor
 // per subscriber live in Game::Publisher now, and this class holds a Publisher with one entry in it
-// (ADR 0029). The behavior is the same to the byte; the shape is what changed, and it changed here
+// (ADR 0030). The behavior is the same to the byte; the shape is what changed, and it changed here
 // rather than the day a second client arrives, because that is the day it would be expensive.
 class WorldSimulation final : public Neuron::Simulation
 {
@@ -42,7 +42,7 @@ public:
     desc.faction = m_subscriberFaction;
 
     // From the head, not from zero: the fleet is spawned before the link is opened, and a ship that
-    // died during boot is not something this client ever held (ADR 0026).
+    // died during boot is not something this client ever held (ADR 0027).
     desc.openingDespawnCursor = m_world.DespawnHead();
     m_subscriber = m_publisher.Add(desc);
   }

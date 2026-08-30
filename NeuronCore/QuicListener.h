@@ -21,7 +21,7 @@ namespace Neuron
 //
 // Desc::backlog is how many connections it can carry AT ONCE, not how many it will ever accept. A
 // slot whose connection has closed is recycled in Poll and serves the next client, so a server does
-// not die by attrition after backlog logins (ADR 0030, review finding E3). The transports are
+// not die by attrition after backlog logins (ADR 0031, review finding E3). The transports are
 // pre-allocated by Start on the owning thread, because the accept itself arrives on an MsQuic worker
 // and a worker allocates nothing.
 //
@@ -63,7 +63,7 @@ public:
   // Every LIVE connection, oldest first. The listener owns them, and a pointer stays valid until the
   // Poll that finds its connection closed -- after which the transport is still alive but belongs to
   // the pool again, so a caller that holds one across a Poll must be prepared to find it gone from
-  // this span (ADR 0030).
+  // this span (ADR 0031).
   [[nodiscard]] std::span<QuicTransport* const> Accepted() const noexcept;
 
   // How many slots have been recycled since Start. Diagnostics: it is the number of clients that
@@ -102,7 +102,7 @@ private:
   std::vector<std::uint32_t> m_pending;
 
   // Free slots, not a high-water mark. A counter that only rose is what made backlog a lifetime
-  // budget instead of a concurrency one (ADR 0030). Taken from the back, so a slot that has just
+  // budget instead of a concurrency one (ADR 0031). Taken from the back, so a slot that has just
   // been recycled is the next one used and the pool stays warm.
   std::vector<std::uint32_t> m_freeSlots;
 

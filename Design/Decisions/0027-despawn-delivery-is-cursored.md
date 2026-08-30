@@ -1,4 +1,4 @@
-# 0026 — The despawn log is read by cursor, not drained
+# 0027 — The despawn log is read by cursor, not drained
 
 Status: accepted
 Date: 2026-08-30

@@ -237,7 +237,7 @@ public:
 
   TEST_METHOD(ASubscriberAddedLaterHearsOnlyWhatFollowsIt)
   {
-    // Its cursor opens at the head, so it is not told about ships it never held (ADR 0026).
+    // Its cursor opens at the head, so it is not told about ships it never held (ADR 0027).
     Game::World world;
     const Game::ShipId first = SpawnAt(world, 0.0f, 0.0f);
 

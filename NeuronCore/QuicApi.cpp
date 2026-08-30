@@ -21,7 +21,7 @@ namespace
 constexpr const char* QUIC_ALPN = "outpost-2";
 
 // One bidirectional stream is negotiated, and QuicTransport opens it: it is the reliable lane
-// (ADR 0028). Reserving the count here before the lane existed is what let that slice land without
+// (ADR 0029). Reserving the count here before the lane existed is what let that slice land without
 // changing a configuration both ends had already agreed on.
 constexpr std::uint16_t QUIC_PEER_BIDI_STREAMS = 1;
 } // namespace

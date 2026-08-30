@@ -55,7 +55,7 @@ One slice, `NeuronCore`. It adds a lane and proves it. It does not put anything 
   handshake. A second is a new decision.
 - **Flow control tuning, or a policy for a peer that never reads.** The ring fills and the lane
   refuses; what a session does about a subscriber that has stopped reading is the session's, and
-  ADR 0026's consequences already name it.
+  ADR 0027's consequences already name it.
 
 ## What to build on
 

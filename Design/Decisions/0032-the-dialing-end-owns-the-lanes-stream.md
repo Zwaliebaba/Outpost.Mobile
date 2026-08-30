@@ -1,11 +1,11 @@
-# 0031 — The dialing end owns the reliable lane's stream
+# 0032 — The dialing end owns the reliable lane's stream
 
 Status: accepted
 Date: 2026-08-30
 
 ## Context
 
-The reliable lane (ADR 0028) is carried on the one bidirectional stream the handshake reserves —
+The reliable lane (ADR 0029) is carried on the one bidirectional stream the handshake reserves —
 `QUIC_PEER_BIDI_STREAMS = 1`, set in `QuicApi.cpp` before the lane existed, precisely so the lane
 would need no configuration change when it arrived.
 
@@ -60,7 +60,7 @@ lane never comes up — anything waiting on `ReliableReady()` waits for ever.
 - `ReliableReady()` becomes true on the dialer at `START_COMPLETE` and on the accepting end when it
   adopts the stream. It stays a separate question from `State()`, because the lane needs one round
   trip more than the connection does.
-- A recycled listener slot (ADR 0030) comes back as an accepting end, because `Reserve` clears the
+- A recycled listener slot (ADR 0031) comes back as an accepting end, because `Reserve` clears the
   role. A transport cannot silently keep a dialing role it acquired in a previous life.
 - The rule is now enforced by code rather than by a comment. Where this tree writes a rule into a
   comment, the next question is which line makes it true.

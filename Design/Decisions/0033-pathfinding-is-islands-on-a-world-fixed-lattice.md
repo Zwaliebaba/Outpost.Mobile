@@ -1,4 +1,4 @@
-# 0032 — Pathfinding is islands of architecture, on a lattice fixed to the world
+# 0033 — Pathfinding is islands of architecture, on a lattice fixed to the world
 
 Status: accepted
 Date: 2026-08-30

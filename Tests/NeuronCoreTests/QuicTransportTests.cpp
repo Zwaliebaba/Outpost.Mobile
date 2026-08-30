@@ -111,7 +111,7 @@ public:
     return m_listener.Port();
   }
 
-  // How many connections the listener has seen come and go. Since ADR 0030 this is how a departure
+  // How many connections the listener has seen come and go. Since ADR 0031 this is how a departure
   // is reported: the transport leaves Accepted() and this rises.
   [[nodiscard]] std::uint32_t RecycledCount() const noexcept
   {
@@ -461,7 +461,7 @@ public:
   TEST_METHOD(AClosedPeerIsReportedRatherThanGoingSilent)
   {
     // A peer that goes away has to be visible rather than silent, or the composition root has
-    // nothing to report. What makes it visible changed with ADR 0030: the listener recycles the
+    // nothing to report. What makes it visible changed with ADR 0031: the listener recycles the
     // accepted end the moment its connection closes, so the report is the transport leaving
     // Accepted() and RecycledCount rising -- not a state read off a pointer the pool has taken back.
     // Reading the state there would race the recycle and, once recycled, would say Disconnected.
@@ -487,7 +487,7 @@ public:
   {
     // The defect this retires: the listener used to count accepts and never give a slot back, so
     // backlog was a budget for the life of the process rather than a concurrency limit. A server
-    // that had seen backlog logins refused everybody until restart, silently (ADR 0030, review E3).
+    // that had seen backlog logins refused everybody until restart, silently (ADR 0031, review E3).
     Neuron::QuicApi api;
     Neuron::QuicApi::Desc apiDesc;
     apiDesc.allowUnvalidatedPeer = true;

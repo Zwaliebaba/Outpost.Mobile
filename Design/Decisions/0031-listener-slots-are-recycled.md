@@ -1,4 +1,4 @@
-# 0030 — Listener slots are recycled, so backlog means concurrency
+# 0031 — Listener slots are recycled, so backlog means concurrency
 
 Status: accepted
 Date: 2026-08-30
@@ -52,7 +52,7 @@ being ready to serve.
   would mean never compacting, which means the span grows forever with holes in it, and it makes the
   natural loop over `Accepted()` wrong. The compacting span with a documented rule — a pointer is
   valid until the Poll that finds its connection closed — is the smaller surprise, and a session
-  layer holds its own handle anyway (ADR 0029).
+  layer holds its own handle anyway (ADR 0030).
 
 ## Consequences
 
@@ -65,7 +65,7 @@ being ready to serve.
 - `Accepted()` returns live connections only, and a pointer taken from it stops being listed after
   the Poll that finds it closed. The transport itself stays alive — the pool owns it — so a stale
   pointer is not a dangling one, but a caller that keeps one is looking at a transport that now
-  belongs to somebody else. Nothing in the tree does this today; the session table (ADR 0029) holds
+  belongs to somebody else. Nothing in the tree does this today; the session table (ADR 0030) holds
   its own handle.
 - **A departure is no longer observable as a state on the accepted end**, and that cost was found by
   a test rather than foreseen here: `AClosedPeerDrainsThenCloses` waited for `Closed` on the pointer

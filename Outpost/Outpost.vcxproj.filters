@@ -97,6 +97,9 @@
     <Image Include="Assets\Terrain\LandscapeMine2.dds">
       <Filter>Assets\Terrain</Filter>
     </Image>
+    <Image Include="Assets\Terrain\Planet1.dds">
+      <Filter>Assets\Terrain</Filter>
+    </Image>
     <Image Include="Assets\Textures\Fuel.dds">
       <Filter>Assets\Textures</Filter>
     </Image>
@@ -138,6 +141,9 @@
     </Image>
     <Image Include="Assets\Textures\IconWallet.dds">
       <Filter>Assets\Textures</Filter>
+    </Image>
+    <Image Include="Assets\Terrain\Planet1.dds">
+      <Filter>Assets\Terrain</Filter>
     </Image>
   </ItemGroup>
   <ItemGroup>

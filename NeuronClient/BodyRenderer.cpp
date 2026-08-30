@@ -8,6 +8,8 @@
 #include "CompiledShaders/BodyVS.h"
 #include "CompiledShaders/BodyPS.h"
 #include "CompiledShaders/BodyOverlayPS.h"
+#include "CompiledShaders/PlanetVS.h"
+#include "CompiledShaders/PlanetPS.h"
 #include "CompiledShaders/BodyBakeMaxCS.h"
 #include "CompiledShaders/BodyBakeCS.h"
 
@@ -84,42 +86,66 @@ void BodyRenderer::Init(GpuDevice& _gpu, const Desc& _desc)
 
   // The table is bound on every draw, terrain included, and a descriptor heap starts uninitialised:
   // a slot that never gets a view is a handle the debug layer reports the moment anything binds it.
-  // The null view is overwritten by the real one below when the file loads.
+  // Every slot is filled with a null view first; a real one overwrites its slot when a file loads.
   D3D12_SHADER_RESOURCE_VIEW_DESC nullSrv = {};
   nullSrv.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
   nullSrv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
   nullSrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
   nullSrv.Texture2D.MipLevels = 1;
-  _gpu.Device()->CreateShaderResourceView(nullptr, &nullSrv, m_srvHeap->GetCPUDescriptorHandleForHeapStart());
-
-  DdsImage image;
-  if (!DdsImage::Load(_desc.outlineTexture, image))
+  for (std::uint32_t slot = 0; slot < TEXTURE_COUNT; ++slot)
   {
-    DebugTrace(L"body outline {} did not load; bodies will draw without their wire frame\n", _desc.outlineTexture);
+    D3D12_CPU_DESCRIPTOR_HANDLE handle = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
+    handle.ptr += static_cast<SIZE_T>(slot) * m_srvStride;
+    _gpu.Device()->CreateShaderResourceView(nullptr, &nullSrv, handle);
+  }
+
+  LoadTexture(_gpu, OUTLINE_SLOT, _desc.outlineTexture, m_outline, m_outlineStaging);
+  m_outlineReady = m_outline != nullptr;
+  if (!m_outlineReady)
+    DebugTrace("body: no outline, so bodies will draw without their wire frame\n");
+
+  // Optional: a game with no textured world names no map, and this is a no-op.
+  if (!_desc.planetTexture.empty())
+  {
+    LoadTexture(_gpu, PLANET_SLOT, _desc.planetTexture, m_planet, m_planetStaging);
+    m_planetReady = m_planet != nullptr;
+  }
+}
+
+// Records one texture's upload into whatever list the composition root opened, and deliberately does
+// not submit it: the bodies' vertex copies go into the same list and one ExecuteAndWait carries all
+// of them. A file that cannot be read traces and leaves _outTexture null, which is what the two
+// Ready() flags are read off.
+void BodyRenderer::LoadTexture(GpuDevice& _gpu, std::uint32_t _slot, const std::wstring& _fileName, GpuPtr<ID3D12Resource>& _outTexture,
+                               GpuPtr<ID3D12Resource>& _outStaging)
+{
+  DdsImage image;
+  if (!DdsImage::Load(_fileName, image))
+  {
+    DebugTrace(L"body texture {} did not load\n", _fileName);
     return;
   }
 
-  // One mip, BGRA8, real alpha: a copy rather than a conversion, and no mip chain to build. The
-  // shader's fwidth fade stands in for the mips the tree does not generate.
+  // One mip, BGRA8: a copy rather than a conversion, and no mip chain to build. On the outline the
+  // shader's fwidth fade stands in for the mips the tree does not generate; on a planet map nothing
+  // does, so a globe small on screen will sparkle until this tree can generate them.
   ByteBuffer pixels;
   if (!image.TopMipAsBgra(pixels))
   {
-    DebugTrace(L"body outline {} is not an uncompressed 8-bit surface\n", _desc.outlineTexture);
+    DebugTrace(L"body texture {} is not an uncompressed 8-bit surface\n", _fileName);
     return;
   }
 
-  // Recorded into whatever list the composition root opened, and deliberately not submitted here:
-  // the bodies' vertex copies go into the same list and one ExecuteAndWait carries all of them.
-  const D3D12_CPU_DESCRIPTOR_HANDLE srv = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
-  UploadColourTexture(_gpu, image.widthPx, image.heightPx, pixels, srv, m_outline, m_outlineStaging);
-  m_outlineReady = m_outline != nullptr;
+  D3D12_CPU_DESCRIPTOR_HANDLE srv = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
+  srv.ptr += static_cast<SIZE_T>(_slot) * m_srvStride;
+  UploadColourTexture(_gpu, image.widthPx, image.heightPx, pixels, srv, _outTexture, _outStaging);
 }
 
 void BodyRenderer::CreatePipelines(GpuDevice& _gpu)
 {
   D3D12_DESCRIPTOR_HEAP_DESC hd = {};
   hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-  hd.NumDescriptors = 1; // the outline, and nothing else: a body's colour is in its vertices
+  hd.NumDescriptors = TEXTURE_COUNT; // the outline and the planet map; a generated body's colour is in its vertices
   hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
   hd.NodeMask = 0;
   check_hresult(_gpu.Device()->CreateDescriptorHeap(&hd, IID_PPV_ARGS(m_srvHeap.put())));
@@ -203,6 +229,17 @@ void BodyRenderer::CreatePipelines(GpuDevice& _gpu)
   pso.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
   pso.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
   check_hresult(_gpu.Device()->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(m_overlayPso.put())));
+
+  // The textured globe: opaque and depth-writing like the terrain, and its own vertex stage, because
+  // it wants the normal interpolated and Body.hlsli declares that one nointerpolation.
+  pso.VS.pShaderBytecode = g_pPlanetVS;
+  pso.VS.BytecodeLength = sizeof(g_pPlanetVS);
+  pso.PS.pShaderBytecode = g_pPlanetPS;
+  pso.PS.BytecodeLength = sizeof(g_pPlanetPS);
+  pso.BlendState.RenderTarget[0].BlendEnable = FALSE;
+  pso.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+  pso.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+  check_hresult(_gpu.Device()->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(m_planetPso.put())));
 }
 
 void BodyRenderer::CreateBakePipelines(GpuDevice& _gpu)
@@ -502,6 +539,7 @@ void BodyRenderer::DiscardStaging() noexcept
   m_staging.clear();
   m_bakeHeaps.clear();
   m_outlineStaging = nullptr;
+  m_planetStaging = nullptr;
 }
 
 void BodyRenderer::Begin(GpuDevice& _gpu, const XMFLOAT4X4& _viewProj, const XMFLOAT3& _lightDir, float _ambient,
@@ -524,7 +562,7 @@ void BodyRenderer::Begin(GpuDevice& _gpu, const XMFLOAT4X4& _viewProj, const XMF
 
 void BodyRenderer::DrawMain(GpuDevice& _gpu, BodyHandle _body, const XMFLOAT4X4& _world)
 {
-  Draw(_gpu, m_mainPso.get(), _body, _world);
+  Draw(_gpu, m_mainPso.get(), _body, _world, OUTLINE_SLOT);
 }
 
 void BodyRenderer::DrawOverlay(GpuDevice& _gpu, BodyHandle _body, const XMFLOAT4X4& _world)
@@ -532,10 +570,18 @@ void BodyRenderer::DrawOverlay(GpuDevice& _gpu, BodyHandle _body, const XMFLOAT4
   if (!m_outlineReady)
     return;
 
-  Draw(_gpu, m_overlayPso.get(), _body, _world);
+  Draw(_gpu, m_overlayPso.get(), _body, _world, OUTLINE_SLOT);
 }
 
-void BodyRenderer::Draw(GpuDevice& _gpu, ID3D12PipelineState* _pso, BodyHandle _body, const XMFLOAT4X4& _world)
+void BodyRenderer::DrawPlanet(GpuDevice& _gpu, BodyHandle _body, const XMFLOAT4X4& _world)
+{
+  if (!m_planetReady)
+    return;
+
+  Draw(_gpu, m_planetPso.get(), _body, _world, PLANET_SLOT);
+}
+
+void BodyRenderer::Draw(GpuDevice& _gpu, ID3D12PipelineState* _pso, BodyHandle _body, const XMFLOAT4X4& _world, std::uint32_t _srvSlot)
 {
   if (_body >= m_bodies.size() || m_bodies[_body].vertexCount == 0)
     return;
@@ -552,7 +598,9 @@ void BodyRenderer::Draw(GpuDevice& _gpu, ID3D12PipelineState* _pso, BodyHandle _
   cmd->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
   cmd->SetPipelineState(_pso);
   cmd->SetGraphicsRoot32BitConstants(0, 16, &_world, WORLD_OFFSET_DWORDS);
-  cmd->SetGraphicsRootDescriptorTable(2, m_srvHeap->GetGPUDescriptorHandleForHeapStart());
+  D3D12_GPU_DESCRIPTOR_HANDLE srv = m_srvHeap->GetGPUDescriptorHandleForHeapStart();
+  srv.ptr += static_cast<UINT64>(_srvSlot) * m_srvStride;
+  cmd->SetGraphicsRootDescriptorTable(2, srv);
   cmd->IASetVertexBuffers(0, 1, &mesh.vbv);
   cmd->DrawInstanced(mesh.vertexCount, 1, 0, 0);
 }

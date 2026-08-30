@@ -21,7 +21,7 @@ public:
     return true;
   }
 
-  // Departures travel on the reliable lane since ADR 0028, so a double that captured only datagrams
+  // Departures travel on the reliable lane since ADR 0029, so a double that captured only datagrams
   // would silently drop half of an update that states one.
   [[nodiscard]] bool SendReliable(const std::uint8_t* _bytes, std::uint32_t _count) override
   {

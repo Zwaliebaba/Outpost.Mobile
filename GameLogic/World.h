@@ -55,7 +55,7 @@ public:
   // It exists so that the wire can say *destroyed* where it previously said only *left*: a client
   // that infers a death from an absence detonates every ship that merely flies out of its interest
   // radius, which is where a hostile patrol lives (Design/Hostiles.md 4.4). Step never touches it --
-  // it is the publisher's, and each of its subscribers reads it at its own pace (ADR 0026).
+  // it is the publisher's, and each of its subscribers reads it at its own pace (ADR 0027).
   //
   // Deaths are numbered for the life of the World and the numbering is never reset, so a cursor
   // stays comparable across a trim and the difference between two cursors is exactly the number of

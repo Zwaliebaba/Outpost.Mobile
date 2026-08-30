@@ -358,7 +358,7 @@ void QuicTransport::Reserve(QuicApi& _api, const Desc& _desc)
   m_datagramSendEnabled.store(false, std::memory_order_relaxed);
 
   // Back to Disconnected, which matters only on the second call: QuicListener re-Reserves a
-  // transport whose connection has closed so the slot can serve another client (ADR 0030), and one
+  // transport whose connection has closed so the slot can serve another client (ADR 0031), and one
   // that still reported Closed would be a pooled transport lying about being finished. On the first
   // call this is the value it already had.
   m_state.store(ConnectionState::Disconnected, std::memory_order_relaxed);
@@ -583,7 +583,7 @@ void QuicTransport::OpenReliableStream()
   // reserved (QuicApi.cpp, QUIC_PEER_BIDI_STREAMS).
   // The dialing end only. The accepting end gets its handle through PEER_STREAM_STARTED, and if it
   // opened one of its own it would be a second bidirectional stream against a peer that negotiated
-  // room for exactly one -- which is the defect ADR 0031 records.
+  // room for exactly one -- which is the defect ADR 0032 records.
   if (!m_isDialer || m_api == nullptr || m_connection == nullptr)
     return;
   if (m_stream.load(std::memory_order_acquire) != nullptr)

@@ -46,8 +46,9 @@ design never moves — it stays the document later changes are reviewed against.
 
 A decision record is one page: the context that forced a choice, the decision, the alternatives
 considered and why each lost, and the consequences. Records are numbered in order of writing and
-never renumbered or rewritten into a different decision; a change of mind is a new record that
-supersedes the old one, which stays with its status changed. One is required whenever a type
+never renumbered or rewritten into a different decision, save for a number two branches both
+claimed: on the merge the record already on the trunk keeps it and the arriving one moves up. A
+change of mind is a new record that supersedes the old one, which stays with its status changed. One is required whenever a type
 moves between libraries, a dependency rule or build guard changes, a project or dependency is
 added or removed, or an approach is turned down that someone will propose again.
 

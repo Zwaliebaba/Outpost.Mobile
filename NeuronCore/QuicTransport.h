@@ -199,7 +199,7 @@ private:
   // Which end of the connection this is. The lane is one bidirectional stream and exactly one end
   // may open it -- the one that dialed. Without this the accepting end's Poll runs before its
   // PEER_STREAM_STARTED arrives, sees no stream, and opens a second one against a peer that
-  // negotiated room for one (ADR 0031).
+  // negotiated room for one (ADR 0032).
   bool m_isDialer = false;
 
   // Inbound, exactly the datagram ring's shape and cursor discipline: workers write under the lock,

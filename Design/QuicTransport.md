@@ -1,9 +1,9 @@
 # The QUIC transport — moving the seam onto MsQuic
 
 **Status: all four slices have landed.** The game boots over QUIC, the seam has a reliable lane,
-and departures and orders travel on it (ADR 0028). §13 lists the slices; §14 is the
+and departures and orders travel on it (ADR 0029). §13 lists the slices; §14 is the
 implementation plan. Every open question was put to the owner on 2026-08-29 and settled (§12), and
-two of those settlements have since moved: the fallback in §6 is gone (ADR 0027), and the reliable
+two of those settlements have since moved: the fallback in §6 is gone (ADR 0028), and the reliable
 lane (slices 3a and 3b) is scheduled with its work orders written, the wait in §12 decision 4
 having been lifted on 2026-08-30.
 
@@ -189,21 +189,21 @@ design (§11: no NAT, no exposure). `QUIC_LISTENER_EVENT_NEW_CONNECTION` arrives
 handler hands the `HQUIC` to a `QuicTransport` the listener pre-allocated for the purpose and
 calls `ConnectionSetConfiguration`. `QuicListener::Poll()` on the owning thread moves accepted
 transports into `Accepted()`, a span the root drains, and gives back the slots whose connections
-have closed so they serve the next client (ADR 0030). `Desc::backlog` is therefore how many
+have closed so they serve the next client (ADR 0031). `Desc::backlog` is therefore how many
 connections the listener carries **at once**, not how many it will ever accept; it defaults to one
 because that is what this executable needs, and a server changes the number.
 
 The port is `constexpr std::uint16_t OUTPOST_QUIC_PORT = 30081` in `Outpost/OutpostApp.cpp`, at
 the composition root and nowhere lower: there is no configuration file, and a number the game needs
 at boot is a constant the root owns. The value is arbitrary and unregistered; since the fallback
-went (ADR 0027) a taken port stops the boot, and §6's failure message names the port and the reason
+went (ADR 0028) a taken port stops the boot, and §6's failure message names the port and the reason
 rather than reporting that there is no link.
 
 ---
 
 ## 6. What `Outpost` does — the boot and the log
 
-**This section described a fallback until ADR 0027 removed it.** What it describes now is the boot
+**This section described a fallback until ADR 0028 removed it.** What it describes now is the boot
 as it stands: one wire, and a failure that stops rather than degrades.
 
 `OutpostApp` holds `Neuron::QuicApi m_quic; Neuron::QuicListener m_listener;
@@ -266,7 +266,7 @@ and no elevated prompt, because every one of those is a step a fresh clone would
 
 ## 8. What changes on the wire — nothing, yet
 
-**Landed in slice 3b (ADR 0028).** The two defects below are fixed: leaves and destroyed lists are
+**Landed in slice 3b (ADR 0029).** The two defects below are fixed: leaves and destroyed lists are
 their own message on the reliable lane, and orders travel on it too. The section is kept as the
 argument that chose which messages go where, which is the part still worth reading.
 
@@ -333,7 +333,7 @@ leaves owed:
   the connection — encryption was unaddressed in every design so far. Connection migration and
   path validation are QUIC's, not ours.
 - **Paid since.** N clients. `Game::Publisher` is that table, and it landed as slice 3 of
-  `Design/MmoScalabilityPlan.md`, with a record for where it lives (ADR 0029). `WorldSimulation`
+  `Design/MmoScalabilityPlan.md`, with a record for where it lives (ADR 0030). `WorldSimulation`
   holds a publisher with one entry in it; a dedicated server calls `Add` per accepted connection. A second process needs a headless composition root, which AGENTS.md §5
   forbids configuring by argv, so it needs a decision on how a server is told what to be. Both
   are named in §11 and neither is scheduled.
@@ -372,7 +372,7 @@ Put to the owner on 2026-08-29, each with the alternative it beat:
 2. **`Outpost.exe` boots over QUIC on localhost, with the loopback as the fallback** (§6). Over
    loopback-by-default with QUIC behind a constant: a path nobody runs is a path nobody notices
    breaking.
-   **Reversed in part on 2026-08-30 by ADR 0027**, on the same argument carried one step further:
+   **Reversed in part on 2026-08-30 by ADR 0028**, on the same argument carried one step further:
    the fallback was itself the path nobody runs. QUIC stays; the fallback is gone.
 3. **Port `30081`, ring capacity 256 datagrams** (§4.3, §5). Both are one constant each.
 4. **The reliable lane (slices 3a/3b) waits until the migration has landed and been lived with**
@@ -415,7 +415,7 @@ the row and the paragraph above are the ones this document guessed at, and they 
 
 What each slice builds, in the order it is built, with the acceptance that decides it. Slices 1 and
 2 are landed and their entries are the record of what was built at the time: the fallback slice 2
-wired has since been removed by ADR 0027, so read those two rows as history rather than as
+wired has since been removed by ADR 0028, so read those two rows as history rather than as
 instructions. The work
 orders carry the exact signatures, the "what to build on" tables and the assumptions; this is the
 plan they are cut from, and it is written to the decisions in §12.
@@ -427,7 +427,7 @@ plan they are cut from, and it is written to the decisions in §12.
 | 1.1 | `QuicApi.h/.cpp` | `Desc { idleTimeoutMs, keepAliveMs, handshakeTimeoutMs, allowUnvalidatedPeer }`, `Open`/`Close`/`Reason`/`IsOpen`. One `MsQuicOpen2`, one registration, two configurations on `QUIC_ALPN = "outpost-1"` with `DatagramReceiveEnabled` and `PeerBidiStreamCount = 1`. The header names no MsQuic type; the `.cpp` includes `<msquic.h>` and `<msquic.hpp>` after `pch.h`. |
 | 1.2 | `DevCertificate.h/.cpp` | `Acquire`/`Release`/`Context`/`Reason`. Persisted NCrypt RSA-2048 key `Outpost.Dev.Quic`, `CertCreateSelfSignCertificate` for `CN=Outpost Development`, handed over as `QUIC_CREDENTIAL_TYPE_CERTIFICATE_CONTEXT`. Fail-closed diagnostics, never a throw. |
 | 1.3 | `QuicTransport.h/.cpp` | `Endpoint`, `Desc { capacityDatagrams = 256 }`, `Connect`, `Close`, the four overrides, `DroppedCount`, `MaxSendLength`. The state table of §4.1; the two rings and one lock of §4.2; the static callback that allocates nothing and calls no MsQuic API; the bounded destructor wait. |
-| 1.4 | `QuicListener.h/.cpp` | `Desc { backlog = 1, transport }`, `Start(api, port)` on `127.0.0.1` only (port 0 = ephemeral), `Stop`, `Port`, `Poll`, `Accepted`, `Reason`. `NEW_CONNECTION` adopts a pre-allocated transport; an exhausted backlog refuses. (Slot recycling came later, ADR 0030.) |
+| 1.4 | `QuicListener.h/.cpp` | `Desc { backlog = 1, transport }`, `Start(api, port)` on `127.0.0.1` only (port 0 = ephemeral), `Stop`, `Port`, `Poll`, `Accepted`, `Reason`. `NEW_CONNECTION` adopts a pre-allocated transport; an exhausted backlog refuses. (Slot recycling came later, ADR 0031.) |
 | 1.5 | `NeuronCore.h`, `.vcxproj`, `.filters` | Three umbrella includes after `LoopbackTransport.h`; eight files registered; `QuicTransportTests.cpp` registered in `NeuronCoreTests` under `Tests`. |
 | 1.6 | `Tests/NeuronCoreTests/QuicTransportTests.cpp` | The ten tests of the work order §4, each over a real localhost connection with a bounded `FrameClock` wait. |
 | 1.7 | `Design/Decisions/0018…0020`, `AGENTS.md` §2, §5 | The three records and their index rows; "no code references it yet" and "what remains is a socket" rewritten in the same commit. |

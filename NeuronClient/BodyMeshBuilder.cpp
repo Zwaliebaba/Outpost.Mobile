@@ -86,8 +86,7 @@ void AssertSharedEdgesAgree(const std::vector<Sample>& _samples, std::uint32_t _
 #endif
 } // namespace
 
-void BodyMeshBuilder::Build(const BodyField& _field, const ColourRamp* _ramp, std::vector<FxVertex>& _outTerrain,
-                            std::vector<MeshVertex>& _outOcean, const XMFLOAT3& _oceanColour, BodyBuildStats& _outStats)
+void BodyMeshBuilder::Build(const BodyField& _field, const ColourRamp* _ramp, std::vector<FxVertex>& _outTerrain, BodyBuildStats& _outStats)
 {
   const BodyParams& params = _field.Params();
   const std::uint32_t gridPower = static_cast<std::uint32_t>(params.outsideMaxHeightGrid.z);
@@ -100,13 +99,6 @@ void BodyMeshBuilder::Build(const BodyField& _field, const ColourRamp* _ramp, st
 
   if (_ramp == nullptr || !_ramp->Loaded())
     DebugTrace("body {}: no colour ramp; the terrain is drawn in the fallback grey\n", seed);
-
-  // Every rule below is behind this one sign. A body with an ocean has its sea floor culled, its
-  // coast dipped and a sphere of water inside it; a dry one takes none of the three and its
-  // vertices are bitwise what they were before this existed (Design/PlanetRenderer.md 5.5).
-  const bool wet = params.outsideMaxHeightGrid.x < 0.0f;
-  const float shoreThreshold = BODY_SHORE_THRESHOLD * params.radiusEllipsoid.x;
-  const float shoreDip = BODY_SHORE_DIP * params.radiusEllipsoid.x;
 
   // Sample first, then emit. Every corner of every cell is shared by four cells and read three or
   // four times, and the field is the expensive half of the work -- evaluating it per triangle would
@@ -121,16 +113,7 @@ void BodyMeshBuilder::Build(const BodyField& _field, const ColourRamp* _ramp, st
         Sample& sample = samples[(face * samplesPerSide + x) * samplesPerSide + z];
         sample.direction = CubeSphere::Direction(static_cast<CubeFace>(face), x, z, samplesPerSide);
         sample.heightMetres = _field.Height(sample.direction);
-
-        // The shore dip: a corner barely above the water is pushed well under it, so the coast
-        // disappears beneath the ocean sphere instead of meeting it edge-on and showing a seam of
-        // sea floor. The height the colour is looked up from stays the undipped one, as the
-        // source's colour pass read it before its strip builder pushed the vertex down.
-        float placedHeight = sample.heightMetres;
-        if (wet && placedHeight < shoreThreshold)
-          placedHeight = shoreDip;
-
-        sample.position = Place(sample.direction, params.radiusEllipsoid, placedHeight);
+        sample.position = Place(sample.direction, params.radiusEllipsoid, sample.heightMetres);
       }
     }
   }
@@ -158,29 +141,6 @@ void BodyMeshBuilder::Build(const BodyField& _field, const ColourRamp* _ramp, st
         const Sample& corner01 = samples[(face * samplesPerSide + x) * samplesPerSide + z + 1u];
         const Sample& corner11 = samples[(face * samplesPerSide + x + 1u) * samplesPerSide + z + 1u];
         const Sample& corner10 = samples[(face * samplesPerSide + x + 1u) * samplesPerSide + z];
-
-        // Sea-level culling: a cell entirely at or under the water is not drawn at all, which is
-        // most of the triangles of an ocean world.
-        //
-        // Six samples, not the four corners it obviously wants to be. The source tested six because
-        // its triangle strip joined neighbouring rows, and keeping the artefact keeps its effect: a
-        // one-sample island holds a ring of sea-floor cells around it, and coastlines do not come
-        // out punched. The two extras are the neighbours before this cell, clamped at a face edge --
-        // the clamp is this port's, because a flat map had no edge to fall off.
-        if (wet)
-        {
-          const std::uint32_t beforeX = (x > 0u) ? x - 1u : 0u;
-          const std::uint32_t beforeZ = (z > 0u) ? z - 1u : 0u;
-          const Sample& westward = samples[(face * samplesPerSide + beforeX) * samplesPerSide + z];
-          const Sample& southward = samples[(face * samplesPerSide + x) * samplesPerSide + beforeZ];
-
-          if (corner00.heightMetres <= 0.0f && corner01.heightMetres <= 0.0f && corner11.heightMetres <= 0.0f &&
-              corner10.heightMetres <= 0.0f && westward.heightMetres <= 0.0f && southward.heightMetres <= 0.0f)
-          {
-            _outStats.trianglesCulled += 2;
-            continue;
-          }
-        }
 
         // One cell, two triangles, sharing the (x, z) to (x+1, z+1) diagonal. The uv of a vertex is
         // its own corner of the cell, so the outline texture tiles once per cell whatever the grid.
@@ -224,9 +184,10 @@ void BodyMeshBuilder::Build(const BodyField& _field, const ColourRamp* _ramp, st
           float v = 1.0f - climate * climateScale;
 
           // The source's expression is 0.45 / (h + 2) on a map whose heights were never negative. A
-          // body has an ocean floor, and at minus two source units that expression divides by zero.
-          // The magnitude of the height keeps the shape the sentence describes -- strongest at sea
-          // level, weaker away from it -- and is the same expression everywhere the source could go.
+          // body's height goes below zero -- an ocean world's floor did, and a crater still does --
+          // and at minus two source units that expression divides by zero. The magnitude of the
+          // height keeps the shape the sentence describes, strongest at zero and weaker away from
+          // it, and is the same expression everywhere the source could go.
           v += rng.Signed(DITHER_STRENGTH / (std::fabs(climate * sourceUnits) + DITHER_SOFTENING));
 
           const XMFLOAT3 colour = (_ramp != nullptr && _ramp->Loaded()) ? _ramp->Sample(u, v) : BODY_FALLBACK_GREY;
@@ -244,54 +205,46 @@ void BodyMeshBuilder::Build(const BodyField& _field, const ColourRamp* _ramp, st
       }
     }
   }
-
-  if (!wet)
-    return;
-
-  BuildOcean(params, _oceanColour, _outOcean);
 }
 
-void BodyMeshBuilder::BuildOcean(const BodyParams& _params, const XMFLOAT3& _oceanColour, std::vector<MeshVertex>& _outOcean)
+void BodyMeshBuilder::BuildSphere(float _radiusMetres, std::uint32_t _gridPower, std::vector<FxVertex>& _outSphere)
 {
-  if (_params.outsideMaxHeightGrid.x >= 0.0f)
-    return;
+  const std::uint32_t gridPower = std::clamp(_gridPower, BodyField::MIN_GRID_POWER, BodyField::MAX_GRID_POWER);
+  const std::uint32_t samples = CubeSphere::SamplesPerSide(gridPower);
+  const std::uint32_t cells = samples - 1u;
+  _outSphere.reserve(_outSphere.size() + static_cast<std::size_t>(CUBE_FACE_COUNT) * cells * cells * 2u * 3u);
 
-  const std::uint32_t gridPower = static_cast<std::uint32_t>(_params.outsideMaxHeightGrid.z);
-  const BodyParams& params = _params;
-
-  // The ocean: a smooth sphere at the body's radius, two grid powers coarser than the terrain --
-  // seventeen samples a side on a planet, whose facets are seventy-five metres across and read as
-  // water rather than as polygons from anywhere the camera can get to. It carries a flat colour and
-  // no normal, because the scene pass it goes through takes its normal from screen-space
-  // derivatives and its colour from the draw.
-  const std::uint32_t oceanPower = std::max(gridPower, BodyField::MIN_GRID_POWER + 2u) - 2u;
-  const std::uint32_t oceanSamples = CubeSphere::SamplesPerSide(oceanPower);
-  const std::uint32_t oceanCells = oceanSamples - 1u;
-  _outOcean.reserve(_outOcean.size() + static_cast<std::size_t>(CUBE_FACE_COUNT) * oceanCells * oceanCells * 2u * 3u);
+  // White, because the pixel stage multiplies the map by nothing: the colour is the picture's.
+  const XMFLOAT4 white(1.0f, 1.0f, 1.0f, 1.0f);
+  const XMFLOAT2 noUv(0.0f, 0.0f);
 
   for (std::uint32_t face = 0; face < CUBE_FACE_COUNT; ++face)
   {
-    for (std::uint32_t x = 0; x < oceanCells; ++x)
+    for (std::uint32_t x = 0; x < cells; ++x)
     {
-      for (std::uint32_t z = 0; z < oceanCells; ++z)
+      for (std::uint32_t z = 0; z < cells; ++z)
       {
-        const XMFLOAT3 corners[4] = {CubeSphere::Direction(static_cast<CubeFace>(face), x, z, oceanSamples),
-                                     CubeSphere::Direction(static_cast<CubeFace>(face), x, z + 1u, oceanSamples),
-                                     CubeSphere::Direction(static_cast<CubeFace>(face), x + 1u, z + 1u, oceanSamples),
-                                     CubeSphere::Direction(static_cast<CubeFace>(face), x + 1u, z, oceanSamples)};
+        const XMFLOAT3 corners[4] = {CubeSphere::Direction(static_cast<CubeFace>(face), x, z, samples),
+                                     CubeSphere::Direction(static_cast<CubeFace>(face), x, z + 1u, samples),
+                                     CubeSphere::Direction(static_cast<CubeFace>(face), x + 1u, z + 1u, samples),
+                                     CubeSphere::Direction(static_cast<CubeFace>(face), x + 1u, z, samples)};
 
-        // The same corner order the terrain emits, so the two agree about which way a cell winds.
+        // The corner order Build emits, so the two producers agree about which way a cell winds.
+        // Winding does not matter to what is drawn -- the pipeline culls nothing and the normal
+        // points outward by construction -- but two producers disagreeing about it would.
         const std::uint32_t order[2][3] = {{0u, 1u, 2u}, {0u, 2u, 3u}};
         for (std::uint32_t triangle = 0; triangle < 2; ++triangle)
         {
           for (std::uint32_t corner = 0; corner < 3; ++corner)
           {
-            const XMFLOAT3 position = Place(corners[order[triangle][corner]], params.radiusEllipsoid, 0.0f);
-            _outOcean.push_back(MeshVertex{position.x, position.y, position.z, _oceanColour.x, _oceanColour.y, _oceanColour.z});
+            const XMFLOAT3& direction = corners[order[triangle][corner]];
+            const XMFLOAT3 position(direction.x * _radiusMetres, direction.y * _radiusMetres, direction.z * _radiusMetres);
+            _outSphere.push_back(FxVertex::Make(position, direction, white, noUv));
           }
         }
       }
     }
   }
 }
+
 } // namespace Neuron
