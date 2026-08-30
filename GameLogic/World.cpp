@@ -6,6 +6,8 @@
 #include "Movement.h"
 #include "SimTuning.h"
 
+#include <cstddef>
+
 using namespace DirectX;
 
 namespace Game
@@ -41,10 +43,15 @@ ShipId World::SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint3
   m_shipSlot.push_back(slot);
   m_routes.emplace_back();
   m_patrols.emplace_back();
-  // Any spawn or despawn can move a Structure's id, not only one that adds or removes a Structure,
-  // because swap-and-pop renumbers whatever was last. Marking every one of them dirty costs a
-  // rebuild that only happens when the fleet changes, and gets the id-shift case right for free.
-  m_staticIndexDirty = true;
+
+  // Only an immovable can change the static set. A spawn appends, so no existing id moves and
+  // nothing already in the store is disturbed -- which is why this needs no id-shift caveat and the
+  // despawn below does (Design/MmoScalabilityReview.md U4). The gate is deliberately looser than
+  // the store's own filter, which is immovable *and* collidable: a Stargate costs one rebuild it did
+  // not need, and a gate that is a superset of the filter cannot miss one that was needed, which is
+  // the direction to be wrong in if the two ever drift apart.
+  if (HullSpecOf(_hullId).immovable)
+    m_staticIndexDirty = true;
   return id;
 }
 
@@ -55,11 +62,23 @@ bool World::DespawnShip(ShipHandle _handle)
     return false;
 
   // Logged before the slot is retired, so the publisher can tell this death from a departure. A
-  // despawn no subscriber held is dropped when the log is drained: you cannot be told of the death
-  // of something you never knew about (Design/Archive/Hostiles.md 4.4).
+  // despawn no subscriber held is dropped where the publisher intersects it with what that
+  // subscriber knew: you cannot be told of the death of something you never knew about
+  // (Design/Archive/Hostiles.md 4.4).
   m_despawnLog.push_back(_handle);
 
+  // Read before anything moves. Two ships can change the static set here: the one being removed, and
+  // the one swap-and-pop moves into its place -- because the static store holds ShipIds, and the
+  // moved ship's id changes even though the ship does not (ADR 0005). Marking every despawn dirty
+  // got that right by brute force and cost a whole-fleet rescan plus a universe-wide replan on every
+  // death; these two checks get it right for the cases that are actually it.
+  const bool removedWasStatic = HullSpecOf(m_ships[id].hullId).immovable;
+
   const ShipId last = static_cast<ShipId>(m_ships.size() - 1);
+  const bool movedIsStatic = (id != last) && HullSpecOf(m_ships[last].hullId).immovable;
+  if (removedWasStatic || movedIsStatic)
+    m_staticIndexDirty = true;
+
   if (id != last)
   {
     m_ships[id] = m_ships[last];
@@ -79,8 +98,34 @@ bool World::DespawnShip(ShipHandle _handle)
   if (freed.generation == 0)
     freed.generation = 1;
   m_freeSlots.push_back(_handle.slot);
-  m_staticIndexDirty = true;
   return true;
+}
+
+std::span<const ShipHandle> World::DespawnsSince(std::uint64_t _cursor) const noexcept
+{
+  if (_cursor <= m_despawnBase)
+    return m_despawnLog;
+  const std::uint64_t offset = _cursor - m_despawnBase;
+  if (offset >= m_despawnLog.size())
+    return {};
+  return std::span<const ShipHandle>(m_despawnLog).subspan(static_cast<std::size_t>(offset));
+}
+
+void World::TrimDespawnsBefore(std::uint64_t _cursor) noexcept
+{
+  if (_cursor <= m_despawnBase)
+    return;
+  const std::uint64_t offset = _cursor - m_despawnBase;
+  if (offset >= m_despawnLog.size())
+  {
+    // Trimming past the head is not an error and must not move the base past it: a cursor ahead of
+    // the log names deaths that have not happened, and the next one to happen is still theirs.
+    m_despawnBase += m_despawnLog.size();
+    m_despawnLog.clear();
+    return;
+  }
+  m_despawnLog.erase(m_despawnLog.begin(), m_despawnLog.begin() + static_cast<std::ptrdiff_t>(offset));
+  m_despawnBase = _cursor;
 }
 
 ShipHandle World::HandleOf(ShipId _id) const noexcept
@@ -144,8 +189,9 @@ const World::Patrol& World::PatrolOf(ShipId _id) const noexcept
 
 void World::StepPatrols()
 {
-  // A patrol issues an order, and an order plans a route, so the grid has to be current here for the
-  // same reason IssueMoveOrder rebuilds it: the first leg is planned on the tick after the spawn.
+  // A patrol issues an order, and an order plans a route, so the islands have to be current here for
+  // the same reason IssueMoveOrder rebuilds them: the first leg is planned on the tick after the
+  // spawn.
   RebuildStaticIfDirty();
 
   for (ShipId id = 0; id < ShipCount(); ++id)
@@ -179,7 +225,7 @@ void World::PlanRoute(ShipId _id, const WorldPos& _destination, float _requiredC
   ShipState& ship = m_ships[_id];
   Route& route = m_routes[_id];
 
-  const bool complete = m_pathGrid.FindPath(ship.posWorld, _destination, _requiredClearanceMetres, m_routeScratch);
+  const bool complete = m_pathIslands.FindPath(ship.posWorld, _destination, _requiredClearanceMetres, m_routeScratch);
   route.destination = _destination;
   route.requiredClearanceMetres = _requiredClearanceMetres;
   route.count = std::min<std::uint32_t>(MAX_PATH_WAYPOINTS, static_cast<std::uint32_t>(m_routeScratch.size()));
@@ -187,7 +233,7 @@ void World::PlanRoute(ShipId _id, const WorldPos& _destination, float _requiredC
     route.waypoint[at] = m_routeScratch[at];
   route.cursor = 0;
   route.legStart = ship.posWorld;
-  route.gridVersion = m_pathGrid.Version();
+  route.gridVersion = m_pathIslands.Version();
   route.reachesDestination = complete;
 
   // A grid that declined to build, or a start with nowhere to go, leaves the destination itself as
@@ -218,7 +264,7 @@ void World::AdvanceRoute(ShipId _id)
   }
 
   // A route that was planned against architecture that has since changed is not a route any more.
-  if (route.gridVersion != m_pathGrid.Version())
+  if (route.gridVersion != m_pathIslands.Version())
   {
     PlanRoute(_id, route.destination, route.requiredClearanceMetres);
     return;
@@ -281,7 +327,7 @@ void World::RebuildStaticIfDirty()
     m_obstacleScratch.clear();
     for (const SpatialIndex::Entry& entry : m_staticEntries)
       m_obstacleScratch.push_back({entry.pos, entry.boundingRadiusMetres});
-    m_pathGrid.Rebuild(m_obstacleScratch);
+    m_pathIslands.Rebuild(m_obstacleScratch);
     m_staticIndexDirty = false;
   }
 }
@@ -290,12 +336,28 @@ void World::RebuildIndex()
 {
   RebuildStaticIfDirty();
 
+  // The neighbourhood's extent rides along with the rebuild, which already walks every ship. It is
+  // what stops a skirmish between fighters paying the Carrier's query radius because a Carrier
+  // exists in the hull table (Design/MmoScalabilityReview.md U2).
+  //
+  // Maxima over what is *present*, so every one of them is an upper bound on any neighbour a query
+  // can return, which is what makes the narrower radius correct rather than merely smaller. The
+  // static maximum comes from the static store, which is rebuilt on its own cadence and is walked
+  // above by RebuildStaticIfDirty.
+  m_extent = NeighbourhoodExtent{};
+  for (const SpatialIndex::Entry& entry : m_staticEntries)
+    m_extent.largestStaticRadiusMetres = std::max(m_extent.largestStaticRadiusMetres, entry.boundingRadiusMetres);
+
   m_dynamicEntries.clear();
   for (ShipId id = 0; id < m_ships.size(); ++id)
   {
     const HullSpec& hull = HullSpecOf(m_ships[id].hullId);
     if (!hull.immovable && hull.collidable)
+    {
       m_dynamicEntries.push_back({id, m_ships[id].prevPos, hull.BoundingRadiusMetres()});
+      m_extent.largestMobileRadiusMetres = std::max(m_extent.largestMobileRadiusMetres, hull.BoundingRadiusMetres());
+      m_extent.fastestSpeedMetresPerSec = std::max(m_extent.fastestSpeedMetresPerSec, hull.maxSpeedMetresPerSec);
+    }
   }
   m_index.RebuildDynamic(m_dynamicEntries);
 }
@@ -308,6 +370,8 @@ void World::GatherNeighbours()
     m_neighbourStart[id + 1] = m_neighbourStart[id] + HullSpecOf(m_ships[id].hullId).neighbourCap;
   m_neighbours.assign(m_neighbourStart[count], Neighbour{});
   m_neighbourCount.assign(count, 0);
+  m_gatheredCandidates = 0;
+  m_queriedCandidates = 0;
 
   for (ShipId id = 0; id < count; ++id)
   {
@@ -316,27 +380,48 @@ void World::GatherNeighbours()
     if (!hull.collidable)
       continue;
 
-    m_index.QueryCircle(ship.prevPos, QueryRadiusMetres(hull), m_queryScratch);
+    const float queryRadius = QueryRadiusMetres(hull, m_extent);
+    m_index.QueryCircle(ship.prevPos, queryRadius, m_queryScratch);
     m_candidateScratch.clear();
+    m_queriedCandidates += m_queryScratch.size();
     for (const ShipId other : m_queryScratch)
     {
       if (other == id)
         continue;
       const ShipState& neighbour = m_ships[other];
+      const HullSpec& neighbourHull = HullSpecOf(neighbour.hullId);
+
+      // The offsets and the squared distance first, because the pair can be rejected on those
+      // alone. The query radius is one circle wide enough for the worst pairing in the
+      // neighbourhood; most pairs in it are nowhere near that, and a fighter beside a fighter has
+      // no business paying a sqrt, two trigonometric calls and a 40-byte record for a hull it
+      // cannot reach. PairRelevanceRadiusMetres is never wider than the query that found this
+      // candidate, so nothing the query was right to return is dropped here.
+      const float offsetX = OffsetX(ship.prevPos, neighbour.prevPos);
+      const float offsetZ = OffsetZ(ship.prevPos, neighbour.prevPos);
+      const float distanceSquared = offsetX * offsetX + offsetZ * offsetZ;
+      // Clamped to the query, because beyond it the index returned nothing and there is nothing to
+      // reject. That clamp is what makes the filter provably behaviour-preserving without asking
+      // anything of the query's own formula: the query decides what exists, this decides what is
+      // worth a record, and it is never the narrower of the two by accident.
+      const float relevance = std::min(PairRelevanceRadiusMetres(hull, neighbourHull), queryRadius);
+      if (distanceSquared > relevance * relevance)
+        continue;
+
       Neighbour record;
       record.id = other;
-      record.offsetX = OffsetX(ship.prevPos, neighbour.prevPos);
-      record.offsetZ = OffsetZ(ship.prevPos, neighbour.prevPos);
+      record.offsetX = offsetX;
+      record.offsetZ = offsetZ;
       record.velocityX = std::sin(neighbour.prevHeading) * neighbour.speed;
       record.velocityZ = std::cos(neighbour.prevHeading) * neighbour.speed;
-      const HullSpec& neighbourHull = HullSpecOf(neighbour.hullId);
       record.boundingRadiusMetres = neighbourHull.BoundingRadiusMetres();
       record.avoidanceAuthority = AvoidanceAuthorityOf(neighbourHull, neighbour.order);
       record.immovable = neighbourHull.immovable;
-      record.distanceSquared = record.offsetX * record.offsetX + record.offsetZ * record.offsetZ;
-      record.proximityMetres = std::sqrt(record.distanceSquared) - record.boundingRadiusMetres;
+      record.distanceSquared = distanceSquared;
+      record.proximityMetres = std::sqrt(distanceSquared) - record.boundingRadiusMetres;
       m_candidateScratch.push_back(record);
     }
+    m_gatheredCandidates += m_candidateScratch.size();
 
     // Every candidate from the covering ring, then sorted, and only then truncated. Truncating
     // cell by cell would make cell size part of the replay contract and it could never be retuned
@@ -511,7 +596,7 @@ void World::Step()
 float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _point, bool _hasFacing, float _facingRad,
                             FactionId _issuerFaction)
 {
-  // An order can arrive before the first tick, so the grid a route is planned against has to be
+  // An order can arrive before the first tick, so the islands a route is planned against have to be
   // current here rather than only at the top of Step.
   RebuildStaticIfDirty();
 

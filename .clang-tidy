@@ -8,10 +8,12 @@
 # overlap: clang-tidy has no check that reports a wrong brace position or an over-long line, and
 # clang-format cannot see that a parameter is missing its `_`.
 #
-# ── Status: nothing runs this for you ──────────────────────────────────────────────────────
+# ── Status: CI runs this over GameLogic, and nothing else ──────────────────────────────────
 #
-# CI builds and tests but does not lint (AGENTS.md §6), and the .vcxproj files do not enable
-# MSBuild code analysis, so this file is enforced by review and by whoever remembers to run it.
+# Both linters gate (AGENTS.md §6): clang-format over the whole tree on Linux, clang-tidy on
+# Windows after the build, scoped to GameLogic. The .vcxproj files still do not enable MSBuild code
+# analysis, so on the other eight projects this file is enforced by review and by whoever remembers
+# to run it. Slice 23 of Design/MmoScalabilityPlan.md widens the job a project at a time.
 # Run it by hand ON THE FILES YOU WROTE -- not on the tree, where the engine projects reach D3D12
 # and C++/WinRT headers that have never been swept and will bury your own findings:
 #
@@ -30,9 +32,10 @@
 # untested, and the version spread is itself a finding: the newer clang-tidy saw a defect the
 # older one did not, so "clean" is always clean *under something*.
 
-# Two rules of AGENTS.md §1 this file cannot express — R2's banned type suffixes and R7's file
-# naming and .vcxproj/.filters registration — have their own CI step, because a check that
-# exists somewhere is worth more than a rule everyone is asked to remember.
+# Three rules of AGENTS.md §1 this file cannot express — R2's banned type affixes, R7's file naming
+# and .vcxproj/.filters registration, and R11's standing spelling families — are checked by
+# Build/CheckProjectFiles.py, which runs in the same CI job that builds. A check that exists
+# somewhere is worth more than a rule everyone is asked to remember.
 #
 # readability-identifier-length is deliberately NOT enabled. Its defaults reject the domain
 # vocabulary this codebase is built on — x, y, _a, _b — and short names here are precise, not lazy.

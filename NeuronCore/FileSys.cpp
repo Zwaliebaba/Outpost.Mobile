@@ -14,13 +14,13 @@ bool IsAbsolute(const std::wstring& _path)
 // Shared for writing too: a file the user is editing must not fail the read.
 ByteBuffer ReadAllBytes(const std::wstring& _fullName)
 {
-  ScopedHandle hFile(SafeHandle(CreateFile2(_fullName.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, OPEN_EXISTING, nullptr)));
-  if (!hFile)
+  ScopedHandle file(SafeHandle(CreateFile2(_fullName.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, OPEN_EXISTING, nullptr)));
+  if (!file)
     return {};
 
   // Get the file size.
   FILE_STANDARD_INFO fileInfo;
-  if (!GetFileInformationByHandleEx(hFile.get(), FileStandardInfo, &fileInfo, sizeof(fileInfo)))
+  if (!GetFileInformationByHandleEx(file.get(), FileStandardInfo, &fileInfo, sizeof(fileInfo)))
     return {};
 
   // File is too big for 32-bit allocation, so reject read.
@@ -33,7 +33,7 @@ ByteBuffer ReadAllBytes(const std::wstring& _fullName)
   // Read the data in.
   DWORD bytesRead = 0;
 
-  if (!::ReadFile(hFile.get(), data.data(), fileInfo.EndOfFile.LowPart, &bytesRead, nullptr))
+  if (!::ReadFile(file.get(), data.data(), fileInfo.EndOfFile.LowPart, &bytesRead, nullptr))
     return {};
 
   if (bytesRead < fileInfo.EndOfFile.LowPart)
@@ -42,14 +42,14 @@ ByteBuffer ReadAllBytes(const std::wstring& _fullName)
   return data;
 }
 
-bool WriteAllBytes(const std::wstring& _fullName, const void* _data, size_t _size)
+bool WriteAllBytes(const std::wstring& _fullName, const void* _data, std::size_t _size)
 {
-  ScopedHandle hFile(SafeHandle(CreateFile2(_fullName.c_str(), GENERIC_WRITE, FILE_SHARE_READ, CREATE_ALWAYS, nullptr)));
-  if (!hFile)
+  ScopedHandle file(SafeHandle(CreateFile2(_fullName.c_str(), GENERIC_WRITE, FILE_SHARE_READ, CREATE_ALWAYS, nullptr)));
+  if (!file)
     return false;
 
   DWORD bytesWritten = 0;
-  if (!::WriteFile(hFile.get(), _data, static_cast<DWORD>(_size), &bytesWritten, nullptr))
+  if (!::WriteFile(file.get(), _data, static_cast<DWORD>(_size), &bytesWritten, nullptr))
     return false;
 
   return bytesWritten == static_cast<DWORD>(_size);
@@ -64,7 +64,7 @@ std::wstring Utf8ToWide(std::string_view _text)
   if (size <= 0)
     return {};
 
-  std::wstring result(static_cast<size_t>(size), L'\0');
+  std::wstring result(static_cast<std::size_t>(size), L'\0');
   ::MultiByteToWideChar(CP_UTF8, 0, _text.data(), static_cast<int>(_text.size()), result.data(), size);
 
   return result;
@@ -79,7 +79,7 @@ std::string WideToUtf8(std::wstring_view _text)
   if (size <= 0)
     return {};
 
-  std::string result(static_cast<size_t>(size), '\0');
+  std::string result(static_cast<std::size_t>(size), '\0');
   ::WideCharToMultiByte(CP_UTF8, 0, _text.data(), static_cast<int>(_text.size()), result.data(), size, nullptr, nullptr);
 
   return result;

@@ -8,6 +8,7 @@
 #include "CompiledShaders/FxFragmentPS.h"
 #include "CompiledShaders/FxSpriteVS.h"
 #include "CompiledShaders/FxSpritePS.h"
+#include "CompiledShaders/FxGlowPS.h"
 
 using namespace DirectX;
 
@@ -41,6 +42,10 @@ void FxRenderer::Init(GpuDevice& _gpu, const Desc& _desc)
   }
 
   m_srvStride = _gpu.Device()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+  // Everything the glow pass needs now exists: pipelines, the descriptor heap CreatePipelines made,
+  // and the ring. The textures below are the explosion's, and a glow reads none of them.
+  m_ringReady = true;
 
   // All three record into the device's command list and are submitted together: one flush here and
   // not one per texture. BeginUploads is what opens it -- without the bracket this records into a
@@ -89,6 +94,25 @@ void FxRenderer::CreatePipelines(GpuDevice& _gpu)
   hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
   hd.NodeMask = 0;
   check_hresult(_gpu.Device()->CreateDescriptorHeap(&hd, IID_PPV_ARGS(m_srvHeap.put())));
+
+  // Every slot gets a null SRV before any texture is read, so the heap is fully initialised whatever
+  // loads and whatever does not. The glow pass draws with a texture missing -- it samples nothing --
+  // and it binds this table on the way past, which is what makes an unwritten descriptor reachable
+  // at all. A null SRV reads as zero rather than as undefined behaviour.
+  {
+    const std::uint32_t stride = _gpu.Device()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    D3D12_SHADER_RESOURCE_VIEW_DESC nullSrv = {};
+    nullSrv.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    nullSrv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    nullSrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    nullSrv.Texture2D.MipLevels = 1;
+    D3D12_CPU_DESCRIPTOR_HANDLE slot = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
+    for (std::uint32_t at = 0; at < TEXTURE_COUNT; ++at)
+    {
+      _gpu.Device()->CreateShaderResourceView(nullptr, &nullSrv, slot);
+      slot.ptr += stride;
+    }
+  }
 
   D3D12_DESCRIPTOR_RANGE range = {};
   range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
@@ -193,11 +217,22 @@ void FxRenderer::CreatePipelines(GpuDevice& _gpu)
 
   pso.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_ONE; // the fireball
   check_hresult(_gpu.Device()->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(m_spriteAddPso.put())));
+
+  // Thruster glows and trails. The blend and depth state below is SceneRenderer's retired glow
+  // pipeline field for field -- additive colour, tested against the scene and never written -- so
+  // the only thing that changed about a glow is how many draws a frame of them costs.
+  pso.PS.pShaderBytecode = g_pFxGlowPS;
+  pso.PS.BytecodeLength = sizeof(g_pFxGlowPS);
+  pso.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+  pso.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+  pso.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+  pso.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+  check_hresult(_gpu.Device()->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(m_glowPso.put())));
 }
 
 void FxRenderer::Begin(GpuDevice& _gpu, const XMFLOAT4X4& _viewProj, const XMFLOAT3& _lightDir, float _ambient, const XMFLOAT3& _cameraPos)
 {
-  if (!m_ready)
+  if (!m_ringReady)
     return;
 
   // The ring resets once a frame and not once a Begin. The pass is begun twice -- fragments before
@@ -223,24 +258,46 @@ void FxRenderer::Begin(GpuDevice& _gpu, const XMFLOAT4X4& _viewProj, const XMFLO
   cmd->SetGraphicsRoot32BitConstants(1, 8, shading, 0);
 }
 
+// The three passes below sample a texture, so each is gated on every texture having loaded. The
+// guard sits here rather than in Draw because DrawGlows shares Draw and has no such requirement.
 void FxRenderer::DrawFragments(GpuDevice& _gpu, std::span<const FxVertex> _verts)
 {
+  if (!m_ready)
+    return;
   Draw(_gpu, m_fragmentPso.get(), FRAGMENT_SLOT, _verts);
 }
 
 void FxRenderer::DrawSpritesDark(GpuDevice& _gpu, std::span<const FxVertex> _verts)
 {
+  if (!m_ready)
+    return;
   Draw(_gpu, m_spriteDarkPso.get(), SPRITE_SLOT, _verts);
 }
 
 void FxRenderer::DrawSpritesAdd(GpuDevice& _gpu, std::span<const FxVertex> _verts)
 {
+  if (!m_ready)
+    return;
   Draw(_gpu, m_spriteAddPso.get(), SPRITE_SLOT, _verts);
+}
+
+void FxRenderer::DrawGlows(GpuDevice& _gpu, std::span<const FxVertex> _verts, float _falloff)
+{
+  if (!m_ringReady || _verts.empty())
+    return;
+
+  // The falloff is the last DWORD of the pixel constants -- cameraPos.w, which Begin left at zero
+  // and the textured passes never read. Set here rather than in Begin because it belongs to this
+  // pass alone, and once per frame either way.
+  _gpu.CommandList()->SetGraphicsRoot32BitConstants(1, 1, &_falloff, 7);
+  // The descriptor table is still bound from Begin. FxGlowPS declares no texture, so which slot it
+  // points at does not matter; SPRITE_SLOT keeps it pointing at something real.
+  Draw(_gpu, m_glowPso.get(), SPRITE_SLOT, _verts);
 }
 
 void FxRenderer::Draw(GpuDevice& _gpu, ID3D12PipelineState* _pso, std::uint32_t _srvSlot, std::span<const FxVertex> _verts)
 {
-  if (!m_ready || _verts.empty())
+  if (!m_ringReady || _verts.empty())
     return;
 
   const std::uint32_t wanted = static_cast<std::uint32_t>(_verts.size());

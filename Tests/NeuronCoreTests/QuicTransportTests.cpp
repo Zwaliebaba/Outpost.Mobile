@@ -19,6 +19,10 @@ namespace
 // The size a caller must always offer, since it is the most a datagram can be.
 using Buffer = std::array<std::uint8_t, Neuron::MAX_DATAGRAM_BYTES>;
 
+// The same, for the reliable lane. Heap-allocated where a test needs one, because 8 KB is more than
+// belongs on a stack frame the framework already owns.
+using ReliableBuffer = std::vector<std::uint8_t>;
+
 // The ring's own default, not a number this file chose. A test that spelled 256 would go on passing
 // the day the class stopped using it.
 constexpr std::uint32_t DEFAULT_CAPACITY = Neuron::QuicTransport::Desc{}.capacityDatagrams;
@@ -81,7 +85,7 @@ public:
 
   ~Pair()
   {
-    // The order Design/QuicTransport.md 6 gives, and the order OutpostApp::Shutdown uses: the client
+    // The order Design/Archive/QuicTransport.md 6 gives, and the order OutpostApp::Shutdown uses: the client
     // end, then the listener and everything it accepted, then the library.
     m_client.Close();
     m_listener.Stop();
@@ -105,6 +109,13 @@ public:
   [[nodiscard]] std::uint16_t Port() const noexcept
   {
     return m_listener.Port();
+  }
+
+  // How many connections the listener has seen come and go. Since ADR 0031 this is how a departure
+  // is reported: the transport leaves Accepted() and this rises.
+  [[nodiscard]] std::uint32_t RecycledCount() const noexcept
+  {
+    return m_listener.RecycledCount();
   }
 
   [[nodiscard]] Neuron::QuicApi& Api() noexcept
@@ -319,6 +330,82 @@ public:
     Assert::AreEqual(2, static_cast<int>(serverGot[0]), L"the server received the datagram it sent");
   }
 
+  TEST_METHOD(TheReliableLaneCarriesAMessageBothWays)
+  {
+    // The lane over a real connection. It needs one more round trip than the datagram lane -- the
+    // stream has to be opened and accepted -- which is why ReliableReady is a question of its own
+    // and a caller that must not lose its first message waits for it rather than for Connected.
+    Pair pair;
+    Assert::IsTrue(pair.PumpUntil([&pair]
+                                  { return pair.Server() != nullptr && pair.Client().State() == Neuron::ConnectionState::Connected; },
+                                  Neuron::QUIC_HANDSHAKE_TIMEOUT_MS),
+                   L"the handshake did not complete");
+    Assert::IsTrue(pair.PumpUntil([&pair] { return pair.Client().ReliableReady() && pair.Server()->ReliableReady(); },
+                                  Neuron::QUIC_HANDSHAKE_TIMEOUT_MS),
+                   L"the reliable lane never came up on both ends");
+
+    const std::uint8_t up[3] = {1, 2, 3};
+    const std::uint8_t down[2] = {9, 8};
+    Assert::IsTrue(pair.Client().SendReliable(up, 3), L"the client's reliable send failed");
+    Assert::IsTrue(pair.Server()->SendReliable(down, 2), L"the server's reliable send failed");
+
+    ReliableBuffer message(Neuron::MAX_RELIABLE_BYTES, 0u);
+    Assert::IsTrue(pair.PumpUntil([&] { return pair.Server()->ReceiveReliable(message.data(), Neuron::MAX_RELIABLE_BYTES) == 3; },
+                                  Neuron::QUIC_HANDSHAKE_TIMEOUT_MS),
+                   L"the server did not receive the client's message");
+    Assert::AreEqual(static_cast<std::uint8_t>(1), message[0], L"the message arrived corrupted");
+
+    Assert::IsTrue(pair.PumpUntil([&] { return pair.Client().ReceiveReliable(message.data(), Neuron::MAX_RELIABLE_BYTES) == 2; },
+                                  Neuron::QUIC_HANDSHAKE_TIMEOUT_MS),
+                   L"the client did not receive the server's message");
+    Assert::AreEqual(static_cast<std::uint8_t>(9), message[0], L"the message arrived corrupted");
+  }
+
+  TEST_METHOD(TheReliableLaneKeepsOrderAcrossManyMessages)
+  {
+    // A stream is ordered and this lane is framed over one, so a burst arrives in send order and
+    // whole. The burst is deliberately larger than one datagram would carry, since reassembling a
+    // frame split across deliveries is the part of this that a unit test cannot see from outside.
+    Pair pair;
+    Assert::IsTrue(
+      pair.PumpUntil([&pair] { return pair.Server() != nullptr && pair.Client().ReliableReady(); }, Neuron::QUIC_HANDSHAKE_TIMEOUT_MS),
+      L"the reliable lane never came up");
+
+    constexpr std::uint32_t COUNT = 24;
+    constexpr std::uint32_t SIZE = 700; // several of these exceed one datagram when framed together
+    ReliableBuffer payload(SIZE, 0u);
+    for (std::uint32_t at = 0; at < COUNT; ++at)
+    {
+      payload[0] = static_cast<std::uint8_t>(at);
+      Assert::IsTrue(pair.Client().SendReliable(payload.data(), SIZE), L"a reliable send failed mid-burst");
+    }
+
+    ReliableBuffer message(Neuron::MAX_RELIABLE_BYTES, 0u);
+    for (std::uint32_t at = 0; at < COUNT; ++at)
+    {
+      Assert::IsTrue(pair.PumpUntil([&] { return pair.Server()->ReceiveReliable(message.data(), Neuron::MAX_RELIABLE_BYTES) == SIZE; },
+                                    Neuron::QUIC_HANDSHAKE_TIMEOUT_MS),
+                     L"a message in the burst never arrived");
+      Assert::AreEqual(static_cast<std::uint8_t>(at), message[0], L"the reliable lane delivered out of order");
+    }
+  }
+
+  TEST_METHOD(AnOversizedReliableMessageIsRefused)
+  {
+    // Refused rather than truncated, which is what Send already promises on the datagram lane. A
+    // wire that silently shortens a message turns a format bug into a corrupt-payload hunt.
+    Pair pair;
+    Assert::IsTrue(pair.PumpUntil([&pair] { return pair.Client().ReliableReady(); }, Neuron::QUIC_HANDSHAKE_TIMEOUT_MS),
+                   L"the lane never came up");
+
+    const ReliableBuffer tooBig(Neuron::MAX_RELIABLE_BYTES + 1, 0xCDu);
+    Assert::IsFalse(pair.Client().SendReliable(tooBig.data(), Neuron::MAX_RELIABLE_BYTES + 1),
+                    L"an oversized reliable message was accepted");
+
+    const ReliableBuffer full(Neuron::MAX_RELIABLE_BYTES, 0xABu);
+    Assert::IsTrue(pair.Client().SendReliable(full.data(), Neuron::MAX_RELIABLE_BYTES), L"a full-sized reliable message was refused");
+  }
+
   TEST_METHOD(AFullRingDropsTheNewestAndCountsIt)
   {
     // Transport.h calls a lost datagram normal rather than an error. What must not happen is losing
@@ -371,24 +458,147 @@ public:
     Assert::AreEqual(7, static_cast<int>(got[0]), L"the payload changed in flight");
   }
 
-  TEST_METHOD(AClosedPeerDrainsThenCloses)
+  TEST_METHOD(AClosedPeerIsReportedRatherThanGoingSilent)
   {
-    // Two of the five ConnectionStates the loopback never used. A peer that goes away has to become
-    // visible as a state rather than as a silence, or the composition root has nothing to report.
+    // A peer that goes away has to be visible rather than silent, or the composition root has
+    // nothing to report. What makes it visible changed with ADR 0031: the listener recycles the
+    // accepted end the moment its connection closes, so the report is the transport leaving
+    // Accepted() and RecycledCount rising -- not a state read off a pointer the pool has taken back.
+    // Reading the state there would race the recycle and, once recycled, would say Disconnected.
     Pair pair;
     pair.RequireConnected();
 
     Neuron::QuicTransport* const server = pair.Server();
+    Assert::IsNotNull(server, L"the pair reported connected without an accepted end");
+
     pair.Client().Close();
 
-    Assert::IsTrue(pair.PumpUntil([&] { return server->State() == Neuron::ConnectionState::Closed; }, Neuron::QUIC_IDLE_TIMEOUT_MS),
-                   L"the accepted end never noticed its peer had gone");
-    Assert::IsFalse(SendByte(*server, 1), L"a closed end accepted a datagram");
+    // Closed is still a state the client half reaches and reports, which is the half of the original
+    // guarantee that does not belong to the listener.
+    Assert::IsTrue(pair.Client().State() == Neuron::ConnectionState::Closed, L"a closed end did not report Closed");
+
+    Assert::IsTrue(pair.PumpUntil([&] { return pair.RecycledCount() == 1; }, Neuron::QUIC_IDLE_TIMEOUT_MS),
+                   L"the listener never reported that the peer had gone");
+    Assert::IsNull(pair.Server(), L"a departed connection was still listed as accepted");
+    Assert::IsFalse(SendByte(*server, 1), L"a departed end accepted a datagram");
+  }
+
+  TEST_METHOD(ASlotIsRecycledWhenItsClientLeaves)
+  {
+    // The defect this retires: the listener used to count accepts and never give a slot back, so
+    // backlog was a budget for the life of the process rather than a concurrency limit. A server
+    // that had seen backlog logins refused everybody until restart, silently (ADR 0031, review E3).
+    Neuron::QuicApi api;
+    Neuron::QuicApi::Desc apiDesc;
+    apiDesc.allowUnvalidatedPeer = true;
+    Assert::IsTrue(api.Open(apiDesc), Widen(api.Reason()).c_str());
+
+    // Its own, because Pair's clock belongs to Pair and these two tests drive a bare listener.
+    Neuron::FrameClock clock;
+    Neuron::QuicListener listener;
+    Neuron::QuicListener::Desc listenerDesc;
+    listenerDesc.backlog = 1; // one at a time, and this test connects three times through it
+    Assert::IsTrue(listener.Start(api, 0, listenerDesc), Widen(listener.Reason()).c_str());
+
+    for (int round = 0; round < 3; ++round)
+    {
+      Neuron::QuicTransport client;
+      Assert::IsTrue(client.Connect(api, {"127.0.0.1", listener.Port()}, {}), Widen(client.Reason()).c_str());
+
+      const std::int64_t start = clock.Now();
+      bool up = false;
+      while (clock.ElapsedMs(start, clock.Now()) < static_cast<float>(Neuron::QUIC_HANDSHAKE_TIMEOUT_MS))
+      {
+        listener.Poll();
+        client.Poll();
+        if (!listener.Accepted().empty())
+          listener.Accepted()[0]->Poll();
+        if (!listener.Accepted().empty() && client.State() == Neuron::ConnectionState::Connected)
+        {
+          up = true;
+          break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+      Assert::IsTrue(up, L"a connection did not come up on a recycled slot");
+
+      // The client leaves. The listener has to notice and take its slot back, or the next round
+      // finds the backlog exhausted.
+      client.Close();
+      const std::int64_t left = clock.Now();
+      while (!listener.Accepted().empty() && clock.ElapsedMs(left, clock.Now()) < static_cast<float>(Neuron::QUIC_HANDSHAKE_TIMEOUT_MS))
+      {
+        listener.Poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+      Assert::IsTrue(listener.Accepted().empty(), L"a closed connection was still listed as accepted");
+    }
+
+    Assert::AreEqual(3u, listener.RecycledCount(), L"the slot was not recycled once per client");
+    listener.Stop();
+    api.Close();
+  }
+
+  TEST_METHOD(AFullBacklogRefusesAndRecovers)
+  {
+    // The other half: while every slot is carrying a connection the listener refuses, and it starts
+    // accepting again the moment one is given back. Refusing is correct; refusing for ever is not.
+    Neuron::QuicApi api;
+    Neuron::QuicApi::Desc apiDesc;
+    apiDesc.allowUnvalidatedPeer = true;
+    Assert::IsTrue(api.Open(apiDesc), Widen(api.Reason()).c_str());
+
+    // Its own, because Pair's clock belongs to Pair and these two tests drive a bare listener.
+    Neuron::FrameClock clock;
+    Neuron::QuicListener listener;
+    Neuron::QuicListener::Desc listenerDesc;
+    listenerDesc.backlog = 1;
+    Assert::IsTrue(listener.Start(api, 0, listenerDesc), Widen(listener.Reason()).c_str());
+
+    Neuron::QuicTransport first;
+    Assert::IsTrue(first.Connect(api, {"127.0.0.1", listener.Port()}, {}), Widen(first.Reason()).c_str());
+    const std::int64_t start = clock.Now();
+    while (listener.Accepted().empty() && clock.ElapsedMs(start, clock.Now()) < static_cast<float>(Neuron::QUIC_HANDSHAKE_TIMEOUT_MS))
+    {
+      listener.Poll();
+      first.Poll();
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    Assert::IsFalse(listener.Accepted().empty(), L"the first connection was never accepted");
+    Assert::AreEqual(0u, listener.RecycledCount(), L"nothing had left yet");
+
+    // A second dial while the one slot is busy. Connect itself succeeds -- it only starts a
+    // handshake -- and the listener's refusal is what stops it reaching Connected.
+    {
+      Neuron::QuicTransport second;
+      Assert::IsTrue(second.Connect(api, {"127.0.0.1", listener.Port()}, {}), Widen(second.Reason()).c_str());
+      const std::int64_t busy = clock.Now();
+      while (clock.ElapsedMs(busy, clock.Now()) < 250.0f)
+      {
+        listener.Poll();
+        second.Poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+      Assert::AreEqual(static_cast<std::size_t>(1), listener.Accepted().size(), L"a full backlog accepted a second connection");
+      second.Close();
+    }
+
+    first.Close();
+    const std::int64_t left = clock.Now();
+    while (!listener.Accepted().empty() && clock.ElapsedMs(left, clock.Now()) < static_cast<float>(Neuron::QUIC_HANDSHAKE_TIMEOUT_MS))
+    {
+      listener.Poll();
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    Assert::AreEqual(1u, listener.RecycledCount(), L"the slot was not given back after its client left");
+
+    listener.Stop();
+    api.Close();
   }
 
   TEST_METHOD(ARefusedListenerReportsWhy)
   {
-    // The fallback in Design/QuicTransport.md 6 depends on this being a diagnostic. A listener that
+    // The fallback in Design/Archive/QuicTransport.md 6 depends on this being a diagnostic. A listener that
     // asserted on a taken port would take the game down over a number nobody chose deliberately.
     Neuron::QuicApi api;
     Neuron::QuicApi::Desc apiDesc;

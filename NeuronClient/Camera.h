@@ -71,6 +71,16 @@ public:
   {
     return m_viewProj;
   }
+  // The two halves, for the one caller that cannot use the product: DirectX::BoundingFrustum is
+  // built from a projection and then transformed by a view's inverse (Neuron::WorldFrustum).
+  [[nodiscard]] const DirectX::XMFLOAT4X4& View() const noexcept
+  {
+    return m_view;
+  }
+  [[nodiscard]] const DirectX::XMFLOAT4X4& Proj() const noexcept
+  {
+    return m_proj;
+  }
   [[nodiscard]] const DirectX::XMFLOAT3& Eye() const noexcept
   {
     return m_eye;
@@ -111,6 +121,8 @@ private:
 
   DirectX::XMFLOAT4X4 m_viewProj;
   DirectX::XMFLOAT4X4 m_invViewProj;
+  DirectX::XMFLOAT4X4 m_view;
+  DirectX::XMFLOAT4X4 m_proj;
   std::uint32_t m_viewWidthPx = 1;
   std::uint32_t m_viewHeightPx = 1;
 };

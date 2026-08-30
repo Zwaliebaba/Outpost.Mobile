@@ -195,6 +195,8 @@
     <ClCompile Include="ColourRampTests.cpp" />
     <ClCompile Include="BodyMeshTests.cpp" />
     <ClCompile Include="FxVertexTests.cpp" />
+    <ClCompile Include="GlowBillboardsTests.cpp" />
+    <ClCompile Include="ViewCullingTests.cpp" />
     <ClCompile Include="SkyFieldTests.cpp" />
   </ItemGroup>
   <ItemGroup>

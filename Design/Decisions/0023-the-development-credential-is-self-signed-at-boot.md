@@ -59,7 +59,7 @@ and it is **not authenticated**. Nothing about the shipped game's trust model is
 
 - **The tree ships an unauthenticated connection, deliberately and visibly.** Anything that can
   reach the port can be the server. The port is `127.0.0.1` only, which bounds it to the machine
-  (`Design/QuicTransport.md` §11), and that is the whole of the mitigation.
+  (`Design/Archive/QuicTransport.md` §11), and that is the whole of the mitigation.
 - **A trust model is now owed** before this is anything but a development transport. It is not
   scheduled, and this record is what a later one supersedes.
 - **`NeuronCore` gains `crypt32` and `ncrypt`**, by `#pragma comment(lib, ...)` in

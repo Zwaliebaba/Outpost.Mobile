@@ -1,6 +1,6 @@
 # Work order — QUIC transport slice 2: the composition root boots over QUIC
 
-Implements slice 2 of [`QuicTransport.md`](../QuicTransport.md) §13: `Outpost.exe` opens a
+Implements slice 2 of [`QuicTransport.md`](QuicTransport.md) §13: `Outpost.exe` opens a
 `QuicListener` and a `QuicTransport` to it on `127.0.0.1`, wires the simulation and the view to the
 two QUIC ends, and falls back to the loopback pair with a logged reason when it cannot (design
 §6, §12 decision 2).
@@ -108,7 +108,7 @@ only `Info`, `Friendly` and `Alert`, and none is added.
   on it across `127.0.0.1`, falling back to the loopback with a logged reason.
 - "Deliberately not here yet": "no networking" and "`Transport` has a loopback implementation and
   no socket" go; in their place: one client, one process, no certificate validation, no reliable
-  lane yet (`Design/QuicTransport.md` §11).
+  lane yet (`Design/Archive/QuicTransport.md` §11).
 - §2 "Where the client/server seam stands today": the paragraph beginning "`NeuronCore/
   Transport.h` declares the seam" gains the QUIC sentence and loses "what remains is a socket".
 - §5 external libraries: "MsQuic … no code references it yet either" becomes a statement that it
@@ -135,7 +135,7 @@ only `Info`, `Friendly` and `Alert`, and none is added.
 | `NeuronCore/QuicApi.h`, `QuicTransport.h`, `QuicListener.h` | `Desc`s, `Open`/`Start`/`Connect`, `Reason()`, `Accepted()`, `State()` — slice 1's surface, archived at `Design/Archive/QuicTransport-slice-1.md` |
 | `NeuronCore/FrameClock.h` | `Now()`, `ElapsedMs()` for the bounded handshake wait |
 | `NeuronCore/Transport.h` | the `ConnectionState` names for the timeout line |
-| `Design/QuicTransport.md` §4.3, §6 | the numbers and the five boot steps |
+| `Design/Archive/QuicTransport.md` §4.3, §6 | the numbers and the five boot steps |
 | ADR 0020 | why `allowUnvalidatedPeer` is set and where that is written down |
 
 ---
@@ -161,7 +161,7 @@ decide:
 - `python Build/CheckProjectFiles.py` and `python Build/CheckFormat.py` pass; all four suites
   green and unchanged.
 - No decision record is due: nothing moves, no rule changes, no dependency is added.
-- `Design/QuicTransport.md` §13 marks slice 2 `landed`; this file moves to `Design/Archive/`.
+- `Design/Archive/QuicTransport.md` §13 marks slice 2 `landed`; this file moves to `Design/Archive/`.
 
 ---
 

@@ -43,6 +43,10 @@ void Camera::Update() noexcept
   const XMMATRIX viewProj = view * proj;
   XMStoreFloat4x4(&m_viewProj, viewProj);
   XMStoreFloat4x4(&m_invViewProj, XMMatrixInverse(nullptr, viewProj));
+  // Kept apart as well as combined: a frustum is built from the projection alone and then carried
+  // into world space by the inverse of the view, and neither can be recovered from the product.
+  XMStoreFloat4x4(&m_view, view);
+  XMStoreFloat4x4(&m_proj, proj);
 }
 
 void Camera::Orbit(float _dxPx, float _dyPx) noexcept

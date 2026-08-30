@@ -61,7 +61,17 @@ bool QuicListener::Start(QuicApi& _api, std::uint16_t _port, const Desc& _desc)
   }
   m_pending.reserve(backlog);
   m_accepted.reserve(backlog);
-  m_adopted = 0;
+  m_acceptedSlot.reserve(backlog);
+
+  // Every slot free, highest first, so the first accept takes slot 0 and the pool fills in order --
+  // which keeps a test's expectations readable and costs nothing.
+  m_freeSlots.clear();
+  m_freeSlots.reserve(backlog);
+  for (std::uint32_t slot = backlog; slot > 0; --slot)
+    m_freeSlots.push_back(slot - 1);
+
+  m_transportDesc = _desc.transport;
+  m_recycled = 0;
 
   const QUIC_API_TABLE* const table = _api.Table();
   HQUIC listener = nullptr;
@@ -130,7 +140,9 @@ void QuicListener::Stop() noexcept
   m_pool.clear();
   m_pending.clear();
   m_accepted.clear();
-  m_adopted = 0;
+  m_acceptedSlot.clear();
+  m_freeSlots.clear();
+  m_recycled = 0;
   m_port = 0;
 
   if (releaseHandle)
@@ -145,10 +157,55 @@ std::uint16_t QuicListener::Port() const noexcept
 
 void QuicListener::Poll()
 {
-  const std::lock_guard<std::mutex> lock(m_acceptLock);
-  for (const std::uint32_t slot : m_pending)
-    m_accepted.push_back(m_pool[slot].get());
-  m_pending.clear();
+  {
+    const std::lock_guard<std::mutex> lock(m_acceptLock);
+    for (const std::uint32_t slot : m_pending)
+    {
+      m_accepted.push_back(m_pool[slot].get());
+      m_acceptedSlot.push_back(slot);
+    }
+    m_pending.clear();
+  }
+
+  RecycleClosed();
+}
+
+void QuicListener::RecycleClosed()
+{
+  // Owning thread. A connection that has reached Closed has already had its SHUTDOWN_COMPLETE, so
+  // no worker is still inside a callback on it and the transport can be taken apart here -- which is
+  // why this is in Poll and not in the callback that saw the shutdown (ADR 0022).
+  std::size_t live = 0;
+  for (std::size_t at = 0; at < m_accepted.size(); ++at)
+  {
+    QuicTransport* const end = m_accepted[at];
+    if (end->State() != ConnectionState::Closed)
+    {
+      // Kept: compacted down in place, so the order of what remains is still the order it arrived.
+      m_accepted[live] = end;
+      m_acceptedSlot[live] = m_acceptedSlot[at];
+      ++live;
+      continue;
+    }
+
+    // Close first -- it is what releases the connection handle MsQuic still holds -- then Reserve,
+    // which resets the rings and the state to what Start left them. Reserve reuses the vectors it
+    // already sized, so the only allocation is the in-flight flags, which are atomics and cannot be
+    // assigned; that is once per client that has left, on the owning thread, and not per datagram.
+    end->Close();
+    end->Reserve(*m_api, m_transportDesc);
+
+    const std::lock_guard<std::mutex> lock(m_acceptLock);
+    m_freeSlots.push_back(m_acceptedSlot[at]);
+    ++m_recycled;
+  }
+  m_accepted.resize(live);
+  m_acceptedSlot.resize(live);
+}
+
+std::uint32_t QuicListener::RecycledCount() const noexcept
+{
+  return m_recycled;
 }
 
 std::span<QuicTransport* const> QuicListener::Accepted() const noexcept
@@ -164,14 +221,15 @@ const char* QuicListener::Reason() const noexcept
 bool QuicListener::OnNewConnection(void* _connection)
 {
   const std::lock_guard<std::mutex> lock(m_acceptLock);
-  if (m_adopted >= m_pool.size())
-    return false; // the backlog is exhausted, and one client is what this design serves
+  if (m_freeSlots.empty())
+    return false; // every slot is carrying a connection; MsQuic turns this into a refusal
 
-  if (!m_pool[m_adopted]->Adopt(_connection))
-    return false;
+  const std::uint32_t slot = m_freeSlots.back();
+  if (!m_pool[slot]->Adopt(_connection))
+    return false; // the slot stays free: nothing was taken from it
 
-  m_pending.push_back(m_adopted);
-  ++m_adopted;
+  m_freeSlots.pop_back();
+  m_pending.push_back(slot);
   return true;
 }
 

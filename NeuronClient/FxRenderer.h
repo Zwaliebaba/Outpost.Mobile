@@ -13,10 +13,15 @@
 
 namespace Neuron
 {
-// The GPU side of the explosion effect: three textures, two static samplers, three pipelines and
-// one per-frame vertex ring. It is the only file in the effect that includes <d3d12.h> -- everything
-// that decides where a fragment or a sprite goes is in MeshShatter and SpriteParticles, which hold
-// no device and are decided by tests.
+// The GPU side of the effect passes: three textures, two static samplers, four pipelines and one
+// per-frame vertex ring. It is the only file in the effect that includes <d3d12.h> -- everything
+// that decides where a fragment, a sprite or a glow goes is in MeshShatter, SpriteParticles and
+// GlowBillboards, which hold no device and are decided by tests.
+//
+// It began as the explosion's alone. The fourth pipeline is the thruster plume, which moved here
+// from SceneRenderer's decal pass because a glow was one draw each and a trail is one glow per
+// sample per nozzle (Design/MmoScalabilityReview.md G1). It reads no texture -- its shape is
+// computed per pixel -- so it is the one pass that draws while a texture is missing.
 //
 // It has its own root signature rather than widening the scene's. The scene's carries no descriptor
 // table and no sampler, and adding both would touch every draw in the game to save one object.
@@ -25,6 +30,11 @@ class FxRenderer
 public:
   // Three copies of a 500-fragment shatter is 4500 vertices per dead ship and a full 4096-particle
   // pool is 24576, so the ring holds five simultaneous deaths with the pool full. 1.3 MB a frame.
+  //
+  // Thruster glows share it, at six vertices each. A ship contributes one glow per trail sample per
+  // nozzle, so a three-nozzle hull running a full 32-sample trail is 576 vertices and the ring holds
+  // 85 of them -- past that, Draw reports what it dropped rather than growing (DroppedVerts). That
+  // is the ceiling to raise the day a fleet is bigger than a fight, and raising it is this constant.
   static constexpr std::uint32_t MAX_FX_VERTS = 49152;
 
   struct Desc
@@ -49,10 +59,23 @@ public:
   void DrawSpritesDark(GpuDevice& _gpu, std::span<const FxVertex> _verts);
   void DrawSpritesAdd(GpuDevice& _gpu, std::span<const FxVertex> _verts);
 
-  // False until every texture has loaded. While it is false no Draw draws anything.
+  // Thruster glows and trails: shaped by the pixel shader from each vertex's own quad corner, so
+  // this pass reads no texture and draws whenever the ring exists. _falloff is the exponent, one
+  // number for every glow in the frame.
+  void DrawGlows(GpuDevice& _gpu, std::span<const FxVertex> _verts, float _falloff);
+
+  // False until every texture has loaded. While it is false the three textured passes draw nothing;
+  // DrawGlows still does, because it needs no texture and the trail should not vanish because an
+  // explosion sprite is missing.
   [[nodiscard]] bool Ready() const noexcept
   {
     return m_ready;
+  }
+
+  // False until the pipelines and the vertex ring exist, which is everything DrawGlows needs.
+  [[nodiscard]] bool RingReady() const noexcept
+  {
+    return m_ringReady;
   }
   // Vertices the ring had no room for, this frame. Reset by the first Begin of each frame, because
   // what a reader wants to know is whether the frame in front of them overflowed.
@@ -75,6 +98,7 @@ private:
   GpuPtr<ID3D12PipelineState> m_fragmentPso;
   GpuPtr<ID3D12PipelineState> m_spriteDarkPso;
   GpuPtr<ID3D12PipelineState> m_spriteAddPso;
+  GpuPtr<ID3D12PipelineState> m_glowPso;
   GpuPtr<ID3D12DescriptorHeap> m_srvHeap; // slot 0 fragment, 1 sprite, 2 flash
   GpuPtr<ID3D12Resource> m_textures[TEXTURE_COUNT];
   // Held only until Init's ExecuteAndWait has run the copies that read them; released there.
@@ -85,6 +109,7 @@ private:
   std::uint32_t m_ringFrameIndex = 0xFFFFFFFFu; // no frame yet, so the first Begin resets the ring
   std::uint32_t m_droppedVerts = 0;
   std::uint32_t m_srvStride = 0;
-  bool m_ready = false;
+  bool m_ready = false;     // every texture loaded
+  bool m_ringReady = false; // the pipelines and the vertex ring exist
 };
 } // namespace Neuron

@@ -1,6 +1,6 @@
 # Work order — QUIC transport slice 1: the transport, the listener, the credential
 
-Implements slice 1 of [`QuicTransport.md`](../QuicTransport.md) §13: `QuicApi`, `QuicTransport`,
+Implements slice 1 of [`QuicTransport.md`](QuicTransport.md) §13: `QuicApi`, `QuicTransport`,
 `QuicListener` and `DevCertificate` in `NeuronCore`, their tests in `NeuronCoreTests`, and the
 three decision records the design owes (design §13).
 
@@ -67,7 +67,7 @@ public:
 ### 2.2 `NeuronCore/DevCertificate.h/.cpp` — the credential
 
 ```cpp
-// A self-signed certificate for a server with no PKI (Design/QuicTransport.md 7, ADR 0020).
+// A self-signed certificate for a server with no PKI (Design/Archive/QuicTransport.md 7, ADR 0020).
 // Development only: the client that talks to it validates nothing, and the header says so.
 // To remove the key this leaves behind: certutil -delkey -user Outpost.Dev.Quic
 class DevCertificate final
@@ -212,7 +212,7 @@ public:
 | `packages/Microsoft.Native.Quic.MsQuic.Schannel.2.6.1/build/native/include/msquic.hpp` | `MsQuicSettings`, `MsQuicAlpn`, `MsQuicCredentialConfig` — use them for settings and credential structs; do not wrap handles in `MsQuicConnection`, whose callback model does not fit a ring |
 | `Tests/NeuronCoreTests/LoopbackTransportTests.cpp` | `Buffer`, `SendByte`, the assertion messages — the tests below reuse its vocabulary |
 | `Build/CheckProjectFiles.py` | `check_registration` will fail on an unregistered file; `check_headless` passes `msquic.h` |
-| `Design/QuicTransport.md` §4, §5, §7, §11 | the transport, the listener, the credential, and what was turned down |
+| `Design/Archive/QuicTransport.md` §4, §5, §7, §11 | the transport, the listener, the credential, and what was turned down |
 | AGENTS.md §5 "Single-writer state", `Transport.h:46` | the threading rule this slice is the first to need |
 | ADR 0001, 0008 | Core is headless; the format is not Core's business |
 
@@ -268,7 +268,7 @@ unchanged.
 - `AGENTS.md` §5: the sentence "MsQuic … no code references it yet either" becomes a sentence
   saying `QuicTransport` exists and the game does not yet boot on it; §2 "what remains is a socket
   and a second process" becomes "what remains is a second process". Both in the same commit.
-- `Design/QuicTransport.md` §13 marks slice 1 `landed`; this file moves to `Design/Archive/`.
+- `Design/Archive/QuicTransport.md` §13 marks slice 1 `landed`; this file moves to `Design/Archive/`.
 
 ---
 

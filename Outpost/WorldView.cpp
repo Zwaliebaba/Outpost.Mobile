@@ -72,6 +72,18 @@ void WorldView::PumpNetwork()
     arrived = m_receiver.Accept(std::span<const std::uint8_t>(datagram.data(), size)) || arrived;
   }
 
+  // Then the reliable lane, which carries departures. After the datagrams rather than before, so a
+  // departure and the upserts of the same update apply in the order the server wrote them; the
+  // receiver is safe either way, and this is the order that needs no argument.
+  m_reliableScratch.resize(Neuron::MAX_RELIABLE_BYTES);
+  for (;;)
+  {
+    const std::uint32_t size = m_transport->ReceiveReliable(m_reliableScratch.data(), Neuron::MAX_RELIABLE_BYTES);
+    if (size == 0)
+      break;
+    arrived = m_receiver.Accept(std::span<const std::uint8_t>(m_reliableScratch.data(), size)) || arrived;
+  }
+
   if (arrived)
     ApplySnapshot();
 }
@@ -205,6 +217,10 @@ void WorldView::ExplodeTheLost(std::uint64_t _tick)
     if (m_log != nullptr)
       m_log->Push(EventLog::Severity::Alert, SimTimeSec(), "SHIP LOST");
   }
+
+  // Drawn, so the receiver may forget them. Deaths accumulate across every message in a drain now
+  // that departures have their own lane, and nothing else clears them (ADR 0029).
+  m_receiver.ClearDestroyed();
 }
 
 WorldView::MotionSample WorldView::SampleOf(const Game::ShipSnapshot& _ship, std::uint64_t _tick) noexcept
@@ -770,6 +786,16 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
   frame.cameraPos = m_camera->Eye();
   _renderer.BeginScene(_gpu, frame);
 
+  // One frustum a frame, tested against everything below. Built from the camera's two matrices
+  // rather than their product, because that is what BoundingFrustum is defined on
+  // (Design/MmoScalabilityReview.md G2).
+  m_frustum = Neuron::WorldFrustum(m_camera->View(), m_camera->Proj());
+  const BoundingFrustum& frustum = m_frustum;
+  m_submittedCount = 0;
+  m_culledCount = 0;
+  for (MeshBucket& bucket : m_meshBuckets)
+    bucket.instances.clear();
+
   XMFLOAT4X4 world;
 
   // The bodies' world matrices. One transform per body per frame, not two: the terrain pass and
@@ -782,6 +808,22 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     XMFLOAT4X4 bodyWorld;
     XMStoreFloat4x4(&bodyWorld, XMMatrixMultiply(orientation, XMMatrixTranslation(ViewX(body.centre), body.centreY, ViewZ(body.centre))));
     m_bodyWorlds.push_back(bodyWorld);
+  }
+
+  // Visibility is decided once per body, here, and the terrain and outline passes below reuse it:
+  // two passes over the same spheres would be two chances for them to disagree, and a body whose
+  // outline drew but whose land did not is a wireframe hanging in empty space.
+  m_bodyVisible.clear();
+  for (std::size_t i = 0; i < m_bodies.size(); ++i)
+  {
+    const XMFLOAT3 centre(ViewX(m_bodies[i].centre), m_bodies[i].centreY, ViewZ(m_bodies[i].centre));
+    const float radius = m_bodies[i].boundingRadiusMetres * CULL_BODY_RADIUS_SCALE;
+    const bool visible = Neuron::IsSphereVisible(frustum, centre, radius);
+    m_bodyVisible.push_back(visible);
+    if (visible)
+      ++m_submittedCount;
+    else
+      ++m_culledCount;
   }
 
   const std::span<const Game::ShipSnapshot> state = Ships();
@@ -816,15 +858,48 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     }
     const float lift = view.hoverAmount * SEL_HOVER_HIGHLIGHT_STRENGTH;
     tint = Rgba{tint.r + (1.0f - tint.r) * lift, tint.g + (1.0f - tint.g) * lift, tint.b + (1.0f - tint.b) * lift, 1.0f};
-    _renderer.DrawMesh(_gpu, view.mesh, world, tint, materialMix);
+
+    // The bounding sphere the hull was drawn through: the mesh's own bounds, carried to where the
+    // hull is and scaled the way the hull is. Padded, because a tight sphere is exactly what pops at
+    // the edge of the screen and the plume trails outside the bounds entirely.
+    const XMFLOAT3 boundsCentre(x + (view.pickCentre.x * std::cos(heading) + view.pickCentre.z * std::sin(heading)) * SHIP_SCALE,
+                                SHIP_HOVER_HEIGHT + (view.restY + view.pickCentre.y) * SHIP_SCALE,
+                                z + (-view.pickCentre.x * std::sin(heading) + view.pickCentre.z * std::cos(heading)) * SHIP_SCALE);
+    const float boundsRadius = std::sqrt(view.halfExtents.x * view.halfExtents.x + view.halfExtents.y * view.halfExtents.y +
+                                         view.halfExtents.z * view.halfExtents.z) *
+                                 SHIP_SCALE +
+                               CULL_RADIUS_PAD_METRES;
+    view.visible = Neuron::IsSphereVisible(frustum, boundsCentre, boundsRadius);
+    if (view.visible)
+    {
+      ++m_submittedCount;
+      // Bucketed by mesh rather than drawn, so a fleet of one hull is one draw. Bucketing by the
+      // mesh handle and not the hull id is what makes two hull ids sharing a mesh share a draw, and
+      // the handle is what the draw needs anyway.
+      Bucket(view.mesh).push_back(Neuron::MeshInstance{.world = world, .tint = {tint.r, tint.g, tint.b, materialMix}});
+    }
+    else
+    {
+      ++m_culledCount;
+    }
 
     // Remembered for the explosion, which needs where the hull was and how it was moving at a point
     // where the snapshot no longer has a record for it. Taken from the drawn pose rather than the
     // latest one, so the shards start exactly where the hull was and drift the way it was pointing.
+    //
+    // Outside the visibility test on purpose. A ship that dies off screen still explodes, and the
+    // player may well be looking at where it was a moment later -- if this only ran for hulls that
+    // were submitted, those shards would start from wherever the hull last happened to be on screen.
+    // Culling decides what is drawn; it must not decide what is remembered.
     view.lastWorld = world;
     view.lastVelMetresPerSec = XMFLOAT3(std::sin(heading) * state[i].speed, 0.0f, std::cos(heading) * state[i].speed);
     view.drawn = true;
   }
+
+  // One draw per hull family present. Order within the opaque pass does not matter -- it writes and
+  // tests depth -- so grouping by mesh costs nothing and buys everything.
+  for (const MeshBucket& bucket : m_meshBuckets)
+    _renderer.DrawMeshInstanced(_gpu, bucket.mesh, bucket.instances);
 
   // The bodies: every terrain, then every outline. Two passes rather than two draws per body, so
   // there is one pipeline switch per pass and body A's outline tests against body B's depth
@@ -834,6 +909,8 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     m_bodyRenderer->Begin(_gpu, frame.viewProj, frame.lightDir, frame.ambient, frame.cameraPos, BODY_OVERLAY);
     for (std::size_t i = 0; i < m_bodies.size(); ++i)
     {
+      if (!m_bodyVisible[i])
+        continue;
       if (m_bodies[i].textured)
         m_bodyRenderer->DrawPlanet(_gpu, m_bodies[i].terrain, m_bodyWorlds[i]);
       else
@@ -843,7 +920,7 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     // photograph, so a textured world is skipped here rather than being given a fainter one.
     for (std::size_t i = 0; i < m_bodies.size(); ++i)
     {
-      if (!m_bodies[i].textured)
+      if (m_bodyVisible[i] && !m_bodies[i].textured)
         m_bodyRenderer->DrawOverlay(_gpu, m_bodies[i].terrain, m_bodyWorlds[i]);
     }
   }
@@ -862,7 +939,7 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     }
   }
 
-  DrawFeedback(_renderer, _gpu);
+  DrawFeedback(_renderer, _gpu, frame);
 
   // Sprites after: they do not write depth, so they have to see the rings rather than punch a hole
   // through them. Dark before additive, as the source draws them -- the fireball goes on top of the
@@ -906,7 +983,18 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
 // The overlay pass: selection and hover rings on the ground, order markers, thruster glow and
 // trail in the air. All of it is the same unit quad shaped by the decal shader.
 
-void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu)
+std::vector<Neuron::MeshInstance>& WorldView::Bucket(Neuron::MeshHandle _mesh)
+{
+  for (MeshBucket& bucket : m_meshBuckets)
+  {
+    if (bucket.mesh == _mesh)
+      return bucket.instances;
+  }
+  m_meshBuckets.push_back(MeshBucket{.mesh = _mesh, .instances = {}});
+  return m_meshBuckets.back().instances;
+}
+
+void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const SceneFrame& _frame)
 {
   _renderer.BeginDecals(_gpu, m_camera->ViewProj(), m_camera->Eye());
 
@@ -917,6 +1005,10 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu)
   for (size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
   {
     const ShipView& view = m_ships[i];
+    // A ring is drawn around a hull and is smaller than the sphere that hull was tested with, so
+    // the hull's answer is the ring's answer and there is nothing to test again.
+    if (!view.visible)
+      continue;
 
     const float hullRadius = std::max(view.halfExtents.x, view.halfExtents.z) * SHIP_SCALE;
     const DisplayPose pose = DisplayedPose(i);
@@ -1008,6 +1100,11 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu)
     if (radius <= 0.5f)
       continue; // the frame it is born in, before the first Advance has widened it
 
+    // A front is a flat disc on the ground and its centre and radius are exactly known, so the
+    // sphere here needs no padding beyond the ring's own width.
+    if (!Neuron::IsSphereVisible(m_frustum, explosion.ShockRingCentre(), radius + SHOCK_RING_WIDTH_METRES))
+      continue;
+
     // The decal's thickness is a fraction of its own half-extent, so holding the front to a width
     // in metres means shrinking that fraction as the ring grows. A constant fraction would draw a
     // band that thickens as it expands, which reads as a spreading stain rather than a wave.
@@ -1019,75 +1116,75 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu)
   }
 
   // --- thruster glow and trail ------------------------------------------------------------------
-  // Billboards: the unit quad lies in XZ, so putting the camera right vector in row 0 and the
-  // camera up vector in row 2 turns it to face the eye wherever it is.
-  const float glowRadius = std::max(0.1f, THRUSTER_GLOW_RADIUS) * SHIP_SCALE;
-  const float trailLength = std::max(0.0f, THRUSTER_TRAIL_LENGTH);
-  const float trailFade = std::max(0.01f, THRUSTER_TRAIL_FADE);
-  const XMFLOAT3& cameraRight = m_camera->Right();
-  const XMFLOAT3& cameraUp = m_camera->Up();
-
-  for (size_t i = 0; i < m_ships.size(); ++i)
+  // Billboards, built into the effect's vertex ring and drawn in one call. This used to be one draw
+  // per sample: a three-nozzle hull running a full trail is 96 of them, and a hundred such ships is
+  // over nine thousand draws a frame for the plume alone (Design/MmoScalabilityReview.md G1). What
+  // each glow looks like has not changed -- the same disc, the same falloff, the same additive blend
+  // -- only how many times the frame is asked to draw one.
+  if (m_fx != nullptr && m_fx->RingReady() && !m_ships.empty())
   {
-    const ShipView& view = m_ships[i];
-    if (view.thrusterLocals.empty() || view.thrusterIntensity <= 0.002f)
-      continue;
+    const float glowRadius = std::max(0.1f, THRUSTER_GLOW_RADIUS) * SHIP_SCALE;
+    const float trailLength = std::max(0.0f, THRUSTER_TRAIL_LENGTH);
+    const float trailFade = std::max(0.01f, THRUSTER_TRAIL_FADE);
 
-    // Hoisted out of the nozzle loop: one lookup per ship rather than one per billboard, and the
-    // whole plume of a hostile is one color rather than being decided sample by sample.
-    const Rgba accent = IsOwn(i) ? SELECTED_COLOUR : HOSTILE_ACCENT_COLOUR;
-
-    // Every exhaust gets its own glow and its own trail: a bomber flying with three nozzles lays
-    // down three ribbons, and they fan apart through a turn because the outboard ones sweep wider.
-    for (size_t nozzle = 0; nozzle < view.thrusterLocals.size(); ++nozzle)
+    m_glowSamples.clear();
+    for (size_t i = 0; i < m_ships.size(); ++i)
     {
-      const XMFLOAT3* const samples = view.trail.data() + nozzle * TRAIL_SAMPLES;
+      const ShipView& view = m_ships[i];
+      // A hull the frustum rejected has no plume worth building. The trail streams behind the ship
+      // rather than around it, which is why CULL_RADIUS_PAD_METRES is a trail length: the sphere
+      // that decided this has to have covered the ribbon, not just the hull.
+      if (!view.visible || view.thrusterLocals.empty() || view.thrusterIntensity <= 0.002f)
+        continue;
 
-      // Newest sample first, walking back along the path until trailLength runs out. The trail
-      // follows the path the nozzle actually took, so it curves through a turn.
-      float travelled = 0.0f;
-      XMFLOAT3 previous = samples[view.trailHead];
-      for (int step = 0; step < view.trailCount; ++step)
+      // Hoisted out of the nozzle loop: one lookup per ship rather than one per billboard, and the
+      // whole plume of a hostile is one color rather than being decided sample by sample.
+      const Rgba accent = IsOwn(i) ? SELECTED_COLOUR : HOSTILE_ACCENT_COLOUR;
+
+      // Every exhaust gets its own glow and its own trail: a bomber flying with three nozzles lays
+      // down three ribbons, and they fan apart through a turn because the outboard ones sweep wider.
+      for (size_t nozzle = 0; nozzle < view.thrusterLocals.size(); ++nozzle)
       {
-        const int index = ((view.trailHead - step) % TRAIL_SAMPLES + TRAIL_SAMPLES) % TRAIL_SAMPLES;
-        const XMFLOAT3 point = samples[index];
-        if (step > 0)
+        const XMFLOAT3* const samples = view.trail.data() + nozzle * TRAIL_SAMPLES;
+
+        // Newest sample first, walking back along the path until trailLength runs out. The trail
+        // follows the path the nozzle actually took, so it curves through a turn.
+        float travelled = 0.0f;
+        XMFLOAT3 previous = samples[view.trailHead];
+        for (int step = 0; step < view.trailCount; ++step)
         {
-          travelled += Distance2D(previous.x, previous.z, point.x, point.z);
-          if (travelled >= trailLength)
+          const int index = ((view.trailHead - step) % TRAIL_SAMPLES + TRAIL_SAMPLES) % TRAIL_SAMPLES;
+          const XMFLOAT3 point = samples[index];
+          if (step > 0)
+          {
+            travelled += Distance2D(previous.x, previous.z, point.x, point.z);
+            if (travelled >= trailLength)
+              break;
+          }
+          previous = point;
+
+          const float along = (trailLength > 0.0f) ? travelled / trailLength : 1.0f;
+          const float taper = std::pow(std::max(0.0f, 1.0f - along), trailFade);
+          const float radius = glowRadius * (step == 0 ? 1.0f : taper * 0.8f);
+          const float alpha = view.thrusterIntensity * (step == 0 ? 1.0f : taper * 0.55f);
+          if (alpha <= 0.002f || radius <= 0.001f)
+            continue;
+
+          m_glowSamples.push_back(
+            Neuron::GlowSample{.posWorld = point, .radiusMetres = radius, .colour = Rgba{accent.r, accent.g, accent.b, alpha}});
+
+          if (trailLength <= 0.0f)
             break;
         }
-        previous = point;
-
-        const float along = (trailLength > 0.0f) ? travelled / trailLength : 1.0f;
-        const float taper = std::pow(std::max(0.0f, 1.0f - along), trailFade);
-        const float radius = glowRadius * (step == 0 ? 1.0f : taper * 0.8f);
-        const float alpha = view.thrusterIntensity * (step == 0 ? 1.0f : taper * 0.55f);
-        if (alpha <= 0.002f || radius <= 0.001f)
-          continue;
-
-        XMFLOAT4X4 billboard;
-        billboard._11 = cameraRight.x * radius * 2.0f;
-        billboard._12 = cameraRight.y * radius * 2.0f;
-        billboard._13 = cameraRight.z * radius * 2.0f;
-        billboard._14 = 0.0f;
-        billboard._21 = 0.0f;
-        billboard._22 = 1.0f;
-        billboard._23 = 0.0f;
-        billboard._24 = 0.0f;
-        billboard._31 = cameraUp.x * radius * 2.0f;
-        billboard._32 = cameraUp.y * radius * 2.0f;
-        billboard._33 = cameraUp.z * radius * 2.0f;
-        billboard._34 = 0.0f;
-        billboard._41 = point.x;
-        billboard._42 = point.y;
-        billboard._43 = point.z;
-        billboard._44 = 1.0f;
-        _renderer.DrawGlow(_gpu, m_quadMesh, billboard, Rgba{accent.r, accent.g, accent.b, alpha}, THRUSTER_GLOW_FALLOFF);
-
-        if (trailLength <= 0.0f)
-          break;
       }
+    }
+
+    if (!m_glowSamples.empty())
+    {
+      m_fxGlowVerts.clear();
+      Neuron::BuildGlowBillboards(m_glowSamples, m_camera->Right(), m_camera->Up(), m_fxGlowVerts);
+      m_fx->Begin(_gpu, m_camera->ViewProj(), _frame.lightDir, _frame.ambient, m_camera->Eye());
+      m_fx->DrawGlows(_gpu, m_fxGlowVerts, THRUSTER_GLOW_FALLOFF);
     }
   }
 }

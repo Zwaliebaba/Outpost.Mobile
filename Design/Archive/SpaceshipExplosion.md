@@ -263,8 +263,12 @@ Build(cameraRight, cameraUp, out):
 The 45° corner order is deliberate: it hides the square silhouette of a 16×16 sprite.
 
 Two `Build` calls, one per blend, so the renderer issues one draw per pass; particles are not
-sorted. Frustum culling is **not** done — the tree has no frustum type, the counts are hundreds,
-and the original culled only to save CPU on a 2005 machine.
+sorted. Frustum culling is **not** done here — the counts are hundreds, and the original culled
+only to save CPU on a 2005 machine. The tree does have a frustum type now (`Neuron::WorldFrustum`,
+slice 9), and hulls, bodies and rings are gated on it; particles and fragments are not, because
+each is already one draw for the whole frame and bounding a debris cloud that keeps expanding is a
+question of its own. What that leaves open is worth naming: since the plume shares the ring, deaths
+off screen can crowd out plumes on it.
 
 `SMOKE_RATE_PER_SEC = 5.0` reproduces the source's `frand() < 0.5 × dt × 10`.
 
@@ -308,7 +312,10 @@ needs the device for and nothing the simulation does.
   mapped — the `TextRenderer` pattern verbatim. `MAX_FX_VERTS = 49152` (1.3 MB per frame): three
   copies of a 500-fragment shatter is 4500 vertices per dead ship, and a full 4096-particle pool is
   24576, so the ring holds five simultaneous deaths with the pool full. Anything over is dropped
-  and traced, never silently truncated.
+  and traced, never silently truncated. **The plume shares it** since slice 8 of the MMO
+  scalability plan: six vertices a glow, so a three-nozzle hull on a full 32-sample trail is 576
+  and the ring holds 85 of them. A busy fight and a crowded sky now compete for the same 49152,
+  which is what `DroppedVerts` on the debug line is for.
 - **Root signature.** 16 DWORDs of `viewProj` (VS) + 8 DWORDs of `lightDirAmbient`, `cameraPos`
   (PS) as root constants, and one SRV descriptor table (PS). The scene root signature is not
   reused: it has no descriptor table and no sampler, and widening it would touch every draw in
@@ -359,12 +366,16 @@ decal pass rebind their own root signature after (`BeginDecals` already does), s
 ```
 BeginScene → ground → hulls          (opaque, depth write)
 fx.Begin → DrawFragments             (blended, depth write, so a shard occludes the smoke behind it)
-DrawFeedback                          (decals and thruster glow, depth test only)
+DrawFeedback                          (decals, then fx.Begin → DrawGlows for the plume; depth test only)
 fx.Begin → DrawSpritesDark → DrawSpritesAdd   (depth test only; dark before additive, as the source)
 TextRenderer.Flush                    (overlay, no depth)
 ```
 
-`fx.Begin` twice is one root-signature bind and 24 DWORDs; not worth a second entry point.
+`fx.Begin` three times is one root-signature bind and 24 DWORDs each; not worth a second entry
+point. The third is the thruster plume, which arrived later (MMO scalability plan, slice 8): it was
+one `SceneRenderer::DrawGlow` per trail sample and is now one `DrawGlows` for the whole frame,
+through this ring. It draws inside `DrawFeedback` because that is where it drew before, and the
+order of the frame is what keeps it looking the same.
 
 ---
 
@@ -446,7 +457,8 @@ shimmer at distance, mip generation is a slice of its own.
 - **The `Starburst.dds` one-frame flash.** The source document's §8 lists it as an improvement,
   not part of the effect. The texture is loaded so adding it is a `Build` of six vertices, but
   it is not in any slice.
-- **Frustum culling of particles.** No frustum type exists and the counts do not need one.
+- **Frustum culling of particles.** A frustum type exists since slice 9 and the counts still do not
+  need one; what would need it is the ring the plume now shares (§8).
 - **Fragments keeping the ship's texture.** Hulls are not textured; the vertex colour *is* the
   panel colour. Option B in the source document has nothing to apply to.
 - **GPU simulation.** Five simultaneous deaths is a few thousand vertices a frame; the CPU
@@ -467,7 +479,7 @@ Put to the owner on 2026-08-29 and answered as follows; each was the recommended
 |---|---|---|
 | What triggers the effect, when nothing can kill a ship? | Client-side despawn detection plus a debug key (§9) | A real destroy event on the wire — touches `GameLogic`, the format and an ADR for a visual slice; and a purely visual key that leaves the ship alive — proves nothing about the real path |
 | Zero-g or the ground plane's gravity? | Zero-g, as the source (§5.3) | Light gravity and ground rest — more code, and the game has not decided whether it is in space |
-| A textured particle pipeline, or reuse `DrawGlow`? | New pipeline in `NeuronClient` (§8) | Reusing the glow — no darkening blend, so no smoke, and the supplied textures unused |
+| A textured particle pipeline, or reuse `DrawGlow`? | New pipeline in `NeuronClient` (§8) | Reusing the glow — no darkening blend, so no smoke, and the supplied textures unused. *(`SceneRenderer::DrawGlow` has since been retired outright: the glow is a fourth pipeline on `FxRenderer` now, §8.)* |
 | Where does the RNG live? | Seeded PCG32 in `NeuronCore`, with a record (§10) | A private generator in the executable — a second one the day `GameLogic` needs its own |
 
 Two smaller ones were settled the same day, so nothing in this design is open:

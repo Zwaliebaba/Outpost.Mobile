@@ -22,6 +22,12 @@ namespace
 // take a datagram of MAX_DATAGRAM_BYTES.
 constexpr QUIC_UINT62 QUIC_ERROR_DATAGRAM_TOO_SMALL = 1;
 
+// A stream is bytes and this lane's contract is messages, so every message goes out behind a
+// two-byte little-endian length. Two bytes and not four because MAX_RELIABLE_BYTES fits in one --
+// the static_assert below is what keeps that true if the bound ever moves.
+constexpr std::uint32_t RELIABLE_HEADER_BYTES = 2;
+static_assert(MAX_RELIABLE_BYTES <= 0xFFFFu, "a reliable frame header is two bytes and could not carry MAX_RELIABLE_BYTES");
+
 // A slot index travels to the send-completion callback as MsQuic's ClientContext, which is a void*.
 // Biased by one, because MsQuic also accepts a null context and slot 0 would be indistinguishable
 // from it.
@@ -41,7 +47,7 @@ constexpr QUIC_UINT62 QUIC_ERROR_DATAGRAM_TOO_SMALL = 1;
 // It allocates nothing and logs nothing. Everything it learns it writes to an atomic or copies into
 // the inbound ring, and the owning thread picks it up in Poll. It calls exactly one MsQuic API, in
 // exactly one case -- shutting the connection down when the peer's datagram limit is too small,
-// which is what Design/QuicTransport.md 4.1 asks for and is the ordinary way to refuse a connection
+// which is what Design/Archive/QuicTransport.md 4.1 asks for and is the ordinary way to refuse a connection
 // from inside its own callback.
 struct QuicTransportCallbacks
 {
@@ -100,6 +106,13 @@ struct QuicTransportCallbacks
       }
       break;
 
+    case QUIC_CONNECTION_EVENT_PEER_STREAM_STARTED:
+      // The accepting end's half of the lane. SetCallbackHandler is the one MsQuic call ADR 0022
+      // sanctions on a worker, and it is what AdoptReliableStream does; nothing else here allocates
+      // or calls back into the library.
+      end.AdoptReliableStream(_event->PEER_STREAM_STARTED.Stream);
+      break;
+
     case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT:
     case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER:
     {
@@ -120,6 +133,100 @@ struct QuicTransportCallbacks
       end.m_closed.notify_all();
       break;
     }
+
+    default:
+      break;
+    }
+
+    return QUIC_STATUS_SUCCESS;
+  }
+
+  // The lane's stream callback, on a worker like the one above and under the same rule: it copies
+  // into a ring and sets atomics, and calls no MsQuic API at all.
+  static QUIC_STATUS QUIC_API OnStreamEvent(HQUIC, void* _context, QUIC_STREAM_EVENT* _event)
+  {
+    QuicTransport& end = *static_cast<QuicTransport*>(_context);
+
+    switch (_event->Type)
+    {
+    case QUIC_STREAM_EVENT_START_COMPLETE:
+      // The dialling end's stream is usable once MsQuic says it started. The accepting end sets this
+      // in AdoptReliableStream, because a stream it was handed is already started.
+      if (QUIC_SUCCEEDED(_event->START_COMPLETE.Status))
+        end.m_streamReady.store(true, std::memory_order_release);
+      break;
+
+    case QUIC_STREAM_EVENT_RECEIVE:
+    {
+      // A stream delivers bytes, in as many buffers as it likes and split wherever it likes, so the
+      // frames are reassembled here rather than assumed. The whole event is handled under the ring's
+      // lock because the partial-frame buffer is shared between whichever workers deliver.
+      const std::lock_guard<std::mutex> lock(end.m_streamInLock);
+      for (std::uint32_t at = 0; at < _event->RECEIVE.BufferCount; ++at)
+      {
+        const QUIC_BUFFER& buffer = _event->RECEIVE.Buffers[at];
+        std::uint32_t consumed = 0;
+        while (consumed < buffer.Length)
+        {
+          const std::uint32_t room = static_cast<std::uint32_t>(end.m_streamPartial.size()) - end.m_streamPartialCount;
+          const std::uint32_t take = (buffer.Length - consumed < room) ? buffer.Length - consumed : room;
+          if (take == 0)
+          {
+            // Cannot happen while the buffer is one frame plus its header, and dropping the
+            // reassembly is the only safe answer if it ever does: a desynchronised stream would
+            // otherwise deliver garbage as messages for the rest of the connection.
+            end.m_streamPartialCount = 0;
+            end.m_dropped.fetch_add(1u, std::memory_order_relaxed);
+            break;
+          }
+          std::memcpy(end.m_streamPartial.data() + end.m_streamPartialCount, buffer.Buffer + consumed, take);
+          end.m_streamPartialCount += take;
+          consumed += take;
+
+          // Then take out every whole frame the buffer now holds, and shuffle the remainder down.
+          for (;;)
+          {
+            if (end.m_streamPartialCount < RELIABLE_HEADER_BYTES)
+              break;
+            const std::uint32_t size =
+              static_cast<std::uint32_t>(end.m_streamPartial[0]) | (static_cast<std::uint32_t>(end.m_streamPartial[1]) << 8);
+            if (size > MAX_RELIABLE_BYTES)
+            {
+              // A frame the sender could not have written. The stream is no longer trustworthy, so
+              // the reassembly is dropped rather than resynchronised by guessing.
+              end.m_streamPartialCount = 0;
+              end.m_dropped.fetch_add(1u, std::memory_order_relaxed);
+              break;
+            }
+            const std::uint32_t frame = RELIABLE_HEADER_BYTES + size;
+            if (end.m_streamPartialCount < frame)
+              break;
+            end.PushReliable(end.m_streamPartial.data() + RELIABLE_HEADER_BYTES, size);
+            const std::uint32_t left = end.m_streamPartialCount - frame;
+            if (left > 0)
+              std::memmove(end.m_streamPartial.data(), end.m_streamPartial.data() + frame, left);
+            end.m_streamPartialCount = left;
+          }
+        }
+      }
+      break;
+    }
+
+    case QUIC_STREAM_EVENT_SEND_COMPLETE:
+    {
+      const std::uint32_t slot = ContextToSlot(_event->SEND_COMPLETE.ClientContext);
+      if (slot < end.m_reliableCapacity)
+        end.m_streamOutInFlight[slot].store(false, std::memory_order_release);
+      break;
+    }
+
+    case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:
+    case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
+    case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
+      // The lane is gone. SendReliable refuses from here on, which the caller reads as backpressure
+      // and the connection's own state explains.
+      end.m_streamReady.store(false, std::memory_order_release);
+      break;
 
     default:
       break;
@@ -166,6 +273,10 @@ bool QuicTransport::Connect(QuicApi& _api, const Endpoint& _peer, const Desc& _d
   _api.AcquireHandle();
   m_holdsApiHandle = true;
 
+  // This end dialed, so this end opens the reliable lane's stream once the handshake lands. Set
+  // before ConnectionStart, because Poll may run against a Connected state as soon as it returns.
+  m_isDialer = true;
+
   status =
     table->ConnectionStart(connection, static_cast<HQUIC>(_api.ClientConfiguration()), QUIC_ADDRESS_FAMILY_INET, _peer.host, _peer.port);
   if (QUIC_FAILED(status))
@@ -208,10 +319,50 @@ void QuicTransport::Reserve(QuicApi& _api, const Desc& _desc)
     m_outBuffers[slot].bytes = m_outArena.data() + static_cast<std::size_t>(slot) * MAX_DATAGRAM_BYTES;
   m_outCursor = 0;
 
+  // The reliable lane's own rings, shallower because a message on it may be MAX_RELIABLE_BYTES.
+  m_reliableCapacity = (_desc.capacityReliableMessages > 0) ? _desc.capacityReliableMessages : 1;
+  const std::size_t reliableArenaBytes = static_cast<std::size_t>(m_reliableCapacity) * MAX_RELIABLE_BYTES;
+  m_streamInArena.assign(reliableArenaBytes, 0u);
+  m_streamInSizes.assign(m_reliableCapacity, 0u);
+  m_streamInWrite.store(0u, std::memory_order_relaxed);
+  m_streamInRead.store(0u, std::memory_order_relaxed);
+  m_streamInReady = 0;
+  m_streamInWriteSlot = 0;
+  m_streamInReadSlot = 0;
+
+  // One frame's worth plus its header: the most a reassembler can be holding when a message is one
+  // byte short of complete.
+  m_streamPartial.assign(static_cast<std::size_t>(MAX_RELIABLE_BYTES) + RELIABLE_HEADER_BYTES, 0u);
+  m_streamPartialCount = 0;
+
+  // Each outbound slot carries its header in front of its payload, so one buffer covers the frame.
+  const std::size_t outSlotBytes = static_cast<std::size_t>(MAX_RELIABLE_BYTES) + RELIABLE_HEADER_BYTES;
+  m_streamOutArena.assign(static_cast<std::size_t>(m_reliableCapacity) * outSlotBytes, 0u);
+  m_streamOutInFlight = std::vector<std::atomic<bool>>(m_reliableCapacity);
+  m_streamOutBuffers.assign(m_reliableCapacity, SendBuffer{});
+  for (std::uint32_t slot = 0; slot < m_reliableCapacity; ++slot)
+    m_streamOutBuffers[slot].bytes = m_streamOutArena.data() + static_cast<std::size_t>(slot) * outSlotBytes;
+  m_streamOutCursor = 0;
+
+  m_stream.store(nullptr, std::memory_order_relaxed);
+
+  // Reserve is the pool's call, and a pooled transport accepts rather than dials. Connect sets this
+  // for the end that dials; the recycle path in QuicListener re-Reserves and so clears it back.
+  m_isDialer = false;
+  m_streamReady.store(false, std::memory_order_relaxed);
+  m_streamRequested.store(false, std::memory_order_relaxed);
+
   m_dropped.store(0u, std::memory_order_relaxed);
   m_maxSendLength.store(0u, std::memory_order_relaxed);
   m_handshakeDone.store(false, std::memory_order_relaxed);
   m_datagramSendEnabled.store(false, std::memory_order_relaxed);
+
+  // Back to Disconnected, which matters only on the second call: QuicListener re-Reserves a
+  // transport whose connection has closed so the slot can serve another client (ADR 0031), and one
+  // that still reported Closed would be a pooled transport lying about being finished. On the first
+  // call this is the value it already had.
+  m_state.store(ConnectionState::Disconnected, std::memory_order_relaxed);
+  m_reason[0] = '\0';
 }
 
 bool QuicTransport::Adopt(void* _connection)
@@ -266,9 +417,16 @@ void QuicTransport::Close() noexcept
                             [this] { return m_state.load(std::memory_order_acquire) == ConnectionState::Closed; });
   }
 
+  // The lane's stream goes before its connection, for the same reason the connection goes before the
+  // registration: a handle cannot close over a live child. It is closed rather than shut down --
+  // the connection shutdown above has already ended it, and StreamClose is what returns the handle.
+  m_streamReady.store(false, std::memory_order_release);
+  if (void* const stream = m_stream.exchange(nullptr, std::memory_order_acq_rel))
+    table->StreamClose(static_cast<HQUIC>(stream));
+
   // Closing here rather than in the destructor, because Outpost's shutdown order closes the client
   // end, then the listener, then the library -- and that order only means anything if this call is
-  // what ends the connection (Design/QuicTransport.md 6). A registration cannot close over a live
+  // what ends the connection (Design/Archive/QuicTransport.md 6). A registration cannot close over a live
   // connection, and MsQuic's answer to being asked is to wait rather than to fail.
   table->ConnectionClose(connection);
   m_connection = nullptr;
@@ -373,11 +531,25 @@ bool QuicTransport::Send(const std::uint8_t* _bytes, std::uint32_t _count)
 
 void QuicTransport::Poll()
 {
+  // The dialling end opens the lane's stream here rather than in the CONNECTED callback: StreamOpen
+  // and StreamStart are MsQuic calls, and ADR 0022 keeps those off the workers. One Poll after the
+  // handshake is the earliest the owning thread can do it, which is why ReliableReady is a separate
+  // question from State().
+  OpenReliableStream();
+
   // Delivery happens here and only here, as Transport.h requires. The lock is held for one cursor
   // copy: what the workers have written below this point is now the reader's, and Receive takes it
   // without the lock because nothing above it is touched by anyone but a writer.
-  const std::lock_guard<std::mutex> lock(m_inLock);
-  m_inReady = m_inWrite.load(std::memory_order_acquire);
+  {
+    const std::lock_guard<std::mutex> lock(m_inLock);
+    m_inReady = m_inWrite.load(std::memory_order_acquire);
+  }
+
+  // Both lanes, one Poll -- there is no second one to forget to call.
+  {
+    const std::lock_guard<std::mutex> lock(m_streamInLock);
+    m_streamInReady = m_streamInWrite.load(std::memory_order_acquire);
+  }
 }
 
 std::uint32_t QuicTransport::Receive(std::uint8_t* _outBytes, std::uint32_t _capacity)
@@ -402,6 +574,157 @@ std::uint32_t QuicTransport::Receive(std::uint8_t* _outBytes, std::uint32_t _cap
   m_inReadSlot = (at + 1u) % m_capacity;
   m_inRead.store(read + 1u, std::memory_order_release);
   return size;
+}
+
+void QuicTransport::OpenReliableStream()
+{
+  // The dialling end only, and once. The accepting end gets its handle through PEER_STREAM_STARTED,
+  // because a bidirectional stream carries both directions and one of them is all the handshake
+  // reserved (QuicApi.cpp, QUIC_PEER_BIDI_STREAMS).
+  // The dialing end only. The accepting end gets its handle through PEER_STREAM_STARTED, and if it
+  // opened one of its own it would be a second bidirectional stream against a peer that negotiated
+  // room for exactly one -- which is the defect ADR 0032 records.
+  if (!m_isDialer || m_api == nullptr || m_connection == nullptr)
+    return;
+  if (m_stream.load(std::memory_order_acquire) != nullptr)
+    return;
+  if (m_state.load(std::memory_order_acquire) != ConnectionState::Connected)
+    return;
+  if (m_streamRequested.exchange(true, std::memory_order_acq_rel))
+    return;
+
+  const QUIC_API_TABLE* const table = m_api->Table();
+  HQUIC stream = nullptr;
+  if (QUIC_FAILED(table->StreamOpen(static_cast<HQUIC>(m_connection), QUIC_STREAM_OPEN_FLAG_NONE, QuicTransportCallbacks::OnStreamEvent,
+                                    this, &stream)))
+  {
+    SetReason("StreamOpen failed");
+    return;
+  }
+
+  // IMMEDIATE, so the peer learns the stream exists now rather than when the first byte is sent.
+  // Without it the accepting end sees no PEER_STREAM_STARTED until traffic flows, so its lane never
+  // comes up and anything waiting on ReliableReady waits for ever.
+  if (QUIC_FAILED(table->StreamStart(stream, QUIC_STREAM_START_FLAG_IMMEDIATE)))
+  {
+    SetReason("StreamStart failed");
+    table->StreamClose(stream);
+    return;
+  }
+  m_stream.store(stream, std::memory_order_release);
+}
+
+void QuicTransport::AdoptReliableStream(void* _stream)
+{
+  // On a worker. SetCallbackHandler is the one MsQuic call this file makes from one, and it is the
+  // same exception ADR 0022 already carries for accepting a connection.
+  if (_stream == nullptr || m_api == nullptr)
+    return;
+
+  // Claim the slot, and refuse a second stream rather than overwrite the handle we already hold:
+  // overwriting would leak the first one, which MsQuic requires this side to close exactly once.
+  void* expected = nullptr;
+  if (!m_stream.compare_exchange_strong(expected, _stream, std::memory_order_acq_rel))
+    return;
+  m_api->Table()->SetCallbackHandler(static_cast<HQUIC>(_stream), reinterpret_cast<void*>(QuicTransportCallbacks::OnStreamEvent), this);
+
+  // A stream handed over by the peer is already started, so there is no START_COMPLETE coming.
+  m_streamReady.store(true, std::memory_order_release);
+}
+
+void QuicTransport::PushReliable(const std::uint8_t* _bytes, std::uint32_t _count)
+{
+  // Called under m_streamInLock, from a worker. Same ring discipline as the datagram lane: the slot
+  // is carried rather than derived, so the free-running cursor's wrap cannot misplace a message.
+  if (m_reliableCapacity == 0)
+    return;
+  const std::uint32_t write = m_streamInWrite.load(std::memory_order_relaxed);
+  const std::uint32_t read = m_streamInRead.load(std::memory_order_acquire);
+  if (write - read >= m_reliableCapacity)
+  {
+    // A full ring on this lane is worse than on the other one -- what is dropped here is a fact
+    // nothing will repeat -- so it is counted and the reader is expected to be keeping up.
+    m_dropped.fetch_add(1u, std::memory_order_relaxed);
+    return;
+  }
+
+  const std::uint32_t at = m_streamInWriteSlot;
+  if (_count > 0)
+    std::memcpy(m_streamInArena.data() + static_cast<std::size_t>(at) * MAX_RELIABLE_BYTES, _bytes, _count);
+  m_streamInSizes[at] = _count;
+  m_streamInWriteSlot = (at + 1u) % m_reliableCapacity;
+  m_streamInWrite.store(write + 1u, std::memory_order_release);
+}
+
+bool QuicTransport::SendReliable(const std::uint8_t* _bytes, std::uint32_t _count)
+{
+  void* const stream = m_stream.load(std::memory_order_acquire);
+  if (!m_streamReady.load(std::memory_order_acquire) || stream == nullptr || m_api == nullptr)
+    return false;
+  if (_count > MAX_RELIABLE_BYTES || (_count > 0 && _bytes == nullptr))
+    return false; // refused rather than truncated, which is Send's rule on the other lane
+
+  // The first slot not still in MsQuic's hands. Same scan as the datagram lane, over a shallower
+  // ring: a full ring means the peer is not reading, which is backpressure and not loss.
+  std::uint32_t slot = m_reliableCapacity;
+  for (std::uint32_t step = 0; step < m_reliableCapacity; ++step)
+  {
+    const std::uint32_t candidate = (m_streamOutCursor + step) % m_reliableCapacity;
+    bool expected = false;
+    if (m_streamOutInFlight[candidate].compare_exchange_strong(expected, true, std::memory_order_acq_rel))
+    {
+      slot = candidate;
+      break;
+    }
+  }
+  if (slot == m_reliableCapacity)
+    return false;
+  m_streamOutCursor = (slot + 1u) % m_reliableCapacity;
+
+  // The header goes in front of the payload in the same slot, so the whole frame is one buffer and
+  // MsQuic has one thing to keep alive until the send completes.
+  std::uint8_t* const frame = m_streamOutBuffers[slot].bytes;
+  frame[0] = static_cast<std::uint8_t>(_count & 0xFFu);
+  frame[1] = static_cast<std::uint8_t>((_count >> 8) & 0xFFu);
+  if (_count > 0)
+    std::memcpy(frame + RELIABLE_HEADER_BYTES, _bytes, _count);
+  m_streamOutBuffers[slot].length = RELIABLE_HEADER_BYTES + _count;
+
+  const QUIC_BUFFER* const buffer = reinterpret_cast<const QUIC_BUFFER*>(&m_streamOutBuffers[slot]);
+  if (QUIC_FAILED(m_api->Table()->StreamSend(static_cast<HQUIC>(stream), buffer, 1, QUIC_SEND_FLAG_NONE, SlotToContext(slot))))
+  {
+    m_streamOutInFlight[slot].store(false, std::memory_order_release);
+    return false;
+  }
+  return true;
+}
+
+std::uint32_t QuicTransport::ReceiveReliable(std::uint8_t* _outBytes, std::uint32_t _capacity)
+{
+  const std::uint32_t read = m_streamInRead.load(std::memory_order_relaxed);
+  if (read == m_streamInReady)
+    return 0;
+
+  const std::uint32_t at = m_streamInReadSlot;
+  const std::uint32_t size = m_streamInSizes[at];
+
+  // Same rule as Receive: too small a buffer is the caller's bug, and returning 0 would be
+  // indistinguishable from an empty lane and would spin a drain loop for ever.
+  ASSERT_TEXT(size <= _capacity, L"ReceiveReliable was offered a buffer smaller than the waiting message");
+  if (size > _capacity)
+    return 0;
+
+  if (size > 0 && _outBytes != nullptr)
+    std::memcpy(_outBytes, m_streamInArena.data() + static_cast<std::size_t>(at) * MAX_RELIABLE_BYTES, size);
+
+  m_streamInReadSlot = (at + 1u) % m_reliableCapacity;
+  m_streamInRead.store(read + 1u, std::memory_order_release);
+  return size;
+}
+
+bool QuicTransport::ReliableReady() const noexcept
+{
+  return m_streamReady.load(std::memory_order_acquire);
 }
 
 ConnectionState QuicTransport::State() const

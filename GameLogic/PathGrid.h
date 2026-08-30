@@ -8,6 +8,24 @@
 
 namespace Game
 {
+// The path lattice: where the cells are, as a property of the world rather than of any grid.
+//
+// A cell's index is a pure function of the position and of nothing else -- not of the obstacle set,
+// not of which grid is asking. That is what stops the same architecture producing a different route
+// because something was built a kilometre away, and it is what will let two grids overlap and agree
+// about every cell they share (Design/Archive/RegionalPathfinding.md 3.1, 5).
+//
+// Exact, because PATH_CELLS_PER_SECTOR is exact and the local offset is inside one sector by the
+// type's invariant. The index is a sector multiplied by 256, so it covers a factor of 256 less of
+// the universe than a WorldPos does -- 2^55 sectors, about 3x10^20 m, thirty thousand light years.
+// Past that it overflows, which is why this says so rather than claiming the whole range.
+[[nodiscard]] std::int64_t PathCellX(const WorldPos& _pos) noexcept;
+[[nodiscard]] std::int64_t PathCellZ(const WorldPos& _pos) noexcept;
+
+// The centre of a lattice cell: the point a clearance is measured at, and the point A* searches.
+// The inverse of the pair above over that range: PathCellX(PathCellCentre(x, z)) == x.
+[[nodiscard]] WorldPos PathCellCentre(std::int64_t _cellX, std::int64_t _cellZ) noexcept;
+
 // Routes around architecture. Local avoidance is not pathfinding, and large static structures are
 // what makes the difference matter: a ship steering locally around a 503 m Structure will hug it,
 // and can be trapped in a concave pocket or orbit it indefinitely. No amount of tuning in the
@@ -53,6 +71,20 @@ public:
   // both the fast path -- most orders need no plan at all -- and what the string-pull is built on.
   [[nodiscard]] bool IsClearBetween(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres) const;
 
+  // Where along that run this grid blocks it, as fractions of the run: the first sample that fails
+  // the clearance and the last one that does. Both greater than one when it never blocks, so a clear
+  // run sorts after every blocked one and IsClearBetween is `first > 1`.
+  //
+  // Both ends, from one walk, because a caller holding several grids needs both: `first` says which
+  // grid the run meets soonest, and `last` says where it is past that one and can be aimed
+  // (Design/Archive/RegionalPathfinding.md 3.4).
+  struct BlockedSpan
+  {
+    float first = 0.0f;
+    float last = 0.0f;
+  };
+  [[nodiscard]] BlockedSpan BlockedAlong(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres) const;
+
   // A route as a short waypoint list. True when the last waypoint is _to itself; false when the
   // route ran out of list before it got there, in which case the last waypoint is the furthest safe
   // point along it and the follower re-plans from there.
@@ -69,18 +101,38 @@ public:
     return m_version;
   }
 
+  // Whether the last rebuild refused, because the obstacles it was given need more cells on an axis
+  // than PATH_GRID_MAX_CELLS_PER_AXIS allows. A grid that declined behaves exactly like an empty
+  // one -- every run is clear, every route is a straight line -- which is the right degradation and
+  // an indistinguishable one, so it is counted rather than left to be inferred
+  // (Design/Archive/RegionalPathfinding.md 3.3).
+  [[nodiscard]] bool Declined() const noexcept
+  {
+    return m_declined;
+  }
+
 private:
-  // Both take an offset from m_origin, not a coordinate. Positions reach them through
-  // OffsetX/OffsetZ so that a grid spanning a sector boundary indexes correctly.
-  [[nodiscard]] std::int32_t ClampedCellX(float _offsetMetres) const noexcept;
-  [[nodiscard]] std::int32_t ClampedCellZ(float _offsetMetres) const noexcept;
+  // The cell a position falls in, pulled into the window and flattened. Clamped rather than
+  // rejected because a route may start or end outside the grid entirely, and the nearest edge cell
+  // is the honest answer for both.
+  [[nodiscard]] std::uint32_t ClampedCell(const WorldPos& _pos) const noexcept;
   [[nodiscard]] WorldPos CentreOf(std::uint32_t _cell) const noexcept;
 
   std::vector<float> m_clearance; // metres to the nearest obstacle surface, per cell
   std::uint32_t m_width = 0;
   std::uint32_t m_height = 0;
-  WorldPos m_origin; // the centre of cell (0, 0)
+  bool m_declined = false;
+  // Which cells of the world lattice this grid holds, as the index of its south-west one. A grid
+  // chooses its window, never where the cells are: store a WorldPos origin instead and the lattice
+  // becomes a function of the obstacles, which is the defect this shape exists to remove.
+  std::int64_t m_originCellX = 0;
+  std::int64_t m_originCellZ = 0;
   std::uint32_t m_version = 0;
+
+  // What the last build was built from, so a rebuild with an unchanged obstacle set can leave the
+  // version alone. The version is what makes every routed ship re-plan (World::AdvanceRoute), so
+  // bumping it for a rebuild that changed nothing is a universe-wide replan for no reason.
+  std::vector<Obstacle> m_built;
 
   // A* scratch, reused so a plan allocates nothing after the first one.
   struct Open
@@ -100,4 +152,14 @@ private:
   std::vector<Open> m_open;
   std::vector<std::uint32_t> m_cellPath;
 };
+
+// Whether two obstacle sets are the same obstacles in the same order. Order counts because a set
+// comes out of the static store in array order, and a set that has been permuted is a set whose ids
+// have moved -- which is a change a router has to hear about. All five fields, compared exactly: two
+// positions a whole sector apart share their local offsets, so comparing those alone would call them
+// equal, and the question here is "did this change" rather than "is this close".
+//
+// Public because both PathGrid and PathIslands gate a rebuild on it, at their own level: the outer
+// one decides whether the world changed at all, the inner whether this island did.
+[[nodiscard]] bool SameObstacles(std::span<const PathGrid::Obstacle> _a, std::span<const PathGrid::Obstacle> _b) noexcept;
 } // namespace Game

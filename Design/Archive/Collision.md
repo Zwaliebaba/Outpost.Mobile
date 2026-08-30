@@ -710,6 +710,18 @@ The query radius follows from the horizon and is therefore per-ship and per-tick
 queryRadius = (ownSpeed + fastestNeighbourSpeed) * horizonSec + ownBoundingRadius + largestNeighbourRadius
 ```
 
+**Two corrections since, both from the MMO scalability plan's slice 11.** The sum is missing
+`AVOID_MARGIN_METRES`, which is part of the clearance `ThreatAlong` tests against — so every query
+was that margin short of its own threat test, in an outer band where a neighbour existed and was
+not returned. And `fastestNeighbourSpeed` and `largestNeighbourRadius` are read off *what is
+present in the world*, not off the hull table: a skirmish between fighters has no business paying
+the Carrier's circle because a Carrier exists somewhere in a table. The table's own maxima are
+still what §17's ghost zone is sized from, because a region has to be wide enough for any fleet
+that might enter it, and that number is now 655 m rather than 647.
+
+The second correction is what exposed the first: the table's worst case was buying enough slack to
+hide eight metres, and narrowing the radius to what is actually there took the slack away.
+
 `QueryCircle` taking an explicit radius is what makes this work — a fast ship naturally sweeps a
 wider cell ring than a slow one, and cell size stays a performance knob (§7).
 
@@ -864,6 +876,13 @@ structure behind it, because the input pathfinding needs is something this desig
 **the static store from phase 2 is the obstacle set.** Nothing mobile is ever an obstacle — ships
 route around architecture and *avoid* each other, and keeping those two problems separate is what
 keeps both of them small.
+
+**Superseded in part by [`RegionalPathfinding.md`](RegionalPathfinding.md) and ADR 0033.** The
+structure below is right and is what shipped; what it got wrong is that there is *one* of it. One
+grid over every obstacle in the universe declines to build past 16.4 km and takes A\* away from every
+ship in the world when it does. The replacement keeps this structure and makes it per-island, on a
+cell lattice anchored to the sector grid rather than to the obstacles. Everything below stands except
+the assumption of a single grid.
 
 ### The structure: a clearance grid over the static store
 
@@ -1308,7 +1327,9 @@ bit-identical relative motion.
 
 Two open questions gate work rather than follow it, and both are named in §18: the **target server
 tick rate** was settled at 60 Hz for the slices above, and **minimum region size** follows
-arithmetically from the widest query radius, which slice 2 measured at 647 m.
+arithmetically from the widest query radius, which slice 2 measured at 647 m. It is 655 m since
+the MMO scalability plan's slice 11, which added the avoidance margin the query had been
+omitting -- see `Design/MmoScalabilityPlan.md`.
 
 ### What the landed slices did not do as written
 

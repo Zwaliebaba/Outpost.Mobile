@@ -312,5 +312,51 @@ public:
       }
     }
   }
+
+  TEST_METHOD(GatheredCandidatesTrackLocalDensity)
+  {
+    // The number slice 11 is about. The index's query is over-inclusive on purpose, so what a tick
+    // pays for is not what the query returns but what survives the pair filter -- and that number
+    // should follow how crowded a ship's own neighbourhood is, not how big the fleet is or what
+    // hulls exist in the table (Design/MmoScalabilityReview.md U2).
+    //
+    // Density is what varies here; the fleet size does not. A fixed count in a shrinking box is the
+    // only way to read the two apart.
+    constexpr std::uint32_t SHIPS = 400;
+    double previousPerShip = 0.0;
+    for (const float spread : {4000.0f, 2000.0f, 1000.0f})
+    {
+      IndexRandom random(7u);
+      Game::World world;
+      for (std::uint32_t at = 0; at < SHIPS; ++at)
+      {
+        const float x = random.NextFloat(-spread, spread);
+        const float z = random.NextFloat(-spread, spread);
+        (void)world.SpawnShip(Game::LocalPos(x, z), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor));
+      }
+      world.Step();
+
+      const double queried = static_cast<double>(world.QueriedCandidateCount()) / SHIPS;
+      const double gathered = static_cast<double>(world.GatheredCandidateCount()) / SHIPS;
+      Logger::WriteMessage(std::format(L"spread {:>5.0f} m   queried {:>7.1f}/ship   gathered {:>7.1f}/ship   "
+                                       L"query radius {:.0f} m\n",
+                                       spread, queried, gathered,
+                                       Game::QueryRadiusMetres(Game::HullSpecOf(Game::HullId::Interceptor), world.Extent()))
+                             .c_str());
+
+      Assert::IsTrue(gathered <= queried, L"the pair filter kept more candidates than the index returned");
+      Assert::IsTrue(gathered > previousPerShip, L"packing the same fleet into a quarter of the area gathered no more per ship");
+      previousPerShip = gathered;
+    }
+
+    // And the radius the whole thing rests on: a world of nothing but Interceptors must not be
+    // asking for the Carrier's circle.
+    Game::World fighters;
+    (void)fighters.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor));
+    fighters.Step();
+    const Game::HullSpec& interceptor = Game::HullSpecOf(Game::HullId::Interceptor);
+    Assert::IsTrue(Game::QueryRadiusMetres(interceptor, fighters.Extent()) < Game::QueryRadiusMetres(interceptor),
+                   L"a world of fighters still asked for the whole hull table's query radius");
+  }
 };
 } // namespace GameLogicTests

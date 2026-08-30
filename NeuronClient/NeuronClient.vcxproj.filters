@@ -90,6 +90,12 @@
     <ClInclude Include="FxRenderer.h">
       <Filter>Render</Filter>
     </ClInclude>
+    <ClInclude Include="GlowBillboards.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="ViewCulling.h">
+      <Filter>Render</Filter>
+    </ClInclude>
     <ClInclude Include="SkyRenderer.h">
       <Filter>Render</Filter>
     </ClInclude>
@@ -158,6 +164,12 @@
     <ClCompile Include="FxRenderer.cpp">
       <Filter>Render</Filter>
     </ClCompile>
+    <ClCompile Include="GlowBillboards.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="ViewCulling.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
     <ClCompile Include="SkyField.cpp">
       <Filter>Render</Filter>
     </ClCompile>
@@ -210,6 +222,9 @@
     <FxCompile Include="Shaders\SceneVS.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
+    <FxCompile Include="Shaders\SceneInstancedVS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
     <FxCompile Include="Shaders\ScenePS.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
@@ -235,6 +250,9 @@
       <Filter>Shaders</Filter>
     </FxCompile>
     <FxCompile Include="Shaders\FxSpritePS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\FxGlowPS.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
     <FxCompile Include="Shaders\SkyVS.hlsl">

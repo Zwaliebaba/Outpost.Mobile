@@ -22,6 +22,14 @@ void AdvanceBoth(Neuron::LoopbackTransport& _a, Neuron::LoopbackTransport& _b, s
 
 // The size a caller must always offer, since it is the most a datagram can be.
 using Buffer = std::array<std::uint8_t, Neuron::MAX_DATAGRAM_BYTES>;
+
+// The same, for the reliable lane, which has a bound of its own.
+using ReliableBuffer = std::array<std::uint8_t, Neuron::MAX_RELIABLE_BYTES>;
+
+[[nodiscard]] bool SendReliableByte(Neuron::LoopbackTransport& _from, std::uint8_t _value)
+{
+  return _from.SendReliable(&_value, 1);
+}
 } // namespace
 
 TEST_CLASS(LoopbackTransportTests)
@@ -54,7 +62,7 @@ public:
     // seconds so the measurement reproduces on a slower machine (slice-2b 2.1).
     Neuron::LoopbackTransport client;
     Neuron::LoopbackTransport server;
-    Neuron::LoopbackTransport::Connect(client, server, {7, 256, 0});
+    Neuron::LoopbackTransport::Connect(client, server, {.latencyTicks = 7});
 
     AdvanceBoth(client, server, 0);
     Assert::IsTrue(SendByte(server, 9), L"the send failed");
@@ -76,7 +84,7 @@ public:
   {
     Neuron::LoopbackTransport client;
     Neuron::LoopbackTransport server;
-    Neuron::LoopbackTransport::Connect(client, server, {2, 256, 0});
+    Neuron::LoopbackTransport::Connect(client, server, {.latencyTicks = 2});
 
     AdvanceBoth(client, server, 0);
     for (std::uint8_t value = 0; value < 16; ++value)
@@ -97,7 +105,7 @@ public:
     // instead of blocking a frame on it. What must not happen is losing what is already in flight.
     Neuron::LoopbackTransport client;
     Neuron::LoopbackTransport server;
-    Neuron::LoopbackTransport::Connect(client, server, {0, 4, 0});
+    Neuron::LoopbackTransport::Connect(client, server, {.capacityDatagrams = 4});
 
     AdvanceBoth(client, server, 0);
     for (std::uint8_t value = 0; value < 4; ++value)
@@ -123,7 +131,7 @@ public:
     {
       Neuron::LoopbackTransport client;
       Neuron::LoopbackTransport server;
-      Neuron::LoopbackTransport::Connect(client, server, {0, 256, 3});
+      Neuron::LoopbackTransport::Connect(client, server, {.dropOneInN = 3});
       AdvanceBoth(client, server, 0);
       for (std::uint8_t value = 0; value < static_cast<std::uint8_t>(_sends); ++value)
         (void)SendByte(server, value);
@@ -187,6 +195,157 @@ public:
     Assert::AreEqual(1, static_cast<int>(got[0]), L"the client received the datagram it sent");
     Assert::AreEqual(1u, server.Receive(got.data(), static_cast<std::uint32_t>(got.size())), L"the server received nothing");
     Assert::AreEqual(2, static_cast<int>(got[0]), L"the server received the datagram it sent");
+  }
+
+  TEST_METHOD(TheReliableLaneKeepsWhatTheDatagramLaneDrops)
+  {
+    // The row this slice exists for. Every datagram is dropped -- dropOneInN = 1 -- and every
+    // reliable message still arrives, in order. Finding E1 in Design/MmoScalabilityReview.md is a
+    // lost leave being permanent; this is the property that retires it.
+    Neuron::LoopbackTransport client;
+    Neuron::LoopbackTransport server;
+    Neuron::LoopbackTransport::Desc desc;
+    desc.dropOneInN = 1;
+    Neuron::LoopbackTransport::Connect(client, server, desc);
+
+    AdvanceBoth(client, server, 0);
+    for (std::uint8_t at = 0; at < 8; ++at)
+    {
+      Assert::IsTrue(SendByte(server, at), L"a dropped datagram is not a send failure");
+      Assert::IsTrue(SendReliableByte(server, at), L"a reliable send failed on an empty lane");
+    }
+    AdvanceBoth(client, server, 0);
+
+    Buffer datagram{};
+    Assert::AreEqual(0u, client.Receive(datagram.data(), static_cast<std::uint32_t>(datagram.size())),
+                     L"a datagram survived dropOneInN = 1");
+
+    ReliableBuffer message{};
+    for (std::uint8_t at = 0; at < 8; ++at)
+    {
+      const std::uint32_t size = client.ReceiveReliable(message.data(), static_cast<std::uint32_t>(message.size()));
+      Assert::AreEqual(1u, size, L"a reliable message was lost while the datagram lane was dropping everything");
+      Assert::AreEqual(at, message[0], L"the reliable lane delivered out of order");
+    }
+    Assert::AreEqual(0u, client.ReceiveReliable(message.data(), static_cast<std::uint32_t>(message.size())),
+                     L"the lane delivered a message nobody sent");
+  }
+
+  TEST_METHOD(TheReliableLaneCarriesTheSameLatency)
+  {
+    // A wire's delay is the wire's, whichever lane a message took. Only the loss differs.
+    Neuron::LoopbackTransport client;
+    Neuron::LoopbackTransport server;
+    Neuron::LoopbackTransport::Desc desc;
+    desc.latencyTicks = 3;
+    Neuron::LoopbackTransport::Connect(client, server, desc);
+
+    AdvanceBoth(client, server, 10);
+    Assert::IsTrue(SendReliableByte(server, 7), L"the reliable send failed");
+
+    ReliableBuffer message{};
+    AdvanceBoth(client, server, 12);
+    Assert::AreEqual(0u, client.ReceiveReliable(message.data(), static_cast<std::uint32_t>(message.size())),
+                     L"a reliable message arrived before its latency had elapsed");
+
+    AdvanceBoth(client, server, 13);
+    Assert::AreEqual(1u, client.ReceiveReliable(message.data(), static_cast<std::uint32_t>(message.size())),
+                     L"a reliable message did not arrive on the tick it was due");
+    Assert::AreEqual(static_cast<std::uint8_t>(7), message[0], L"the wrong message arrived");
+  }
+
+  TEST_METHOD(AFullSizedReliableMessageSurvivesAndALargerOneIsRefused)
+  {
+    // Refused rather than truncated, which is Send's rule on the other lane and the bug a wire that
+    // silently shortens a message turns into a corrupt-payload hunt.
+    Neuron::LoopbackTransport client;
+    Neuron::LoopbackTransport server;
+    Neuron::LoopbackTransport::Connect(client, server, {});
+    AdvanceBoth(client, server, 0);
+
+    std::vector<std::uint8_t> full(Neuron::MAX_RELIABLE_BYTES, 0xABu);
+    Assert::IsTrue(server.SendReliable(full.data(), Neuron::MAX_RELIABLE_BYTES), L"a full-sized reliable message was refused");
+
+    const std::vector<std::uint8_t> tooBig(Neuron::MAX_RELIABLE_BYTES + 1, 0xCDu);
+    Assert::IsFalse(server.SendReliable(tooBig.data(), Neuron::MAX_RELIABLE_BYTES + 1), L"an oversized reliable message was accepted");
+
+    AdvanceBoth(client, server, 0);
+    ReliableBuffer message{};
+    Assert::AreEqual(Neuron::MAX_RELIABLE_BYTES, client.ReceiveReliable(message.data(), static_cast<std::uint32_t>(message.size())),
+                     L"the full-sized message did not survive");
+    Assert::AreEqual(static_cast<std::uint8_t>(0xABu), message[Neuron::MAX_RELIABLE_BYTES - 1], L"the last byte did not survive");
+  }
+
+  TEST_METHOD(AFullReliableLaneRefusesRatherThanDropping)
+  {
+    // The one false SendReliable may return. A datagram lane drops the newest and says nothing,
+    // because a lost datagram is a normal thing; this lane cannot drop, so it pushes back instead
+    // and the sender learns before the message is gone.
+    Neuron::LoopbackTransport client;
+    Neuron::LoopbackTransport server;
+    Neuron::LoopbackTransport::Desc desc;
+    desc.capacityReliableMessages = 4;
+    Neuron::LoopbackTransport::Connect(client, server, desc);
+    AdvanceBoth(client, server, 0);
+
+    for (std::uint8_t at = 0; at < 4; ++at)
+      Assert::IsTrue(SendReliableByte(server, at), L"a send into an unfull lane failed");
+    Assert::IsFalse(SendReliableByte(server, 4), L"a full lane accepted a message it had no room for");
+    Assert::AreEqual(4u, client.QueuedReliableCount(), L"the lane did not hold exactly what it accepted");
+
+    // Draining one makes room for exactly one more, and what was queued is untouched.
+    AdvanceBoth(client, server, 0);
+    ReliableBuffer message{};
+    Assert::AreEqual(1u, client.ReceiveReliable(message.data(), static_cast<std::uint32_t>(message.size())), L"the lane delivered nothing");
+    Assert::AreEqual(static_cast<std::uint8_t>(0), message[0], L"the lane dropped the oldest rather than refusing the newest");
+    Assert::IsTrue(SendReliableByte(server, 4), L"the lane did not recover its room");
+  }
+
+  TEST_METHOD(TheTwoLanesDoNotDisturbEachOther)
+  {
+    // Separate rings, so a full lane refuses only itself; and the datagram lane's counted loss must
+    // not shift because a reliable message went out between two datagrams.
+    Neuron::LoopbackTransport client;
+    Neuron::LoopbackTransport server;
+    Neuron::LoopbackTransport::Desc desc;
+    desc.dropOneInN = 2; // every second datagram
+    Neuron::LoopbackTransport::Connect(client, server, desc);
+    AdvanceBoth(client, server, 0);
+
+    for (std::uint8_t at = 0; at < 4; ++at)
+    {
+      Assert::IsTrue(SendByte(server, at), L"the datagram send failed");
+      Assert::IsTrue(SendReliableByte(server, at), L"the reliable send failed");
+    }
+    AdvanceBoth(client, server, 0);
+
+    // 0 and 2 survive; 1 and 3 are the second and fourth datagrams and are dropped.
+    Buffer datagram{};
+    Assert::AreEqual(1u, client.Receive(datagram.data(), static_cast<std::uint32_t>(datagram.size())), L"the first datagram was lost");
+    Assert::AreEqual(static_cast<std::uint8_t>(0), datagram[0], L"the loss pattern moved");
+    Assert::AreEqual(1u, client.Receive(datagram.data(), static_cast<std::uint32_t>(datagram.size())), L"the third datagram was lost");
+    Assert::AreEqual(static_cast<std::uint8_t>(2), datagram[0], L"the loss pattern moved");
+    Assert::AreEqual(0u, client.Receive(datagram.data(), static_cast<std::uint32_t>(datagram.size())), L"a dropped datagram arrived");
+
+    ReliableBuffer message{};
+    for (std::uint8_t at = 0; at < 4; ++at)
+    {
+      Assert::AreEqual(1u, client.ReceiveReliable(message.data(), static_cast<std::uint32_t>(message.size())),
+                       L"a reliable message was lost");
+      Assert::AreEqual(at, message[0], L"the reliable lane delivered out of order");
+    }
+  }
+
+  TEST_METHOD(AnUnconnectedEndRefusesReliableSends)
+  {
+    // The default in Transport.h refuses, and so does a real implementation with no peer. A caller
+    // reads the two the same way, which is the point of the refusing default.
+    Neuron::LoopbackTransport lonely;
+    Assert::IsFalse(SendReliableByte(lonely, 1), L"an unconnected end accepted a reliable message");
+
+    ReliableBuffer message{};
+    Assert::AreEqual(0u, lonely.ReceiveReliable(message.data(), static_cast<std::uint32_t>(message.size())),
+                     L"an unconnected end delivered a reliable message");
   }
 
   TEST_METHOD(AnUnconnectedEndRefusesToSend)

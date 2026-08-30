@@ -1,17 +1,13 @@
 #pragma once
 
-#include "InterestSet.h"
+#include "Publisher.h"
 #include "World.h"
-#include "WorldSnapshot.h"
 
 #include "Simulation.h"
 #include "Transport.h"
 
-#include <algorithm>
-#include <array>
-#include <iterator>
+#include <cstdint>
 #include <span>
-#include <vector>
 
 namespace Outpost
 {
@@ -24,6 +20,11 @@ namespace Outpost
 // produced. Draining orders after the step would give every click an extra tick of latency that no
 // configured latency accounts for, and publishing before the step would send last tick's world
 // (Design/Archive/Collision-slice-2b.md 2.5).
+//
+// What it no longer owns is the fan-out. An interest set, a writer, a faction and a despawn cursor
+// per subscriber live in Game::Publisher now, and this class holds a Publisher with one entry in it
+// (ADR 0030). The behavior is the same to the byte; the shape is what changed, and it changed here
+// rather than the day a second client arrives, because that is the day it would be expensive.
 class WorldSimulation final : public Neuron::Simulation
 {
 public:
@@ -32,16 +33,26 @@ public:
   {
   }
 
-  void Connect(Neuron::Transport& _transport) noexcept
+  // Connects the one subscriber this executable has. A dedicated server would call Publisher::Add
+  // once per session instead, which is the whole of what changes there.
+  void Connect(Neuron::Transport& _transport)
   {
-    m_transport = &_transport;
+    Game::Publisher::Desc desc;
+    desc.transport = &_transport;
+    desc.faction = m_subscriberFaction;
+
+    // From the head, not from zero: the fleet is spawned before the link is opened, and a ship that
+    // died during boot is not something this client ever held (ADR 0027).
+    desc.openingDespawnCursor = m_world.DespawnHead();
+    m_subscriber = m_publisher.Add(desc);
   }
 
   void Step() override
   {
-    ApplyIncomingOrders();
+    m_publisher.ApplyOrders(m_world);
     m_world.Step();
-    PublishInterest();
+    m_publisher.SetCentre(m_subscriber, SubscriberCentre());
+    m_publisher.Publish(m_world);
   }
 
   [[nodiscard]] std::uint64_t Tick() const override
@@ -49,55 +60,19 @@ public:
     return m_world.Tick();
   }
 
+  // Diagnostics the HUD does not show yet, exposed because the numbers are worth having a name for:
+  // both should be zero.
+  [[nodiscard]] std::uint32_t ThrottledTickCount() const noexcept
+  {
+    return m_publisher.ThrottledTickCount(m_subscriber);
+  }
+
+  [[nodiscard]] std::uint32_t RefusedLeaveCount() const noexcept
+  {
+    return m_publisher.RefusedLeaveCount(m_subscriber);
+  }
+
 private:
-  // What the subscriber can see, published on its own schedule rather than every tick. Design
-  // /Collision.md 1 asks for 5-20 Hz against a 60 Hz tick, and the rate is counted in ticks so a
-  // measurement reproduces.
-  void PublishInterest()
-  {
-    if (m_transport == nullptr || !m_interest.IsDueOn(m_world.Tick()))
-      return;
-
-    m_interest.Update(m_world, SubscriberCentre());
-
-    // Entered and refreshed go on the wire together: the receiver upserts either way and the
-    // distinction is the sender's, not the format's.
-    m_sendScratch.clear();
-    m_sendScratch.insert(m_sendScratch.end(), m_interest.Entered().begin(), m_interest.Entered().end());
-    m_sendScratch.insert(m_sendScratch.end(), m_interest.Refreshed().begin(), m_interest.Refreshed().end());
-    SplitTheLost();
-    if (m_sendScratch.empty() && m_interest.Left().empty())
-      return; // nothing changed and nothing came due; an empty update is not information
-
-    (void)m_writer.WriteInterest(m_world, m_sendScratch, m_leftScratch, m_destroyedScratch, *m_transport);
-  }
-
-  // Which of this update's leaves were deaths. A despawned ship the subscriber held always turns up
-  // in Left() -- InterestTests::ADespawnedShipLeavesTheSet is that guarantee -- so the world's
-  // despawn log intersected with Left() is exactly the set that died in view; the rest merely went
-  // out of range (Design/Archive/Hostiles.md 4.4).
-  //
-  // Left() is sorted (ADR 0010) and the log is a handful of handles, so this is a walk of the log
-  // with a binary search into Left(). The log is drained on every due update rather than only on the
-  // ones that send, since a despawn no subscriber held has nobody left to tell and would otherwise
-  // sit in the log for the rest of the match.
-  void SplitTheLost()
-  {
-    const std::span<const Game::ShipHandle> left = m_interest.Left();
-    m_destroyedScratch.clear();
-    for (const Game::ShipHandle dead : m_world.DespawnLog())
-    {
-      if (std::binary_search(left.begin(), left.end(), dead, Game::HandleOrderBefore))
-        m_destroyedScratch.push_back(dead);
-    }
-    m_world.ClearDespawnLog();
-
-    std::sort(m_destroyedScratch.begin(), m_destroyedScratch.end(), Game::HandleOrderBefore);
-    m_leftScratch.clear();
-    std::set_difference(left.begin(), left.end(), m_destroyedScratch.begin(), m_destroyedScratch.end(), std::back_inserter(m_leftScratch),
-                        Game::HandleOrderBefore);
-  }
-
   // Where the subscriber is looking: the centroid of its own fleet. The day a real player has a
   // camera on the wire, it comes from there instead (Design/Archive/Collision-slice-6.md 3.6).
   //
@@ -111,71 +86,34 @@ private:
   {
     const std::span<const Game::ShipState> ships = m_world.Ships();
     Game::WorldPos centre;
-    std::uint32_t counted = 0;
-    float offsetX = 0.0f;
-    float offsetZ = 0.0f;
+    bool haveFirst = false;
+    float sumX = 0.0f;
+    float sumZ = 0.0f;
+    std::uint32_t count = 0;
     for (const Game::ShipState& ship : ships)
     {
       if (ship.factionId != m_subscriberFaction)
         continue;
-      if (counted == 0)
+      if (!haveFirst)
+      {
         centre = ship.posWorld;
-      offsetX += Game::OffsetX(centre, ship.posWorld);
-      offsetZ += Game::OffsetZ(centre, ship.posWorld);
-      ++counted;
+        haveFirst = true;
+      }
+      sumX += Game::OffsetX(centre, ship.posWorld);
+      sumZ += Game::OffsetZ(centre, ship.posWorld);
+      ++count;
     }
-    if (counted == 0)
-      return Game::WorldPos{}; // nothing of its own to look from, as an empty world already returned
-
-    Game::Translate(centre, offsetX / static_cast<float>(counted), offsetZ / static_cast<float>(counted));
+    if (count > 0)
+      Game::Translate(centre, sumX / static_cast<float>(count), sumZ / static_cast<float>(count));
     return centre;
   }
 
-  void ApplyIncomingOrders()
-  {
-    if (m_transport == nullptr)
-      return;
-
-    m_transport->Poll();
-    std::array<std::uint8_t, Neuron::MAX_DATAGRAM_BYTES> datagram{};
-    for (;;)
-    {
-      const std::uint32_t size = m_transport->Receive(datagram.data(), static_cast<std::uint32_t>(datagram.size()));
-      if (size == 0)
-        break;
-
-      Game::MoveOrder order;
-      if (!Game::ReadMoveOrder(std::span<const std::uint8_t>(datagram.data(), size), order))
-        continue; // a datagram this half does not understand is dropped, not fatal
-
-      // Handles resolve here and nowhere else. A ship that died between the click and this tick
-      // resolves to nothing and is simply left out of the order, rather than steering whichever
-      // ship swap-and-pop moved into its index (ADR 0005).
-      m_resolved.clear();
-      m_resolved.reserve(order.ships.size());
-      for (const Game::ShipHandle handle : order.ships)
-      {
-        const Game::ShipId id = m_world.Resolve(handle);
-        if (id != Game::INVALID_SHIP_ID)
-          m_resolved.push_back(id);
-      }
-      if (!m_resolved.empty())
-        (void)m_world.IssueMoveOrder(m_resolved, order.destination, order.hasFacing, order.facingRad, m_subscriberFaction);
-    }
-  }
-
   Game::World& m_world;
-  Neuron::Transport* m_transport = nullptr;
-  Game::SnapshotWriter m_writer;
-  Game::InterestSet m_interest;
+  Game::Publisher m_publisher;
+  Game::Publisher::Handle m_subscriber;
 
   // Whose orders this subscriber may give. One subscriber today, so it is the player's; the day a
-  // real player connects, this comes from the session -- the same sentence SubscriberCentre carries.
+  // login exists it arrives with the session and only Connect changes.
   Game::FactionId m_subscriberFaction = Game::FACTION_PLAYER;
-
-  std::vector<Game::ShipId> m_resolved;
-  std::vector<Game::ShipHandle> m_sendScratch;
-  std::vector<Game::ShipHandle> m_leftScratch;
-  std::vector<Game::ShipHandle> m_destroyedScratch;
 };
 } // namespace Outpost

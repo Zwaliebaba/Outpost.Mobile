@@ -15,9 +15,12 @@ void InterestSet::Configure(const Desc& _desc) noexcept
   m_desc.minWeight = std::clamp(_desc.minWeight, 1.0f / 64.0f, 1.0f);
 }
 
-bool InterestSet::IsDueOn(std::uint64_t _tick) const noexcept
+bool InterestSet::IsDueOn(std::uint64_t _tick, std::uint32_t _phase) const noexcept
 {
-  return (_tick % m_desc.updateEveryTicks) == 0;
+  // The phase is taken modulo the period rather than asserted to be inside it, so a caller that
+  // assigns phases by subscriber index -- which is what Publisher does -- needs no arithmetic of its
+  // own and cannot silently produce a subscriber that is never due.
+  return (_tick % m_desc.updateEveryTicks) == (_phase % m_desc.updateEveryTicks);
 }
 
 void InterestSet::Update(const World& _world, const WorldPos& _centre)

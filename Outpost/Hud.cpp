@@ -251,8 +251,9 @@ void Hud::DrawDebug(TextRenderer& _text, const Layout& _layout, const Frame& _fr
 
   // The explosion effect. Two of these four are the numbers that go wrong quietly -- a pool that
   // refused a particle and a vertex ring that ran out -- and neither is visible in what is drawn.
-  std::snprintf(line, sizeof(line), "FX %d%sPARTICLES %u%sDROPPED %u%sVERTS LOST %u", _frame.stats.explosionCount, SEPARATOR,
-                _frame.stats.particleCount, SEPARATOR, _frame.stats.particlesDropped, SEPARATOR, _frame.stats.fxVertsDropped);
+  std::snprintf(line, sizeof(line), "FX %d%sPARTICLES %u%sDROPPED %u%sVERTS LOST %u%sDRAWN %u%sCULLED %u", _frame.stats.explosionCount,
+                SEPARATOR, _frame.stats.particleCount, SEPARATOR, _frame.stats.particlesDropped, SEPARATOR, _frame.stats.fxVertsDropped,
+                SEPARATOR, _frame.stats.submittedCount, SEPARATOR, _frame.stats.culledCount);
   const float lineHeight = _text.LineHeightPx(FontId::Ui, HUD_TEXT_SCALE * s);
   width = advance * static_cast<float>(std::strlen(line));
   _text.DrawTextLine(FontId::Ui, (static_cast<float>(_widthPx) - width) * 0.5f, top + lineHeight, HUD_TEXT_SCALE * s, HUD_LABEL_COLOUR,
@@ -264,6 +265,13 @@ void Hud::DrawDebug(TextRenderer& _text, const Layout& _layout, const Frame& _fr
                 _frame.stats.bodyTriangles, SEPARATOR, static_cast<double>(_frame.stats.bodyGenerationMs));
   width = advance * static_cast<float>(std::strlen(line));
   _text.DrawTextLine(FontId::Ui, (static_cast<float>(_widthPx) - width) * 0.5f, top + lineHeight * 2.0f, HUD_TEXT_SCALE * s,
+                     HUD_LABEL_COLOUR, line);
+
+  // The router. DECLINED is the one number here that is not a curiosity: an island that refused to
+  // build routes nothing and looks like open space, so this is where it says so.
+  std::snprintf(line, sizeof(line), "ISLANDS %u%sDECLINED %u", _frame.stats.pathIslandCount, SEPARATOR, _frame.stats.pathIslandsDeclined);
+  width = advance * static_cast<float>(std::strlen(line));
+  _text.DrawTextLine(FontId::Ui, (static_cast<float>(_widthPx) - width) * 0.5f, top + lineHeight * 3.0f, HUD_TEXT_SCALE * s,
                      HUD_LABEL_COLOUR, line);
 }
 

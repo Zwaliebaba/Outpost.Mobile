@@ -1,9 +1,11 @@
 # The QUIC transport — moving the seam onto MsQuic
 
-**Status: slices 1 and 2 have landed; the game boots over QUIC.** §13 lists the slices; §14 is the
-implementation plan. Every open question was put to the owner on 2026-08-29 and settled (§12). The
-reliable lane (slices 3a and 3b) is deliberately unscheduled — §12 decision 4 waits for the
-migration to have been lived with — and its work orders are written when it is.
+**Status: all four slices have landed, and this document is archived.** The game boots over QUIC,
+the seam has a reliable lane, and departures and orders travel on it (ADR 0029). §13 lists the
+slices; §14 is the implementation plan. Every open question was put to the owner on 2026-08-29 and
+settled (§12), and two of those settlements have since moved: the fallback in §6 is gone (ADR 0028),
+and the reliable lane of slices 3a and 3b — which §12 decision 4 was waiting on, released on
+2026-08-30 — is built.
 
 This document proposes how the client/server seam stops being a loopback and becomes a network:
 a `QuicTransport` in `NeuronCore` over MsQuic 2.6.1, the package the tree restored on 2026-08-29
@@ -89,7 +91,7 @@ a real certificate chain, more than one client, NAT traversal (§11).
 | `QuicApi`, `QuicTransport`, `QuicListener` | NeuronCore | `NeuronCore/QuicApi.h/.cpp`, `QuicTransport.h/.cpp`, `QuicListener.h/.cpp` | Beside `Transport.h` and `LoopbackTransport`; the package is imported here; it is engine, with zero game semantics. R2 already reserves the name: "`Transport` and, when one exists, `QuicTransport`" (AGENTS.md §1). |
 | `DevCertificate` | NeuronCore | `NeuronCore/DevCertificate.h/.cpp` | Makes the self-signed credential the listener needs; crypt32/ncrypt are Windows SDK. Lives in Core because the server half must have it when it runs alone (ADR 0001). |
 | Tests | NeuronCoreTests | `Tests/NeuronCoreTests/QuicTransportTests.cpp` | Beside `LoopbackTransportTests.cpp`; the package is already imported into this project, which is why `msquic.dll` lands beside the test DLL. |
-| Wiring, fallback, boot log | Outpost | `Outpost/OutpostApp.h/.cpp` | The composition root is the only place allowed to choose a transport. |
+| Wiring, boot log | Outpost | `Outpost/OutpostApp.h/.cpp` | The composition root is the only place allowed to choose a transport. |
 | Nothing | GameLogic, NeuronServer, NeuronClient | — | The format does not change; `ServerHost` ticks and knows no transport; the renderer never sees one. |
 
 The umbrella `NeuronCore.h` gains three includes after `LoopbackTransport.h`. `msquic.h` is
@@ -163,7 +165,7 @@ These are the first `std::mutex` and `std::atomic` in the tree. They are confine
 | `QuicTransport::Desc::capacityDatagrams` | 256 | `QuicTransport.h` | The loopback's default; 288 KB per ring, two rings per transport. |
 | `QUIC_IDLE_TIMEOUT_MS` | 10 000 | `QuicApi.cpp` | Past this silence MsQuic drains the connection; the publish rate is 10 Hz, so silence means the peer is gone. |
 | `QUIC_KEEP_ALIVE_MS` | 2 000 | `QuicApi.cpp` | A client with nothing selected sends no orders; the keep-alive is what stops the server from idling it out. |
-| `QUIC_HANDSHAKE_TIMEOUT_MS` | 3 000 | `QuicApi.cpp` | Boot waits at most this long before the fallback (§6). |
+| `QUIC_HANDSHAKE_TIMEOUT_MS` | 3 000 | `QuicApi.cpp` | Boot waits at most this long, then fails naming both ends' states (§6). |
 | `QUIC_ALPN` | `"outpost-1"` | `QuicApi.cpp` | Bumps when the wire format's `KIND_*` bytes change meaning, so two builds that cannot talk refuse at the handshake rather than at the parser. |
 
 Settings go in through `MsQuicSettings` (`msquic.hpp`, shipped with the package):
@@ -186,47 +188,58 @@ from it; it is not a singleton and there is no global.
 design (§11: no NAT, no exposure). `QUIC_LISTENER_EVENT_NEW_CONNECTION` arrives on a worker; the
 handler hands the `HQUIC` to a `QuicTransport` the listener pre-allocated for the purpose and
 calls `ConnectionSetConfiguration`. `QuicListener::Poll()` on the owning thread moves accepted
-transports into `Accepted()`, a span the root drains. One pre-allocated transport in this design;
-`Desc::backlog` names the number so the day there are N clients it is a number and not a
-rewrite.
+transports into `Accepted()`, a span the root drains, and gives back the slots whose connections
+have closed so they serve the next client (ADR 0031). `Desc::backlog` is therefore how many
+connections the listener carries **at once**, not how many it will ever accept; it defaults to one
+because that is what this executable needs, and a server changes the number.
 
 The port is `constexpr std::uint16_t OUTPOST_QUIC_PORT = 30081` in `Outpost/OutpostApp.cpp`, at
-the composition root and nowhere lower, for the same reason the loopback's latency knob is one
-line there (`OutpostApp.cpp:108–111`): there is no configuration file, and a number the game
-needs at boot is a constant the root owns. The value is arbitrary and unregistered; if it is
-taken, boot falls back (§6) and the log says so.
+the composition root and nowhere lower: there is no configuration file, and a number the game needs
+at boot is a constant the root owns. The value is arbitrary and unregistered; since the fallback
+went (ADR 0028) a taken port stops the boot, and §6's failure message names the port and the reason
+rather than reporting that there is no link.
 
 ---
 
-## 6. What `Outpost` does — the boot, the fallback, the log
+## 6. What `Outpost` does — the boot and the log
 
-`OutpostApp` gains `Neuron::QuicApi m_quic; Neuron::QuicListener m_listener;
-Neuron::QuicTransport m_serverQuic, m_clientQuic;` beside the two `LoopbackTransport`s, which
-stay. `Init` becomes:
+**This section described a fallback until ADR 0028 removed it.** What it describes now is the boot
+as it stands: one wire, and a failure that stops rather than degrades.
+
+`OutpostApp` holds `Neuron::QuicApi m_quic; Neuron::QuicListener m_listener;
+Neuron::QuicTransport m_clientQuic;` and a `m_serverQuic` pointer to the one the listener accepts.
+There are no `LoopbackTransport` members: that class stays in `NeuronCore` for the tests, which are
+the only thing that needs to drop or delay a datagram on purpose. `Init` runs `OpenQuicLink()`,
+which either returns having connected both ends or throws:
 
 1. Construct `m_quic` from a `QuicApi::Desc`. On failure — MsQuic missing, credential
-   unobtainable — log `LINK | QUIC UNAVAILABLE | <reason>` and go to step 5.
-2. `m_listener.Start(m_quic, OUTPOST_QUIC_PORT)`; on failure (port taken) log and go to 5.
+   unobtainable — throw naming the stage and `m_quic.Reason()`.
+2. `m_listener.Start(m_quic, OUTPOST_QUIC_PORT)`; on failure (port taken) close what opened and
+   throw naming the reason.
 3. `m_clientQuic.Connect(m_quic, {"127.0.0.1", OUTPOST_QUIC_PORT})`. Pump `m_listener.Poll()`
    and `m_clientQuic.Poll()` until both ends are `Connected`, or `QUIC_HANDSHAKE_TIMEOUT_MS` has
-   elapsed on `FrameClock`. Boot is the one place a wait is acceptable; it is bounded and logged.
-4. `m_simulation.Connect(serverEnd); m_view.Init(clientEnd, ...)`. Log `LINK | QUIC |
+   elapsed on `FrameClock`. Boot is the one place a wait is acceptable; it is bounded, and on the
+   way out it either logs the link or throws naming what both ends were still doing.
+4. `m_simulation.Connect(*m_serverQuic); m_view.Init(m_clientQuic, ...)`. Log `LINK | QUIC |
    127.0.0.1:30081 | <handshake ms>`. Done.
-5. Fallback: `LoopbackTransport::Connect(m_serverLink, m_clientLink, linkDesc)` exactly as today,
-   and `LINK | LOOPBACK | <why>` in the event log the HUD already shows.
 
-`Run` keeps `AdvanceTo` on the loopback pair (harmless when unused) and keeps
-`m_view.PumpNetwork()` per tick and once per tickless frame; the QUIC ends need only `Poll`,
-which `PumpNetwork` and `ApplyIncomingOrders` already call. Real latency replaces counted
-latency: `INTERP_DELAY_TICKS = INTEREST_UPDATE_EVERY_TICKS` (100 ms at 60 Hz) is already the
-client's cushion, and on localhost QUIC adds well under a tick.
+The throw is `winrt::hresult_error(E_FAIL, …)` so that `wWinMain`'s first catch shows the message
+verbatim: the player reads which stage refused and why, which for a taken port is the difference
+between a diagnostic and a support ticket. `Neuron::Fatal` is not used for it — it discards its
+formatted arguments and puts "Fatal Error" in the box.
+
+`Run` pumps `m_view.PumpNetwork()` per tick and once per tickless frame; the QUIC ends need only
+`Poll`, which `PumpNetwork` and `ApplyIncomingOrders` already call. Nothing advances a link clock
+any more — tick-counted latency was the loopback's. `INTERP_DELAY_TICKS = INTEREST_UPDATE_EVERY_TICKS`
+(100 ms at 60 Hz) is the client's cushion, and on localhost QUIC adds well under a tick.
 
 `Shutdown` closes the client end, then the listener's end, then the listener, then `m_quic`, in
-that order, because a registration cannot close while a connection on it lives.
+that order, because a registration cannot close while a connection on it lives. It is guarded by
+`m_linkOpen`, because `wWinMain` calls it after a boot that threw partway.
 
 The simulation, the format, the interest set and the renderer do not know which transport they
 got. That is the acceptance criterion for the whole design, and §9 tests it by running the same
-snapshot round-trip over both.
+snapshot round-trip over both — the loopback in `NeuronCoreTests`, QUIC beside it.
 
 ---
 
@@ -252,6 +265,10 @@ and no elevated prompt, because every one of those is a step a fresh clone would
 ---
 
 ## 8. What changes on the wire — nothing, yet
+
+**Landed in slice 3b (ADR 0029).** The two defects below are fixed: leaves and destroyed lists are
+their own message on the reliable lane, and orders travel on it too. The section is kept as the
+argument that chose which messages go where, which is the part still worth reading.
 
 Every message today is a datagram, and QUIC DATAGRAM frames are datagrams: unreliable,
 unordered, bounded. The mapping is one-to-one and the format is untouched, which is what makes
@@ -293,7 +310,7 @@ not in CI's timeout.
 | `AClosedPeerDrainsThenCloses` | Client `Close()`; the server end passes through `Draining` to `Closed` and `Send` on it returns false. |
 | `NothingIsDeliveredOutsidePoll` | Send, spin without polling, `Receive` returns 0; poll once, it does not. This is the threading rule as a test. |
 | `AFragmentSizedBurstArrivesIntact` | Thirteen 1152-byte datagrams sent back to back — one snapshot's worth of fragments — all arrive, each byte-for-byte. Not a `SnapshotWriter` test: `GameLogicTests` does not import MsQuic and stays that way, so the format's tests stay on the loopback and this one stands in for them here. |
-| `ARefusedListenerReportsWhy` | Two listeners on the same port; the second `Start` returns false with a reason string, not an assert — the fallback in §6 depends on this being a diagnostic. |
+| `ARefusedListenerReportsWhy` | Two listeners on the same port; the second `Start` returns false with a reason string, not an assert — §6's failure message is built from that string. |
 
 `LoopbackTransportTests`, `SnapshotTests` and `InterestTests` pass unchanged; they are the
 format's tests and they stay on the loopback, because a format test with real latency in it is a
@@ -315,10 +332,9 @@ leaves owed:
   what a dedicated server would start, and it lives in the headless library. TLS 1.3 comes with
   the connection — encryption was unaddressed in every design so far. Connection migration and
   path validation are QUIC's, not ours.
-- **Owed.** One client: `WorldSimulation` holds one `Transport*`, one `InterestSet`, one
-  subscriber faction. N clients is a `WorldSimulation` change — a table of `{transport, interest
-  set, faction}` — and belongs to a design of its own; the listener's `backlog` is the only
-  concession made here. A second process needs a headless composition root, which AGENTS.md §5
+- **Paid since.** N clients. `Game::Publisher` is that table, and it landed as slice 3 of
+  `Design/MmoScalabilityPlan.md`, with a record for where it lives (ADR 0030). `WorldSimulation`
+  holds a publisher with one entry in it; a dedicated server calls `Add` per accepted connection. A second process needs a headless composition root, which AGENTS.md §5
   forbids configuring by argv, so it needs a decision on how a server is told what to be. Both
   are named in §11 and neither is scheduled.
 
@@ -356,10 +372,16 @@ Put to the owner on 2026-08-29, each with the alternative it beat:
 2. **`Outpost.exe` boots over QUIC on localhost, with the loopback as the fallback** (§6). Over
    loopback-by-default with QUIC behind a constant: a path nobody runs is a path nobody notices
    breaking.
+   **Reversed in part on 2026-08-30 by ADR 0028**, on the same argument carried one step further:
+   the fallback was itself the path nobody runs. QUIC stays; the fallback is gone.
 3. **Port `30081`, ring capacity 256 datagrams** (§4.3, §5). Both are one constant each.
 4. **The reliable lane (slices 3a/3b) waits until the migration has landed and been lived with**
    (§8). Slices 1 and 2 stay a pure swap; the work orders for 3a/3b are written when they are
    scheduled.
+   **Lifted on 2026-08-30 by the owner**: the migration has been lived with, and
+   `Design/MmoScalabilityReview.md` finding E1 priced the wait — a lost leave or destroyed list is
+   a permanently wrong client, and a 13-fragment update completes 77% of the time at 2% loss. The
+   slices below are scheduled and their work orders written.
 
 ---
 
@@ -370,10 +392,10 @@ moment 1 merges; 3b follows 3a because the lane must exist before the format cho
 
 | # | Slice | Layer | Depends on | Status | Work order |
 |---|---|---|---|---|---|
-| 1 | `QuicApi`, `QuicTransport`, `QuicListener`, `DevCertificate`, the tests, ADRs 0018–0020 | `NeuronCore` | — | landed | [slice 1](Archive/QuicTransport-slice-1.md) |
-| 2 | The composition root: boot over QUIC, fallback, log, AGENTS.md text | `Outpost` | 1 | landed | [slice 2](Archive/QuicTransport-slice-2.md) |
-| 3a | A reliable lane on `Transport`, on both implementations | `NeuronCore` | 1 | | to write, after 2 has landed (§12 decision 4) |
-| 3b | Leaves, destroyed lists and orders go reliable | `GameLogic` | 3a | | to write, with 3a |
+| 1 | `QuicApi`, `QuicTransport`, `QuicListener`, `DevCertificate`, the tests, ADRs 0018–0020 | `NeuronCore` | — | landed | [slice 1](QuicTransport-slice-1.md) |
+| 2 | The composition root: boot over QUIC, fallback, log, AGENTS.md text | `Outpost` | 1 | landed | [slice 2](QuicTransport-slice-2.md) |
+| 3a | A reliable lane on `Transport`, on both implementations | `NeuronCore` | 1 | landed | [slice 3a](ReliableLane-work-order.md) |
+| 3b | Leaves, destroyed lists and orders go reliable | `GameLogic` | 3a | landed | [slice 3b](ReliableFormat-work-order.md) |
 
 Three decision records are due, all in slice 1: *the network transport is MsQuic* (a dependency
 record, overdue since `ac1eb00`), *MsQuic's workers enqueue to a ring and the owning thread
@@ -391,7 +413,10 @@ the row and the paragraph above are the ones this document guessed at, and they 
 
 ## 14. Implementation plan
 
-What each slice builds, in the order it is built, with the acceptance that decides it. The work
+What each slice builds, in the order it is built, with the acceptance that decides it. Slices 1 and
+2 are landed and their entries are the record of what was built at the time: the fallback slice 2
+wired has since been removed by ADR 0028, so read those two rows as history rather than as
+instructions. The work
 orders carry the exact signatures, the "what to build on" tables and the assumptions; this is the
 plan they are cut from, and it is written to the decisions in §12.
 
@@ -402,7 +427,7 @@ plan they are cut from, and it is written to the decisions in §12.
 | 1.1 | `QuicApi.h/.cpp` | `Desc { idleTimeoutMs, keepAliveMs, handshakeTimeoutMs, allowUnvalidatedPeer }`, `Open`/`Close`/`Reason`/`IsOpen`. One `MsQuicOpen2`, one registration, two configurations on `QUIC_ALPN = "outpost-1"` with `DatagramReceiveEnabled` and `PeerBidiStreamCount = 1`. The header names no MsQuic type; the `.cpp` includes `<msquic.h>` and `<msquic.hpp>` after `pch.h`. |
 | 1.2 | `DevCertificate.h/.cpp` | `Acquire`/`Release`/`Context`/`Reason`. Persisted NCrypt RSA-2048 key `Outpost.Dev.Quic`, `CertCreateSelfSignCertificate` for `CN=Outpost Development`, handed over as `QUIC_CREDENTIAL_TYPE_CERTIFICATE_CONTEXT`. Fail-closed diagnostics, never a throw. |
 | 1.3 | `QuicTransport.h/.cpp` | `Endpoint`, `Desc { capacityDatagrams = 256 }`, `Connect`, `Close`, the four overrides, `DroppedCount`, `MaxSendLength`. The state table of §4.1; the two rings and one lock of §4.2; the static callback that allocates nothing and calls no MsQuic API; the bounded destructor wait. |
-| 1.4 | `QuicListener.h/.cpp` | `Desc { backlog = 1, transport }`, `Start(api, port)` on `127.0.0.1` only (port 0 = ephemeral), `Stop`, `Port`, `Poll`, `Accepted`, `Reason`. `NEW_CONNECTION` adopts a pre-allocated transport; an exhausted backlog refuses. |
+| 1.4 | `QuicListener.h/.cpp` | `Desc { backlog = 1, transport }`, `Start(api, port)` on `127.0.0.1` only (port 0 = ephemeral), `Stop`, `Port`, `Poll`, `Accepted`, `Reason`. `NEW_CONNECTION` adopts a pre-allocated transport; an exhausted backlog refuses. (Slot recycling came later, ADR 0031.) |
 | 1.5 | `NeuronCore.h`, `.vcxproj`, `.filters` | Three umbrella includes after `LoopbackTransport.h`; eight files registered; `QuicTransportTests.cpp` registered in `NeuronCoreTests` under `Tests`. |
 | 1.6 | `Tests/NeuronCoreTests/QuicTransportTests.cpp` | The ten tests of the work order §4, each over a real localhost connection with a bounded `FrameClock` wait. |
 | 1.7 | `Design/Decisions/0018…0020`, `AGENTS.md` §2, §5 | The three records and their index rows; "no code references it yet" and "what remains is a socket" rewritten in the same commit. |
