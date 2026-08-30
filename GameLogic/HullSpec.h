@@ -208,6 +208,38 @@ inline constexpr HullSpec HULL_SPECS[HULL_COUNT] = {
   return (scaled > ARRIVAL_RADIUS_MIN_METRES) ? scaled : ARRIVAL_RADIUS_MIN_METRES;
 }
 
+// Where a docking ship is sent: DOCK_CAPTURE_METRES clear of the two hulls' skins, measured centre
+// to centre.
+//
+// Derived per pair rather than flat, for the reason DOCK_CAPTURE_METRES gives: the hull table spans
+// a 3.4 m Interceptor and a 107 m Carrier against a 251 m station, and no single number is outside
+// the big pair's no-go band while still being a dock rather than a postcode for the small one.
+// Sixty metres clear of touching, for every pair in the table, by construction.
+[[nodiscard]] constexpr float DockApproachRangeMetres(const HullSpec& _station, const HullSpec& _ship) noexcept
+{
+  return _station.BoundingRadiusMetres() + _ship.BoundingRadiusMetres() + DOCK_CAPTURE_METRES;
+}
+
+// How close a ship has to get to a station before it is inside.
+//
+// The approach range plus the tolerance the ship stops within, and that second term is not a fudge:
+// it is what makes *arriving* and *docking* the same event. A ship is declared arrived when it is
+// within ArrivalRadiusMetres of its destination, in any direction -- so a ship sent to a point
+// exactly on the capture boundary can settle just outside it, go Idle, be re-aimed at the same
+// point it is already at, and sit there for ever. Measured, before this term existed: a Corvette
+// parked at 328.66 m against a 324.88 m boundary and never docked.
+//
+// Adding the arrival radius makes the implication hold by construction rather than by luck, for
+// every hull -- including the Carrier, whose 37 m tolerance is more than half the capture slack and
+// which no fixed margin inside the boundary could have absorbed (Design/Stations-slice-3.md 2.2).
+//
+// A ship does not *stop* here. It stops existing, which is why the constant behind it is in the
+// contract (Design/Stations.md 7.3).
+[[nodiscard]] constexpr float DockRangeMetres(const HullSpec& _station, const HullSpec& _ship) noexcept
+{
+  return DockApproachRangeMetres(_station, _ship) + ArrivalRadiusMetres(_ship);
+}
+
 [[nodiscard]] constexpr float SlotSpacingMetres(float _largestBoundingRadiusMetres) noexcept
 {
   return 2.0f * _largestBoundingRadiusMetres * FORMATION_SPACING_MARGIN;

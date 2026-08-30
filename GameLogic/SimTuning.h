@@ -298,6 +298,31 @@ inline constexpr int FORMATION_SHAPE = 1; // FormationShape::Wedge
 // not contract.
 inline constexpr std::uint32_t PATROL_RING_WAYPOINTS = 12;
 
+// --- docking -------------------------------------------------------------------------------------
+// The slack a docking ship is captured within, over and above the two hulls' bounding radii. In the
+// contract, and near the top of it: it decides on which tick a ship stops existing in space.
+//
+// A slack rather than a range, because a flat number cannot serve this hull table. A flat 300 m is
+// inside a Carrier's no-go band -- where separation is already shoving and a route may not end --
+// and a canyon for an Interceptor. Derived per pair (HullSpec.h, DockRangeMetres) it is 315 m for an
+// Interceptor and 419 m for a Carrier, both outside that band.
+//
+// 60 m is chosen against the path grid's quantization rather than by feel: at PATH_CELL_SIZE_METRES
+// of 32 it is nearly two cells of margin, so the approach destination lands in unblocked cells
+// instead of in the station's own obstacle footprint (Design/Stations.md 7.3).
+inline constexpr float DOCK_CAPTURE_METRES = 60.0f;
+
+// How far a pursued target may move from the point its hunter last aimed at before the hunter
+// re-aims. In the contract: it changes which point a protector steers at.
+//
+// PATH_REPLAN_DEVIATION_METRES's figure and its reasoning -- two path cells, and never per tick,
+// because a plan is a pure function of the static set and the two endpoints and re-running it every
+// tick would cost everything and change nothing. Its own constant rather than a share of that one
+// because the two measure different things: that is a follower drifting off its leg, this is a
+// target moving, and the day either is retuned the other should not move with it
+// (Design/Stations.md 8.3).
+inline constexpr float PURSUIT_REPLAN_METRES = 64.0f;
+
 // --- interest management -----------------------------------------------------------------------
 // Not in the replay contract, and that is worth saying because everything around it is: these change
 // what is *sent*, never what is *simulated*. A recording made at one radius replays identically at

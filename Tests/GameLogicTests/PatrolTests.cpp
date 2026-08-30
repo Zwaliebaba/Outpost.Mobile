@@ -25,14 +25,14 @@ constexpr int TICKS_PER_LAP = 16000;
 Game::ShipId BuildHostileBase(Game::World& _world, std::vector<Game::ShipId>& _outPatrol, int _count = PATROL_COUNT)
 {
   const Game::ShipId station = _world.SpawnShip(Game::LocalPos(STATION_EAST_METRES, STATION_NORTH_METRES), 0.0f,
-                                                static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_HOSTILE);
+                                                static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANDAL);
   const Game::WorldPos anchor = _world.Ship(station).posWorld;
   for (int at = 0; at < _count; ++at)
   {
     const std::uint32_t index =
       static_cast<std::uint32_t>(at) * Game::PATROL_RING_WAYPOINTS / static_cast<std::uint32_t>(std::max(1, _count));
     const Game::ShipId ship = _world.SpawnShip(Game::PatrolRingPoint(anchor, index, RING_METRES), Game::PatrolRingHeadingRad(index),
-                                               static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_HOSTILE);
+                                               static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
     _world.AssignPatrol(ship, station, RING_METRES, CRUISE_MPS);
     _outPatrol.push_back(ship);
   }
@@ -261,7 +261,7 @@ public:
 
     const Game::WorldPos destination = Game::LocalPos(STATION_EAST_METRES + 1200.0f, STATION_NORTH_METRES);
     const Game::ShipId order[] = {ship};
-    (void)world.IssueMoveOrder(order, destination, false, 0.0f, Game::FACTION_HOSTILE);
+    (void)world.IssueMoveOrder(order, destination, false, 0.0f, Game::FACTION_VANDAL);
     Assert::IsFalse(world.PatrolOf(ship).active, L"an explicit order left the patrol running underneath it");
     Assert::AreEqual(0.0f, world.Ship(ship).orderSpeedCapMetresPerSec, 0.0f, L"a player's order inherited the patrol's cruise cap");
 
@@ -287,11 +287,11 @@ public:
     // point, not all the way back round to north.
     Game::World world;
     const Game::ShipId station =
-      world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_HOSTILE);
+      world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANDAL);
     const float bearing = DirectX::XMConvertToRadians(100.0f);
     const Game::ShipId ship =
       world.SpawnShip(Game::LocalPos(std::sin(bearing) * RING_METRES, std::cos(bearing) * RING_METRES), bearing + DirectX::XM_PIDIV2,
-                      static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_HOSTILE);
+                      static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
     world.AssignPatrol(ship, station, RING_METRES, CRUISE_MPS);
 
     world.Step();

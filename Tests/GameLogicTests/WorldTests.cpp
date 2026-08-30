@@ -125,7 +125,7 @@ public:
     Assert::AreEqual(doomed.size(), world.DespawnsSince(0).size(), L"three despawns across three ticks did not all survive to be read");
     Assert::AreEqual(static_cast<std::uint64_t>(doomed.size()), world.DespawnHead(), L"the head does not count every death");
     for (std::size_t at = 0; at < doomed.size(); ++at)
-      Assert::IsTrue(world.DespawnsSince(0)[at] == doomed[at], L"the log is not in despawn order");
+      Assert::IsTrue(world.DespawnsSince(0)[at].handle == doomed[at], L"the log is not in despawn order");
 
     // A despawn that failed is not a death, and a Step is not a trim.
     Assert::IsFalse(world.DespawnShip(doomed[0]), L"despawning the same handle twice succeeded");
@@ -161,12 +161,12 @@ public:
     Assert::AreEqual(static_cast<std::size_t>(2), world.DespawnsSince(slow).size(),
                      L"the slow reader lost a death to the fast reader's trim");
     for (std::size_t at = 0; at < 2; ++at)
-      Assert::IsTrue(world.DespawnsSince(slow)[at] == doomed[at], L"the slow reader saw the deaths out of order");
+      Assert::IsTrue(world.DespawnsSince(slow)[at].handle == doomed[at], L"the slow reader saw the deaths out of order");
 
     // A third death, and the fast reader sees exactly it -- not the two it has already been told.
     Assert::IsTrue(world.DespawnShip(doomed[2]), L"the despawn failed");
     Assert::AreEqual(static_cast<std::size_t>(1), world.DespawnsSince(fast).size(), L"the fast reader was told a death twice");
-    Assert::IsTrue(world.DespawnsSince(fast)[0] == doomed[2], L"the fast reader was told the wrong death");
+    Assert::IsTrue(world.DespawnsSince(fast)[0].handle == doomed[2], L"the fast reader was told the wrong death");
     Assert::AreEqual(static_cast<std::size_t>(3), world.DespawnsSince(slow).size(), L"the slow reader lost a death");
 
     // Both caught up: now the log may go.
@@ -194,7 +194,7 @@ public:
     Assert::IsTrue(world.DespawnShip(doomed[2]), L"the despawn failed");
     Assert::AreEqual(static_cast<std::size_t>(1), world.DespawnsSince(joined).size(),
                      L"the reader did not hear the death that followed it");
-    Assert::IsTrue(world.DespawnsSince(joined)[0] == doomed[2], L"the reader heard the wrong death");
+    Assert::IsTrue(world.DespawnsSince(joined)[0].handle == doomed[2], L"the reader heard the wrong death");
   }
 
   TEST_METHOD(ADefaultHandleIsNull)

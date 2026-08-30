@@ -71,3 +71,8 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0034](0034-a-routes-version-is-the-whole-worlds.md) | A route's version is the whole world's, not its island's | accepted |
 | [0035](0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md) | Ship hulls are authored in GLB and converted to NMO, and ObjParser is deleted | accepted |
 | [0036](0036-a-liveried-surface-is-declared-and-the-combine-is-a-multiply.md) | A liveried surface is declared by its material, and the combine is a multiply | accepted |
+| [0037](0037-the-universe-layout-is-static-content-in-gamelogic.md) | The universe layout is static content in GameLogic | accepted |
+| [0038](0038-stations-are-ships-with-a-side-table.md) | Stations are ships with a side table | accepted |
+| [0039](0039-standings-are-simulation-state-stated-per-subscriber.md) | Standings are simulation state, stated per subscriber | accepted |
+| [0040](0040-a-departure-carries-a-cause.md) | A departure carries a cause on the wire | accepted |
+| [0041](0041-the-protector-response-reacts-to-stated-acts.md) | The protector response reacts to stated acts, not senses | accepted |

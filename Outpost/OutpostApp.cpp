@@ -470,7 +470,7 @@ void OutpostApp::SpawnStartingFleet()
 void OutpostApp::SpawnHostileBase()
 {
   const Game::ShipId station = m_world.SpawnShip(Game::LocalPos(HOSTILE_BASE_EAST_METRES, HOSTILE_BASE_NORTH_METRES), 0.0f,
-                                                 static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_HOSTILE);
+                                                 static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANDAL);
   const Game::WorldPos anchor = Game::LocalPos(HOSTILE_BASE_EAST_METRES, HOSTILE_BASE_NORTH_METRES);
 
   for (int at = 0; at < HOSTILE_PATROL_COUNT; ++at)
@@ -482,7 +482,7 @@ void OutpostApp::SpawnHostileBase()
       static_cast<std::uint32_t>(at) * Game::PATROL_RING_WAYPOINTS / static_cast<std::uint32_t>(HOSTILE_PATROL_COUNT);
     const Game::ShipId ship =
       m_world.SpawnShip(Game::PatrolRingPoint(anchor, index, HOSTILE_PATROL_RING_METRES), Game::PatrolRingHeadingRad(index),
-                        static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_HOSTILE);
+                        static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
     m_world.AssignPatrol(ship, station, HOSTILE_PATROL_RING_METRES, HOSTILE_PATROL_CRUISE_MPS);
   }
 }

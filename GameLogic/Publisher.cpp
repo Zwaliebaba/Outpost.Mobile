@@ -147,22 +147,44 @@ void Publisher::ApplyOrders(World& _world)
           break;
         ++read;
 
-        MoveOrder order;
-        if (!ReadMoveOrder(std::span<const std::uint8_t>(m_messageScratch.data(), size), order))
-          continue; // a message this half does not understand is dropped, not fatal
+        const std::span<const std::uint8_t> message(m_messageScratch.data(), size);
 
-        // Handles resolve here and nowhere else. A ship that died between the click and this tick
-        // resolves to nothing and is left out, rather than steering whichever ship swap-and-pop
-        // moved into its index (ADR 0005).
-        m_resolvedScratch.clear();
-        for (const ShipHandle handle : order.ships)
+        // Handles resolve here and nowhere else, for either kind. A ship that died between the click
+        // and this tick resolves to nothing and is left out, rather than steering whichever ship
+        // swap-and-pop moved into its index (ADR 0005).
+        MoveOrder order;
+        DockOrder dockOrder;
+        if (ReadMoveOrder(message, order))
         {
-          const ShipId id = _world.Resolve(handle);
-          if (id != INVALID_SHIP_ID)
-            m_resolvedScratch.push_back(id);
+          m_resolvedScratch.clear();
+          for (const ShipHandle handle : order.ships)
+          {
+            const ShipId id = _world.Resolve(handle);
+            if (id != INVALID_SHIP_ID)
+              m_resolvedScratch.push_back(id);
+          }
+          if (!m_resolvedScratch.empty())
+            (void)_world.IssueMoveOrder(m_resolvedScratch, order.destination, order.hasFacing, order.facingRad, subscriber.faction);
         }
-        if (!m_resolvedScratch.empty())
-          (void)_world.IssueMoveOrder(m_resolvedScratch, order.destination, order.hasFacing, order.facingRad, subscriber.faction);
+        else if (ReadDockOrder(message, dockOrder))
+        {
+          // The station resolves too, and a dead one makes the whole order a no-op rather than a
+          // dock at whatever now occupies that index.
+          const ShipId station = _world.Resolve(dockOrder.station);
+          if (station == INVALID_SHIP_ID)
+            continue;
+
+          m_resolvedScratch.clear();
+          for (const ShipHandle handle : dockOrder.ships)
+          {
+            const ShipId id = _world.Resolve(handle);
+            if (id != INVALID_SHIP_ID)
+              m_resolvedScratch.push_back(id);
+          }
+          if (!m_resolvedScratch.empty())
+            (void)_world.IssueDockOrder(m_resolvedScratch, station, subscriber.faction);
+        }
+        // A message this half does not understand is dropped, not fatal.
       }
     }
   }
@@ -199,26 +221,44 @@ void Publisher::PublishOne(const World& _world, Subscriber& _subscriber)
   if (m_sendScratch.empty() && _subscriber.interest.Left().empty())
     return; // nothing changed and nothing came due; an empty update is not information
 
-  (void)_subscriber.writer.WriteInterest(_world, m_sendScratch, m_leftScratch, m_destroyedScratch, *_subscriber.transport);
+  // The subscriber's faction is what the header's hostileMask is stated for. The publisher is the
+  // only thing that knows whose view an update is; this is not a second authority check.
+  (void)_subscriber.writer.WriteInterest(_world, m_sendScratch, m_leftScratch, m_destroyedScratch, m_dockedScratch, *_subscriber.transport,
+                                         _subscriber.faction);
 }
 
 void Publisher::SplitTheLost(const World& _world, Subscriber& _subscriber)
 {
   const std::span<const ShipHandle> left = _subscriber.interest.Left();
   m_destroyedScratch.clear();
+  m_dockedScratch.clear();
 
+  // Three sets from two now: a departure carries a cause, so this is where a death is told apart
+  // from a docking and both from a ship that merely flew out of range (ADR 0040).
+  //
   // This subscriber's own cursor, so two of them reading the same death both see it. The cursor
   // advances whether or not anything is sent, since a death nobody held has nobody to tell.
-  for (const ShipHandle dead : _world.DespawnsSince(_subscriber.despawnCursor))
+  for (const DespawnRecord& gone : _world.DespawnsSince(_subscriber.despawnCursor))
   {
-    if (std::binary_search(left.begin(), left.end(), dead, HandleOrderBefore))
-      m_destroyedScratch.push_back(dead);
+    if (!std::binary_search(left.begin(), left.end(), gone.handle, HandleOrderBefore))
+      continue;
+    if (gone.cause == DespawnCause::Docked)
+      m_dockedScratch.push_back(gone.handle);
+    else
+      m_destroyedScratch.push_back(gone.handle);
   }
   _subscriber.despawnCursor = _world.DespawnHead();
 
   std::sort(m_destroyedScratch.begin(), m_destroyedScratch.end(), HandleOrderBefore);
+  std::sort(m_dockedScratch.begin(), m_dockedScratch.end(), HandleOrderBefore);
+
+  // The merely-left are what is in neither stated set. Both are subtracted, in two passes, because
+  // set_difference wants a sorted range on each side and the two causes are sorted separately.
+  m_statedScratch.clear();
+  std::set_union(m_destroyedScratch.begin(), m_destroyedScratch.end(), m_dockedScratch.begin(), m_dockedScratch.end(),
+                 std::back_inserter(m_statedScratch), HandleOrderBefore);
   m_leftScratch.clear();
-  std::set_difference(left.begin(), left.end(), m_destroyedScratch.begin(), m_destroyedScratch.end(), std::back_inserter(m_leftScratch),
+  std::set_difference(left.begin(), left.end(), m_statedScratch.begin(), m_statedScratch.end(), std::back_inserter(m_leftScratch),
                       HandleOrderBefore);
 }
 } // namespace Game

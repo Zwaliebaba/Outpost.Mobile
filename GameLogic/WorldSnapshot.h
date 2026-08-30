@@ -51,8 +51,23 @@ struct ShipSnapshot
   float turnRateRadPerSec = 0.0f;
   OrderState order = OrderState::Idle;
   FactionId factionId = FACTION_PLAYER;
+
+  // Bit 0: this record is a station that admits ships.
+  //
+  // Identity, which is why it is on the reviewable list beside factionId and hullId rather than
+  // left to be worked out: "immovable hull of faction 2" is the client inferring server state, the
+  // exact sin the destroyed list exists to prevent, and a client has to know it is tapping a
+  // station before an order is worth sending (Design/Stations.md 6.2). What is deliberately *not*
+  // here: the ledger, the garrison numbers and the target list -- private state of the kind the
+  // snapshot exists to withhold. Seven bits are unspoken for; user stations and conquerable ones
+  // are what they are being kept for.
+  std::uint8_t flags = 0;
+
   std::uint32_t hullId = 0;
 };
+
+// Bit 0 of ShipSnapshot::flags.
+inline constexpr std::uint8_t SHIP_FLAG_STATION = 0x01;
 
 // A decoded snapshot: what the client renders instead of reaching into World.
 struct WorldSnapshot
@@ -68,6 +83,14 @@ struct MoveOrder
   WorldPos destination;
   float facingRad = 0.0f;
   bool hasFacing = false;
+};
+
+// What one dock order carries up the wire. A second instance of the move order's shape: a datagram
+// kind, a write/read pair, handles resolved in the adapter and a faction gate in World (ADR 0014).
+struct DockOrder
+{
+  std::vector<ShipHandle> ships;
+  ShipHandle station; // the station's structure
 };
 
 // How many ships fit in one datagram of each kind. Derived from MAX_DATAGRAM_BYTES rather than
@@ -88,7 +111,10 @@ struct MoveOrder
 class SnapshotWriter
 {
 public:
-  std::uint32_t Write(const World& _world, Neuron::Transport& _transport);
+  // _viewer is whose standing the header's hostileMask states. It is defaulted because Write is the
+  // whole-world path -- a benchmark and a test harness, with no subscriber to speak of -- while
+  // WriteInterest is always written for somebody, and Publisher is the only caller that knows who.
+  std::uint32_t Write(const World& _world, Neuron::Transport& _transport, FactionId _viewer = FACTION_PLAYER);
 
   // One subscriber's update. _sent are handles to carry in full -- entered and refreshed together,
   // because the wire cannot tell them apart and the receiver upserts either way. _left are dropped.
@@ -98,14 +124,15 @@ public:
   // death from an absence (Design/Archive/Hostiles.md 4.4). A handle belongs in one list, never both; the
   // caller decides which and the writer does not check.
   std::uint32_t WriteInterest(const World& _world, std::span<const ShipHandle> _sent, std::span<const ShipHandle> _left,
-                              std::span<const ShipHandle> _destroyed, Neuron::Transport& _transport);
+                              std::span<const ShipHandle> _destroyed, std::span<const ShipHandle> _docked, Neuron::Transport& _transport,
+                              FactionId _viewer = FACTION_PLAYER);
 
   // The leave and destroyed lists, as one message on the reliable lane. Public because a caller
   // that is not sending an interest update -- a subscriber leaving, a world shutting down -- still
   // has departures to state. Returns false when the lane refused it, which is a full lane or one
   // that is not up yet, and never a partial send.
   bool WriteLeaves(std::uint64_t _tick, std::span<const ShipHandle> _left, std::span<const ShipHandle> _destroyed,
-                   Neuron::Transport& _transport);
+                   std::span<const ShipHandle> _docked, Neuron::Transport& _transport);
 
   // How many leave messages the lane has refused. Nothing repeats a refused one, so this is the
   // count of departures a subscriber was never told about -- a number that should be zero, and a
@@ -167,6 +194,24 @@ public:
     return m_hasSnapshot;
   }
 
+  // Bit f set: faction f holds this client's faction hostile, as of the last header that arrived.
+  //
+  // Taken from every fragment that passes the header and staleness checks, rather than on apply
+  // like the upserts -- deliberately. An incomplete update is dropped because a half-applied set of
+  // records is a half-updated world; a mask has no such coupling, so taking it from whatever
+  // arrives is strictly more robust, and robustness against loss is the entire argument for
+  // spending the byte (Design/Stations.md 4.3).
+  [[nodiscard]] std::uint8_t HostileMask() const noexcept
+  {
+    return m_hostileMask;
+  }
+
+  // Whether _faction holds this client hostile. What the livery table and the dock affordance ask.
+  [[nodiscard]] bool IsHostileToMe(FactionId _faction) const noexcept
+  {
+    return _faction < FACTION_LIMIT && (m_hostileMask & static_cast<std::uint8_t>(1u << _faction)) != 0;
+  }
+
   // The handles the last applied update said were destroyed, as distinct from those that merely left
   // this subscriber's view. Valid until the next update applies; empty for a full snapshot.
   [[nodiscard]] std::span<const ShipHandle> Destroyed() const noexcept
@@ -180,6 +225,19 @@ public:
   void ClearDestroyed() noexcept
   {
     m_destroyed.clear();
+  }
+
+  // The handles the last applied departure message said had docked: gone from the world, but not
+  // dead. The client removes the hull silently -- no explosion, no shake, no SHIP LOST -- which is
+  // the entire reason a departure carries a cause (ADR 0040).
+  [[nodiscard]] std::span<const ShipHandle> Docked() const noexcept
+  {
+    return m_docked;
+  }
+
+  void ClearDocked() noexcept
+  {
+    m_docked.clear();
   }
 
   // The tick the last departure message was written on. Diagnostics: how stale a departure was.
@@ -205,8 +263,11 @@ private:
   std::vector<ShipSnapshot> m_pendingUpserts;
   std::vector<ShipHandle> m_leaveScratch;     // one departure message, read before any of it applies
   std::vector<ShipHandle> m_destroyedScratch; // the same, for the deaths in it
+  std::vector<ShipHandle> m_dockedScratch;    // and for the dockings
   std::vector<ShipHandle> m_destroyed;        // deaths since the consumer last cleared them
+  std::vector<ShipHandle> m_docked;           // dockings since the consumer last cleared them
   std::uint64_t m_lastLeaveTick = 0;
+  std::uint8_t m_hostileMask = 0;
   WorldSnapshot m_latest;
   std::uint32_t m_buildingId = 0;
   std::uint64_t m_buildingTick = 0;
@@ -220,4 +281,11 @@ private:
 // Orders travel the other way. Written by the client half, read and applied by the server half.
 [[nodiscard]] bool WriteMoveOrder(const MoveOrder& _order, Neuron::Transport& _transport);
 [[nodiscard]] bool ReadMoveOrder(std::span<const std::uint8_t> _datagram, MoveOrder& _outOrder);
+
+// A dock order's own header is smaller than a move order's -- a station handle in place of a
+// destination and a facing -- so it would admit two more ships. It deliberately does not: the cap
+// stays MaxShipsPerOrder(), because the client's selection logic already agrees on one number and
+// two caps differing by two is a fact nobody will remember and no test would pin.
+[[nodiscard]] bool WriteDockOrder(const DockOrder& _order, Neuron::Transport& _transport);
+[[nodiscard]] bool ReadDockOrder(std::span<const std::uint8_t> _datagram, DockOrder& _outOrder);
 } // namespace Game

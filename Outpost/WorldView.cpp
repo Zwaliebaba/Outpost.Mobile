@@ -567,7 +567,7 @@ Rgba WorldView::LiveryOf(Game::FactionId _faction, bool _own, bool _hostileToMe)
     return LIVERY_VANDAL;
   if (_faction == Game::FACTION_VANGUARD)
     return LIVERY_VANGUARD;
-  // FACTION_HOSTILE reaches here only if it ever stops being hostile to this client, and a faction
+  // FACTION_VANDAL reaches here only if it ever stops being hostile to this client, and a faction
   // a later slice adds reaches it until someone gives it a row. Red is the safe answer for both:
   // a stranger drawn as a friend is the one mistake this table must not make.
   return LIVERY_VANDAL;

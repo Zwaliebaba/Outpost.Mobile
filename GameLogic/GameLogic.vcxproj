@@ -180,6 +180,7 @@
     <ClInclude Include="HullSpec.h" />
     <ClInclude Include="Formation.h" />
     <ClInclude Include="Patrol.h" />
+    <ClInclude Include="UniverseLayout.h" />
     <ClInclude Include="Movement.h" />
     <ClInclude Include="Collision.h" />
     <ClInclude Include="PathGrid.h" />
@@ -201,6 +202,7 @@
     <ClCompile Include="SpatialIndex.cpp" />
     <ClCompile Include="WorldSnapshot.cpp" />
     <ClCompile Include="InterestSet.cpp" />
+    <ClCompile Include="UniverseLayout.cpp" />
     <ClCompile Include="World.cpp" />
   </ItemGroup>
   <ItemGroup>
