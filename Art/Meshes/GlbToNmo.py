@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Batch-converts the authored GLB hulls in this folder to NMO (Design/NmoFormat.md).
+"""Batch-converts the authored GLB hulls in this folder to NMO (Design/Archive/NmoFormat.md).
 
 The conversion itself is the Blender add-on's (Tools/BlenderNmo): the axis swap, the winding
 reversal, materials, skinning, clips and markers all live there, stated once so import and export
@@ -169,6 +169,86 @@ def _regroup(bpy, name):
     return collection
 
 
+# Design/Archive/NmoFormat.md 13.1: which half of the corpus's material vocabulary is the model's own paint
+# and which half is the faction's, and what shade each liveried one is. Applied here, by name, once,
+# at conversion -- never in the loader, because "the material called plate is the liveried one" is a
+# convention a rename breaks silently, where a flag is authored, round-tripped and visible in the
+# file. A material whose GLB extras already state nmo_render_flags or nmo_base_colour keeps those
+# instead, so an author can override the row at source.
+#
+# The three liveried rows are greyscale on purpose: they are a brightness ladder, and that ladder is
+# the whole content of them -- plate reads as body, accent as trim, thruster as hot, at every livery
+# and in the same order. A hue painted into one would be discarded by the renderer's multiply and
+# would mislead whoever opened the file next.
+MATERIAL_SHADES = {
+    'hull': (False, (0.27, 0.27, 0.27)),      # structural plating; the ship's own
+    'glass': (False, (0.12, 0.12, 0.12)),     # canopy, dark enough to read as a window
+    'plate': (True, (0.45, 0.45, 0.45)),      # the painted panels -- the biggest liveried area
+    'accent': (True, (0.80, 0.80, 0.80)),     # trim: the stripe that names the faction at distance
+    'thruster': (True, (1.00, 1.00, 1.00)),   # nozzles, the brightest thing on an unlit hull
+    'aperture': (True, (0.80, 0.80, 0.80)),   # Stargate's sixth name; follows accent
+}
+GLTF_RENDER_FLAGS = 'nmo_render_flags'  # an extras key that wins over the table above
+GLTF_BASE_COLOUR = 'nmo_base_colour'
+
+# A quarter turn about Blender's +X, which is what points a marker's arrow aft.
+#
+# A marker's direction is its local +Z (Design/Archive/NmoFormat.md 5.10), and an empty's arrow is its
+# Blender +Z, which is *up* -- so an Exhaust the GLB left unrotated aims its plume at the sky. Aft
+# in Blender is -Y (the bow is +Y, section 11), and +90 degrees about +X is the rotation that takes
+# +Z there, and the swap lands it on a half turn about NMO's +X -- which aims the plume at -Z, the
+# same direction Tools/ObjToNmo.py has always written, differing from the fixture's half turn about
+# +Y only by a roll about the plume's own axis, which a cone has no opinion about. An authored
+# rotation passes through untouched.
+EXHAUST_AIM_AFT = (0.70710678, 0.70710678, 0.0, 0.0)  # (w, x, y, z), the order mathutils takes
+
+
+def _adopt_materials(collection):
+    """Apply Design/Archive/NmoFormat.md 13.1's table to the collection's materials, by name.
+
+    Returns how many came out liveried, so a hull that lost its paint in conversion is a number in
+    the summary rather than something noticed in a screenshot three days later. A material the table
+    does not know is left exactly as authored and traced once -- a new name should be noticed, not
+    silently drawn as the model's own paint.
+    """
+    flagged = 0
+    seen = set()
+    for obj in collection.objects:
+        for mat in (obj.data.materials if obj.type == 'MESH' else []):
+            if mat is None or mat.name in seen:
+                continue
+            seen.add(mat.name)
+            row = MATERIAL_SHADES.get(mat.name)
+            if row is None:
+                print('  warning: material %r is not in the livery table; left as authored'
+                      % mat.name)
+                continue
+            liveried, shade = row
+            if GLTF_BASE_COLOUR not in mat:
+                _set_base_colour(mat, shade)
+            if GLTF_RENDER_FLAGS in mat:
+                mat[scene_map.PROP_RENDER_FLAGS] = int(mat[GLTF_RENDER_FLAGS])
+            elif liveried:
+                mat[scene_map.PROP_RENDER_FLAGS] = (int(mat.get(scene_map.PROP_RENDER_FLAGS, 0))
+                                                    | nmo.RENDER_FLAG_RACE_TINTED)
+            if int(mat.get(scene_map.PROP_RENDER_FLAGS, 0)) & nmo.RENDER_FLAG_RACE_TINTED:
+                flagged += 1
+    return flagged
+
+
+def _set_base_colour(mat, shade):
+    """Both places the exporter reads a base colour from, so the two cannot disagree."""
+    mat.diffuse_color = (shade[0], shade[1], shade[2], 1.0)
+    if mat.use_nodes:
+        principled = next((n for n in mat.node_tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+        if principled is not None:
+            principled.inputs['Base Color'].default_value = (shade[0], shade[1], shade[2], 1.0)
+
+
+def _luminance(colour):
+    return 0.2126 * colour[0] + 0.7152 * colour[1] + 0.0722 * colour[2]
+
+
 def _warn_dropped_materials(collection):
     """One submesh carries one material (5.4). A GLB whose mesh splits over several would lose
     all but the first here, silently -- so say so, and name the fix (split the object in Blender).
@@ -202,9 +282,10 @@ def _adopt_markers(bpy, collection):
     kind for the same reason a marker imported from a .nmo gets one: so the cones and spheres look
     like themselves when this is opened in Blender to author on top of it.
     """
-    from mathutils import Matrix
+    from mathutils import Matrix, Quaternion
 
     adopted = 0
+    flagged = 0
     for obj in collection.objects:
         if obj.type != 'EMPTY' or scene_map.PROP_KIND not in obj:
             continue
@@ -215,15 +296,43 @@ def _adopt_markers(bpy, collection):
         colour = obj.get(GLTF_COLOUR)
         if colour is not None:
             obj.color = tuple(colour)[:4]
+
+        # Exhaust is livery and NavLight and Gun are not (Design/Archive/NmoFormat.md 5.10): port red and
+        # starboard green are a convention older than any faction here, and liveried they would turn
+        # red-on-red for the Vandals. An extras nmo_flags wins over that default -- and "stated" has
+        # to mean a *nonzero* word rather than a present key, because the authoring tool writes
+        # nmo_flags: 0 onto every marker it exports, so a presence test would never let the default
+        # fire at all. No other marker bit is defined, so nothing is lost by reading 0 as unstated;
+        # the day a second bit exists, an author who wants an unliveried exhaust sets that one.
+        if kind == nmo.MARKER_KIND_EXHAUST and int(obj.get(scene_map.PROP_MARKER_FLAGS, 0)) == 0:
+            obj[scene_map.PROP_MARKER_FLAGS] = nmo.MARKER_FLAG_RACE_TINTED
+        if int(obj.get(scene_map.PROP_MARKER_FLAGS, 0)) & nmo.MARKER_FLAG_RACE_TINTED:
+            # A flagged colour is a shade, not a colour (5.5): the hue is discarded by the multiply,
+            # so writing the luminance is the only honest thing to leave in the file. A green plume
+            # left green would read as authored intent that the renderer then throws away.
+            shade = _luminance(tuple(obj.color)[:3])
+            obj.color = (shade, shade, shade, tuple(obj.color)[3])
+            flagged += 1
+
         translation, rotation, _ = obj.matrix_world.decompose()
         scale = float(obj.get(GLTF_SCALE, 1.0))
+        # An identity-rotated exhaust points its +Z at the bow, which is backwards for a plume.
+        # Nothing reads a marker's orientation yet; this closes the content defect rather than
+        # leaving it for the slice that finally aims one.
+        if kind == nmo.MARKER_KIND_EXHAUST and _is_identity_rotation(rotation):
+            rotation = Quaternion(EXHAUST_AIM_AFT)
         obj.matrix_world = (Matrix.Translation(translation) @ rotation.to_matrix().to_4x4()
                             @ Matrix.Diagonal((scale, scale, scale, 1.0)))
         for consumed in (GLTF_COLOUR, GLTF_COLOUR_HEX, GLTF_SCALE):
             if consumed in obj:
                 del obj[consumed]
         adopted += 1
-    return adopted
+    return adopted, flagged
+
+
+def _is_identity_rotation(rotation, tolerance=1e-4):
+    """A quaternion within a whisker of (1, 0, 0, 0), either sign -- q and -q are one rotation."""
+    return abs(abs(rotation.w) - 1.0) <= tolerance
 
 
 def _short(path):
@@ -255,12 +364,15 @@ def convert(bpy, source, out_dir):
     if not any(obj.type == 'MESH' for obj in collection.objects):
         raise RuntimeError('%s holds no mesh' % os.path.basename(source))
     _warn_dropped_materials(collection)
-    _adopt_markers(bpy, collection)
+    liveried_materials = _adopt_materials(collection)
+    _, liveried_markers = _adopt_markers(bpy, collection)
 
     if 'FINISHED' not in bpy.ops.export_scene.nmo(filepath=target):
         # The operator reports the broken rule itself, above this line, and writes nothing.
         raise RuntimeError('the exporter refused %s' % os.path.basename(source))
-    print('  %s (%d bytes): %s' % (_short(target), os.path.getsize(target), _summary(target)))
+    print('  %s (%d bytes): %s, %d liveried material(s), %d liveried marker(s)'
+          % (_short(target), os.path.getsize(target), _summary(target), liveried_materials,
+             liveried_markers))
 
 
 def run_in_blender(args):

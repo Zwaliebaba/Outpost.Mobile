@@ -5,7 +5,7 @@ the operator in __init__ writes the model to bytes and runs the codec's full val
 before the file lands on disk, so a mapping bug becomes a refused export naming the broken rule
 rather than a broken file.
 
-Scene assumptions, stated rather than discovered (Design/NmoFormat.md 11):
+Scene assumptions, stated rather than discovered (Design/Archive/NmoFormat.md 11):
   - A mesh is a collection tagged by import (PROP_MESH_COLLECTION), or the active collection.
   - Object transforms are applied into the data; nothing here supports a scaled or rotated
     armature object against its submeshes.
@@ -79,7 +79,7 @@ def _mesh_bone_table(rig):
 
 def _local_bone_table(rig, mesh_records, mesh_order):
     """A submesh rig's table: aliases first in mesh-table order, carrying copies of the mesh
-    bone's matrices (their stored transforms are inert -- Design/NmoFormat.md 5.8), then the local
+    bone's matrices (their stored transforms are inert -- Design/Archive/NmoFormat.md 5.8), then the local
     bones, parents first."""
     aliases = []
     locals_ = []
@@ -228,7 +228,7 @@ def _vertex_weights(obj, scope_index_of):
 def _submesh_geometry(obj, weights):
     """Triangulated, welded, axis-crossed geometry: per-corner tuples keyed on the whole
     attribute set (weights included -- two corners may only weld when every consumer agrees),
-    triangles facet-major so quads survive (Design/NmoFormat.md 8)."""
+    triangles facet-major so quads survive (Design/Archive/NmoFormat.md 8)."""
     data = obj.data
     if hasattr(data, 'calc_loop_triangles'):
         data.calc_loop_triangles()

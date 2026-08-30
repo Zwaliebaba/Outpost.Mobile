@@ -22,9 +22,14 @@ changes in the same commit.
 **Built and tested.** Five projects and four test suites, Debug|x64, gating in CI (§6). The game
 is a fleet of three hulls in open space: select them, order them somewhere in formation, watch
 them route around architecture, give way to each other, and arrive without passing through
-anything — and F4 shatters a selected hull into tumbling debris, a fireball and smoke. Not every
+anything — and F4 shatters a selected hull into tumbling debris, a fireball and smoke. Every hull
+burns the exhaust colour and nozzle radius its author gave it and carries running lights that blink
+on periods authored per light, all of it read from the mesh file's markers rather than recovered or
+hard-coded. Not every
 ship is the player's: an enemy station sits 1.2 km northeast with three Interceptors patrolling a
-ring around it, drawn red in the scene and on the minimap and counted as contacts, and they cannot
+ring around it, wearing the Vandal Collective's red on the minimap and on the panels and trim its
+hull declares as livery -- the plating and the canopy are the model's own paint whoever is flying
+(ADR 0036) -- and counted as contacts, and they cannot
 be selected or ordered — the simulation refuses an order from the wrong faction and the client does
 not offer one.
 There is still no combat. One world and six asteroids share the sky with the fleet, and they are
@@ -40,7 +45,7 @@ ground: the scene pass draws no plane and has no grid
 rather than geometry. D3D12 renderer, WM_POINTER input covering mouse and touch, a main-screen HUD
 drawn through one overlay pipeline (bitmap font atlases, coverage-mask icons, untextured quads),
 textured FX pipelines for the explosion's fragments and sprites, a two-pass body pipeline, an
-additive sky pass, OBJ/MTL hulls, DXC-compiled shader model 6.7 shaders.
+additive sky pass, NMO hulls, DXC-compiled shader model 6.7 shaders.
 `Transport` has a QUIC implementation over MsQuic, and the game boots on it and only on it:
 `Outpost.exe` listens and dials across `127.0.0.1`, so every frame of every run crosses a real
 network stack. There is no fallback — a boot that cannot open the wire says which stage refused and
@@ -50,7 +55,7 @@ stops, rather than running on a second path nobody is testing (`Design/Decisions
 purpose.
 
 **Deliberately not here yet**, so nobody goes looking for it: no audio, no combat, no economy, no
-damage model, no save format, no content pipeline beyond OBJ and DDS, and no configuration file —
+damage model, no save format, no content pipeline beyond NMO and DDS, and no configuration file —
 tuning is `constexpr` in `SimTuning.h`, `HullSpec.h` and `ViewTuning.h` (§5). The hostiles above
 have no weapons and no senses: the patrol is a metronome that never reacts to anything, and the
 station cannot be destroyed. The networking stops well short of a network: one client, one process,
@@ -269,13 +274,13 @@ does not have.
 |---|---|
 | `NeuronCore/` | Engine primitives shared by every layer — zero game semantics, no graphics API, headless (below). Diagnostics, file IO, framerate-independent easing, the frame clock, the seeded `Pcg32` (ADR 0012), and the seam: `Transport`, with `LoopbackTransport` behind it for the tests and the MsQuic implementation the game runs on — `QuicApi`, `QuicTransport`, `QuicListener` and the self-signed `DevCertificate` (ADRs 0021, 0023). No content readers: those live with their consumer (below). |
 | `GameLogic/` | The deterministic simulation, namespace `Game`. `World`, `ShipState`, `WorldPos`, `HullSpec`, `Movement`, `Collision`, `SpatialIndex`, `PathGrid`, `Formation`, `Patrol`, `SimTuning`, `InterestSet`, `PathIslands` (the architecture partitioned into islands, one `PathGrid` over each, ADR 0033), `WorldSnapshot` (the wire format, ADR 0008) and `Publisher` (the fan-out to N subscribers, ADR 0030). Depends on NeuronCore only. |
-| `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, the explosion's `FxRenderer`/`MeshShatter`/`SpriteParticles` and the `GlowBillboards` the thruster plume is built with, `ViewCulling` (the camera's frustum and the sphere test everything drawn is gated on), the planet pipeline (`CubeSphere`, `Noise3`, `BodyDesc`/`BodyParams`/`BodyField`, `BodyMeshBuilder`, `BodyRenderer`, `ColourRamp` — see [`Design/Archive/PlanetRenderer.md`](Design/Archive/PlanetRenderer.md)), the star field (`SkyField`, `SkyRenderer`, `SkyVertex` — [`Design/Archive/Skybox.md`](Design/Archive/Skybox.md)), and the content readers `DdsImage`, `ObjParser`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
+| `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, the explosion's `FxRenderer`/`MeshShatter`/`SpriteParticles` and the `GlowBillboards` the thruster plume is built with, `ViewCulling` (the camera's frustum and the sphere test everything drawn is gated on), the planet pipeline (`CubeSphere`, `Noise3`, `BodyDesc`/`BodyParams`/`BodyField`, `BodyMeshBuilder`, `BodyRenderer`, `ColourRamp` — see [`Design/Archive/PlanetRenderer.md`](Design/Archive/PlanetRenderer.md)), the star field (`SkyField`, `SkyRenderer`, `SkyVertex` — [`Design/Archive/Skybox.md`](Design/Archive/Skybox.md)), and the content readers `DdsImage`, `NmoFile`/`NmoReader`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
 | `Outpost/` | The executable: composition root, presentation state, the HUD and its event log, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
 | `NeuronClient/Shaders/` | HLSL (§3). DXC compiles it, as shader model 6.7 DXIL, into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
 | `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). |
-| `Tools/` | Content tools, stdlib Python only: the NMO ship-mesh codec and Blender add-on (`BlenderNmo/`), the OBJ→NMO converter (`ObjToNmo.py`), and their tests (`Nmo*Test.py` — the codec test needs bare python3, the Blender one the `bpy` wheel). [`Design/NmoFormat.md`](Design/NmoFormat.md) is the format; nothing here is engine code, and no `.vcxproj` names it. |
+| `Tools/` | Content tools, stdlib Python only: the NMO ship-mesh codec and Blender add-on (`BlenderNmo/`), the OBJ→NMO converter (`ObjToNmo.py`), and their tests (`Nmo*Test.py` — the codec test needs bare python3, the Blender one the `bpy` wheel). [`Design/Archive/NmoFormat.md`](Design/Archive/NmoFormat.md) is the format; nothing here is engine code, and no `.vcxproj` names it. The shipping corpus is *not* converted here: the hulls are authored as GLB in `Art/Meshes/` and converted by `Art/Meshes/GlbToNmo.py`, which sits beside them because that is where an artist looks for it ([ADR 0035](Design/Decisions/0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md)). `ObjToNmo.py` stays as the OBJ path's record and the Blender test's fixture source. |
 | `Design/` | Designs with a slice still open, `Screenprints/`, `Archive/` for designs whose slices have all landed and for the work orders that landed them, and `Design/Decisions/` — the architecture decision records (§9). An archived design is still the document its area is reviewed against and is cited from code as before; `Design/` itself is the list of what is unfinished. Its `README.md` says which document is which and how a slice moves from a design into the tree (§7). |
 | `.github/` | CI (§6) and the pull request template every slice answers (§7). |
 

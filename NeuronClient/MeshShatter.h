@@ -39,7 +39,7 @@ public:
     DirectX::XMFLOAT3 velMetresPerSec; //
     DirectX::XMFLOAT3 v0, v1, v2;      // vertices relative to the centroid, world orientation, untumbled
     DirectX::XMFLOAT3 normal;
-    DirectX::XMFLOAT3 colour; // lerp(desc.tintColour, vertexColour, desc.tintMix), fixed at spawn
+    DirectX::XMFLOAT3 colour; // lerp(vertexColour, desc.livery * vertexColour, vertexRace), fixed at spawn
     std::uint8_t tumbler = 0; // 0..TUMBLER_COUNT-1
   };
 
@@ -55,11 +55,11 @@ public:
     std::uint32_t maxFragments = 500;
     DirectX::XMFLOAT3 gravityMetresPerSec2{0.0f, 0.0f, 0.0f};
 
-    // Fragment colour = lerp(tintColour, vertexColour, tintMix), the same operand order ScenePS
-    // mixes a hull in. The defaults leave the vertex colour untouched; the game passes its own ship
-    // colour and material mix so a shard is exactly the colour of the panel it came off.
-    DirectX::XMFLOAT3 tintColour{0.0f, 0.0f, 0.0f};
-    float tintMix = 1.0f;
+    // Fragment colour = lerp(vertexColour, livery * vertexColour, vertexRace), which is exactly the
+    // line ScenePS runs, so a shard is the colour the panel it came off was being drawn in. A shard
+    // off a grey hull plate stays grey; a shard off a liveried panel keeps the faction's paint. The
+    // default is white, which leaves every vertex colour as it stands.
+    DirectX::XMFLOAT3 livery{1.0f, 1.0f, 1.0f};
   };
 
   // Shatters _mesh, placed by _world, into fragments carrying _inheritedVelMetresPerSec on top of

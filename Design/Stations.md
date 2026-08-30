@@ -644,8 +644,8 @@ The mask row outranks the Vanguard row: turn criminal and the law turns red — 
 dots together, one mapping change, which is ADR 0013 doing precisely what it promised.
 
 **How the scene column is actually painted** is no longer this document's to say. NMO's
-[slice 5](NmoFormat-slice-5.md) replaces the whole-hull tint with liveries: a material declares
-whether it is the model's paint or the faction's ([NmoFormat.md](NmoFormat.md) §5.5), and only the
+[slice 5](Archive/NmoFormat-slice-5.md) replaces the whole-hull tint with liveries: a material declares
+whether it is the model's paint or the faction's ([NmoFormat.md](Archive/NmoFormat.md) §5.5), and only the
 declared surfaces take the faction's colour. Three consequences for the table above, none of them
 to its precedence, which stands exactly as written and is the part that mattered: the scene column
 becomes **one** constant per faction rather than a ship colour and an accent colour, because the

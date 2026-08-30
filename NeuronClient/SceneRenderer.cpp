@@ -16,9 +16,13 @@ namespace Neuron
 {
 namespace
 {
+// The decal pipelines share this layout with a Decal.hlsli VsIn that never declares RACE. That is
+// legal -- an input element no shader consumes is ignored -- so do not add it there to fix a
+// warning that will not come.
 constexpr D3D12_INPUT_ELEMENT_DESC SCENE_ELEMENTS[] = {
   {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
   {"COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+  {"RACE", 0, DXGI_FORMAT_R32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
 };
 
 // The same two per-vertex elements, plus the instance stream at slot 1. The offsets are
@@ -27,6 +31,7 @@ constexpr D3D12_INPUT_ELEMENT_DESC SCENE_ELEMENTS[] = {
 constexpr D3D12_INPUT_ELEMENT_DESC SCENE_INSTANCED_ELEMENTS[] = {
   {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
   {"COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+  {"RACE", 0, DXGI_FORMAT_R32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
   {"INSTANCEWORLD", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
   {"INSTANCEWORLD", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 16, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
   {"INSTANCEWORLD", 2, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 32, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
@@ -220,12 +225,12 @@ void SceneRenderer::BeginScene(GpuDevice& _gpu, const SceneFrame& _frame)
   cmd->SetGraphicsRoot32BitConstants(1, 8, shading, 4);
 }
 
-void SceneRenderer::DrawMesh(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _baseColour, float _materialMix)
+void SceneRenderer::DrawMesh(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _livery, float _highlight)
 {
   if (_mesh >= m_meshes.size() || m_meshes[_mesh].vertexCount == 0)
     return;
   const GpuMesh& mesh = m_meshes[_mesh];
-  const float base[4] = {_baseColour.r, _baseColour.g, _baseColour.b, _materialMix};
+  const float base[4] = {_livery.r, _livery.g, _livery.b, _highlight};
 
   ID3D12GraphicsCommandList* cmd = _gpu.CommandList();
   // Set here rather than relied on from BeginScene. DrawMeshInstanced switches the pipeline, so a

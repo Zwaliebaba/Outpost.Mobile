@@ -576,7 +576,7 @@ void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, std::span<co
         std::snprintf(percent, sizeof(percent), "-");
       _text.DrawTextLine(FontId::Ui, bx + barWidth + HUD_PANEL_GAP_PX * s, _y, HUD_TEXT_SCALE * s, HUD_COLOUR, percent);
     };
-    statBar(row1, "HULL", _frame.hullFraction, SHIP_COLOUR);
+    statBar(row1, "HULL", _frame.hullFraction, SELECTABLE_LIVERIES[PLAYER_LIVERY_INDEX]);
     statBar(row2, "SHIELD", _frame.shieldFraction, HUD_ACCENT_GREEN);
 
     const float column = x + HUD_STAT_COLUMN_PX * s;

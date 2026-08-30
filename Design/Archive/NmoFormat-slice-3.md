@@ -73,7 +73,7 @@ Both files, their `NeuronClient.vcxproj` and `.filters` entries, and the `#inclu
 in `NeuronClient.h`. With them goes `ClusterAttachPoints` — the union-find over `thruster`-material
 face centroids that has run in the shipping loader on every boot since the hulls arrived. Its
 conventions live on in `Tools/ObjToNmo.py`, which is where a heuristic that runs once belongs
-([ADR 0011](Decisions/0011-ship-meshes-are-nmo-and-its-tools-are-python.md), design §13); the
+([ADR 0011](../Decisions/0011-ship-meshes-are-nmo-and-its-tools-are-python.md), design §13); the
 `Tools/` copy stays and is not touched by this slice.
 
 `MeshData::attachPoints` **stays** — `NmoReader` fills it from the `Exhaust` markers and

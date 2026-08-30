@@ -20,7 +20,7 @@ an 8-slot Phong material.
 ## Decision
 
 Adopt NMO **version 2.0** as the ship mesh format, specified normatively in
-[`Design/NmoFormat.md`](../NmoFormat.md): the sibling proposal's container rules, submesh
+[`Design/Archive/NmoFormat.md`](../Archive/NmoFormat.md): the sibling proposal's container rules, submesh
 skeletons with aliasing, and SRT clips, minus the CMO-fidelity baggage, plus typed markers (a
 kind string with colour and parameters — `Exhaust`, `NavLight`, `Gun`, open-ended). The magic is
 `'NMO2'` so a sibling-dialect file fails in one comparison. The reference tooling is stdlib
@@ -32,9 +32,9 @@ comes later, in NeuronClient, where content readers live (0002).
 
 - **Adopt the sibling NMO 1.x byte-compatibly, sharing tooling across the two trees.** Rejected:
   it would import D3D9's constraints and CMO's dead weight into a tree with neither, forever, to
-  stay compatible with a format that has itself shipped nothing. `Design/NmoFormat.md` §3 records
+  stay compatible with a format that has itself shipped nothing. `Design/Archive/NmoFormat.md` §3 records
   every dropped piece and why; §15 Q1 leaves reunification open if the owner wants it.
-- **glTF.** Rejected in `Design/NmoFormat.md` §6: a conforming reader means JSON + base64 + an
+- **glTF.** Rejected in `Design/Archive/NmoFormat.md` §6: a conforming reader means JSON + base64 + an
   extension ecosystem (or a third-party library AGENTS.md §5 forbids by default), and the fields
   this game needs would be custom extensions anyway.
 - **Keep OBJ and grow conventions** (more magic material names, sidecar text files). Rejected:
@@ -56,4 +56,4 @@ comes later, in NeuronClient, where content readers live (0002).
   by material conventions. The converter seeds `Exhaust` markers from the old heuristic once;
   `NavLight`/`Gun` markers only exist where an artist places them.
 - The engine changes nothing until the reader slice lands; OBJ stays the shipping path and the
-  clustering heuristic stays in `ObjParser` until `Design/NmoFormat.md` §14 slices 2–4 retire it.
+  clustering heuristic stays in `ObjParser` until `Design/Archive/NmoFormat.md` §14 slices 2–4 retire it.

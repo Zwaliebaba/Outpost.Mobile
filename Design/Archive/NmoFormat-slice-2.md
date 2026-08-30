@@ -336,7 +336,7 @@ Decided by tests, because everything here is (Design/README.md):
   ground. A wrong stride shows up as geometry exploding, and a shader that reads the new channel
   by accident shows up as a black ship; neither is subtle, and both are this slice's bug.
 - No decision record is due — the format, its home and its tooling were all decided by
-  [ADR 0011](Decisions/0011-ship-meshes-are-nmo-and-its-tools-are-python.md), and the record that
+  [ADR 0011](../Decisions/0011-ship-meshes-are-nmo-and-its-tools-are-python.md), and the record that
   owes for liveries is slice 5's, where the rule becomes visible. Say so.
 - `Design/NmoFormat.md` §14 marks slice 2 landed; this file moves to `Design/Archive/`.
 

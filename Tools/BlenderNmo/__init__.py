@@ -1,4 +1,4 @@
-"""Blender add-on: import and export Neuron NMO ship meshes (Design/NmoFormat.md).
+"""Blender add-on: import and export Neuron NMO ship meshes (Design/Archive/NmoFormat.md).
 
 Ships both registration shapes so either installer works: blender_manifest.toml for the 4.2+
 extensions platform, and this bl_info for the legacy add-on installer. The operators are thin --

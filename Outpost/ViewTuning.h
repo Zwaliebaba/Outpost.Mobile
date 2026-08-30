@@ -5,6 +5,8 @@
 
 #include "SimTuning.h"
 
+#include <cstddef>
+
 namespace Outpost
 {
 // Presentation tuning: everything that changes how the game looks and feels without changing what
@@ -130,9 +132,27 @@ inline constexpr float THRUSTER_MAX_INTENSITY = 1.0f;
 inline constexpr float THRUSTER_RESPONSE_HALF_LIFE = 0.1f;
 inline constexpr float THRUSTER_TRAIL_LENGTH = 18.0f;
 inline constexpr float THRUSTER_TRAIL_FADE = 0.55f;
-inline constexpr float THRUSTER_GLOW_RADIUS = 6.0f;
+// The nozzle's size is content now -- an Exhaust marker's scale, in metres, authored per hull
+// (Design/Archive/NmoFormat.md 5.10) -- so what stays tunable is how loudly it is drawn.
+inline constexpr float THRUSTER_GLOW_SCALE = 6.0f;
 inline constexpr float THRUSTER_GLOW_FALLOFF = 2.2f;
 inline constexpr int TRAIL_SAMPLES = 32; // half a second of history at the tick rate
+
+// --- navigation lights ---------------------------------------------------------------------------
+// One glow pip per NavLight marker, coloured by the marker and blinking on its own period and phase
+// (Design/Archive/NmoFormat.md 5.10). Port red and starboard green are a convention older than any faction
+// here, so a nav light is never liveried -- see the marker's flags, and 5.10 for why.
+// The light's size is content, exactly as the nozzle's is: a NavLight marker's scale, in metres
+// (Design/Archive/NmoFormat.md 5.10), so this is how loudly it is drawn and not how big it is. It has to be
+// the marker's -- a station authors approach rings at 3.5 m and berth pads at 4.5, and one flat
+// radius would draw a 500 m structure's running lights at a corvette's size.
+inline constexpr float NAV_LIGHT_GLOW_SCALE = 1.0f;
+inline constexpr float NAV_LIGHT_INTENSITY = 0.85f; // alpha at full on
+inline constexpr float NAV_LIGHT_DUTY = 0.35f;      // fraction of the period a blinking light is lit
+inline constexpr float NAV_LIGHT_OFF_LEVEL = 0.12f; // alpha between blinks -- a beacon dims, it does not vanish
+// The clamp on an authored period, and the whole multiple the nav clock wraps at, so the wrap is
+// seamless for every period a marker may legally carry.
+inline constexpr float NAV_LIGHT_MAX_PERIOD_SEC = 30.0f;
 
 // --- frustum culling ----------------------------------------------------------------------------
 // What is not on screen is not submitted (Design/MmoScalabilityReview.md G2). Both numbers below
@@ -202,31 +222,42 @@ inline constexpr float LIGHT_DIR_X = -0.42f;
 inline constexpr float LIGHT_DIR_Y = 0.78f;
 inline constexpr float LIGHT_DIR_Z = -0.46f;
 inline constexpr float AMBIENT_LEVEL = 0.3f;
-inline constexpr Neuron::Rgba SHIP_COLOUR{0.55f, 0.6f, 0.66f, 1.0f};
-inline constexpr Neuron::Rgba SELECTED_COLOUR{0.35f, 0.95f, 0.66f, 1.0f};
-inline constexpr float SHIP_MATERIAL_MIX = 0.55f;
+// --- liveries -------------------------------------------------------------------------------------
+// A faction's paint. One colour, where an enemy used to need three: the mix is gone with the lerp
+// (Design/Decisions/0036), and the accent is gone because the shade ladder already provides it -- a
+// thruster is this colour at 1.0 and a plate is it at 0.45, so a livery is authored at the
+// brightness its nozzles should burn and the hull falls out of it (Design/Archive/NmoFormat.md 13.1).
+//
+// Which faction counts as "another" is the viewer's own, supplied by the composition root -- the
+// server states identity and each client decides what it means
+// (Design/Archive/Hostiles.md 4.1), so this is a mapping the client owns and not a fact about the
+// ship.
+//
+// The first two cannot be chosen. Core Vanguard Command is the government and the Vandal Collective
+// is what the government is for; a player wearing either would be lying about who they are, and the
+// affordance that would let them is simply absent -- a chooser walks SELECTABLE_LIVERIES and
+// structurally cannot reach these two.
+inline constexpr Neuron::Rgba LIVERY_VANGUARD{0.24f, 0.52f, 0.95f, 1.0f}; // CVC azure -- reserved
+inline constexpr Neuron::Rgba LIVERY_VANDAL{0.92f, 0.26f, 0.22f, 1.0f};   // Vandal red -- reserved
 
-// What a ship of another faction is drawn in: the three knobs that make an enemy a color rather than
-// a silhouette. Which faction counts as "another" is the viewer's own, supplied by the composition
-// root -- the server states identity and each client decides what it means (Design/Archive/Hostiles.md 4.1),
-// so this is a mapping the client owns and not a fact about the ship.
-//
-// The mix is the one that matters, and it is why there are three constants rather than one. The
-// pixel shader takes albedo = lerp(tint, the mesh's own vertex color, mix), so SHIP_MATERIAL_MIX
-// keeps 55 % of the paint the hull was authored with -- and these hulls are authored with bright
-// green panels (Kd 0.50 0.93 0.13 on the Interceptor). Worked through: a friendly's panel comes out
-// #86C75E, and the same panel under a red tint at the same mix comes out #B0A932 -- olive, with red
-// barely ahead of green, which is not a red ship. At a fifth it is #D57540 against a #BD473A hull:
-// enough paint left for the panels to go on shading the hull, not enough for them to argue about
-// whose ship it is.
-//
-// The accent is where the eye actually catches a hostile under way: exhaust and trail, which every
-// ship in the game drew in SELECTED_COLOUR until now, so an enemy was a green-flamed ship. One
-// accent for the whole feature -- HUD_ALERT_RED below derives from it, so retuning the enemy moves
-// the hulls, the plumes and the dots on the overview together and they cannot drift apart.
-inline constexpr Neuron::Rgba HOSTILE_SHIP_COLOUR{0.92f, 0.34f, 0.28f, 1.0f};
-inline constexpr float HOSTILE_SHIP_MATERIAL_MIX = 0.2f;
-inline constexpr Neuron::Rgba HOSTILE_ACCENT_COLOUR{0.95f, 0.43f, 0.35f, 1.0f};
+inline constexpr Neuron::Rgba SELECTABLE_LIVERIES[] = {
+  {0.54f, 1.00f, 0.14f, 1.0f}, // green -- what every hull in the game wore before liveries existed
+  {0.95f, 0.66f, 0.15f, 1.0f}, // amber
+  {0.62f, 0.36f, 0.92f, 1.0f}, // violet
+  {0.20f, 0.80f, 0.82f, 1.0f}, // cyan
+  {0.95f, 0.45f, 0.16f, 1.0f}, // orange
+  {0.86f, 0.88f, 0.92f, 1.0f}, // white
+};
+
+// There is no configuration file in this tree (AGENTS.md 5), so the player's livery is a constant
+// and the chooser is not this slice. This is the seam one will arrive at, and it is an index into
+// the selectable array rather than a colour precisely so that whatever chooses later cannot choose
+// a reserved one.
+inline constexpr std::size_t PLAYER_LIVERY_INDEX = 0;
+
+// Toward white, on the selected hull. Selection stops being a colour under liveries: a mint-green
+// selected hull would read as a different faction, and the player's own livery might be mint.
+inline constexpr float SELECTED_HIGHLIGHT_LIFT = 0.35f;
 
 inline constexpr float SHIP_SCALE = 1.0f;
 inline constexpr float SHIP_HOVER_HEIGHT = 4.0f;
@@ -378,9 +409,13 @@ inline constexpr Neuron::Rgba HUD_LABEL_COLOUR{0.373f, 0.455f, 0.533f, 1.0f};
 inline constexpr Neuron::Rgba HUD_ACCENT_GREEN{SEL_RING_COLOUR.r, SEL_RING_COLOUR.g, SEL_RING_COLOUR.b, 1.0f}; // active, positive
 inline constexpr Neuron::Rgba HUD_ACCENT_AMBER{MARKER_COLOUR.r, MARKER_COLOUR.g, MARKER_COLOUR.b, 1.0f};       // alerts, orders
 // Derived, the way HUD_ACCENT_GREEN is derived from the ring: the red a hostile draws in on the map
-// is the red it draws in on the ground, so retuning the enemy retunes both (world look, above).
-inline constexpr Neuron::Rgba HUD_ALERT_RED{HOSTILE_ACCENT_COLOUR.r, HOSTILE_ACCENT_COLOUR.g, HOSTILE_ACCENT_COLOUR.b,
-                                            1.0f}; // hostile, and alerts
+// is the red the Vandal Collective flies in the scene, so retuning the faction retunes both.
+//
+// The HUD is a *relation* language where the scene is an identity one, and the two must not be
+// confused: liveries say who a ship is, and the minimap says whether it is a friend. A player who
+// picks a red-ish livery must not turn their own dots into the colour the HUD uses for hostiles, so
+// nothing on the HUD reads SELECTABLE_LIVERIES except the player's own hull bar.
+inline constexpr Neuron::Rgba HUD_ALERT_RED{LIVERY_VANDAL.r, LIVERY_VANDAL.g, LIVERY_VANDAL.b, 1.0f}; // hostile, and alerts
 inline constexpr Neuron::Rgba HUD_INFO_GREY{0.45f, 0.50f, 0.56f, 1.0f};
 inline constexpr Neuron::Rgba HUD_BAR_TRACK{1.0f, 1.0f, 1.0f, 0.07f};
 inline constexpr float HUD_ACTIVE_OUTLINE_ALPHA = 0.7f; // a pressed or active button, in the accent

@@ -17,6 +17,7 @@ VsOut main(VsIn i, VsInstance n)
   o.worldPos = wp.xyz;
   o.clip = mul(wp, viewProj);
   o.col = i.col;
+  o.race = i.race;
   o.tint = n.tint;
   return o;
 }

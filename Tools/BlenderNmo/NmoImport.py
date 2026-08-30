@@ -21,7 +21,7 @@ def _set_mode(context, obj, mode):
 
 def _rest_world_matrices(bones, mesh_rest_worlds):
     """Blender-space rest matrix per table entry. Locals chain onto their parent's rest; aliases
-    take the mesh bone's rest -- their stored matrices are inert copies (Design/NmoFormat.md 5.8),
+    take the mesh bone's rest -- their stored matrices are inert copies (Design/Archive/NmoFormat.md 5.8),
     so the mesh skeleton is the truth here exactly as it is at runtime."""
     rests = []
     for bone in bones:
@@ -93,7 +93,7 @@ def _local_rest_trs(bones, rests):
 def _import_clips(context, rig, clips, bones, rests):
     """Each clip becomes an action on its own NLA track named for the clip, keys converted from
     the bone's absolute local pose to Blender's rest-relative basis, linear interpolation to match
-    the format's sampling rule (Design/NmoFormat.md 5.9)."""
+    the format's sampling rule (Design/Archive/NmoFormat.md 5.9)."""
     if not clips:
         return
     scene = context.scene
@@ -313,7 +313,7 @@ def import_model(context, model, name_hint):
                         local_rig.parent = mesh_rig
                     deform_rig = local_rig
             elif sub.clips and mesh_rig is not None:
-                # Submesh clips over the mesh skeleton (Design/NmoFormat.md 7, row 2): actions on
+                # Submesh clips over the mesh skeleton (Design/Archive/NmoFormat.md 7, row 2): actions on
                 # the mesh rig, named back to their submesh by prefix at export.
                 prefixed = []
                 for clip in sub.clips:

@@ -153,8 +153,35 @@ void WorldView::ApplySnapshot()
         view.restY = data.RestY();
         view.pickCentre = data.BoundsCentre();
         view.halfExtents = data.HalfExtents();
-        view.thrusterLocals = data.attachPoints;
-        view.trail.assign(view.thrusterLocals.size() * TRAIL_SAMPLES, XMFLOAT3(0.0f, 0.0f, 0.0f));
+        // One walk of the authored markers. Gun, Point and Unknown are carried by the file and
+        // consumed by nobody here, exactly as Design/Archive/NmoFormat.md 9 says.
+        for (const MeshMarker& marker : data.markers)
+        {
+          if (marker.kind == MarkerKind::Exhaust)
+          {
+            view.exhausts.push_back(ExhaustView{.local = marker.position,
+                                                .colour = Rgba{marker.colour.x, marker.colour.y, marker.colour.z, marker.colour.w},
+                                                .radiusMetres = marker.scale,
+                                                .raceTinted = marker.raceTinted});
+          }
+          else if (marker.kind == MarkerKind::NavLight)
+          {
+            // A period past the clamp is a content mistake, not a bad file: the light still draws,
+            // and the trace says which hull to look at.
+            float periodSec = std::max(0.0f, marker.param0);
+            if (periodSec > NAV_LIGHT_MAX_PERIOD_SEC)
+            {
+              DebugTrace(L"nav light blink period {} exceeds the clamp; using {}\n", periodSec, NAV_LIGHT_MAX_PERIOD_SEC);
+              periodSec = NAV_LIGHT_MAX_PERIOD_SEC;
+            }
+            view.navLights.push_back(NavLightView{.local = marker.position,
+                                                  .colour = Rgba{marker.colour.x, marker.colour.y, marker.colour.z, marker.colour.w},
+                                                  .radiusMetres = marker.scale,
+                                                  .periodSec = periodSec,
+                                                  .phase = marker.param1});
+          }
+        }
+        view.trail.assign(view.exhausts.size() * TRAIL_SAMPLES, XMFLOAT3(0.0f, 0.0f, 0.0f));
       }
       m_ships.push_back(std::move(view));
     }
@@ -203,6 +230,7 @@ void WorldView::ExplodeTheLost(std::uint64_t _tick)
     spawn.world = lost.lastWorld;
     spawn.velMetresPerSec = lost.lastVelMetresPerSec;
     spawn.halfExtents = lost.halfExtents;
+    spawn.livery = lost.lastLivery;
     // The same ship dying on the same tick shatters the same way, which is what a replay of a
     // recorded match will want and costs nothing to give it now. The odd constant is the golden
     // ratio in 64 bits, which is what stops two nearby ticks producing two nearby streams.
@@ -356,6 +384,14 @@ int WorldView::SelectedCount() const noexcept
   return count;
 }
 
+XMFLOAT3 WorldView::HullPointToWorld(float _restY, const DisplayPose& _pose, const XMFLOAT3& _local) const noexcept
+{
+  const float cosH = std::cos(_pose.headingRad);
+  const float sinH = std::sin(_pose.headingRad);
+  return XMFLOAT3(ViewX(_pose.pos) + (_local.x * cosH + _local.z * sinH) * SHIP_SCALE, SHIP_HOVER_HEIGHT + (_restY + _local.y) * SHIP_SCALE,
+                  ViewZ(_pose.pos) + (-_local.x * sinH + _local.z * cosH) * SHIP_SCALE);
+}
+
 // One sample per nozzle per tick, so trail length means the same thing whatever the frame rate.
 void WorldView::SampleTrails()
 {
@@ -365,21 +401,17 @@ void WorldView::SampleTrails()
   for (size_t i = 0; i < count; ++i)
   {
     ShipView& view = m_ships[i];
-    if (view.thrusterLocals.empty())
+    if (view.exhausts.empty())
       continue;
     // Sampled where the ship is drawn, not where the latest record puts it, or the trail would step
     // once an update while the hull glides.
     const DisplayPose pose = DisplayedPose(i);
 
-    const float cosH = std::cos(pose.headingRad);
-    const float sinH = std::sin(pose.headingRad);
     view.trailHead = (view.trailHead + 1) % TRAIL_SAMPLES;
-    for (size_t nozzle = 0; nozzle < view.thrusterLocals.size(); ++nozzle)
+    for (size_t nozzle = 0; nozzle < view.exhausts.size(); ++nozzle)
     {
-      const XMFLOAT3& local = view.thrusterLocals[nozzle];
       view.trail[nozzle * TRAIL_SAMPLES + static_cast<size_t>(view.trailHead)] =
-        XMFLOAT3(ViewX(pose.pos) + (local.x * cosH + local.z * sinH) * SHIP_SCALE, SHIP_HOVER_HEIGHT + (view.restY + local.y) * SHIP_SCALE,
-                 ViewZ(pose.pos) + (-local.x * sinH + local.z * cosH) * SHIP_SCALE);
+        HullPointToWorld(view.restY, pose, view.exhausts[nozzle].local);
     }
     view.trailCount = std::min(view.trailCount + 1, TRAIL_SAMPLES);
   }
@@ -401,6 +433,18 @@ void WorldView::UpdateFeedback(float _dtSec)
   const float skyWrapSec = 255.0f * XM_2PI / std::max(m_skyTuning.twinkleMaxRateRadPerSec, 1e-3f);
   if (m_skyTimeSec > skyWrapSec)
     m_skyTimeSec -= skyWrapSec;
+
+  // The nav lights' clock, wrapped for the reason above: precision. The sky's wrap is seamless
+  // because every rate up there divides it; this one is not, because a marker may carry any period
+  // at all -- a light whose period does not divide the wrap loses or gains at most one beat every
+  // NAV_LIGHT_MAX_PERIOD_SEC. That is invisible on a free-running beacon and is the whole price of a
+  // clock that never goes imprecise, which a frozen blink after two hours is not.
+  //
+  // Real time, so a light drifts against the simulation and against a recording. That is what a
+  // running light does.
+  m_navTimeSec += dt;
+  if (m_navTimeSec > NAV_LIGHT_MAX_PERIOD_SEC)
+    m_navTimeSec -= NAV_LIGHT_MAX_PERIOD_SEC;
 
   // Bodies turn on real time, like every other feedback here, so the debug keys that slow the
   // simulation do not slow a planet: what 1/2/3 change is how fast the world is simulated, and a
@@ -509,6 +553,24 @@ void WorldView::UpdateFeedback(float _dtSec)
   m_camera->Follow(leadX, leadZ, dt);
   m_camera->UpdateShake(dt);
   m_camera->Update(); // everything above moved it
+}
+
+Rgba WorldView::LiveryOf(Game::FactionId _faction, bool _own, bool _hostileToMe) noexcept
+{
+  // The hostile row outranks the faction rows (Design/Stations.md 9.3): a Vanguard ship whose
+  // faction holds this client hostile paints the Vandals' red, because the law turning on you is the
+  // thing the player must see. FACTION_VANGUARD exists in GameLogic and nothing spawns one yet; the
+  // row is written now so that the day Stations lands, no client code changes.
+  if (_own)
+    return SELECTABLE_LIVERIES[PLAYER_LIVERY_INDEX];
+  if (_hostileToMe)
+    return LIVERY_VANDAL;
+  if (_faction == Game::FACTION_VANGUARD)
+    return LIVERY_VANGUARD;
+  // FACTION_HOSTILE reaches here only if it ever stops being hostile to this client, and a faction
+  // a later slice adds reaches it until someone gives it a row. Red is the safe answer for both:
+  // a stranger drawn as a friend is the one mistake this table must not make.
+  return LIVERY_VANDAL;
 }
 
 bool WorldView::IsOwn(std::size_t _index) const noexcept
@@ -844,20 +906,22 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
                           XMMatrixRotationY(heading) * XMMatrixTranslation(x, SHIP_HOVER_HEIGHT, z);
     XMStoreFloat4x4(&world, hull);
 
-    // Selection is only ever the viewer's own, so there are three cases: mine and picked, mine, and
-    // somebody else's. The mix travels with the tint because an enemy overrides more of the hull's
-    // authored paint than a friendly does -- ViewTuning.h says why. In-scene IFF the moment a hull
-    // is on screen, rather than an overview the player has to look away to read.
-    Rgba tint = SELECTED_COLOUR;
-    float materialMix = SHIP_MATERIAL_MIX;
-    if (!view.selected)
-    {
-      const bool own = IsOwn(i);
-      tint = own ? SHIP_COLOUR : HOSTILE_SHIP_COLOUR;
-      materialMix = own ? SHIP_MATERIAL_MIX : HOSTILE_SHIP_MATERIAL_MIX;
-    }
-    const float lift = view.hoverAmount * SEL_HOVER_HIGHLIGHT_STRENGTH;
-    tint = Rgba{tint.r + (1.0f - tint.r) * lift, tint.g + (1.0f - tint.g) * lift, tint.b + (1.0f - tint.b) * lift, 1.0f};
+    // Whose paint this hull wears -- in-scene IFF the moment a hull is on screen, rather than an
+    // overview the player has to look away to read. Only the surfaces the model declared RaceTinted
+    // take it; the plating and the glass are the model's own whoever is flying
+    // (Design/Archive/NmoFormat.md 5.5).
+    //
+    // hostileMask arrives with Design/Stations.md; until it does, "hostile to me" is the existing
+    // "not my faction" test, and it is a parameter so that swapping the source is one call site.
+    const bool own = IsOwn(i);
+    const Rgba livery = LiveryOf(state[i].factionId, own, !own);
+    view.lastLivery = livery;
+
+    // Selection is a brightness now, not a hue: a mint-green selected hull would read as a different
+    // faction, and the player's own livery might be mint (ViewTuning.h). The hover lift folds into
+    // the same channel.
+    const float highlight =
+      std::clamp((view.selected ? SELECTED_HIGHLIGHT_LIFT : 0.0f) + view.hoverAmount * SEL_HOVER_HIGHLIGHT_STRENGTH, 0.0f, 1.0f);
 
     // The bounding sphere the hull was drawn through: the mesh's own bounds, carried to where the
     // hull is and scaled the way the hull is. Padded, because a tight sphere is exactly what pops at
@@ -876,7 +940,7 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
       // Bucketed by mesh rather than drawn, so a fleet of one hull is one draw. Bucketing by the
       // mesh handle and not the hull id is what makes two hull ids sharing a mesh share a draw, and
       // the handle is what the draw needs anyway.
-      Bucket(view.mesh).push_back(Neuron::MeshInstance{.world = world, .tint = {tint.r, tint.g, tint.b, materialMix}});
+      Bucket(view.mesh).push_back(Neuron::MeshInstance{.world = world, .tint = {livery.r, livery.g, livery.b, highlight}});
     }
     else
     {
@@ -1123,7 +1187,6 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const Sc
   // -- only how many times the frame is asked to draw one.
   if (m_fx != nullptr && m_fx->RingReady() && !m_ships.empty())
   {
-    const float glowRadius = std::max(0.1f, THRUSTER_GLOW_RADIUS) * SHIP_SCALE;
     const float trailLength = std::max(0.0f, THRUSTER_TRAIL_LENGTH);
     const float trailFade = std::max(0.01f, THRUSTER_TRAIL_FADE);
 
@@ -1131,20 +1194,58 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const Sc
     for (size_t i = 0; i < m_ships.size(); ++i)
     {
       const ShipView& view = m_ships[i];
-      // A hull the frustum rejected has no plume worth building. The trail streams behind the ship
-      // rather than around it, which is why CULL_RADIUS_PAD_METRES is a trail length: the sphere
-      // that decided this has to have covered the ribbon, not just the hull.
-      if (!view.visible || view.thrusterLocals.empty() || view.thrusterIntensity <= 0.002f)
+      // A hull the frustum rejected has no plume and no running lights worth building. The trail
+      // streams behind the ship rather than around it, which is why CULL_RADIUS_PAD_METRES is a
+      // trail length: the sphere that decided this has to have covered the ribbon, not just the hull.
+      if (!view.visible)
         continue;
 
-      // Hoisted out of the nozzle loop: one lookup per ship rather than one per billboard, and the
-      // whole plume of a hostile is one color rather than being decided sample by sample.
-      const Rgba accent = IsOwn(i) ? SELECTED_COLOUR : HOSTILE_ACCENT_COLOUR;
+      // Navigation lights burn whether or not the ship is under way, so they come before the thrust
+      // test. Blink is free-running real time, so two ships of one hull blink together and only a
+      // different authored phase separates them -- which is what an author controls with param1.
+      if (!view.navLights.empty())
+      {
+        const DisplayPose pose = DisplayedPose(i);
+        for (const NavLightView& light : view.navLights)
+        {
+          float blink = 1.0f; // a zero period is a steady light, and most of them are
+          if (light.periodSec > 0.0f)
+          {
+            const float cycles = m_navTimeSec / light.periodSec + light.phase;
+            const float phase01 = cycles - std::floor(cycles);
+            blink = (phase01 < NAV_LIGHT_DUTY) ? 1.0f : NAV_LIGHT_OFF_LEVEL;
+          }
+          // The marker's alpha is an intensity (Design/Archive/NmoFormat.md 5.10): every shipped light has
+          // 1, so nothing visible changes, and an author who dims one gets what they asked for.
+          const float alpha = NAV_LIGHT_INTENSITY * blink * light.colour.a;
+          if (alpha <= 0.002f)
+            continue;
+          const float radius = std::max(0.1f, light.radiusMetres * NAV_LIGHT_GLOW_SCALE) * SHIP_SCALE;
+          m_glowSamples.push_back(Neuron::GlowSample{.posWorld = HullPointToWorld(view.restY, pose, light.local),
+                                                     .radiusMetres = radius,
+                                                     .colour = Rgba{light.colour.r, light.colour.g, light.colour.b, alpha}});
+        }
+      }
+
+      if (view.exhausts.empty() || view.thrusterIntensity <= 0.002f)
+        continue;
 
       // Every exhaust gets its own glow and its own trail: a bomber flying with three nozzles lays
       // down three ribbons, and they fan apart through a turn because the outboard ones sweep wider.
-      for (size_t nozzle = 0; nozzle < view.thrusterLocals.size(); ++nozzle)
+      for (size_t nozzle = 0; nozzle < view.exhausts.size(); ++nozzle)
       {
+        // Hoisted out of the step loop, which is what the hoist this replaced was protecting: one
+        // lookup per ribbon rather than one per billboard. The colour is the marker's now, so a
+        // friend and a foe flying the same hull burn the same plume -- faction stays readable
+        // through the selection ring, the minimap and the contact count (Design/Archive/NmoFormat.md 9).
+        const ExhaustView& exhaust = view.exhausts[nozzle];
+        // A liveried plume is a shade under the same multiply the hull's flagged surfaces take, so
+        // one authored plume burns azure, red or the player's own. An unflagged one draws as
+        // authored -- and a nav light never multiplies at all (Design/Archive/NmoFormat.md 5.10).
+        const Rgba plume = exhaust.raceTinted ? Rgba{exhaust.colour.r * view.lastLivery.r, exhaust.colour.g * view.lastLivery.g,
+                                                     exhaust.colour.b * view.lastLivery.b, exhaust.colour.a}
+                                              : exhaust.colour;
+        const float glowRadius = std::max(0.1f, exhaust.radiusMetres * THRUSTER_GLOW_SCALE) * SHIP_SCALE;
         const XMFLOAT3* const samples = view.trail.data() + nozzle * TRAIL_SAMPLES;
 
         // Newest sample first, walking back along the path until trailLength runs out. The trail
@@ -1166,12 +1267,12 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const Sc
           const float along = (trailLength > 0.0f) ? travelled / trailLength : 1.0f;
           const float taper = std::pow(std::max(0.0f, 1.0f - along), trailFade);
           const float radius = glowRadius * (step == 0 ? 1.0f : taper * 0.8f);
-          const float alpha = view.thrusterIntensity * (step == 0 ? 1.0f : taper * 0.55f);
+          const float alpha = view.thrusterIntensity * (step == 0 ? 1.0f : taper * 0.55f) * plume.a;
           if (alpha <= 0.002f || radius <= 0.001f)
             continue;
 
           m_glowSamples.push_back(
-            Neuron::GlowSample{.posWorld = point, .radiusMetres = radius, .colour = Rgba{accent.r, accent.g, accent.b, alpha}});
+            Neuron::GlowSample{.posWorld = point, .radiusMetres = radius, .colour = Rgba{plume.r, plume.g, plume.b, alpha}});
 
           if (trailLength <= 0.0f)
             break;

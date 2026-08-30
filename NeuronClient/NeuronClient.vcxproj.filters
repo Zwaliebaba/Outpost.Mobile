@@ -72,7 +72,10 @@
     <ClInclude Include="SpriteParticles.h">
       <Filter>Render</Filter>
     </ClInclude>
-    <ClInclude Include="ObjParser.h">
+    <ClInclude Include="NmoFile.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="NmoReader.h">
       <Filter>Render</Filter>
     </ClInclude>
     <ClInclude Include="GpuHelpers.h">
@@ -131,7 +134,7 @@
     <ClCompile Include="DdsImage.cpp">
       <Filter>Render</Filter>
     </ClCompile>
-    <ClCompile Include="ObjParser.cpp">
+    <ClCompile Include="NmoReader.cpp">
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="BodyField.cpp">
