@@ -33,7 +33,15 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-CODEC = os.path.join(REPO, 'Tools', 'BlenderNmo')  # NmoFormat, for the read-back summary
+TOOLS = os.path.join(REPO, 'Tools')
+CODEC = os.path.join(TOOLS, 'BlenderNmo')  # the add-on, whose schema and codec this reuses
+# The GLB author's spelling of the two marker fields the add-on reads off the object rather
+# than off a custom property (_adopt_markers translates them). The other four extras keys the
+# hulls carry -- nmo_kind, nmo_param0, nmo_param1, nmo_flags -- are already the add-on's own.
+GLTF_SCALE = 'nmo_scale'
+GLTF_COLOUR = 'nmo_colour'
+GLTF_COLOUR_HEX = 'nmo_colour_hex'
+
 # The glTF importer narrates every node it builds at INFO, which buries this script's own
 # output. Its `loglevel` property is not the knob -- it overwrites it from bpy.app.debug_value
 # on every run (io_scene_gltf2's set_debug_log), and 2 is that function's ERROR.
@@ -114,6 +122,23 @@ def relaunch(argv, args):
 
 # --- inside Blender: the conversion ---------------------------------------------------------------
 
+def _load_schema():
+    """The add-on's own modules, from the repository copy: NmoScene for the property names and
+    the marker display table, NmoFormat for reading a written file back. Named rather than
+    re-spelled, so this script cannot drift from the schema it is writing into."""
+    global scene_map, nmo
+    # Both paths, as Tools/NmoBlenderTest.py sets them up: NmoScene ends on a relative import, so
+    # it loads as part of the BlenderNmo package and not on its own, while NmoFormat is stdlib-only
+    # and loads flat.
+    for entry in (CODEC, TOOLS):
+        if entry not in sys.path:
+            sys.path.insert(0, entry)
+    import NmoFormat
+    from BlenderNmo import NmoScene
+    scene_map = NmoScene
+    nmo = NmoFormat
+
+
 def _require_operators(bpy):
     """Both halves of the pipeline have to be registered before the first file is touched."""
     if 'nmo' not in dir(bpy.ops.export_scene):
@@ -155,6 +180,52 @@ def _warn_dropped_materials(collection):
                                                  obj.data.materials[0].name))
 
 
+def _adopt_markers(bpy, collection):
+    """Translate the GLB's marker nodes into the add-on's scene schema.
+
+    The hulls carry their exhausts, navigation lights and gun mounts as node `extras`, and the
+    glTF importer copies every key onto the empty as a custom property. Four of them are already
+    the add-on's own schema and need nothing: `nmo_kind`, `nmo_param0`, `nmo_param1`, `nmo_flags`.
+    The other two are the GLB author's encoding of fields the add-on reads off the object itself,
+    and this is where the two spellings meet:
+
+      - `nmo_colour` -> `object.color`, the exporter's marker colour (linear RGBA, as the file
+        wants it, so it copies straight through).
+      - `nmo_scale` -> the empty's world scale, the exporter's marker scale. It is assigned
+        through matrix_world rather than through `.scale`, because these empties hang under a
+        group node the GLB scales by ~3.5, and the exporter decomposes the world matrix: a local
+        scale would arrive multiplied by the parent's, and the authored nozzle radius would be
+        wrong by whatever that node happens to hold.
+
+    Both are then deleted, so the scene holds one statement of each value rather than a live one
+    and a stale copy an artist could edit expecting it to matter. The display type is set from the
+    kind for the same reason a marker imported from a .nmo gets one: so the cones and spheres look
+    like themselves when this is opened in Blender to author on top of it.
+    """
+    from mathutils import Matrix
+
+    adopted = 0
+    for obj in collection.objects:
+        if obj.type != 'EMPTY' or scene_map.PROP_KIND not in obj:
+            continue
+        kind = str(obj[scene_map.PROP_KIND])
+        obj.empty_display_type = scene_map.MARKER_DISPLAY.get(kind,
+                                                              scene_map.MARKER_DISPLAY_FALLBACK)
+        obj.empty_display_size = 1.0
+        colour = obj.get(GLTF_COLOUR)
+        if colour is not None:
+            obj.color = tuple(colour)[:4]
+        translation, rotation, _ = obj.matrix_world.decompose()
+        scale = float(obj.get(GLTF_SCALE, 1.0))
+        obj.matrix_world = (Matrix.Translation(translation) @ rotation.to_matrix().to_4x4()
+                            @ Matrix.Diagonal((scale, scale, scale, 1.0)))
+        for consumed in (GLTF_COLOUR, GLTF_COLOUR_HEX, GLTF_SCALE):
+            if consumed in obj:
+                del obj[consumed]
+        adopted += 1
+    return adopted
+
+
 def _short(path):
     """Repo-relative where that is shorter -- an --out pointing outside stays absolute."""
     relative = os.path.relpath(path, REPO)
@@ -163,8 +234,6 @@ def _short(path):
 
 def _summary(path):
     """What actually landed, read back through the codec rather than reported by the writer."""
-    sys.path.insert(0, CODEC)
-    import NmoFormat as nmo
     model = nmo.read_file(path)
     mesh = model.meshes[0]
     triangles = sum(sub.primitive_count for sub in mesh.sub_meshes)
@@ -186,6 +255,7 @@ def convert(bpy, source, out_dir):
     if not any(obj.type == 'MESH' for obj in collection.objects):
         raise RuntimeError('%s holds no mesh' % os.path.basename(source))
     _warn_dropped_materials(collection)
+    _adopt_markers(bpy, collection)
 
     if 'FINISHED' not in bpy.ops.export_scene.nmo(filepath=target):
         # The operator reports the broken rule itself, above this line, and writes nothing.
@@ -197,6 +267,7 @@ def run_in_blender(args):
     import bpy
 
     _require_operators(bpy)
+    _load_schema()
     bpy.app.debug_value = GLTF_QUIET
     sources = resolve_inputs(args)
     if not sources:

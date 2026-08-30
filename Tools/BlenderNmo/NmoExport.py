@@ -339,22 +339,31 @@ def _export_marker(empty, scope_index_of, rig):
 
 def _gather_markers(collection, sub_objects, local_rig_of, mesh_rig):
     """empty -> submesh object, resolved the way import laid them out: object parent, owning
-    local rig, or PROP_OWNER for mesh-skeleton bindings."""
+    local rig, or PROP_OWNER for mesh-skeleton bindings.
+
+    A marker that matches none of those -- an artist's empty dropped at collection level, or one
+    that arrived from another format parented under a group node -- falls to the first submesh
+    rather than to nothing. The format has no mesh-level marker list to put it in, and a marker
+    with no owner used to be skipped by the caller's owner test, which silently deleted authored
+    data on the way to a file the codec then validated as fine. Losing where a rigid marker was
+    filed costs nothing (its position is mesh space either way); losing the marker costs the
+    exhaust that no longer glows."""
     owners = {}
     rig_owner = {rig.name: name for name, rig in local_rig_of.items()}
     by_name = {obj.name: obj for obj in sub_objects}
+    fallback = sub_objects[0] if sub_objects else None
     for obj in collection.objects:
         if obj.type != 'EMPTY' or scene_map.PROP_KIND not in obj:
             continue
         if obj.parent is not None and obj.parent.name in by_name:
             owners[obj] = by_name[obj.parent.name]
         elif obj.parent is not None and obj.parent.name in rig_owner:
-            owners[obj] = by_name.get(rig_owner[obj.parent.name])
+            owners[obj] = by_name.get(rig_owner[obj.parent.name], fallback)
         elif mesh_rig is not None and obj.parent is mesh_rig:
             owner = obj.get(scene_map.PROP_OWNER)
-            owners[obj] = by_name.get(owner) if owner else None
+            owners[obj] = by_name.get(owner, fallback) if owner else fallback
         else:
-            owners[obj] = None
+            owners[obj] = fallback
     return owners
 
 

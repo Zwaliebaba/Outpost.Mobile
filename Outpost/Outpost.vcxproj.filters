@@ -97,9 +97,6 @@
     <Image Include="Assets\Terrain\LandscapeMine2.dds">
       <Filter>Assets\Terrain</Filter>
     </Image>
-    <Image Include="Assets\Terrain\Planet1.dds">
-      <Filter>Assets\Terrain</Filter>
-    </Image>
     <Image Include="Assets\Textures\Fuel.dds">
       <Filter>Assets\Textures</Filter>
     </Image>
@@ -246,6 +243,39 @@
     </None>
     <None Include="Assets\Fonts\SpeccyFont.dds">
       <Filter>Assets\Fonts</Filter>
+    </None>
+    <None Include="Assets\Meshes\Battleship.nmo">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Bomber.nmo">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Carrier.nmo">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Corvette.nmo">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Fighter.nmo">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Frigate.nmo">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Hauler.nmo">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Interceptor.nmo">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Miner.nmo">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Stargate.nmo">
+      <Filter>Assets\Meshes</Filter>
+    </None>
+    <None Include="Assets\Meshes\Structure.nmo">
+      <Filter>Assets\Meshes</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
