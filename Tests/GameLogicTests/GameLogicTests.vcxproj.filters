@@ -53,6 +53,9 @@
     <ClCompile Include="ProtectorTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="BackOffTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="UniverseLayoutTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

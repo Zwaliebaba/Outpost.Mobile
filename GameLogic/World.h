@@ -506,6 +506,12 @@ private:
     std::uint32_t cursor = 0;
     std::uint32_t gridVersion = 0;
     bool reachesDestination = true; // false means the list ran out and the rest is still to plan
+
+    // Consecutive ticks the blocking pass has pushed this ship away from its own steer target. Counted
+    // by ApplyBlocking, reset by every plan and by every tick that is not blocked, and read by
+    // AdvanceRoute: at BLOCKED_WAYPOINT_TICKS the waypoint is taken as reached, because a ship that
+    // has pushed at a wall for a second is as close to the point as it is ever going to get.
+    std::uint32_t blockedTicks = 0;
   };
   std::vector<Route> m_routes;
 
