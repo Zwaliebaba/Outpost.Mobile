@@ -32,8 +32,9 @@ equirectangular map, sampled per pixel off the direction so it has no seam, whil
 seeded low-poly heightfield on a cube-sphere with one flat colour per triangle from a colour ramp and
 a wire-frame outline over the top. Behind them is a procedurally generated star field: a seeded
 catalogue of stars, dust clouds and a galactic band, uploaded once and expanded into billboards in
-the vertex shader (`Design/Archive/Skybox.md`). F5 reseeds the lot, sky included; all of it is presentation
-only and a ship flies straight through a rock (`Design/Decisions/0016`). There is no ground: the scene pass draws no plane and has no grid
+the vertex shader (`Design/Archive/Skybox.md`). F5 reseeds the lot, sky included; all of it is
+presentation only and a ship flies straight through a rock (`Design/Decisions/0016`). There is no
+ground: the scene pass draws no plane and has no grid
 (`Design/Decisions/0025`), and the flat y = 0 plane a move order lands on is arithmetic in `Camera`
 rather than geometry. D3D12 renderer, WM_POINTER input covering mouse and touch, a main-screen HUD
 drawn through one overlay pipeline (bitmap font atlases, coverage-mask icons, untextured quads),
@@ -109,10 +110,10 @@ are never renamed to fit: `XMFLOAT2`, `XMVECTOR`, `ID3D12Device`, `IDXGISwapChai
 
 **R5 — Template parameters are PascalCase**: `T`, `Fn`, `BlockBytes`, `Ts...`.
 
-**R6 — Units belong in names; types do not.** `posXCm`, `velXCmPerSec`, `etaTicks`, `zoomMetres`,
-`cooldownMs`, `dragThresholdPx` are encouraged — this game measures a plane in meters, a wire in
-centimeters, and time in ticks, so unit ambiguity is a real defect class. Never encode the type:
-no `iCount`, `pShip`, `strName`, `dwFlags`.
+**R6 — Units belong in names; types do not.** `radiusMetres`, `maxSpeedMetresPerSec`, `etaTicks`,
+`cooldownMs`, `dragThresholdPx` are encouraged — this game measures a plane in metres and whole
+sectors, screen space in pixels, and time in ticks and milliseconds, so unit ambiguity is a real
+defect class. Never encode the type: no `iCount`, `pShip`, `strName`, `dwFlags`.
 
 **R7 — A file is named for its primary type**, PascalCase, `.h` / `.cpp` only. `.hpp`, `.cc` and
 `.inl` are not used; template implementations live in the header. Two exceptions: the per-project
@@ -137,7 +138,7 @@ renderer — uses plain `camelCase` fields so brace initialization reads natural
 
 **R9 — Namespaces.** Three, all flat:
 
-- `Neuron` — the four engine libraries. Flat, not `Neuron::Client`, because engine code is meant
+- `Neuron` — the three engine libraries. Flat, not `Neuron::Client`, because engine code is meant
   to move between the libraries without a rename pass; the library boundary and §2's dependency
   rules do the separating, and the namespace does not need to repeat it.
 - `Game` — GameLogic.
@@ -217,7 +218,7 @@ Run either yourself before you push — clang-tidy on the files you wrote, not o
 python Build/CheckFormat.py            report what is not formatted
 python Build/CheckFormat.py --fix      format it
 
-clang-tidy --quiet NeuronCore/YourNewFile.cpp -- -I . -D _WIN32 -D _DEBUG /std:c++latest
+clang-tidy --quiet NeuronCore/YourNewFile.cpp -- --driver-mode=cl /std:c++20 /EHsc /D_DEBUG /INeuronCore
 ```
 
 **Pin your clang-format to the version CI uses** — 18.1.3, via `pip install clang-format==18.1.3`.
@@ -227,18 +228,24 @@ and the two of you take turns undoing each other.
 The tree is formatted and a whole-tree run is a no-op. Keep it that way: format the lines you
 write, and do not reformat files you are only passing through.
 
-Three rules `.clang-tidy` structurally cannot state. All three are checked by
+Three rules `.clang-tidy` structurally cannot state. Two of them are checked by
 [`Build/CheckProjectFiles.py`](Build/CheckProjectFiles.py) instead, which needs no compiler and runs
-in CI before the build:
+in CI before the build; the third is still read by eye, and the difference is stated below rather
+than left to be discovered:
 
 - **R2's affixes.** clang-tidy can require an *absent* prefix but cannot ban a *present* suffix, so
   `FooBase` slips through it entirely. A bare `struct Impl;` is the pimpl idiom and is not a suffix
-  on anything; `FooImpl` is. The check tests a declared type name for a two-capital start, a
-  `Base`/`Impl` suffix, an `Abstract` prefix or a `_t` suffix — the two-capital test being safe only
-  because R4 already bans `GPUDevice` in favour of `GpuDevice`.
-- **R7's file naming**, and that a new file is registered in the `.vcxproj` **and** the
-  `.filters` (§3). Registering it in one and not the other is the miss §8's checklist exists to
-  prevent.
+  on anything; `FooImpl` is. The check tests a declared type name for an `I`, `C`, `S` or `E`
+  followed by a capital, a `Base`/`Impl` suffix, an `Abstract` prefix or a `_t` suffix. **It is not
+  a "two capitals to start" test**, and deliberately: the one name in the tree that would trip that
+  is `QUIC_API_TABLE`, which is MsQuic's and not ours to rename. R4's `GpuDevice`-not-`GPUDevice` is
+  therefore a rule the reader keeps, not one the guard holds.
+- **§3's registration and uniqueness** — that a new file is registered in the `.vcxproj` **and** the
+  `.filters`, and that no two files anywhere share a name case-insensitively. Registering a file in
+  one project file and not the other is the miss §8's checklist exists to prevent. **R7's file
+  *naming*** — PascalCase, named for its primary type, `.h`/`.cpp` only — is *not* machine-checked:
+  the check walks the names already ending in `.h` or `.cpp`, so a stray `.hpp` is skipped rather
+  than reported. That one is review's.
 - **R11's spelling.** No tool in this tree reads English, and none needs to: the check reads only
   names *this tree declares*, told apart by the tree's own markers — R1's leading `_`, R8's `m_`/
   `sm_`, R3's UPPER_CASE, and type names. A local spelled plain camelCase is out of its reach, and
@@ -259,7 +266,7 @@ does not have.
 
 | Path | What it is |
 |---|---|
-| `NeuronCore/` | Engine primitives shared by every layer — zero game semantics, no graphics API, headless (below). Diagnostics, file IO, framerate-independent easing, the frame clock, the seeded `Pcg32` (ADR 0012), and `Transport`. No content readers: those live with their consumer (below). |
+| `NeuronCore/` | Engine primitives shared by every layer — zero game semantics, no graphics API, headless (below). Diagnostics, file IO, framerate-independent easing, the frame clock, the seeded `Pcg32` (ADR 0012), and the seam: `Transport`, with `LoopbackTransport` behind it for the tests and the MsQuic implementation the game runs on — `QuicApi`, `QuicTransport`, `QuicListener` and the self-signed `DevCertificate` (ADRs 0021, 0023). No content readers: those live with their consumer (below). |
 | `GameLogic/` | The deterministic simulation, namespace `Game`. `World`, `ShipState`, `WorldPos`, `HullSpec`, `Movement`, `Collision`, `SpatialIndex`, `PathGrid`, `Formation`, `Patrol`, `SimTuning`, `InterestSet`, `PathIslands` (the architecture partitioned into islands, one `PathGrid` over each, ADR 0033), `WorldSnapshot` (the wire format, ADR 0008) and `Publisher` (the fan-out to N subscribers, ADR 0030). Depends on NeuronCore only. |
 | `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, the explosion's `FxRenderer`/`MeshShatter`/`SpriteParticles` and the `GlowBillboards` the thruster plume is built with, `ViewCulling` (the camera's frustum and the sphere test everything drawn is gated on), the planet pipeline (`CubeSphere`, `Noise3`, `BodyDesc`/`BodyParams`/`BodyField`, `BodyMeshBuilder`, `BodyRenderer`, `ColourRamp` — see [`Design/Archive/PlanetRenderer.md`](Design/Archive/PlanetRenderer.md)), the star field (`SkyField`, `SkyRenderer`, `SkyVertex` — [`Design/Archive/Skybox.md`](Design/Archive/Skybox.md)), and the content readers `DdsImage`, `ObjParser`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
@@ -324,8 +331,10 @@ so the process boundary is the only one left to cross.
 puts the far end in this process, with latency and loss you can configure — counted in ticks rather
 than seconds, so a measurement reproduces. `QuicTransport` puts it on one MsQuic connection, with
 the same datagrams and the same contract (`Design/Decisions/0021`); `QuicListener` beside it is the
-half a dedicated server would start. The composition root chooses between them at boot and
-nothing below it can tell which it got, so what remains is a second process, and it is not
+half a dedicated server would start. The composition root opens QUIC and only QUIC -- a boot that
+cannot open the wire stops rather than running on a second path nobody is testing (ADR 0028) -- and
+`LoopbackTransport` stays in `NeuronCore` as what the tests drive, the only way to drop or delay a
+datagram on purpose. What remains is a second process, and it is not
 scheduled: the code boundary is the part that had to land early, because it is what
 stops the two halves growing into each other. Do not
 shortcut it: if you find yourself wanting the simulation to call into the renderer, or the renderer
@@ -360,7 +369,9 @@ to reach into the world, that is the seam telling you the change belongs somewhe
 - **Every project's `pch.cpp` contains exactly `#include "pch.h"`** and nothing else. `/Yc`
   requires the translation unit that *creates* the precompiled header to include it; an empty one
   is `C2857`, reported at line 1 column 1 of a file whose entire contents are the thing that is
-  missing. Six of them were empty once, and it cost a CI run.
+  missing. Six of them were empty once, and it cost a CI run — which is why
+  [`Build/CheckProjectFiles.py`](Build/CheckProjectFiles.py) holds this one, and it is the only rule
+  in §3 that a guard holds rather than a reader.
 - **Every added, removed or renamed file updates both** the `.vcxproj` and the `.vcxproj.filters`
   of its project, in the same commit. [`Build/CheckProjectFiles.py`](Build/CheckProjectFiles.py)
   checks this, and runs in CI before anything is compiled — run it yourself before you push.
@@ -519,9 +530,10 @@ vstest.console.exe x64\Debug\NeuronCoreTests.dll x64\Debug\GameLogicTests.dll ^
 The projects use `packages.config`, not `PackageReference`, so `msbuild -t:restore` does nothing
 for them — restore is `nuget restore` per config file, which is what the CI step does.
 
-x64 is the configuration that is built and run. Win32 and ARM64 exist in the project files but are
-not exercised; the solution maps `*|ARM64` onto the x64 libraries, which will not link against an
-ARM64 executable. Treat anything other than x64 as unverified.
+x64 is the configuration that is built and run. There is no Win32 or x86 configuration at all --
+`Win32Proj` in a project file is the MSBuild keyword, not a platform. ARM64 is real rather than
+aliased: every project declares `Debug|ARM64` and `Release|ARM64`, and `Outpost.slnx` declares the
+platform, but nothing builds them. Treat anything other than `Debug|x64` as unverified.
 
 ### The project files are MSVC-native
 
@@ -556,7 +568,7 @@ change it:
   naming Visual Studio 2010, on a runner that has 2026 installed. That is measured, not read: it is
   what a CI run did.
 
-The cost of all this is duplication — nine projects, four or six configurations each, the same
+The cost of all this is duplication — nine projects, four configurations each, the same
 values written out longhand. That is the deliberate trade, and it is checked rather than trusted:
 [`Build/CheckProjectFiles.py`](Build/CheckProjectFiles.py) reads the settings that must agree out
 of every project's XML and fails the build, before anything is compiled, if one has drifted. It
@@ -570,7 +582,9 @@ in for the sheet now. A setting that drifts is always the one that mattered.
 ### CI
 
 [`.github/workflows/build.yml`](.github/workflows/build.yml) builds **Debug|x64** and runs all four
-test suites on every push and pull request, and **it gates** — a red job means the branch does not
+test suites on every pull request, on every push to `main`, and on demand — a push to a branch with
+no pull request open runs nothing, so that a branch under review does not build twice. **It gates**
+— a red job means the branch does not
 build or a test failed. Three things about it are worth knowing before you read a red run:
 
 - **The toolset is pinned, so the runner has to carry it.** Every project spells `v145` and
@@ -716,8 +730,9 @@ When to write one — any of these, and in the same commit as the change:
 
 Rules for the records themselves: numbered in order of writing and never renumbered, except when
 two branches claimed the same number and meet — the one already on the trunk keeps it, the arriving
-one moves up with its citations, in the merge commit; never edited into a different decision — a change of mind is a new record that supersedes the old one,
-and the old one stays with its status changed; and the index in the README lists every one. A
+one moves up with its citations, in the merge commit; never edited into a different decision — a
+change of mind is a new record that supersedes the old one, and the old one stays with its status
+changed; and the index in the README lists every one. A
 record is a page, not a paper: if it needs more than that, the design document it came from is
 where the rest goes, and the record links to it.
 

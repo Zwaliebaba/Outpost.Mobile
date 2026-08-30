@@ -276,9 +276,10 @@ ALIAS_DECLARATION = re.compile(r'\busing\s+([A-Za-z_]\w*)\s*=')
 def check_type_names(problems):
     """R2: a type name carries no prefix, no Base/Impl suffix, and no _t.
 
-    The prefix test is "two capitals to start", which is only safe because R4 already requires
-    acronyms to capitalize as words -- there is no legitimate GPUDevice for this to trip over, only
-    GpuDevice. That is the whole reason the two rules can be checked this cheaply.
+    The prefix test is the four letters R2 names -- I, C, S or E followed by a capital -- and not
+    "two capitals to start", which is what this said before anyone compared it with the line below.
+    The wider test would trip on QUIC_API_TABLE, which is MsQuic's type and not ours to rename, so
+    R4's GpuDevice-not-GPUDevice stays a rule the reader keeps rather than one this holds.
     """
     banned_prefix = re.compile(r'^(?:I|C|S|E)[A-Z]')
     for path in source_files():
