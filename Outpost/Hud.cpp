@@ -251,8 +251,9 @@ void Hud::DrawDebug(TextRenderer& _text, const Layout& _layout, const Frame& _fr
 
   // The explosion effect. Two of these four are the numbers that go wrong quietly -- a pool that
   // refused a particle and a vertex ring that ran out -- and neither is visible in what is drawn.
-  std::snprintf(line, sizeof(line), "FX %d%sPARTICLES %u%sDROPPED %u%sVERTS LOST %u", _frame.stats.explosionCount, SEPARATOR,
-                _frame.stats.particleCount, SEPARATOR, _frame.stats.particlesDropped, SEPARATOR, _frame.stats.fxVertsDropped);
+  std::snprintf(line, sizeof(line), "FX %d%sPARTICLES %u%sDROPPED %u%sVERTS LOST %u%sDRAWN %u%sCULLED %u", _frame.stats.explosionCount,
+                SEPARATOR, _frame.stats.particleCount, SEPARATOR, _frame.stats.particlesDropped, SEPARATOR, _frame.stats.fxVertsDropped,
+                SEPARATOR, _frame.stats.submittedCount, SEPARATOR, _frame.stats.culledCount);
   const float lineHeight = _text.LineHeightPx(FontId::Ui, HUD_TEXT_SCALE * s);
   width = advance * static_cast<float>(std::strlen(line));
   _text.DrawTextLine(FontId::Ui, (static_cast<float>(_widthPx) - width) * 0.5f, top + lineHeight, HUD_TEXT_SCALE * s, HUD_LABEL_COLOUR,

@@ -13,12 +13,14 @@
 #include "Camera.h"
 #include "FxRenderer.h"
 #include "FxVertex.h"
+#include "GlowBillboards.h"
 #include "MeshLibrary.h"
 #include "PointerTracker.h"
 #include "SceneRenderer.h"
 #include "SkyRenderer.h"
 #include "SpriteParticles.h"
 #include "TextRenderer.h"
+#include "ViewCulling.h"
 
 #include "Pcg32.h"
 
@@ -88,6 +90,10 @@ public:
     DirectX::XMFLOAT3X3 tumble{1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
     DirectX::XMFLOAT3 tumbleRadPerSec{0.0f, 0.0f, 0.0f};
     std::uint32_t triangleCount = 0; // for the F1 readout only
+    // The sphere the frustum test uses: the body's radius stretched by its longest ellipsoid axis
+    // and raised by its tallest terrain. Both are fractions of the radius in BodyDesc, and both are
+    // known on either bake path, so this is the extent rather than a guess at it.
+    float boundingRadiusMetres = 0.0f;
   };
 
   // One ship's presentation state, parallel to the latest snapshot's ships and indexed the same
@@ -104,7 +110,10 @@ public:
     float restY = 0.0f;                              // lifts the hull so its lowest vertex rests on the ground
     DirectX::XMFLOAT3 pickCentre{0.0f, 0.0f, 0.0f};  // mesh bounds centre, in local space
     DirectX::XMFLOAT3 halfExtents{1.0f, 1.0f, 1.0f}; // mesh half-size about that centre
-    std::vector<DirectX::XMFLOAT3> thrusterLocals;   // one point per exhaust nozzle
+    // Whether the last Render submitted this hull. Set by the frustum test there and read by the
+    // plume, so a trail is not built for a ship nobody can see.
+    bool visible = true;
+    std::vector<DirectX::XMFLOAT3> thrusterLocals; // one point per exhaust nozzle
 
     // One ring buffer per exhaust, nozzle-major: nozzle n owns [n * TRAIL_SAMPLES, (n + 1) *
     // TRAIL_SAMPLES), newest at trailHead. Every nozzle is sampled on the same tick, so the head
@@ -294,6 +303,16 @@ public:
   }
 
   // For the debug readout: how much of the effect is live right now.
+  // For the debug readout: what frustum culling kept and what it skipped, last frame.
+  [[nodiscard]] std::uint32_t SubmittedCount() const noexcept
+  {
+    return m_submittedCount;
+  }
+  [[nodiscard]] std::uint32_t CulledCount() const noexcept
+  {
+    return m_culledCount;
+  }
+
   [[nodiscard]] int ExplosionCount() const noexcept
   {
     return static_cast<int>(m_explosions.size());
@@ -391,6 +410,19 @@ private:
   // the camera are different jobs, and only the second is worth a test.
   std::vector<Neuron::GlowSample> m_glowSamples;
   std::vector<Neuron::FxVertex> m_fxGlowVerts;
+
+  // What the last Render submitted and what it skipped, so the saving is read off the screen rather
+  // than inferred.
+  std::uint32_t m_submittedCount = 0;
+  std::uint32_t m_culledCount = 0;
+
+  // Decided once per body per frame and reused by the ocean, terrain and outline passes.
+  std::vector<bool> m_bodyVisible;
+
+  // This frame's frustum, built at the top of Render. Held rather than passed because DrawFeedback
+  // is a second pass over the same frame and rebuilding it there would be a second chance for the
+  // two to disagree about what is on screen.
+  DirectX::BoundingFrustum m_frustum;
   // Smoke is shed once a frame rather than once per death, so it cannot use a per-explosion seed
   // and does not need one: what a replay wants reproducible is the shatter, and that is seeded from
   // the ship's handle and the tick it died on.

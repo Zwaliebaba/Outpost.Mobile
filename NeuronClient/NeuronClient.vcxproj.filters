@@ -93,6 +93,9 @@
     <ClInclude Include="GlowBillboards.h">
       <Filter>Render</Filter>
     </ClInclude>
+    <ClInclude Include="ViewCulling.h">
+      <Filter>Render</Filter>
+    </ClInclude>
     <ClInclude Include="SkyRenderer.h">
       <Filter>Render</Filter>
     </ClInclude>
@@ -162,6 +165,9 @@
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="GlowBillboards.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="ViewCulling.cpp">
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="SkyField.cpp">

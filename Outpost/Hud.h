@@ -44,6 +44,11 @@ public:
     std::size_t bodyCount = 0;
     std::uint32_t bodyTriangles = 0;
     float bodyGenerationMs = 0.0f;
+    // Frustum culling (Design/MmoScalabilityReview.md G2). On the screen rather than inferred,
+    // because a culler that is quietly rejecting everything and one that is quietly rejecting
+    // nothing both look exactly like a working one until you count.
+    std::uint32_t submittedCount = 0;
+    std::uint32_t culledCount = 0;
   };
 
   // The rail's icons, which are the images the composition root lists in TextRenderer::Desc, in

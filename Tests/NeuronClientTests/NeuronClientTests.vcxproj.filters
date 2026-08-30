@@ -53,6 +53,9 @@
     <ClCompile Include="GlowBillboardsTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="ViewCullingTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="SkyFieldTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

@@ -33,6 +33,7 @@
 #include "BodyRenderer.h"
 #include "FxRenderer.h"
 #include "GlowBillboards.h"
+#include "ViewCulling.h"
 #include "SkyRenderer.h"
 #include "BitmapFont.h"
 #include "ScreenImage.h"

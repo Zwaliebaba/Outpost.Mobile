@@ -130,7 +130,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 6 | Leaves, destroys, orders go reliable (= QuicTransport 3b) | `GameLogic` | M | 5 | E1 | ADR | [landed](ReliableFormat-work-order.md) |
 | 7 | Listener slot reclamation, per-role rings | `NeuronCore` | S | — | E3 | ADR | landed |
 | 8 | Trail and glow batching | `NeuronClient`+`Outpost` | S | — | G1 |  |   landed |
-| 9 | Frustum culling | `NeuronClient`+`Outpost` | S | — | G2 |  |  |
+| 9 | Frustum culling | `NeuronClient`+`Outpost` | S | — | G2 |  |   landed |
 | 10 | Hull instancing | `NeuronClient`+`Outpost` | M | 9 | G2 |  |  |
 | 11 | Localized gather radius, threat pre-filter | `GameLogic` | M | — | U2 |  |  |
 | 12 | The tick-rate decision | `GameLogic` | S | — | E7 | ADR | decided: 60 Hz stays |
@@ -288,6 +288,43 @@ already holds.
 **Acceptance.** The HUD counter shows off-screen ships unsubmitted while the minimap still plots
 them; screenshots at two window sizes, one framing half the fleet out; no visible pop at the frustum
 edge (radius-padded test stated in the order).
+
+**As landed.** `Camera` gained `View()` and `Proj()` — a `BoundingFrustum` is built from the
+projection alone and carried out by the inverse of the view, and neither survives their product.
+`Neuron::WorldFrustum` and `IsSphereVisible` hold that in `NeuronClient`, so the handedness flag is
+decided by tests rather than by looking: `rhcoords` is **false**, which
+[Microsoft's own documentation](https://learn.microsoft.com/windows/win32/api/directxcollision/nf-directxcollision-boundingfrustum-createfrommatrix)
+defines as left-handed, matching §5 and the camera's `LookAtLH`/`PerspectiveFovLH`. Passing `true`
+does not fail — it builds a frustum pointing the other way and empties the screen — which is why one
+test row exists for that alone.
+
+Culled: **hulls** (the win — thousands of draws), the **selection and hover rings** that belong to
+them, **bodies** (one decision per body, reused by the ocean, terrain and outline passes so they
+cannot disagree and leave a hole), the **shock rings**, and the **plume**, which follows its hull.
+The minimap is untouched, as the order requires: it draws from the snapshot and never asks what is
+on screen.
+
+**Padding**, per the order: `CULL_RADIUS_PAD_METRES = 24` on every hull sphere, because a hull's
+mesh bounds are tight and the trail streams *behind* the ship, outside them entirely — the pad is a
+trail length with room over. Bodies carry their own extent (radius × widest ellipsoid axis + tallest
+tile), read off `BodyDesc`, so it is right on either bake path; `BodyBuildStats::maxHeightMetres` is
+only filled on the CPU one, and `BodyDesc::maxHeight` scales colour and is usually zero.
+
+**One thing culling must not decide**: what is remembered. `lastWorld`, `lastVelMetresPerSec` and
+`drawn` are updated for every ship whether or not it was submitted, because a ship that dies off
+screen still explodes and its shards must start where the hull actually was.
+
+**Deliberately not culled — fragment and sprite builds.** Both are already one draw each for the
+whole frame, so there is no draw to save, only CPU vertex building; and doing it properly needs a
+debris-spread bound on `ShipExplosion` that grows with age, which is a question of its own. The
+reason to revisit it is named here rather than left to be rediscovered: since slice 8 the glows
+share that ring, so off-screen deaths can now crowd out visible plumes.
+
+**Screenshots are owed** for the same reason as slice 8 — no Windows, no D3D12 here. Seven
+`ViewCullingTests` rows stand in: in front versus behind, both planes, off to the side, the
+conservative straddle, that padding can only ever keep more, that the frustum follows the camera
+rather than sitting at the origin, and a negative radius. A reviewer on Windows should still frame
+half the fleet out and read `DRAWN`/`CULLED` off the debug line before this merges.
 
 #### Slice 10 — hull instancing (`NeuronClient` + `Outpost`, M)
 

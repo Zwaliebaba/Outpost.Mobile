@@ -351,6 +351,16 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
     view.centre = Game::LocalPos(std::sin(_bearingRad) * _distanceMetres, std::cos(_bearingRad) * _distanceMetres);
     // A planet floats clear of the ground quad; a rock rests on it, the way a Structure does.
     view.centreY = _asteroid ? _radiusMetres : _radiusMetres * BODY_PLANET_LIFT;
+    // The sphere the frustum test uses. Every length in a BodyDesc but radiusMetres is a fraction of
+    // it, so the furthest the body can reach is its radius stretched by its widest ellipsoid axis and
+    // raised by its tallest continent. Read off the description, so it is right on either bake path
+    // -- BodyBuildStats::maxHeightMetres is only filled on the CPU one. Not desc.maxHeight, which
+    // scales colour and is usually zero; a tile's own desiredHeight and lift are the geometry.
+    const float widestAxis = std::max({desc.ellipsoid.x, desc.ellipsoid.y, desc.ellipsoid.z});
+    float tallestTile = 0.0f;
+    for (const BodyTile& tile : desc.tiles)
+      tallestTile = std::max(tallestTile, tile.desiredHeight + tile.posY);
+    view.boundingRadiusMetres = _radiusMetres * (widestAxis + std::max(0.0f, tallestTile));
     view.spinAxis = desc.spinAxis;
     view.triangleCount = stats.trianglesEmitted;
     if (_asteroid)
@@ -569,6 +579,10 @@ void OutpostApp::Render()
   frame.stats.bodyCount = m_view.BodyCount();
   frame.stats.bodyTriangles = m_view.BodyTriangleCount();
   frame.stats.bodyGenerationMs = m_bodyGenerationMs;
+  // Last frame's, because Render has not run for this one yet. That is the right reading anyway: it
+  // is the frame whose cost the numbers beside it describe.
+  frame.stats.submittedCount = m_view.SubmittedCount();
+  frame.stats.culledCount = m_view.CulledCount();
   frame.showDebug = m_showDebug;
   frame.sector = m_view.WorldPosAt(m_camera.Target().x, m_camera.Target().z);
   frame.hullNames = HULL_NAMES;

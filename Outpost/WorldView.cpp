@@ -786,6 +786,14 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
   frame.cameraPos = m_camera->Eye();
   _renderer.BeginScene(_gpu, frame);
 
+  // One frustum a frame, tested against everything below. Built from the camera's two matrices
+  // rather than their product, because that is what BoundingFrustum is defined on
+  // (Design/MmoScalabilityReview.md G2).
+  m_frustum = Neuron::WorldFrustum(m_camera->View(), m_camera->Proj());
+  const BoundingFrustum& frustum = m_frustum;
+  m_submittedCount = 0;
+  m_culledCount = 0;
+
   XMFLOAT4X4 world;
 
   // The bodies' world matrices, built here because the ocean needs them before the hulls and the
@@ -804,8 +812,26 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
   // in the depth buffer by the time the terrain draws over them; the coast dips below sea level, so
   // the shore hides behind the water rather than meeting it edge-on (Design/PlanetRenderer.md 5.5).
   // The same world matrix as the terrain, spin included, so the sea turns with the land.
+  //
+  // Visibility is decided once per body, here, and the terrain and outline passes below reuse it:
+  // three passes over the same spheres would be three chances for them to disagree, and a body whose
+  // sea drew but whose land did not is a hole in the world.
+  m_bodyVisible.clear();
   for (std::size_t i = 0; i < m_bodies.size(); ++i)
   {
+    const XMFLOAT3 centre(ViewX(m_bodies[i].centre), m_bodies[i].centreY, ViewZ(m_bodies[i].centre));
+    const float radius = m_bodies[i].boundingRadiusMetres * CULL_BODY_RADIUS_SCALE;
+    m_bodyVisible.push_back(Neuron::IsSphereVisible(frustum, centre, radius));
+  }
+
+  for (std::size_t i = 0; i < m_bodies.size(); ++i)
+  {
+    if (!m_bodyVisible[i])
+    {
+      ++m_culledCount;
+      continue;
+    }
+    ++m_submittedCount;
     if (m_bodies[i].ocean != INVALID_MESH)
       _renderer.DrawMesh(_gpu, m_bodies[i].ocean, m_bodyWorlds[i], m_bodies[i].oceanColour, 0.0f);
   }
@@ -842,11 +868,36 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     }
     const float lift = view.hoverAmount * SEL_HOVER_HIGHLIGHT_STRENGTH;
     tint = Rgba{tint.r + (1.0f - tint.r) * lift, tint.g + (1.0f - tint.g) * lift, tint.b + (1.0f - tint.b) * lift, 1.0f};
-    _renderer.DrawMesh(_gpu, view.mesh, world, tint, materialMix);
+
+    // The bounding sphere the hull was drawn through: the mesh's own bounds, carried to where the
+    // hull is and scaled the way the hull is. Padded, because a tight sphere is exactly what pops at
+    // the edge of the screen and the plume trails outside the bounds entirely.
+    const XMFLOAT3 boundsCentre(x + (view.pickCentre.x * std::cos(heading) + view.pickCentre.z * std::sin(heading)) * SHIP_SCALE,
+                                SHIP_HOVER_HEIGHT + (view.restY + view.pickCentre.y) * SHIP_SCALE,
+                                z + (-view.pickCentre.x * std::sin(heading) + view.pickCentre.z * std::cos(heading)) * SHIP_SCALE);
+    const float boundsRadius = std::sqrt(view.halfExtents.x * view.halfExtents.x + view.halfExtents.y * view.halfExtents.y +
+                                         view.halfExtents.z * view.halfExtents.z) *
+                                 SHIP_SCALE +
+                               CULL_RADIUS_PAD_METRES;
+    view.visible = Neuron::IsSphereVisible(frustum, boundsCentre, boundsRadius);
+    if (view.visible)
+    {
+      ++m_submittedCount;
+      _renderer.DrawMesh(_gpu, view.mesh, world, tint, materialMix);
+    }
+    else
+    {
+      ++m_culledCount;
+    }
 
     // Remembered for the explosion, which needs where the hull was and how it was moving at a point
     // where the snapshot no longer has a record for it. Taken from the drawn pose rather than the
     // latest one, so the shards start exactly where the hull was and drift the way it was pointing.
+    //
+    // Outside the visibility test on purpose. A ship that dies off screen still explodes, and the
+    // player may well be looking at where it was a moment later -- if this only ran for hulls that
+    // were submitted, those shards would start from wherever the hull last happened to be on screen.
+    // Culling decides what is drawn; it must not decide what is remembered.
     view.lastWorld = world;
     view.lastVelMetresPerSec = XMFLOAT3(std::sin(heading) * state[i].speed, 0.0f, std::cos(heading) * state[i].speed);
     view.drawn = true;
@@ -862,9 +913,11 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     // ones the water used, not ones recomputed from a spin that has not moved since.
     m_bodyRenderer->Begin(_gpu, frame.viewProj, frame.lightDir, frame.ambient, frame.cameraPos, BODY_OVERLAY);
     for (std::size_t i = 0; i < m_bodies.size(); ++i)
-      m_bodyRenderer->DrawMain(_gpu, m_bodies[i].terrain, m_bodyWorlds[i]);
+      if (m_bodyVisible[i])
+        m_bodyRenderer->DrawMain(_gpu, m_bodies[i].terrain, m_bodyWorlds[i]);
     for (std::size_t i = 0; i < m_bodies.size(); ++i)
-      m_bodyRenderer->DrawOverlay(_gpu, m_bodies[i].terrain, m_bodyWorlds[i]);
+      if (m_bodyVisible[i])
+        m_bodyRenderer->DrawOverlay(_gpu, m_bodies[i].terrain, m_bodyWorlds[i]);
   }
 
   // Hull fragments before the decals: they are blended but write depth, so a shard occludes what is
@@ -936,6 +989,10 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu)
   for (size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
   {
     const ShipView& view = m_ships[i];
+    // A ring is drawn around a hull and is smaller than the sphere that hull was tested with, so
+    // the hull's answer is the ring's answer and there is nothing to test again.
+    if (!view.visible)
+      continue;
 
     const float hullRadius = std::max(view.halfExtents.x, view.halfExtents.z) * SHIP_SCALE;
     const DisplayPose pose = DisplayedPose(i);
@@ -1027,6 +1084,11 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu)
     if (radius <= 0.5f)
       continue; // the frame it is born in, before the first Advance has widened it
 
+    // A front is a flat disc on the ground and its centre and radius are exactly known, so the
+    // sphere here needs no padding beyond the ring's own width.
+    if (!Neuron::IsSphereVisible(m_frustum, explosion.ShockRingCentre(), radius + SHOCK_RING_WIDTH_METRES))
+      continue;
+
     // The decal's thickness is a fraction of its own half-extent, so holding the front to a width
     // in metres means shrinking that fraction as the ring grows. A constant fraction would draw a
     // band that thickens as it expands, which reads as a spreading stain rather than a wave.
@@ -1053,7 +1115,10 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu)
     for (size_t i = 0; i < m_ships.size(); ++i)
     {
       const ShipView& view = m_ships[i];
-      if (view.thrusterLocals.empty() || view.thrusterIntensity <= 0.002f)
+      // A hull the frustum rejected has no plume worth building. The trail streams behind the ship
+      // rather than around it, which is why CULL_RADIUS_PAD_METRES is a trail length: the sphere
+      // that decided this has to have covered the ribbon, not just the hull.
+      if (!view.visible || view.thrusterLocals.empty() || view.thrusterIntensity <= 0.002f)
         continue;
 
       // Hoisted out of the nozzle loop: one lookup per ship rather than one per billboard, and the

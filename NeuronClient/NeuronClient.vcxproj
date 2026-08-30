@@ -242,6 +242,7 @@
     <ClInclude Include="BodyRenderer.h" />
     <ClInclude Include="FxRenderer.h" />
     <ClInclude Include="GlowBillboards.h" />
+    <ClInclude Include="ViewCulling.h" />
     <ClInclude Include="SkyRenderer.h" />
     <ClInclude Include="BitmapFont.h" />
     <ClInclude Include="ScreenImage.h" />
@@ -269,6 +270,7 @@
     <ClCompile Include="BodyRenderer.cpp" />
     <ClCompile Include="FxRenderer.cpp" />
     <ClCompile Include="GlowBillboards.cpp" />
+    <ClCompile Include="ViewCulling.cpp" />
     <ClCompile Include="SkyField.cpp" />
     <ClCompile Include="SkyRenderer.cpp" />
     <ClCompile Include="BitmapFont.cpp" />
