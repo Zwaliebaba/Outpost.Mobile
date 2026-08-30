@@ -1,6 +1,7 @@
 # The MMO scalability plan — the review as slices
 
-**Status: slice 2 has landed; the despawn log is cursored.** This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
+**Status: slice 2 has landed and the despawn log is cursored; the loopback fallback is gone
+(ADR 0027); slices 5 and 6 are scheduled and their work orders written.** This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
 (tree at `de12b6d`) into an ordered slice plan in the shape `Design/README.md` defines: one slice,
 one branch, one pull request. The review is the evidence; this document is the work. Where a slice
 already has a design in the tree — the reliable lane lives in [`QuicTransport.md`](QuicTransport.md)
@@ -77,7 +78,9 @@ dependency. Four tracks can be in flight at once; nothing requires it.
 
 Named here so no slice takes them silently:
 
-1. **Schedule the reliable lane now** — reverses QuicTransport.md §12 decision 4, as above.
+1. ~~**Schedule the reliable lane now**~~ — **taken 2026-08-30: scheduled.** The wait in
+   QuicTransport.md §12 decision 4 is lifted there, and the two work orders
+   ([3a](ReliableLane-work-order.md), [3b](ReliableFormat-work-order.md)) are written.
 2. **The tick rate** (slice 12): keep 60 Hz and pay it per region, or lower it and pay collision
    substepping in GameLogic. The tunneling suite is already parameterized to name the hulls that
    break; the decision record writes itself either way, but only the owner can weigh server cost
@@ -108,12 +111,12 @@ Findings reference `MmoScalabilityReview.md`.
 
 | # | Slice | Layer | Size | Depends on | Findings | ADR | Status |
 |---|---|---|---|---|---|---|---|
-| 1 | Ghost backstop: periodic full refresh | `Outpost` | S | — | E1 interim |  |  |
+| 1 | Ghost backstop: periodic full refresh | `Outpost` | S | — | E1 interim |  | dropped: 5–6 scheduled |
 | 2 | Sequence-cursored despawn delivery | `GameLogic` | M | — | E2 | ADR | [landed](DespawnCursors-work-order.md) |
 | 3 | The publisher: subscriber table, phases, budgets | `GameLogic` | M | 2 | E2 E4 E6 | ADR |  |
 | 4 | The root joins the publisher | `Outpost` | S | 3 | E2 |  |  |
-| 5 | Reliable lane on both transports (= QuicTransport 3a) | `NeuronCore` | M | — | E1 |  |  |
-| 6 | Leaves, destroys, orders go reliable (= QuicTransport 3b) | `GameLogic` | M | 5 | E1 |  |  |
+| 5 | Reliable lane on both transports (= QuicTransport 3a) | `NeuronCore` | M | — | E1 |  | [scheduled](ReliableLane-work-order.md) |
+| 6 | Leaves, destroys, orders go reliable (= QuicTransport 3b) | `GameLogic` | M | 5 | E1 |  | [scheduled](ReliableFormat-work-order.md) |
 | 7 | Listener slot reclamation, per-role rings | `NeuronCore` | S | — | E3 |  |  |
 | 8 | Trail and glow batching | `NeuronClient`+`Outpost` | S | — | G1 |  |  |
 | 9 | Frustum culling | `NeuronClient`+`Outpost` | S | — | G2 |  |  |
@@ -149,6 +152,10 @@ in the live path.
 **Acceptance.** A code read (the adapter has no suite — ADR 0014's argument, stated as the slice's
 assumption); `SnapshotTests` already cover `Write`; the knob's comment names slice 6 as what makes
 this a belt-and-suspenders setting. **Skip this slice entirely if slices 5–6 are scheduled first.**
+
+**Dropped, 2026-08-30.** They were scheduled first. This slice was a way to blunt E1 while the lane
+waited; nothing waits now, and a periodic full refresh that exists only to cover a gap the lane
+closes is a knob to explain and then remove.
 
 #### Slice 2 — sequence-cursored despawn delivery (`GameLogic`, M)
 
@@ -195,15 +202,17 @@ and HUD are unchanged.
 **Acceptance.** Boot log reads as before over both transports; screenshots at two window sizes;
 stated assumption: still one subscriber in practice, now as a table of one.
 
-#### Slices 5 and 6 — the reliable lane (= QuicTransport.md slices 3a and 3b)
+#### Slices 5 and 6 — the reliable lane (= QuicTransport.md slices 3a and 3b) — **scheduled**
 
 Fully specified in [`QuicTransport.md`](QuicTransport.md) §14, steps and acceptance included —
 `SendReliable`/`ReceiveReliable` with refusing defaults, the loopback lane exempt from
 `dropOneInN`, the reserved bidirectional stream with 2-byte framing, `KIND_LEAVE`, orders going
 reliable, the ALPN bump to `outpost-2`, and the drop-everything test in which every leave and
 every order still arrives. The work orders are written from that design when the owner takes §4
-decision 1; they are not restated here. One addition from this plan: slice 6's order carries the
-removal (or demotion to a comment) of slice 1's backstop knob if it landed first.
+decision 1 — taken on 2026-08-30 — and are now written:
+[3a](ReliableLane-work-order.md) and [3b](ReliableFormat-work-order.md). Slice 1's backstop is
+dropped rather than built: it existed only to blunt E1 while the lane was unscheduled, and the lane
+is the real answer.
 
 #### Slice 7 — listener slot reclamation (`NeuronCore`, S)
 
