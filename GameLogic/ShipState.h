@@ -16,16 +16,68 @@ inline constexpr ShipId INVALID_SHIP_ID = 0xFFFFFFFFu;
 // which is the correct amount of knowledge (Design/Archive/Hostiles.md 4.1).
 using FactionId = std::uint8_t;
 inline constexpr FactionId FACTION_PLAYER = 0;
-inline constexpr FactionId FACTION_HOSTILE = 1;
+
+// The Vandal Collective -- "Vandal", and VANDAL where the HUD needs a word. It was FACTION_HOSTILE
+// until Stations.md 4.1, and the rename is not cosmetic: Standing::Hostile below is a *relation*,
+// and a faction named for it made StandingOf(FACTION_HOSTILE, ...) == Standing::Hostile a sentence
+// nobody should have to parse twice. Identity constants name identities and standing values name
+// relations, which is ADR 0013's split spelled into the identifiers.
+inline constexpr FactionId FACTION_VANDAL = 1;
+
 // Core Vanguard Command -- CVC, the Vanguard -- the government of known space (Design/Stations.md 4).
-// It spawns nothing yet: what needs it now is the client's livery table, which paints a hull by the
-// faction the wire states and therefore has to be able to name all three. The id is the wire's, so
-// it is declared with the other two rather than in the client, and it is 2 because Stations.md 4.1
-// says 2 -- a value the server will start using is not one to renumber later.
-//
-// Stations.md 4.1 also renames FACTION_HOSTILE to FACTION_VANDAL, same value, every caller in one
-// commit. That rename is Stations' to make; this line does not pre-empt it.
+// Its ships and stations are ordinary records with this id: no government flag, no station-faction
+// special case anywhere in the engine, for ADR 0013's reason -- the server states whose a thing is,
+// and what that *means* is a mapping each side owns.
 inline constexpr FactionId FACTION_VANGUARD = 2;
+
+// How many factions the standing table below holds, and therefore how many the wire's hostileMask
+// can name: the mask is a u8 (Design/Stations.md 4.3). The day factions outgrow a byte the mask
+// becomes a small standings record and this limit moves with it -- widen both together.
+inline constexpr std::uint32_t FACTION_LIMIT = 8;
+
+// What one faction is to another.
+//
+// Simulation state by AGENTS.md 5's own test: it changes recorded outcomes -- who may dock, who
+// gets hunted -- and a spectator would need it. It is a relation and not an identity, which is the
+// whole reason the faction above stopped being called HOSTILE.
+enum class Standing : std::uint8_t
+{
+  Neutral,
+  Hostile
+};
+
+// The standings table, read as StandingOf(owner, other): *the owner's opinion of the other*.
+//
+// Directional, because "CVC despises you" and "you despise CVC" are different facts and the second
+// is none of the simulation's business. A fixed-size array indexed by two integers -- no map, no
+// hashing, no iteration at all on the hot path (Design/Stations.md 4.2, 10).
+struct StandingTable
+{
+  // Standing::Neutral is zero, so the authored default is "everyone is neutral" and the function
+  // below writes only what is not.
+  Standing rows[FACTION_LIMIT][FACTION_LIMIT]{};
+};
+
+// The standings the world starts with.
+//
+// Built by a loop rather than written out as sixty-four literals, because the rule is one sentence
+// and a grid of Neutrals is not: the Vandal Collective holds every other faction Hostile and is
+// held Hostile by every other faction. The Vandals were never neutral -- the tree just had no word
+// for it until now. "Every other" excludes the diagonal: a faction is not its own enemy.
+[[nodiscard]] constexpr StandingTable AuthoredStandings() noexcept
+{
+  StandingTable table{};
+  for (std::uint32_t other = 0; other < FACTION_LIMIT; ++other)
+  {
+    if (other == FACTION_VANDAL)
+      continue;
+    table.rows[FACTION_VANDAL][other] = Standing::Hostile;
+    table.rows[other][FACTION_VANDAL] = Standing::Hostile;
+  }
+  return table;
+}
+
+inline constexpr StandingTable DEFAULT_STANDINGS = AuthoredStandings();
 
 // A reference to a ship that survives a despawn.
 //

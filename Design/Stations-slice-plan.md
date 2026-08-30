@@ -228,6 +228,12 @@ side because what a planet *wears* is nobody's business but the client's. Next f
 
 ## 5. Slice 2 — who is who
 
+**Written, in review** — work order [`Stations-slice-2.md`](Stations-slice-2.md), decision records
+[0038](Decisions/0038-stations-are-ships-with-a-side-table.md) and
+[0039](Decisions/0039-standings-are-simulation-state-stated-per-subscriber.md). Built as planned; the
+three §2.2 decisions about the mask byte were taken as recommended, and `DEFAULT_STANDINGS` is a
+`constexpr` loop rather than sixty-four literals so the rule reads as the sentence it is.
+
 **Layer:** `GameLogic`, `GameLogicTests`, plus the rename's two `Outpost` call sites.
 **Depends on:** nothing. **Blocks:** 3, 4, 5.
 

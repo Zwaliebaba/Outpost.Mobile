@@ -36,6 +36,56 @@ public:
     bool active = false;
   };
 
+  // An index into the station table. Nested beside the types it names, as Patrol is: a station is
+  // World's concept, where ShipId is everybody's. Stations do not despawn this phase, so an index
+  // stays an index and needs no generation.
+  using StationId = std::uint32_t;
+  static constexpr StationId INVALID_STATION_ID = 0xFFFFFFFFu;
+
+  // One ship inside a station's ledger. Hull and faction is the whole of what a ship *is* today;
+  // when undocking arrives it spawns a fresh ship from this row, with a fresh handle, so control
+  // groups will have pruned the docked member and will not reclaim it -- the honest consequence of
+  // handles naming lives, and what groups already do for any despawn (Design/Stations.md 7.3).
+  struct DockedShip
+  {
+    std::uint32_t hullId = 0;
+    FactionId factionId = FACTION_PLAYER;
+  };
+
+  // What a station is made with. All content, passed in by whoever makes the station, the way a
+  // patrol's ring radius and cruise speed are -- not tuning constants, because what the composition
+  // root spawns is content (Design/Archive/Hostiles.md 5.1).
+  struct StationDesc
+  {
+    FactionId ownerFaction = FACTION_VANGUARD;
+
+    // The garrison. Nothing reads these until the protector response lands; they are here now
+    // because the composition root registers the stations before that slice exists, and a desc that
+    // could not carry them would make the root unable to say what it means.
+    std::uint32_t protectorHullId = 0;
+    std::uint32_t protectorComplement = 0; // 0: this station never launches anything
+    std::uint32_t launchEveryTicks = 90;
+    std::uint32_t targetCap = 4; // the most aggressors one station tracks at once
+  };
+
+  // A station: the structure ship, who owns it, what it would launch, and who is inside.
+  //
+  // The handle is a handle rather than an id for ADR 0005's reason, and every read of it goes
+  // through Resolve, so a row whose ship is gone reports inactive instead of dangling. Nothing can
+  // destroy anything this phase and a Vanguard station is indestructible as a rule
+  // (Design/Stations.md 8.5) -- but the user-station design inherits a table that already tolerates
+  // death, which is the point of doing it now.
+  struct Station
+  {
+    ShipHandle structure;
+    FactionId ownerFaction = FACTION_VANGUARD;
+    std::uint32_t protectorHullId = 0;
+    std::uint32_t protectorComplement = 0;
+    std::uint32_t launchEveryTicks = 90;
+    std::uint32_t targetCap = 4;
+    std::vector<DockedShip> docked; // the ledger: who is inside. Filled by the dock pass.
+  };
+
   // Adds a ship at rest. Returns its id, which is its index for as long as nothing is despawned.
   // Take HandleOf if the reference has to outlive a tick.
   //
@@ -101,6 +151,69 @@ public:
   // A ship's standing patrol. Server-side only, like a route: an assignment is intent, and the
   // snapshot exists to withhold intent. Exposed for tests and for a debug overlay.
   [[nodiscard]] const Patrol& PatrolOf(ShipId _id) const noexcept;
+
+  // --- standings ---------------------------------------------------------------------------------
+
+  // The owner's opinion of the other. Directional: "CVC despises you" and "you despise CVC" are
+  // different facts, and only the first decides whether CVC lets you dock.
+  //
+  // A faction id at or past FACTION_LIMIT reads back Hostile. Nobody authored it, every caller of
+  // this is a gate or a warning colour, and a stranger admitted as a friend is the one mistake this
+  // table must not make -- the same direction WorldView::LiveryOf takes, for the same reason.
+  [[nodiscard]] Standing StandingOf(FactionId _owner, FactionId _other) const noexcept;
+
+  // Bit f set: faction f currently holds _viewer's faction hostile. What the wire states to each
+  // subscriber so a client's affordances can tell the truth without inferring anything
+  // (Design/Stations.md 4.3).
+  [[nodiscard]] std::uint8_t HostileMaskFor(FactionId _viewer) const noexcept;
+
+  // The server's judgment on a hostile act against a station: the attacker's faction becomes
+  // Hostile in the station owner's eyes, permanently and empire-wide.
+  //
+  // Permanently, because forgiveness is a standings design of its own and the owner chose
+  // permanence over inventing half of one here (Design/Stations.md 15, decision 3). Empire-wide,
+  // because CVC is one government -- so a second station of the same owner refuses the attacker
+  // too, without ever having been told.
+  //
+  // There is no client message for this and there never will be. Aggression is a judgment about
+  // acts the server observed; a client that could declare one could make anybody a criminal
+  // (Design/Stations.md 8.1). It arrives from outside the tick -- an adapter, the composition root,
+  // a test -- like any order.
+  //
+  // A stale attacker handle is a no-op. Slice 4 adds the second half: the attacked station
+  // scrambles its garrison.
+  void RecordAggression(ShipHandle _attacker, StationId _station);
+
+  // --- stations ----------------------------------------------------------------------------------
+
+  // Makes an existing structure ship a station. Returns its id, which is an index into the station
+  // table; stations do not despawn this phase, so the index is stable.
+  //
+  // The ship keeps doing everything it already does -- static index, obstacle set, record on the
+  // wire -- and the row is what knows it admits ships. Deliberately not a hull property: a
+  // Structure that is scenery and a Structure that is a station must both be expressible, and
+  // user-owned stations will be stations on other hulls (Design/Stations.md 6.1).
+  //
+  // Naming a ship that is not live returns INVALID_STATION_ID and makes no row.
+  StationId MakeStation(ShipId _structure, const StationDesc& _desc);
+
+  // The station a ship is, or INVALID_STATION_ID if it is not one. A linear scan of a vector with
+  // single digits of rows, which is free at this scale and becomes an index the day there are
+  // hundreds (Design/Stations.md 6.1, 13).
+  [[nodiscard]] StationId StationAt(ShipId _id) const noexcept;
+  [[nodiscard]] bool IsStation(ShipId _id) const noexcept
+  {
+    return StationAt(_id) != INVALID_STATION_ID;
+  }
+
+  // A station's row. Server-side only: the ledger, the garrison numbers and the target list are all
+  // intent or private state of the kind the snapshot exists to withhold (Design/Stations.md 6.2).
+  // Exposed for tests and for a debug overlay.
+  [[nodiscard]] const Station& StationOf(StationId _id) const noexcept;
+  [[nodiscard]] std::uint32_t StationCount() const noexcept
+  {
+    return static_cast<std::uint32_t>(m_stations.size());
+  }
 
   // One fixed tick. The only thing in the game that advances simulation state.
   //
@@ -282,6 +395,15 @@ private:
   // not a field on ShipState, deliberately: that struct promises nothing in it a snapshot could not
   // carry, and an assignment is the kind of intent the snapshot exists to withhold.
   std::vector<Patrol> m_patrols;
+
+  // The stations. Indexed by StationId and *not* parallel to m_ships, which is the difference worth
+  // seeing: a patrol belongs to a ship, a station is a thing a ship happens to be. Nothing removes
+  // from it this phase, so an index stays an index.
+  std::vector<Station> m_stations;
+
+  // Who holds whom hostile. Mutated only by RecordAggression, which arrives from outside the tick;
+  // read pointwise and never iterated, so no pass of Step depends on its contents in array order.
+  StandingTable m_standings = DEFAULT_STANDINGS;
 
   std::vector<WorldPos> m_routeScratch;
   std::vector<PathGrid::Obstacle> m_obstacleScratch;

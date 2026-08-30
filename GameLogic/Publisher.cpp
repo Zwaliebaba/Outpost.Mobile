@@ -199,7 +199,10 @@ void Publisher::PublishOne(const World& _world, Subscriber& _subscriber)
   if (m_sendScratch.empty() && _subscriber.interest.Left().empty())
     return; // nothing changed and nothing came due; an empty update is not information
 
-  (void)_subscriber.writer.WriteInterest(_world, m_sendScratch, m_leftScratch, m_destroyedScratch, *_subscriber.transport);
+  // The subscriber's faction is what the header's hostileMask is stated for. The publisher is the
+  // only thing that knows whose view an update is; this is not a second authority check.
+  (void)_subscriber.writer.WriteInterest(_world, m_sendScratch, m_leftScratch, m_destroyedScratch, *_subscriber.transport,
+                                         _subscriber.faction);
 }
 
 void Publisher::SplitTheLost(const World& _world, Subscriber& _subscriber)

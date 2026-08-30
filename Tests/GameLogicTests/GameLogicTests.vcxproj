@@ -193,6 +193,7 @@
     <ClCompile Include="OrderTests.cpp" />
     <ClCompile Include="PathfindingTests.cpp" />
     <ClCompile Include="PatrolTests.cpp" />
+    <ClCompile Include="StationTests.cpp" />
     <ClCompile Include="UniverseLayoutTests.cpp" />
     <ClCompile Include="PublisherTests.cpp" />
     <ClCompile Include="SeparationTests.cpp" />

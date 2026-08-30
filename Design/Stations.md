@@ -1,6 +1,6 @@
 # Stations — Core Vanguard Command, docking, and the protector response
 
-**Status: in progress. No slice has merged; slice 1 is written and in review.** Four decisions were
+**Status: in progress. No slice has merged; slices 1 and 2 are written and in review.** Four decisions were
 put to the owner on 2026-08-30 and taken (§15); each was the recommended option. §16 lists the
 slices and the dependencies between them, and
 [`Stations-slice-plan.md`](Stations-slice-plan.md) grounds that list against the tree.
@@ -873,7 +873,7 @@ shape; work orders are written per slice when it is picked up.
 | # | Slice | Layer | Depends on | Decision records due |
 |---|---|---|---|---|
 | 1 | **The layout**: `UniverseLayout.h/.cpp`, `LayOutSystem`, the three layout tests — *in review*, [work order](Stations-slice-1.md) | `GameLogic` | — | the layout is static content in `GameLogic` ([ADR 0037](Decisions/0037-the-universe-layout-is-static-content-in-gamelogic.md)) |
-| 2 | **Who is who**: `FACTION_VANGUARD`, the `FACTION_HOSTILE` → `FACTION_VANDAL` rename at every caller (§4.1), `Standing` + `DEFAULT_STANDINGS` + the table in `World`, the standing half of `RecordAggression`, the station table + `MakeStation` + `StationDesc`, the record's flags byte, the update header's `hostileMask`, their tests | `GameLogic` (+ the rename's `Outpost` call sites) | — | stations are ships with a side table; standings are simulation state stated per subscriber |
+| 2 | **Who is who**: `FACTION_VANGUARD`, the `FACTION_HOSTILE` → `FACTION_VANDAL` rename at every caller (§4.1), `Standing` + `DEFAULT_STANDINGS` + the table in `World`, the standing half of `RecordAggression`, the station table + `MakeStation` + `StationDesc`, the record's flags byte, the update header's `hostileMask`, their tests — *in review*, [work order](Stations-slice-2.md) | `GameLogic` (+ the rename's `Outpost` call sites) | — | [stations are ships with a side table](Decisions/0038-stations-are-ships-with-a-side-table.md); [standings are simulation state stated per subscriber](Decisions/0039-standings-are-simulation-state-stated-per-subscriber.md) |
 | 3 | **Docking**: `DespawnCause` + the docked list on the wire, `DockOrder` write/read, `IssueDockOrder` + gates, `m_dockings` + the dock pass + capture + ledger, `DOCK_CAPTURE_METRES` + `DockRangeMetres`, move-order cancellation, despawn repair, their tests | `GameLogic` | 2 | a departure carries a cause on the wire |
 | 4 | **The response**: target lists + the launch metronome, `m_protectors` + the pursuit pass + `PURSUIT_REPLAN_METRES`, stand-down-and-dock-home, the full `RecordAggression`, the replay test over the whole scene | `GameLogic` | 2, 3 | the protector response reacts to stated acts, not senses |
 | 5 | **The Vanguard scene**: root calls `LayOutSystem` + spawns the stations + registers the Vandal base, planet visuals follow the sites (F5 reseeds looks only), `VANGUARD_*`/`HUD_VANGUARD_BLUE` colors + the faction-tint table, `FACTION_NAMES` beside `HULL_NAMES`, minimap station dots + hollow marks + edge clamping, `hostileMask` consumption, `CONTACTS` by mask, `STATIONS ONLINE` boot line, AGENTS.md's what-is-here sentences, screenshots at two sizes | `Outpost` | 1, 2 | — |

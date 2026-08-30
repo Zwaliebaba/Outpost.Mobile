@@ -16,7 +16,7 @@ public:
     const Game::ShipId ours = world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
     const Game::ShipId alsoOurs = world.SpawnShip(Game::LocalPos(80.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
     const Game::ShipId theirs =
-      world.SpawnShip(Game::LocalPos(160.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_HOSTILE);
+      world.SpawnShip(Game::LocalPos(160.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
 
     const Game::WorldPos before = world.Ship(theirs).steerTargetPos;
     const Game::ShipId justTheirs[] = {theirs};
@@ -33,7 +33,7 @@ public:
     Assert::AreEqual(Game::OrderState::Idle, world.Ship(theirs).order, L"a hostile ship rode in on a mixed order");
 
     // And the ship is orderable by its own faction: the gate is a comparison, not a ban.
-    (void)world.IssueMoveOrder(justTheirs, Game::LocalPos(0.0f, 900.0f), false, 0.0f, Game::FACTION_HOSTILE);
+    (void)world.IssueMoveOrder(justTheirs, Game::LocalPos(0.0f, 900.0f), false, 0.0f, Game::FACTION_VANDAL);
     Assert::AreEqual(Game::OrderState::Moving, world.Ship(theirs).order, L"a ship refused an order from its own faction");
   }
 

@@ -26,13 +26,18 @@ constexpr std::uint8_t KIND_MOVE_ORDER = 2;
 // reason about, and the unreliable copy would still be the one that arrived first.
 constexpr std::uint8_t KIND_LEAVE = 3;
 
-// kind, complete, snapshotId, fragmentIndex, fragmentCount, tick, recordCount
-constexpr std::uint32_t SNAPSHOT_HEADER_BYTES = 1 + 1 + 4 + 4 + 4 + 8 + 4;
+// kind, complete, snapshotId, fragmentIndex, fragmentCount, tick, recordCount, hostileMask
+//
+// The mask is appended rather than inserted, so every field a reader already knew stays where it
+// was. It rides every update rather than travelling on change because updates are datagrams: a lost
+// "you are now criminal" would leave a client believing itself honest for the rest of the match,
+// and one byte per update is the cheapest idempotence there is (Design/Stations.md 4.3).
+constexpr std::uint32_t SNAPSHOT_HEADER_BYTES = 1 + 1 + 4 + 4 + 4 + 8 + 4 + 1;
 
 // kind, tick, leaveCount, destroyedCount
 constexpr std::uint32_t LEAVE_HEADER_BYTES = 1 + 8 + 4 + 4;
-// handle, posWorld, prevPos, five floats, order, faction, hullId
-constexpr std::uint32_t SHIP_RECORD_BYTES = 8 + 24 + 24 + 20 + 1 + 1 + 4;
+// handle, posWorld, prevPos, five floats, order, faction, flags, hullId
+constexpr std::uint32_t SHIP_RECORD_BYTES = 8 + 24 + 24 + 20 + 1 + 1 + 1 + 4;
 // kind, orderId, hasFacing, facingRad, destination, handleCount
 constexpr std::uint32_t ORDER_HEADER_BYTES = 1 + 4 + 1 + 4 + 24 + 4;
 constexpr std::uint32_t HANDLE_BYTES = 8;
@@ -219,11 +224,12 @@ void WriteShipRecord(ByteWriter& _out, const World& _world, ShipId _id)
   _out.F32(ship.turnRateRadPerSec);
   _out.U8(static_cast<std::uint8_t>(ship.order));
   _out.U8(ship.factionId);
+  _out.U8(_world.IsStation(_id) ? SHIP_FLAG_STATION : std::uint8_t{0});
   _out.U32(ship.hullId);
 }
 } // namespace
 
-std::uint32_t SnapshotWriter::Write(const World& _world, Neuron::Transport& _transport)
+std::uint32_t SnapshotWriter::Write(const World& _world, Neuron::Transport& _transport, FactionId _viewer)
 {
   const std::span<const ShipState> ships = _world.Ships();
   const std::uint32_t perFragment = ShipsPerSnapshotFragment();
@@ -251,6 +257,7 @@ std::uint32_t SnapshotWriter::Write(const World& _world, Neuron::Transport& _tra
     out.U32(fragmentCount);
     out.U64(_world.Tick());
     out.U32(count);
+    out.U8(_world.HostileMaskFor(_viewer));
 
     for (std::uint32_t at = 0; at < count; ++at)
       WriteShipRecord(out, _world, static_cast<ShipId>(first + at));
@@ -294,7 +301,7 @@ bool SnapshotWriter::WriteLeaves(std::uint64_t _tick, std::span<const ShipHandle
 }
 
 std::uint32_t SnapshotWriter::WriteInterest(const World& _world, std::span<const ShipHandle> _sent, std::span<const ShipHandle> _left,
-                                            std::span<const ShipHandle> _destroyed, Neuron::Transport& _transport)
+                                            std::span<const ShipHandle> _destroyed, Neuron::Transport& _transport, FactionId _viewer)
 {
   m_lastBytes = 0;
   m_lastRecords = 0;
@@ -346,6 +353,7 @@ std::uint32_t SnapshotWriter::WriteInterest(const World& _world, std::span<const
     out.U32(fragmentCount);
     out.U64(_world.Tick());
     out.U32(count);
+    out.U8(_world.HostileMaskFor(_viewer));
 
     for (const ShipId id : m_resolvedScratch)
       WriteShipRecord(out, _world, id);
@@ -385,6 +393,7 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
   const std::uint32_t fragmentCount = in.U32();
   const std::uint64_t tick = in.U64();
   const std::uint32_t count = in.U32();
+  const std::uint8_t hostileMask = in.U8();
   if (!in.Ok() || fragmentCount == 0 || fragment >= fragmentCount)
     return false;
 
@@ -392,6 +401,12 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
   // on and applying it would step the view backwards.
   if (m_hasSnapshot && tick <= m_latest.tick)
     return false;
+
+  // Taken here rather than in Apply, and the asymmetry with the upserts is the point: an incomplete
+  // update is dropped whole because half a set of records is half a world, but a mask is not coupled
+  // to any record, so taking it from whatever fragment arrives is strictly more robust. Below the
+  // staleness check, so a late fragment of a superseded update cannot walk it backwards.
+  m_hostileMask = hostileMask;
 
   if (snapshotId != m_buildingId)
   {
@@ -423,6 +438,7 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
     ship.turnRateRadPerSec = in.F32();
     ship.order = static_cast<OrderState>(in.U8());
     ship.factionId = in.U8();
+    ship.flags = in.U8();
     ship.hullId = in.U32();
     if (!in.Ok())
     {

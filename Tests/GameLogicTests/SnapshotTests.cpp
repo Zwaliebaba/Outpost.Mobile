@@ -115,7 +115,7 @@ public:
     // Spawned hostile so that every field is compared against a value that is not its default: a
     // faction that round-trips only because both ends default to zero proves nothing.
     Game::World world;
-    const Game::ShipId ship = SpawnAt(world, 120.0f, -340.0f, Game::HullId::Frigate, Game::FACTION_HOSTILE);
+    const Game::ShipId ship = SpawnAt(world, 120.0f, -340.0f, Game::HullId::Frigate, Game::FACTION_VANDAL);
     const Game::ShipId order[] = {ship};
     world.IssueMoveOrder(order, Game::LocalPos(0.0f, 600.0f), false, 0.0f);
     for (int tick = 0; tick < 30; ++tick)
@@ -153,7 +153,7 @@ public:
     // by the round-trip test above.
     Game::World world;
     const Game::ShipId ours = SpawnAt(world, 0.0f, 0.0f, Game::HullId::Corvette, Game::FACTION_PLAYER);
-    const Game::ShipId theirs = SpawnAt(world, 200.0f, 0.0f, Game::HullId::Interceptor, Game::FACTION_HOSTILE);
+    const Game::ShipId theirs = SpawnAt(world, 200.0f, 0.0f, Game::HullId::Interceptor, Game::FACTION_VANDAL);
     world.Step();
 
     const Game::ShipHandle ourHandle = world.HandleOf(ours);
@@ -168,7 +168,7 @@ public:
     Assert::IsTrue(Find(fromWhole.Latest(), ourHandle) != nullptr, L"the player's ship is missing from the full snapshot");
     Assert::AreEqual(Faction(Game::FACTION_PLAYER), Faction(Find(fromWhole.Latest(), ourHandle)->factionId),
                      L"the player's faction did not survive Write");
-    Assert::AreEqual(Faction(Game::FACTION_HOSTILE), Faction(Find(fromWhole.Latest(), theirHandle)->factionId),
+    Assert::AreEqual(Faction(Game::FACTION_VANDAL), Faction(Find(fromWhole.Latest(), theirHandle)->factionId),
                      L"the hostile faction did not survive Write");
 
     world.Step();
@@ -180,8 +180,116 @@ public:
       (void)fromUpdate.Accept(datagram);
     Assert::AreEqual(Faction(Game::FACTION_PLAYER), Faction(Find(fromUpdate.Latest(), ourHandle)->factionId),
                      L"the player's faction did not survive WriteInterest");
-    Assert::AreEqual(Faction(Game::FACTION_HOSTILE), Faction(Find(fromUpdate.Latest(), theirHandle)->factionId),
+    Assert::AreEqual(Faction(Game::FACTION_VANDAL), Faction(Find(fromUpdate.Latest(), theirHandle)->factionId),
                      L"the hostile faction did not survive WriteInterest");
+  }
+
+  // A client tapping a structure has to know it is tapping a station before an order is worth
+  // sending, and "immovable hull of faction 2" is inference of exactly the kind the wire's whole
+  // design forbids (Design/Stations.md 6.2).
+  TEST_METHOD(TheStationFlagSurvivesTheWire)
+  {
+    Game::World world;
+    const Game::ShipId ship = SpawnAt(world, 0.0f, 0.0f, Game::HullId::Corvette, Game::FACTION_PLAYER);
+    const Game::ShipId scenery = SpawnAt(world, 400.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+    const Game::ShipId post = SpawnAt(world, 800.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+
+    Game::World::StationDesc desc;
+    desc.ownerFaction = Game::FACTION_VANGUARD;
+    Assert::AreNotEqual(Game::World::INVALID_STATION_ID, world.MakeStation(post, desc), L"the station was not made");
+    world.Step();
+
+    const Game::ShipHandle shipHandle = world.HandleOf(ship);
+    const Game::ShipHandle sceneryHandle = world.HandleOf(scenery);
+    const Game::ShipHandle postHandle = world.HandleOf(post);
+
+    // Both shapes of send: the flag is written by one record writer, but only one of the two paths
+    // would be exercised by a round-trip test, and a header read in the wrong place breaks the other.
+    CaptureTransport whole;
+    Game::SnapshotWriter writer;
+    Assert::IsTrue(writer.Write(world, whole) > 0, L"the full snapshot did not send");
+    Game::SnapshotReceiver fromWhole;
+    for (const std::vector<std::uint8_t>& datagram : whole.sent)
+      (void)fromWhole.Accept(datagram);
+
+    Assert::AreEqual(static_cast<std::uint32_t>(Game::SHIP_FLAG_STATION),
+                     static_cast<std::uint32_t>(Find(fromWhole.Latest(), postHandle)->flags), L"the station's flag did not survive Write");
+    Assert::AreEqual(static_cast<std::uint32_t>(0), static_cast<std::uint32_t>(Find(fromWhole.Latest(), sceneryHandle)->flags),
+                     L"a Structure that is only scenery came back flagged as a station");
+    Assert::AreEqual(static_cast<std::uint32_t>(0), static_cast<std::uint32_t>(Find(fromWhole.Latest(), shipHandle)->flags),
+                     L"a plain ship came back flagged as a station");
+
+    world.Step();
+    CaptureTransport update;
+    const Game::ShipHandle all[] = {shipHandle, sceneryHandle, postHandle};
+    Assert::IsTrue(writer.WriteInterest(world, all, {}, {}, update) > 0, L"the interest update did not send");
+    Game::SnapshotReceiver fromUpdate;
+    for (const std::vector<std::uint8_t>& datagram : update.sent)
+      (void)fromUpdate.Accept(datagram);
+
+    Assert::AreEqual(static_cast<std::uint32_t>(Game::SHIP_FLAG_STATION),
+                     static_cast<std::uint32_t>(Find(fromUpdate.Latest(), postHandle)->flags),
+                     L"the station's flag did not survive WriteInterest");
+    Assert::AreEqual(static_cast<std::uint32_t>(0), static_cast<std::uint32_t>(Find(fromUpdate.Latest(), sceneryHandle)->flags),
+                     L"scenery came back flagged over WriteInterest");
+  }
+
+  // The client must not infer its standing, and there is nothing to infer from anyway: an order
+  // datagram is fire-and-forget, so a refused dock would otherwise be ships that simply never go
+  // (Design/Stations.md 4.3).
+  TEST_METHOD(StandingSurvivesTheWire)
+  {
+    Game::World world;
+    const Game::ShipId raider = SpawnAt(world, 0.0f, 0.0f, Game::HullId::Bomber, Game::FACTION_PLAYER);
+    const Game::ShipId post = SpawnAt(world, 900.0f, 900.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+
+    Game::World::StationDesc desc;
+    desc.ownerFaction = Game::FACTION_VANGUARD;
+    const Game::World::StationId station = world.MakeStation(post, desc);
+    world.Step();
+
+    const Game::ShipHandle held[] = {world.HandleOf(raider), world.HandleOf(post)};
+    Game::SnapshotWriter writer;
+
+    // The full-snapshot path first. Both writers stamp KIND_SNAPSHOT and one reader parses both, so
+    // a mask written by one and not the other desynchronises the reader on the first full snapshot
+    // -- and nothing else in this file would notice, because every other test here uses one path.
+    CaptureTransport whole;
+    Assert::IsTrue(writer.Write(world, whole, Game::FACTION_PLAYER) > 0, L"the full snapshot did not send");
+    Game::SnapshotReceiver fromWhole;
+    for (const std::vector<std::uint8_t>& datagram : whole.sent)
+      (void)fromWhole.Accept(datagram);
+    Assert::IsTrue(fromWhole.IsHostileToMe(Game::FACTION_VANDAL), L"the mask did not survive Write");
+    Assert::IsFalse(fromWhole.IsHostileToMe(Game::FACTION_VANGUARD), L"Write reported the Vanguard hostile before it was");
+
+    CaptureTransport atBoot;
+    Assert::IsTrue(writer.WriteInterest(world, held, {}, {}, atBoot, Game::FACTION_PLAYER) > 0, L"the update did not send");
+    Game::SnapshotReceiver player;
+    for (const std::vector<std::uint8_t>& datagram : atBoot.sent)
+      (void)player.Accept(datagram);
+
+    Assert::IsTrue(player.IsHostileToMe(Game::FACTION_VANDAL), L"the client was not told the Vandals are hostile to it");
+    Assert::IsFalse(player.IsHostileToMe(Game::FACTION_VANGUARD), L"the client was told the Vanguard is hostile before it was");
+
+    world.RecordAggression(world.HandleOf(raider), station);
+    world.Step();
+
+    CaptureTransport afterwards;
+    Assert::IsTrue(writer.WriteInterest(world, held, {}, {}, afterwards, Game::FACTION_PLAYER) > 0, L"the second update did not send");
+    for (const std::vector<std::uint8_t>& datagram : afterwards.sent)
+      (void)player.Accept(datagram);
+    Assert::IsTrue(player.IsHostileToMe(Game::FACTION_VANGUARD), L"the client was never told the law had turned on it");
+
+    // Directional, and stated per subscriber rather than broadcast: a Vandal-faction client is told
+    // about the player, not about itself. One row of the table, never the table.
+    world.Step();
+    CaptureTransport vandalLink;
+    Assert::IsTrue(writer.WriteInterest(world, held, {}, {}, vandalLink, Game::FACTION_VANDAL) > 0, L"the Vandal update did not send");
+    Game::SnapshotReceiver vandal;
+    for (const std::vector<std::uint8_t>& datagram : vandalLink.sent)
+      (void)vandal.Accept(datagram);
+    Assert::IsTrue(vandal.IsHostileToMe(Game::FACTION_PLAYER), L"the Vandals were not told the player is hostile to them");
+    Assert::IsFalse(vandal.IsHostileToMe(Game::FACTION_VANDAL), L"the Vandals were told they are hostile to themselves");
   }
 
   TEST_METHOD(ADeathAndADepartureDifferOnTheWire)

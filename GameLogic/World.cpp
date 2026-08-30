@@ -101,6 +101,84 @@ bool World::DespawnShip(ShipHandle _handle)
   return true;
 }
 
+Standing World::StandingOf(FactionId _owner, FactionId _other) const noexcept
+{
+  // Out of range is Hostile, not Neutral. Nobody authored that faction, every caller here is a gate
+  // or a warning colour, and the failure directions are not symmetric: a stranger refused a dock is
+  // a bug report, a stranger admitted is a hole.
+  if (_owner >= FACTION_LIMIT || _other >= FACTION_LIMIT)
+    return Standing::Hostile;
+  return m_standings.rows[_owner][_other];
+}
+
+std::uint8_t World::HostileMaskFor(FactionId _viewer) const noexcept
+{
+  std::uint8_t mask = 0;
+  for (std::uint32_t faction = 0; faction < FACTION_LIMIT; ++faction)
+  {
+    // Their opinion of the viewer, not the viewer's of them. The client colours a faction that has
+    // turned on *it*, and refuses to offer a dock it would be refused (Design/Stations.md 4.3, 9.3).
+    if (StandingOf(static_cast<FactionId>(faction), _viewer) == Standing::Hostile)
+      mask |= static_cast<std::uint8_t>(1u << faction);
+  }
+  return mask;
+}
+
+void World::RecordAggression(ShipHandle _attacker, StationId _station)
+{
+  const ShipId attacker = Resolve(_attacker);
+  if (attacker == INVALID_SHIP_ID || _station >= m_stations.size())
+    return; // an attacker that is already gone, or a station that never was: nothing to judge
+
+  const FactionId attackerFaction = m_ships[attacker].factionId;
+  const FactionId owner = m_stations[_station].ownerFaction;
+  if (attackerFaction >= FACTION_LIMIT || owner >= FACTION_LIMIT)
+    return;
+
+  // Keyed on the faction, not on the ship: one subscriber is one faction today, so "your faction is
+  // criminal" and "you are criminal" are the same sentence. The day two players share a faction this
+  // widens to per-player rows exactly as ADR 0014's authority gate does (Design/Stations.md 4.2, 12).
+  m_standings.rows[owner][attackerFaction] = Standing::Hostile;
+}
+
+World::StationId World::MakeStation(ShipId _structure, const StationDesc& _desc)
+{
+  if (_structure >= m_ships.size())
+    return INVALID_STATION_ID;
+
+  Station station;
+  station.structure = HandleOf(_structure);
+  station.ownerFaction = _desc.ownerFaction;
+  station.protectorHullId = _desc.protectorHullId;
+  station.protectorComplement = _desc.protectorComplement;
+  station.launchEveryTicks = _desc.launchEveryTicks;
+  station.targetCap = _desc.targetCap;
+
+  const StationId id = static_cast<StationId>(m_stations.size());
+  m_stations.push_back(std::move(station));
+  return id;
+}
+
+World::StationId World::StationAt(ShipId _id) const noexcept
+{
+  if (_id >= m_ships.size())
+    return INVALID_STATION_ID;
+
+  // Through Resolve rather than by comparing stored ids, because swap-and-pop moves ids and a row
+  // holding a raw id would silently name whichever ship arrived in that slot (ADR 0005).
+  for (std::size_t at = 0; at < m_stations.size(); ++at)
+  {
+    if (Resolve(m_stations[at].structure) == _id)
+      return static_cast<StationId>(at);
+  }
+  return INVALID_STATION_ID;
+}
+
+const World::Station& World::StationOf(StationId _id) const noexcept
+{
+  return m_stations[_id];
+}
+
 std::span<const ShipHandle> World::DespawnsSince(std::uint64_t _cursor) const noexcept
 {
   if (_cursor <= m_despawnBase)
