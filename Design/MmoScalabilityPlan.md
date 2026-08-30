@@ -13,9 +13,9 @@ an entity has an identity that outlives the World that minted it -- and slice 17
 simulation half: a world can be written out, read back and replayed to byte equality, which is the
 gate this tree has been promising itself since Collision.md. Slice 18 opens the client track's
 second half -- a copy queue and render handles that can be freed -- built and run on Windows on
-arrival, which the branch it came from could not do. Slice 23 has taken its first project, and
-slice 24 is in: a root is told what to be by a file rather than by a rebuild.
-**What is left is slices 19 and 20, plus slice 23's promotion commit.**
+arrival, which the branch it came from could not do. Slice 23 has taken its first project and been
+promoted over it, and slice 24 is in: a root is told what to be by a file rather than by a rebuild.
+**What is left is slices 19 and 20.**
 This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
 (tree at `de12b6d`) into an ordered slice plan in the shape `Design/README.md` defines: one slice,
 one branch, one pull request. The review is the evidence; this document is the work. Where a slice
@@ -162,24 +162,14 @@ Findings reference `MmoScalabilityReview.md`.
 | 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR | landed, all four slices of [its design](Archive/RegionalPathfinding.md) |
 | 15 | The quantized wire | `GameLogic` | M | 6 | E5 | ADR | [landed](Archive/QuantizedWire-work-order.md) |
 | 16 | Global entity identity | `GameLogic` | M | 15 | U3 | ADR | [landed](Archive/EntityIdentity-work-order.md) |
-rather than built — 60 Hz stays — and its record is written at last (ADR 0045). Phase 3 has opened
-with 15 and 16 -- the ship record is 47 bytes and a fragment carries 23 of them instead of 13, and
-an entity has an identity that outlives the World that minted it -- and slice 17 closes its
-simulation half: a world can be written out, read back and replayed to byte equality, which is the
-gate this tree has been promising itself since Collision.md. Slice 18 opens the client track's
-second half -- a copy queue and render handles that can be freed -- built and run on Windows on
-arrival, which the branch it came from could not do. Slice 23 has taken its first project, and
-slice 24 is in: a root is told what to be by a file rather than by a rebuild.
-**What is left is slices 19 and 20, plus slice 23's promotion commit.**
+| 17 | The state codec and the replay gate | `GameLogic` | M | 16 | U3 |  | [landed](Archive/WorldState-work-order.md) |
+| 18 | Copy-queue uploader, store eviction | `NeuronClient` | M | 10 | G3 | ADR | landed, built and run (ADR 0044) |
 | 19 | Compressed textures, descriptor allocator | `NeuronClient` | M | 18 | G4 |  |  |
 | 20 | Body LOD and culling completion | `NeuronClient` | M | 9 | G5 |  |  |
 | 21 | Guard widening and the docs re-trued | `Build/`+prose | S | — | C2 C3 C4 |  | landed |
 | 22 | Legacy helper cleanup | `NeuronCore` | S | — | C1 |  | landed |
-rather than built: 60 Hz stays. Slice 18 opens the client track's second half -- a copy queue and
-render handles that can be freed -- built and run on Windows on arrival, which the branch it came
-from could not do. Slice 23 has taken its first project, and slice 24 is in: a root is told what to
-be by a file rather than by a rebuild. **What is left is phase 3 — slices 15 through 17, 19 and
-20 — plus slice 23's promotion commit.**
+| 23 | clang-tidy widens a project | `.github/` | S | — | C2 |  | landed; promoted 2026-08-30 |
+| 24 | The server configuration file | `Outpost` | M | — | — | ADR | [landed](Archive/ServerConfig-work-order.md) |
 
 **Quick wins:** slices 1, 7, 13, 21 and 22 are each a sitting, depend on nothing, and retire real
 findings; any idle track starts with its nearest one.
@@ -859,10 +849,10 @@ sitting each; NeuronCore follows slice 22 so the sweep meets a clean file.
 **Acceptance.** Two green runs, then the promotion commit; AGENTS.md §6's scope sentence updated
 in the same commit.
 
-**As landed**, NeuronServer joined the step **advisory**: the exit code is GameLogic's count alone,
-so a finding in NeuronServer is printed and the job stays green. The promotion commit is owed and is
-one line — `exit $counts['GameLogic']` grows a `+ $counts['NeuronServer']` — after two runs on the
-runner come back clean.
+**As landed**, NeuronServer joined the step **advisory**: the exit code was GameLogic's count
+alone, so a finding in NeuronServer was printed and the job stayed green. **Promoted 2026-08-30**:
+runs 33333828441 and 33334083108 on `main` each reported findings in 0 file(s) of NeuronServer
+under the runner's LLVM 22, and the exit line grew its count the same day.
 
 The step now walks a list of projects rather than one directory, so the third joins as one entry
 rather than as a second copy of the loop. Its file list is still read off disk, for the reason the

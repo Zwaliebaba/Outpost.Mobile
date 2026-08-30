@@ -230,10 +230,10 @@ repeat the settings, so there is nothing to drift. [`.clang-format`](.clang-form
 whitespace; the two never overlap.
 
 **Both gate in CI** (§6). `clang-format` runs in its own Linux job — it only reads C++ as text, so
-it needs no SDK and no Windows runner. `clang-tidy` runs on Windows after the build: it **gates**
-over GameLogic and **reports** over NeuronServer, which is the same arrival happening again a
-project at a time. Both arrived non-blocking and were promoted once a run came back clean, which is
-the only way a linter should ever start gating.
+it needs no SDK and no Windows runner. `clang-tidy` runs on Windows after the build and **gates**
+over GameLogic and NeuronServer. Each arrived non-blocking and was promoted once runs on the
+runner came back clean, which is the only way a linter should ever start gating; the next project
+joins the same way.
 
 Run either yourself before you push — clang-tidy on the files you wrote, not on the tree:
 
@@ -658,16 +658,13 @@ two that do not reach the D3D12 headers. It still reaches C++/WinRT through `Neu
 projection is generated during the build, which is why the step runs after the build and discovers
 the generated directory rather than assuming where it is.
 
-**NeuronServer is checked in the same step and does not gate.** The step's exit code is GameLogic's
-count alone, so a finding there is printed and the job stays green. That is this rule applied to
-itself rather than an exception to it: a linter arrives non-blocking, and it is promoted when a run
-on this runner comes back clean. The sweep that found NeuronServer clean was clang-tidy 18 on Linux
-and the runner ships LLVM 22, which is not a formality — `.clang-tidy`'s status block records that
-the newer one has already seen a defect the older one did not. Promotion is one line in
-`build.yml`, and the next project after it is NeuronCore, whose files slice 22 already swept.
+**NeuronServer gates in the same step**, promoted on 2026-08-30 after two clean runs under the
+runner's own LLVM 22 — it arrived advisory, exactly as this rule asks, and the exit line grew its
+count. The next project after it is NeuronCore, whose files slice 22 already swept.
 
-It landed non-blocking and was promoted two runs later, which is the process working. **A finding
-in GameLogic is therefore yours**: it came back clean, so anything the step reports there arrived
+clang-tidy itself landed non-blocking and was promoted two runs later, which is the process
+working. **A finding in GameLogic or NeuronServer is therefore yours**: both came back clean, so
+anything the step reports there arrived
 with your change. One exception is worth knowing — the clang-tidy is whichever one Visual Studio ships on the
 runner (LLVM 22 at the time of writing) and is **not** version-pinned, unlike clang-format. If a
 run goes red on a day nobody touched GameLogic, compare the LLVM version line against the last

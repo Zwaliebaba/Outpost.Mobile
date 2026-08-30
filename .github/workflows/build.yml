@@ -163,13 +163,13 @@ jobs:
         # on a day nobody touched GameLogic, compare the LLVM version line against the last green
         # run before assuming the code moved.
         #
-        # NeuronServer joined it ADVISORY, and that is the point of this step's shape: the exit code
-        # is GameLogic's count alone, so a finding in NeuronServer is printed and does not fail the
-        # job. That is the tree's own rule for how a linter starts gating (AGENTS.md 6), and it is
-        # not a formality here -- the runner's clang-tidy is the VS-bundled LLVM 22 while the sweep
-        # that found NeuronServer clean was clang-tidy 18 on Linux, and .clang-tidy's own status
-        # block records that the newer one has already seen a defect the older one did not. Two
-        # green runs and promotion is one line: add NeuronServer's count to the exit.
+        # NeuronServer joined it ADVISORY and was promoted two runs later, exactly as the step
+        # promised: runs 33333828441 and 33334083108 (main, 2026-08-30) each reported findings in
+        # 0 file(s) of NeuronServer under the runner's own LLVM 22, and the exit line below now
+        # carries its count. That is the tree's rule for how a linter starts gating (AGENTS.md 6),
+        # applied to itself -- and it was not a formality: the sweep that first found NeuronServer
+        # clean was clang-tidy 18 on Linux, and .clang-tidy's status block records that the newer
+        # clang-tidy has already seen a defect the older one did not.
         #
         # Why NeuronServer next: it is the smallest project, it is headless, and it is the only one
         # besides GameLogic that does not reach the D3D12 headers. Both still reach C++/WinRT through
@@ -214,9 +214,9 @@ jobs:
             Write-Host "clang-tidy reported findings in $failed file(s) of $project"
           }
 
-          # GameLogic alone decides the exit code; NeuronServer is advisory until two runs come back
-          # clean and somebody promotes it, which is this line growing a `+ $counts['NeuronServer']`.
-          exit $counts['GameLogic']
+          # Both projects gate. The next arrival joins the list above advisory, with its own line
+          # here until its two clean runs, which is how NeuronServer got in.
+          exit ($counts['GameLogic'] + $counts['NeuronServer'])
 
       - name: Upload logs
         # Failures are the case these are wanted in, and a green run's logs cost storage for

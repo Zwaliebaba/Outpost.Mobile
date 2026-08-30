@@ -8,12 +8,12 @@
 # overlap: clang-tidy has no check that reports a wrong brace position or an over-long line, and
 # clang-format cannot see that a parameter is missing its `_`.
 #
-# ── Status: CI gates this over GameLogic and reports it over NeuronServer ──────────────────
+# ── Status: CI gates this over GameLogic and NeuronServer ──────────────────────────────────
 #
 # Both linters gate (AGENTS.md §6): clang-format over the whole tree on Linux, clang-tidy on
-# Windows after the build. That step's exit code is GameLogic's alone; NeuronServer is checked in
-# the same loop and does not fail the job, which is how a linter arrives here and is promoted once
-# a run on the runner comes back clean. The .vcxproj files still do not enable MSBuild code
+# Windows after the build, over GameLogic and NeuronServer -- the second promoted on 2026-08-30
+# after two clean runs under the runner's LLVM 22, which is how a linter arrives here and starts
+# gating. The .vcxproj files still do not enable MSBuild code
 # analysis, so on the other seven projects this file is enforced by review and by whoever remembers
 # to run it. Slice 23 of Design/MmoScalabilityPlan.md widens the job a project at a time; NeuronCore
 # is next, and slice 22 already swept its one header.
@@ -31,8 +31,8 @@
 #
 # NeuronServer was swept under clang-tidy 18 (Linux) before the job was widened to it and came back
 # with nothing at all -- three headers and one translation unit, which is why it was the project to
-# take next. It is not yet swept under the runner's LLVM 22, which is exactly why it reports rather
-# than gates.
+# take next. The runner's LLVM 22 then found it clean on two consecutive main runs (2026-08-30),
+# and it gates.
 #
 # Unlike the sibling tree there is nothing grandfathered here — this is a greenfield repository,
 # so a whole-tree pass should come back clean and a finding is a defect, not archaeology. That
