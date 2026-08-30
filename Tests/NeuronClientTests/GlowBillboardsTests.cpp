@@ -9,8 +9,8 @@ namespace
 {
 // The camera basis used throughout: right along +X, up along +Y. A billboard built with these lies
 // in the XY plane, which makes every expected corner readable as a pair of numbers.
-constexpr XMFLOAT3 RIGHT(1.0f, 0.0f, 0.0f);
-constexpr XMFLOAT3 UP(0.0f, 1.0f, 0.0f);
+constexpr XMFLOAT3 RIGHT{1.0f, 0.0f, 0.0f};
+constexpr XMFLOAT3 UP{0.0f, 1.0f, 0.0f};
 
 [[nodiscard]] Neuron::GlowSample Glow(float _x, float _y, float _z, float _radius, float _alpha = 1.0f)
 {

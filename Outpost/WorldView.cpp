@@ -934,7 +934,7 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     }
   }
 
-  DrawFeedback(_renderer, _gpu);
+  DrawFeedback(_renderer, _gpu, frame);
 
   // Sprites after: they do not write depth, so they have to see the rings rather than punch a hole
   // through them. Dark before additive, as the source draws them -- the fireball goes on top of the
@@ -978,7 +978,7 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
 // The overlay pass: selection and hover rings on the ground, order markers, thruster glow and
 // trail in the air. All of it is the same unit quad shaped by the decal shader.
 
-void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu)
+void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const SceneFrame& _frame)
 {
   _renderer.BeginDecals(_gpu, m_camera->ViewProj(), m_camera->Eye());
 
@@ -1167,7 +1167,7 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu)
     {
       m_fxGlowVerts.clear();
       Neuron::BuildGlowBillboards(m_glowSamples, m_camera->Right(), m_camera->Up(), m_fxGlowVerts);
-      m_fx->Begin(_gpu, m_camera->ViewProj(), frame.lightDir, frame.ambient, m_camera->Eye());
+      m_fx->Begin(_gpu, m_camera->ViewProj(), _frame.lightDir, _frame.ambient, m_camera->Eye());
       m_fx->DrawGlows(_gpu, m_fxGlowVerts, THRUSTER_GLOW_FALLOFF);
     }
   }

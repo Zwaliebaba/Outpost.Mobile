@@ -338,7 +338,10 @@ public:
   }
 
 private:
-  void DrawFeedback(Neuron::SceneRenderer& _renderer, Neuron::GpuDevice& _gpu);
+  // Takes the frame because the thruster plume it ends with goes through the effect pass, and
+  // FxRenderer::Begin wants the lighting the scene was drawn under. The decals themselves do not
+  // need it -- they are shaped entirely in the pixel shader from root constants.
+  void DrawFeedback(Neuron::SceneRenderer& _renderer, Neuron::GpuDevice& _gpu, const Neuron::SceneFrame& _frame);
   [[nodiscard]] int PickShip(float _xPx, float _yPx) const;
 
   // Whether record _index is one this client may take hold of. Every selection path goes through it:
