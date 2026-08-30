@@ -196,6 +196,72 @@ public:
     Assert::IsTrue(closest > Game::HullSpecOf(Game::HullId::Structure).capsuleRadiusMetres, L"the ship flew into the new Structure");
   }
 
+  TEST_METHOD(MobileChurnLeavesRoutesAlone)
+  {
+    // The cost this retires: every spawn and despawn used to dirty the static set, so a fighter
+    // dying rebuilt the whole static index, rebuilt the PathGrid, bumped its version and made every
+    // routed ship in the world re-plan. At MMO churn that is a universe-wide replan on every death
+    // (Design/MmoScalabilityReview.md U4).
+    Game::World world;
+    (void)world.SpawnShip(Game::LocalPos(0.0f, 200.0f), 0.0f, STRUCTURE);
+    const Game::ShipId ship = world.SpawnShip(Game::LocalPos(0.0f, -1400.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+    const Game::ShipId order[] = {ship};
+    world.IssueMoveOrder(order, Game::LocalPos(0.0f, 1400.0f), false, 0.0f);
+    world.Step();
+
+    const std::size_t planned = world.RouteOf(ship).size();
+    Assert::IsTrue(planned > 1, L"the Structure did not force a route round it");
+
+    // A mobile ship arrives and leaves. Neither touches the architecture, so neither may disturb a
+    // route that was planned against it.
+    const Game::ShipHandle passer =
+      world.HandleOf(world.SpawnShip(Game::LocalPos(600.0f, 600.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor)));
+    world.Step();
+    Assert::AreEqual(planned, world.RouteOf(ship).size(), L"a mobile spawn re-planned a route it could not have affected");
+
+    Assert::IsTrue(world.DespawnShip(passer), L"the despawn failed");
+    world.Step();
+    Assert::AreEqual(planned, world.RouteOf(ship).size(), L"a mobile despawn re-planned a route it could not have affected");
+  }
+
+  TEST_METHOD(DespawningAStructureStillReplans)
+  {
+    // The other half, and the one that matters more: gating the rebuild must not gate away the case
+    // it exists for. Architecture leaving is architecture changing.
+    Game::World world;
+    const Game::ShipHandle wall = world.HandleOf(world.SpawnShip(Game::LocalPos(0.0f, 200.0f), 0.0f, STRUCTURE));
+    const Game::ShipId ship = world.SpawnShip(Game::LocalPos(0.0f, -1400.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+    const Game::ShipId order[] = {ship};
+    world.IssueMoveOrder(order, Game::LocalPos(0.0f, 1400.0f), false, 0.0f);
+    world.Step();
+    Assert::IsTrue(world.RouteOf(ship).size() > 1, L"the Structure did not force a route round it");
+
+    Assert::IsTrue(world.DespawnShip(wall), L"the despawn failed");
+    world.Step();
+    Assert::AreEqual(size_t{1}, world.RouteOf(ship).size(), L"removing the Structure did not free the route");
+  }
+
+  TEST_METHOD(ARebuildWithTheSameObstaclesKeepsItsVersion)
+  {
+    // The version is what makes a route re-plan, so it may only move when the architecture does.
+    Game::PathGrid grid;
+    const Game::PathGrid::Obstacle wall[] = {{Game::LocalPos(0.0f, 0.0f), 100.0f}};
+    grid.Rebuild(wall);
+    const std::uint32_t first = grid.Version();
+
+    grid.Rebuild(wall);
+    Assert::AreEqual(first, grid.Version(), L"rebuilding with the same obstacles bumped the version");
+
+    const Game::PathGrid::Obstacle moved[] = {{Game::LocalPos(0.0f, 300.0f), 100.0f}};
+    grid.Rebuild(moved);
+    Assert::AreNotEqual(first, grid.Version(), L"rebuilding with a moved obstacle did not bump the version");
+
+    const Game::PathGrid::Obstacle wider[] = {{Game::LocalPos(0.0f, 300.0f), 140.0f}};
+    const std::uint32_t second = grid.Version();
+    grid.Rebuild(wider);
+    Assert::AreNotEqual(second, grid.Version(), L"a radius change alone did not bump the version");
+  }
+
   TEST_METHOD(AnEmptyWorldPlansNothing)
   {
     // Every phase before this one was verified with no planner in the tree. With no architecture in

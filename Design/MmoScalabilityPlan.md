@@ -134,7 +134,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 10 | Hull instancing | `NeuronClient`+`Outpost` | M | 9 | G2 |  |  |
 | 11 | Localized gather radius, threat pre-filter | `GameLogic` | M | — | U2 |  |  |
 | 12 | The tick-rate decision | `GameLogic` | S | — | E7 | ADR | decided: 60 Hz stays |
-| 13 | Churn-gated static rebuilds | `GameLogic` | S | — | U4 |  |  |
+| 13 | Churn-gated static rebuilds | `GameLogic` | S | — | U4 |  | landed |
 | 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR |  |
 | 15 | The quantized wire | `GameLogic` | M | 6 | E5 |  |  |
 | 16 | Global entity identity | `GameLogic` | M | 15 | U3 | ADR |  |
@@ -321,6 +321,15 @@ bumps `m_version` only when the obstacle set actually differs from the one it bu
 **Build on.** `World.cpp:44-48,82,265-287`, `PathGrid.cpp:24-26`, `RouteOf` for the assertion.
 **Acceptance.** `GameLogicTests` rows: a mobile spawn/despawn leaves `PathGrid` version and every
 `RouteOf` untouched; a static spawn still rebuilds and replans; the replay gate green.
+
+**As landed**, the id-shift hazard is handled by reading the moved ship rather than by giving static
+entries handles. `DespawnShip` reads two hulls before anything moves -- the one leaving, and the one
+swap-and-pop is about to move into its place -- and dirties if either is immovable. Handles in the
+static entries would also have worked and cost every entry a widening plus a resolve per rebuild, to
+buy exactness the two reads already have: they are a superset of the store's own `immovable &&
+collidable` filter, so the gate cannot miss a rebuild that was needed, only pay for one that was not
+(a Stargate, which does not churn). Verified exhaustively over every ship table up to length five
+against a brute-force static-set oracle, plus three `PathfindingTests` rows.
 
 #### Slice 14 — regional pathfinding (`GameLogic`, L — design first)
 

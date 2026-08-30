@@ -43,10 +43,15 @@ ShipId World::SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint3
   m_shipSlot.push_back(slot);
   m_routes.emplace_back();
   m_patrols.emplace_back();
-  // Any spawn or despawn can move a Structure's id, not only one that adds or removes a Structure,
-  // because swap-and-pop renumbers whatever was last. Marking every one of them dirty costs a
-  // rebuild that only happens when the fleet changes, and gets the id-shift case right for free.
-  m_staticIndexDirty = true;
+
+  // Only an immovable can change the static set. A spawn appends, so no existing id moves and
+  // nothing already in the store is disturbed -- which is why this needs no id-shift caveat and the
+  // despawn below does (Design/MmoScalabilityReview.md U4). The gate is deliberately looser than
+  // the store's own filter, which is immovable *and* collidable: a Stargate costs one rebuild it did
+  // not need, and a gate that is a superset of the filter cannot miss one that was needed, which is
+  // the direction to be wrong in if the two ever drift apart.
+  if (HullSpecOf(_hullId).immovable)
+    m_staticIndexDirty = true;
   return id;
 }
 
@@ -62,7 +67,18 @@ bool World::DespawnShip(ShipHandle _handle)
   // (Design/Hostiles.md 4.4).
   m_despawnLog.push_back(_handle);
 
+  // Read before anything moves. Two ships can change the static set here: the one being removed, and
+  // the one swap-and-pop moves into its place -- because the static store holds ShipIds, and the
+  // moved ship's id changes even though the ship does not (ADR 0005). Marking every despawn dirty
+  // got that right by brute force and cost a whole-fleet rescan plus a universe-wide replan on every
+  // death; these two checks get it right for the cases that are actually it.
+  const bool removedWasStatic = HullSpecOf(m_ships[id].hullId).immovable;
+
   const ShipId last = static_cast<ShipId>(m_ships.size() - 1);
+  const bool movedIsStatic = (id != last) && HullSpecOf(m_ships[last].hullId).immovable;
+  if (removedWasStatic || movedIsStatic)
+    m_staticIndexDirty = true;
+
   if (id != last)
   {
     m_ships[id] = m_ships[last];
@@ -82,7 +98,6 @@ bool World::DespawnShip(ShipHandle _handle)
   if (freed.generation == 0)
     freed.generation = 1;
   m_freeSlots.push_back(_handle.slot);
-  m_staticIndexDirty = true;
   return true;
 }
 

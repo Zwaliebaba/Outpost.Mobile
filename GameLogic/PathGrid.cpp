@@ -21,9 +21,41 @@ bool PathGrid::Worse(const Open& _a, const Open& _b) noexcept
   return _a.cell > _b.cell;
 }
 
+namespace
+{
+// Two obstacle sets are the same when they are the same obstacles in the same order. Order counts
+// because the set comes out of the static store in array order, and a set that has been permuted is
+// a set whose ids have moved -- which is a change a router has to hear about.
+//
+// All four fields, compared exactly. Two positions a whole sector apart share their local offsets,
+// so comparing those alone would call them equal; and exact is what is wanted here rather than a
+// tolerance, because the question is "did this change" and not "is this close".
+[[nodiscard]] bool SameObstacles(std::span<const PathGrid::Obstacle> _a, std::span<const PathGrid::Obstacle> _b) noexcept
+{
+  if (_a.size() != _b.size())
+    return false;
+  for (std::size_t at = 0; at < _a.size(); ++at)
+  {
+    const PathGrid::Obstacle& one = _a[at];
+    const PathGrid::Obstacle& other = _b[at];
+    if (one.pos.sectorX != other.pos.sectorX || one.pos.sectorZ != other.pos.sectorZ || one.pos.localX != other.pos.localX ||
+        one.pos.localZ != other.pos.localZ || one.radiusMetres != other.radiusMetres)
+      return false;
+  }
+  return true;
+}
+} // namespace
+
 void PathGrid::Rebuild(std::span<const Obstacle> _obstacles)
 {
-  ++m_version;
+  // A rebuild that finds the same obstacles leaves the version alone: the version is what makes
+  // every routed ship re-plan, and a rebuild triggered by something that did not move the
+  // architecture must not cost the fleet its routes (Design/MmoScalabilityReview.md U4).
+  const bool changed = !SameObstacles(_obstacles, m_built);
+  if (changed)
+    ++m_version;
+  m_built.assign(_obstacles.begin(), _obstacles.end());
+
   m_clearance.clear();
   m_width = 0;
   m_height = 0;

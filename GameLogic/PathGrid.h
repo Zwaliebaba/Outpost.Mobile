@@ -82,6 +82,11 @@ private:
   WorldPos m_origin; // the centre of cell (0, 0)
   std::uint32_t m_version = 0;
 
+  // What the last build was built from, so a rebuild with an unchanged obstacle set can leave the
+  // version alone. The version is what makes every routed ship re-plan (World::AdvanceRoute), so
+  // bumping it for a rebuild that changed nothing is a universe-wide replan for no reason.
+  std::vector<Obstacle> m_built;
+
   // A* scratch, reused so a plan allocates nothing after the first one.
   struct Open
   {
