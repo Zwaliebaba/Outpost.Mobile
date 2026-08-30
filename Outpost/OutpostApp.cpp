@@ -485,6 +485,12 @@ void OutpostApp::ReseedBodies()
 
 void OutpostApp::SpawnStartingFleet()
 {
+  // Which shard this world mints identities for, told to it by the composition root before anything
+  // spawns -- AGENTS.md 5's rule, and the same shape as ConfigureIndex. Zero because there is one
+  // world and one process; a dedicated server would read its own out of the configuration file
+  // slice 24 cuts, and nothing else in the tree would change (ADR 0047).
+  m_world.ConfigureShard(0);
+
   constexpr int hullCount = static_cast<int>(std::size(STARTING_FLEET));
   for (int i = 0; i < hullCount; ++i)
   {
@@ -589,18 +595,22 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
     // composition root calls World directly. It is the one place allowed to, and this design must
     // not invent a despawn order on the wire for a tuning aid (Design/Archive/SpaceshipExplosion.md 9).
     //
-    // The handles are collected before the first despawn: Ships() is a span over the last snapshot
-    // rather than over the world, so the walk itself is safe, and taking the handles first keeps it
+    // The ids are collected before the first despawn: Ships() is a span over the last snapshot
+    // rather than over the world, so the walk itself is safe, and taking the ids first keeps it
     // that way if it ever stops being.
-    std::vector<Game::ShipHandle> doomed;
+    //
+    // The snapshot names entities and World despawns handles, so this is the one place in the
+    // executable that crosses back the way the publisher crosses forward -- which the composition
+    // root is entitled to do, being the only thing that holds both halves (ADR 0047).
+    std::vector<Game::EntityId> doomed;
     const std::span<const Game::ShipSnapshot> ships = m_view.Ships();
     for (std::size_t i = 0; i < ships.size(); ++i)
     {
       if (m_view.IsSelected(i))
-        doomed.push_back(ships[i].handle);
+        doomed.push_back(ships[i].entity);
     }
-    for (const Game::ShipHandle handle : doomed)
-      m_world.DespawnShip(handle);
+    for (const Game::EntityId entity : doomed)
+      m_world.DespawnShip(m_world.HandleOfEntity(entity));
     break;
   }
   case VK_F5:
@@ -616,12 +626,15 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
     // and the response can be watched (Design/Stations.md 8.1). No client message exists for this,
     // or ever will: a client that can declare an aggression can make anybody a criminal (ADR 0041).
     const std::span<const Game::ShipSnapshot> ships = m_view.Ships();
-    Game::ShipHandle attacker;
-    for (std::size_t i = 0; i < ships.size() && attacker.generation == 0; ++i)
+    Game::EntityId aggressor = Game::INVALID_ENTITY_ID;
+    for (std::size_t i = 0; i < ships.size() && aggressor == Game::INVALID_ENTITY_ID; ++i)
     {
       if (m_view.IsSelected(i))
-        attacker = ships[i].handle;
+        aggressor = ships[i].entity;
     }
+    // The wire names entities and the simulation's judgment takes a handle: the root sits on both
+    // sides of the seam and converts, exactly as the publisher does for orders (ADR 0047).
+    const Game::ShipHandle attacker = m_world.HandleOfEntity(aggressor);
     const Game::ShipId attackerId = m_world.Resolve(attacker);
     if (attackerId == Game::INVALID_SHIP_ID)
       break;

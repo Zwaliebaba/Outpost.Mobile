@@ -95,21 +95,21 @@ void WorldView::ApplySnapshot()
   const std::uint64_t tick = m_receiver.Latest().tick;
 
   m_carryScratch.clear();
-  m_carryHandles.clear();
+  m_carryEntities.clear();
   m_carryScratch.swap(m_ships);
-  m_carryHandles.swap(m_handles);
+  m_carryEntities.swap(m_entities);
 
   m_ships.reserve(ships.size());
-  m_handles.reserve(ships.size());
+  m_entities.reserve(ships.size());
   for (const Game::ShipSnapshot& ship : ships)
   {
     // Linear: the carried set is the previous snapshot's ships, and at these counts a map would
     // cost more than it saved. It is also the one lookup in this class, so if it ever matters it
     // is one place to change.
-    std::size_t found = m_carryHandles.size();
-    for (std::size_t at = 0; at < m_carryHandles.size(); ++at)
+    std::size_t found = m_carryEntities.size();
+    for (std::size_t at = 0; at < m_carryEntities.size(); ++at)
     {
-      if (m_carryHandles[at] == ship.handle)
+      if (m_carryEntities[at] == ship.entity)
       {
         found = at;
         break;
@@ -134,9 +134,9 @@ void WorldView::ApplySnapshot()
       }
       view.faction = ship.factionId;
       m_ships.push_back(std::move(view));
-      // Struck off so the leftovers can be walked below. Generation 0 is never issued, so a null
-      // handle can never match a live ship on a later pass either.
-      m_carryHandles[found] = Game::ShipHandle{};
+      // Struck off so the leftovers can be walked below. No shard ever mints the null id, so it can
+      // never match a live ship on a later pass either.
+      m_carryEntities[found] = Game::INVALID_ENTITY_ID;
     }
     else
     {
@@ -187,7 +187,7 @@ void WorldView::ApplySnapshot()
       }
       m_ships.push_back(std::move(view));
     }
-    m_handles.push_back(ship.handle);
+    m_entities.push_back(ship.entity);
   }
 
   ExplodeTheLost(tick);
@@ -213,16 +213,16 @@ void WorldView::ExplodeTheLost(std::uint64_t _tick)
   // arrive in the same message, so a consumer that treated the spans alike would look like a bug in
   // the explosion rather than in the drain (Design/Stations.md 7.4, Stations-slice-plan.md 9). Only
   // the player's own are counted for the line: a protector coming home is the station's business.
-  const std::span<const Game::ShipHandle> docked = m_receiver.Docked();
+  const std::span<const Game::EntityId> docked = m_receiver.Docked();
   int ownDocked = 0;
-  for (std::size_t at = 0; at < m_carryHandles.size() && at < m_carryScratch.size(); ++at)
+  for (std::size_t at = 0; at < m_carryEntities.size() && at < m_carryScratch.size(); ++at)
   {
-    const Game::ShipHandle handle = m_carryHandles[at];
-    if (handle.generation == 0)
+    const Game::EntityId entity = m_carryEntities[at];
+    if (entity == Game::INVALID_ENTITY_ID)
       continue;
     bool inside = false;
-    for (const Game::ShipHandle gone : docked)
-      inside = inside || gone == handle;
+    for (const Game::EntityId gone : docked)
+      inside = inside || gone == entity;
     if (inside && m_carryScratch[at].faction == m_ownFaction)
       ++ownDocked;
   }
@@ -230,16 +230,16 @@ void WorldView::ExplodeTheLost(std::uint64_t _tick)
     m_log->PushFormat(EventLog::Severity::Friendly, SimTimeSec(), "DOCKED | %d SHIPS", ownDocked);
   m_receiver.ClearDocked();
 
-  const std::span<const Game::ShipHandle> destroyed = m_receiver.Destroyed();
-  for (std::size_t at = 0; at < m_carryHandles.size() && at < m_carryScratch.size(); ++at)
+  const std::span<const Game::EntityId> destroyed = m_receiver.Destroyed();
+  for (std::size_t at = 0; at < m_carryEntities.size() && at < m_carryScratch.size(); ++at)
   {
-    const Game::ShipHandle handle = m_carryHandles[at];
-    if (handle.generation == 0)
+    const Game::EntityId entity = m_carryEntities[at];
+    if (entity == Game::INVALID_ENTITY_ID)
       continue; // carried onto the new snapshot
 
     bool died = false;
-    for (const Game::ShipHandle dead : destroyed)
-      died = died || dead == handle;
+    for (const Game::EntityId dead : destroyed)
+      died = died || dead == entity;
     if (!died)
       continue; // it left this client's view, which is not a death and never was
 
@@ -258,7 +258,12 @@ void WorldView::ExplodeTheLost(std::uint64_t _tick)
     // The same ship dying on the same tick shatters the same way, which is what a replay of a
     // recorded match will want and costs nothing to give it now. The odd constant is the golden
     // ratio in 64 bits, which is what stops two nearby ticks producing two nearby streams.
-    spawn.seed = ((static_cast<std::uint64_t>(handle.slot) << 32) | handle.generation) ^ (_tick * 0x9E3779B97F4A7C15ull);
+    //
+    // The id is the seed directly now that identity is 64 bits of its own. It used to be a slot
+    // shifted over a generation, which was the same 64 bits assembled by hand -- and which would
+    // have made the same ship shatter differently after a shard handed it on, because its slot
+    // would have changed (ADR 0047).
+    spawn.seed = entity ^ (_tick * 0x9E3779B97F4A7C15ull);
     // Whatever gives a station a lifecycle sets this from the station itself. Until something can
     // kill one, every death carries a ring, because otherwise nothing would ever draw one
     // (ViewTuning.h).
@@ -345,12 +350,12 @@ void WorldView::AssignGroup(int _group)
   if (_group < 0 || _group >= CONTROL_GROUPS)
     return;
 
-  std::vector<Game::ShipHandle>& group = m_groups[_group];
+  std::vector<Game::EntityId>& group = m_groups[_group];
   group.clear();
-  for (size_t i = 0; i < m_ships.size() && i < m_handles.size(); ++i)
+  for (size_t i = 0; i < m_ships.size() && i < m_entities.size(); ++i)
   {
     if (m_ships[i].selected)
-      group.push_back(m_handles[i]);
+      group.push_back(m_entities[i]);
   }
 
   if (m_log)
@@ -371,9 +376,9 @@ void WorldView::SelectGroup(int _group)
 
   ClearSelection();
   int selected = 0;
-  for (const Game::ShipHandle handle : m_groups[_group])
+  for (const Game::EntityId entity : m_groups[_group])
   {
-    const int at = RecallableIndex(handle);
+    const int at = RecallableIndex(entity);
     if (at < 0)
       continue; // out of view or no longer this client's; kept in the group either way
     m_ships[static_cast<std::size_t>(at)].selected = true;
@@ -390,8 +395,8 @@ int WorldView::GroupSize(int _group) const noexcept
     return 0;
 
   int live = 0;
-  for (const Game::ShipHandle handle : m_groups[_group])
-    live += (RecallableIndex(handle) >= 0) ? 1 : 0;
+  for (const Game::EntityId entity : m_groups[_group])
+    live += (RecallableIndex(entity) >= 0) ? 1 : 0;
   return live;
 }
 
@@ -610,16 +615,16 @@ bool WorldView::IsOwn(std::size_t _index) const noexcept
   return _index < state.size() && state[_index].factionId == m_ownFaction;
 }
 
-// The faction check here is not redundant, even though a handle names one ship for the whole of its
+// The faction check here is not redundant, even though an id names one ship for the whole of its
 // life and only the client's own ships are ever assigned to a group. Ownership finer than faction
 // arrives with the second subscriber (ADR 0014), and then a ship that was the player's when the
 // group was assigned need not still be. Every path into the selection asks the same question at the
 // moment it selects, rather than trusting what was true when something was remembered.
-int WorldView::RecallableIndex(Game::ShipHandle _handle) const noexcept
+int WorldView::RecallableIndex(Game::EntityId _entity) const noexcept
 {
-  for (std::size_t at = 0; at < m_handles.size(); ++at)
+  for (std::size_t at = 0; at < m_entities.size(); ++at)
   {
-    if (m_handles[at] == _handle)
+    if (m_entities[at] == _entity)
       return IsOwn(at) ? static_cast<int>(at) : -1;
   }
   return -1;
@@ -726,8 +731,8 @@ void WorldView::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float _f
   if (m_transport == nullptr)
     return;
 
-  // Handles, not indices. Between this click and the order reaching the other half a ship can die,
-  // and swap-and-pop would move a stranger into the index it left behind (ADR 0005).
+  // Identities, not indices. Between this click and the order reaching the other half a ship can
+  // die, and swap-and-pop would move a stranger into the index it left behind (ADR 0005, ADR 0047).
   const std::span<const Game::ShipSnapshot> state = Ships();
   Game::MoveOrder order;
   order.ships.reserve(m_ships.size());
@@ -739,7 +744,7 @@ void WorldView::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float _f
       continue;
     if (order.ships.empty())
       firstHeading = state[i].headingRad;
-    order.ships.push_back(state[i].handle);
+    order.ships.push_back(state[i].entity);
     m_orderPositions.push_back(state[i].posWorld);
   }
   if (order.ships.empty())
@@ -803,7 +808,7 @@ void WorldView::IssueDockOrder(std::size_t _station)
   for (std::size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
   {
     if (m_ships[i].selected)
-      order.ships.push_back(state[i].handle);
+      order.ships.push_back(state[i].entity);
   }
   if (order.ships.empty())
     return;
@@ -814,7 +819,7 @@ void WorldView::IssueDockOrder(std::size_t _station)
                         static_cast<int>(Game::MaxShipsPerOrder()));
     return;
   }
-  order.station = state[_station].handle;
+  order.station = state[_station].entity;
   if (!Game::WriteDockOrder(order, *m_transport))
     return; // the send queue is full, which Transport.h calls normal: the tap is dropped
 

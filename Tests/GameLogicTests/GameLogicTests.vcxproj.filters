@@ -65,6 +65,9 @@
     <ClCompile Include="SeparationTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="EntityIdentityTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="SectorTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

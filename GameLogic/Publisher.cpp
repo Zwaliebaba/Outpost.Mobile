@@ -4,7 +4,6 @@
 #include "World.h"
 
 #include <algorithm>
-#include <iterator>
 
 namespace Game
 {
@@ -149,17 +148,18 @@ void Publisher::ApplyOrders(World& _world)
 
         const std::span<const std::uint8_t> message(m_messageScratch.data(), size);
 
-        // Handles resolve here and nowhere else, for either kind. A ship that died between the click
-        // and this tick resolves to nothing and is left out, rather than steering whichever ship
-        // swap-and-pop moved into its index (ADR 0005).
+        // Ids resolve here and nowhere else, for either kind. A ship that died between the click and
+        // this tick resolves to nothing and is left out, rather than steering whichever ship
+        // swap-and-pop moved into its index (ADR 0005) -- and an id minted by another shard resolves
+        // to nothing too, which is what stops a client ordering a ship this world does not own.
         MoveOrder order;
         DockOrder dockOrder;
         if (ReadMoveOrder(message, order))
         {
           m_resolvedScratch.clear();
-          for (const ShipHandle handle : order.ships)
+          for (const EntityId entity : order.ships)
           {
-            const ShipId id = _world.Resolve(handle);
+            const ShipId id = _world.ResolveEntity(entity);
             if (id != INVALID_SHIP_ID)
               m_resolvedScratch.push_back(id);
           }
@@ -170,14 +170,14 @@ void Publisher::ApplyOrders(World& _world)
         {
           // The station resolves too, and a dead one makes the whole order a no-op rather than a
           // dock at whatever now occupies that index.
-          const ShipId station = _world.Resolve(dockOrder.station);
+          const ShipId station = _world.ResolveEntity(dockOrder.station);
           if (station == INVALID_SHIP_ID)
             continue;
 
           m_resolvedScratch.clear();
-          for (const ShipHandle handle : dockOrder.ships)
+          for (const EntityId entity : dockOrder.ships)
           {
-            const ShipId id = _world.Resolve(handle);
+            const ShipId id = _world.ResolveEntity(entity);
             if (id != INVALID_SHIP_ID)
               m_resolvedScratch.push_back(id);
           }
@@ -232,33 +232,46 @@ void Publisher::SplitTheLost(const World& _world, Subscriber& _subscriber)
   const std::span<const ShipHandle> left = _subscriber.interest.Left();
   m_destroyedScratch.clear();
   m_dockedScratch.clear();
+  m_departedScratch.clear();
 
-  // Three sets from two now: a departure carries a cause, so this is where a death is told apart
-  // from a docking and both from a ship that merely flew out of range (ADR 0040).
+  // Three sets from two: a departure carries a cause, so this is where a death is told apart from a
+  // docking and both from a ship that merely flew out of range (ADR 0040).
   //
   // This subscriber's own cursor, so two of them reading the same death both see it. The cursor
   // advances whether or not anything is sent, since a death nobody held has nobody to tell.
+  //
+  // The two stated causes come off the log as *ids*, because their ships are already gone and the
+  // world can no longer be asked who they were -- which is why the log carries one (ADR 0047). The
+  // handles go into a separate list, used only to work out who is left over.
   for (const DespawnRecord& gone : _world.DespawnsSince(_subscriber.despawnCursor))
   {
     if (!std::binary_search(left.begin(), left.end(), gone.handle, HandleOrderBefore))
       continue;
+    m_departedScratch.push_back(gone.handle);
     if (gone.cause == DespawnCause::Docked)
-      m_dockedScratch.push_back(gone.handle);
+      m_dockedScratch.push_back(gone.entity);
     else
-      m_destroyedScratch.push_back(gone.handle);
+      m_destroyedScratch.push_back(gone.entity);
   }
   _subscriber.despawnCursor = _world.DespawnHead();
 
-  std::sort(m_destroyedScratch.begin(), m_destroyedScratch.end(), HandleOrderBefore);
-  std::sort(m_dockedScratch.begin(), m_dockedScratch.end(), HandleOrderBefore);
+  // One sorted list to subtract instead of a set_union of two, which is what the currency split
+  // bought: the causes no longer have to be sorted in the same terms they are sent in.
+  std::sort(m_departedScratch.begin(), m_departedScratch.end(), HandleOrderBefore);
 
-  // The merely-left are what is in neither stated set. Both are subtracted, in two passes, because
-  // set_difference wants a sorted range on each side and the two causes are sorted separately.
-  m_statedScratch.clear();
-  std::set_union(m_destroyedScratch.begin(), m_destroyedScratch.end(), m_dockedScratch.begin(), m_dockedScratch.end(),
-                 std::back_inserter(m_statedScratch), HandleOrderBefore);
   m_leftScratch.clear();
-  std::set_difference(left.begin(), left.end(), m_statedScratch.begin(), m_statedScratch.end(), std::back_inserter(m_leftScratch),
-                      HandleOrderBefore);
+  for (const ShipHandle handle : left)
+  {
+    if (std::binary_search(m_departedScratch.begin(), m_departedScratch.end(), handle, HandleOrderBefore))
+      continue;
+
+    // Anything the log did not claim is still alive: the log is trimmed to the minimum cursor across
+    // subscribers, so no subscriber can be past a death it has not been shown (ADR 0027). A handle
+    // that resolves to nothing here would therefore be a ship this subscriber will never be told
+    // about -- a ghost -- so it is dropped rather than sent as a null id, which would remove nothing.
+    const EntityId entity = _world.EntityIdOf(handle);
+    if (entity != INVALID_ENTITY_ID)
+      m_leftScratch.push_back(entity);
+  }
 }
 } // namespace Game
