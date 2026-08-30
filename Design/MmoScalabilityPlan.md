@@ -143,7 +143,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 19 | Compressed textures, descriptor allocator | `NeuronClient` | M | 18 | G4 |  |  |
 | 20 | Body LOD and culling completion | `NeuronClient` | M | 9 | G5 |  |  |
 | 21 | Guard widening and the docs re-trued | `Build/`+prose | S | — | C2 C3 C4 |  |  |
-| 22 | Legacy helper cleanup | `NeuronCore` | S | — | C1 |  |  |
+| 22 | Legacy helper cleanup | `NeuronCore` | S | — | C1 |  | landed |
 | 23 | clang-tidy widens a project | `.github/` | S | — | C2 |  |  |
 | 24 | The server configuration file | `Outpost` | M | — | — | ADR | cuttable since §4.3 |
 
@@ -452,6 +452,15 @@ gains its thread-safety sentence.
 **Out of scope.** New helpers; behavior changes.
 **Acceptance.** Grep evidence of zero uses in the pull request; all four suites green; clang-tidy
 clean on the touched files.
+
+**As landed**, 161 lines of the header became 25. `AGENTS.md`'s macro-naming row cited `ENUM_HELPER`
+as its example and its clang-tidy history cited the `NOLINT` over it, so both were re-trued in the
+same commit -- a citation to a symbol that no longer exists is the drift this plan is about. Two
+things the sweep turned up are deliberately left: `NeuronCore.h`'s `<type_traits>` now has zero
+users in the tree, and `World.cpp:617` spells a bare `size_t`. The first needs a build to remove
+safely (an umbrella include is exactly what something relies on transitively), and the second is
+`GameLogic`, not this slice's layer; both belong with slice 21's R10 grep, which is what should find
+them rather than a reader.
 
 #### Slice 23 — clang-tidy widens a project (`.github/`, S)
 

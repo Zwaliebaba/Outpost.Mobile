@@ -78,7 +78,7 @@ composition root, and it says so at the definition.
 | Local | `camelCase` | `stationIndex` |
 | Constant (`constexpr`, `static constexpr`) | `UPPER_CASE` | `TICK_HZ`, `MAX_DATAGRAM_BYTES` |
 | Enumerator | `PascalCase` | `QueueFull` |
-| Macro | `SCREAMING_SNAKE` | `ASSERT`, `ENUM_HELPER` |
+| Macro | `SCREAMING_SNAKE` | `ASSERT`, `ASSERT_TEXT` |
 | Namespace | `PascalCase` | `Neuron`, `Game`, `Outpost` |
 | File | `PascalCase.cpp` / `.h` | `ServerHost.cpp` |
 | Directory | `PascalCase` | `Design/Decisions/`, `NeuronClient/Shaders/` |
@@ -605,7 +605,10 @@ headers admitted by a `HeaderFilterRegex` whose `.*` also matched
 repository started with — parameters missing their `_`, a static member spelled `m_` instead of
 `sm_`, and `bugprone-macro-parentheses` firing on `ENUM_HELPER`, where the macro argument is a
 *type* and `static_cast<(T)>` does not compile. Filter tightened, naming fixed, false positive
-silenced for that block with its reason rather than disabled for the tree.
+silenced for that block with its reason rather than disabled for the tree. `ENUM_HELPER` and
+its suppression have since gone: the macro had zero uses, and deleting dead code is a better
+answer to a diagnostic than a `NOLINT` over it. The paragraph stands as the record of why a
+linter lands non-blocking.
 
 **Release|x64 is the only thing still not in CI.** Release only recently became a real release
 build (see the settings above) and has no history of being green. Worth adding on the same

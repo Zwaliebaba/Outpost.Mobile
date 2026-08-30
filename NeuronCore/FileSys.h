@@ -2,7 +2,7 @@
 
 namespace Neuron
 {
-using ByteBuffer = std::vector<uint8_t>;
+using ByteBuffer = std::vector<std::uint8_t>;
 
 class FileSys
 {
@@ -24,7 +24,7 @@ public:
     const int size =
       ::WideCharToMultiByte(CP_UTF8, 0, sm_homeDir.data(), static_cast<int>(sm_homeDir.size()), nullptr, 0, nullptr, nullptr);
 
-    std::string result(static_cast<size_t>(size), '\0');
+    std::string result(static_cast<std::size_t>(size), '\0');
     ::WideCharToMultiByte(CP_UTF8, 0, sm_homeDir.data(), static_cast<int>(sm_homeDir.size()), result.data(), size, nullptr, nullptr);
 
     return result;
@@ -35,6 +35,10 @@ public:
   [[nodiscard]] static std::wstring ResolvePath(const std::wstring& _fileName);
 
 protected:
+  // Set once by the composition root before any thread that reads a file exists (Outpost/Main.cpp),
+  // and never written again -- which is the whole of its thread safety. A write after startup would
+  // race every reader here, so if a second root ever needs to move it, it moves to that root's state
+  // rather than gaining a lock: nothing in the tree wants this to change while the game is running.
   inline static std::wstring sm_homeDir;
 };
 
