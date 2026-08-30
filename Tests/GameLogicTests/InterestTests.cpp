@@ -313,8 +313,15 @@ public:
   {
     // A delta stream cannot resynchronise by waiting, so a partly applied update is worse than a
     // dropped one: the client would hold a world nothing will ever correct.
+    //
+    // Three fragments, derived from the record rather than spelled: this test wanted 40 ships when a
+    // fragment held 13, and quantizing the record to 23 quietly turned it into a two-fragment test
+    // that skipped the last one instead of a middle one. A count taken from the writer's own number
+    // cannot go stale that way (Design/Archive/QuantizedWire-work-order.md 5).
+    const std::uint32_t needed = Game::ShipsPerSnapshotFragment() * 2 + 1;
+
     Game::World world;
-    for (int at = 0; at < 40; ++at)
+    for (std::uint32_t at = 0; at < needed; ++at)
       SpawnCorvetteAt(world, static_cast<float>(at) * 30.0f, 0.0f);
     world.Step();
 
@@ -325,7 +332,7 @@ public:
     Game::SnapshotWriter writer;
     Game::SnapshotReceiver receiver;
     CaptureLink link;
-    Assert::IsTrue(writer.WriteInterest(world, all, {}, {}, {}, link) > 2, L"40 ships did not need three fragments");
+    Assert::IsTrue(writer.WriteInterest(world, all, {}, {}, {}, link) > 2, L"the ship count did not need three fragments");
 
     for (std::size_t at = 0; at < link.sent.size(); ++at)
     {

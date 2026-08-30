@@ -100,6 +100,39 @@ Game::ShipId SpawnAt(Game::World& _world, float _x, float _z, Game::HullId _hull
   return _faction;
 }
 
+// What round-to-nearest costs on a wire that carries a position as a 0.125 m lattice step and an
+// angle as a sixteenth-bit of a turn: half a step of either. These are the numbers the slice's
+// acceptance is stated in (Design/Archive/QuantizedWire-work-order.md 5), and they are what four fields of
+// the ship record are asserted against instead of equality.
+constexpr float WIRE_POSITION_BOUND_METRES = 0.0625f;
+constexpr float WIRE_ANGLE_BOUND_RAD = DirectX::XM_PI / 65536.0f;
+
+// The lattice step itself, for the assertions about what the wire can and cannot represent.
+constexpr float WIRE_POSITION_STEP_METRES = 0.125f;
+
+// Per axis, not as a distance: the quantizer rounds each axis independently, so a diagonal error of
+// 0.088 m is two axes each inside the bound and not a violation of it.
+[[nodiscard]] float WorstAxisError(const Game::WorldPos& _a, const Game::WorldPos& _b)
+{
+  return std::max(std::fabs(Game::OffsetX(_a, _b)), std::fabs(Game::OffsetZ(_a, _b)));
+}
+
+// An angle compared as an angle. The decode's range is (-pi, pi], so a source of exactly -pi comes
+// back as +pi: the same bearing and a different number, which a plain subtraction would call a
+// failure of 2pi (Design/Archive/QuantizedWire-work-order.md 5).
+[[nodiscard]] float AngleError(float _a, float _b)
+{
+  return std::fabs(DirectX::XMScalarModAngle(_a - _b));
+}
+
+// Every datagram the capture holds, in order. Write uses only the unreliable lane, so this is the
+// whole of a full snapshot -- FeedBothLanes is for the update path, which also states departures.
+void FeedDatagrams(Game::SnapshotReceiver& _receiver, const CaptureTransport& _link)
+{
+  for (const std::vector<std::uint8_t>& datagram : _link.sent)
+    (void)_receiver.Accept(datagram);
+}
+
 [[nodiscard]] const Game::ShipSnapshot* Find(const Game::WorldSnapshot& _snapshot, Game::ShipHandle _handle)
 {
   for (const Game::ShipSnapshot& ship : _snapshot.ships)
@@ -117,9 +150,10 @@ public:
   TEST_METHOD(TheFragmentSizeIsDerivedFromTheDatagram)
   {
     // Derived rather than chosen, so the day the record grows these follow it. The numbers are
-    // recorded because they are the argument for interest management: 13 ships per datagram means a
-    // 5,000-ship snapshot is 385 fragments, which is what slice 6 exists to stop sending.
-    Assert::IsTrue(Game::ShipsPerSnapshotFragment() > 0, L"no ship fits in a datagram");
+    // recorded because they are the argument for interest management: 23 ships per datagram -- 13
+    // before the record was quantized -- means a 5,000-ship snapshot is 218 fragments, which is what
+    // slice 6 exists to stop sending.
+    Assert::AreEqual(23u, Game::ShipsPerSnapshotFragment(), L"the quantized record no longer fits 23 ships in a datagram");
     Assert::IsTrue(Game::ShipsPerSnapshotFragment() < 64, L"the record got suspiciously small");
     Assert::IsTrue(Game::MaxShipsPerOrder() > Game::ShipsPerSnapshotFragment(), L"an order holds fewer ships than a snapshot fragment");
   }
@@ -149,16 +183,235 @@ public:
     const Game::ShipState& source = world.Ship(ship);
     const Game::ShipSnapshot& copy = got.ships[0];
     Assert::IsTrue(copy.handle == world.HandleOf(ship), L"the handle did not survive");
-    Assert::IsTrue(IsSamePosition(source.posWorld, copy.posWorld), L"posWorld did not survive");
-    Assert::IsTrue(IsSamePosition(source.prevPos, copy.prevPos), L"prevPos did not survive");
-    Assert::AreEqual(source.headingRad, copy.headingRad, 0.0f, L"headingRad did not survive");
-    Assert::AreEqual(source.prevHeading, copy.prevHeading, 0.0f, L"prevHeading did not survive");
+
+    // Four fields are quantized and seven are not, and both halves are asserted here: a bound where
+    // the wire rounds, and bit equality where it does not. A record whose fields got out of step
+    // between the writer and the reader shows up as the exact ones failing, which is why they are
+    // still compared against zero (Design/Archive/QuantizedWire-work-order.md 1).
+    Assert::IsTrue(WorstAxisError(source.posWorld, copy.posWorld) <= WIRE_POSITION_BOUND_METRES,
+                   L"posWorld came back further than half a lattice step");
+    Assert::IsTrue(WorstAxisError(source.prevPos, copy.prevPos) <= WIRE_POSITION_BOUND_METRES,
+                   L"prevPos came back further than half a lattice step");
+    Assert::IsTrue(AngleError(source.headingRad, copy.headingRad) <= WIRE_ANGLE_BOUND_RAD,
+                   L"headingRad came back further than half a turns16 step");
+    Assert::IsTrue(AngleError(source.prevHeading, copy.prevHeading) <= WIRE_ANGLE_BOUND_RAD,
+                   L"prevHeading came back further than half a turns16 step");
     Assert::AreEqual(source.speed, copy.speed, 0.0f, L"speed did not survive");
     Assert::AreEqual(source.accelSample, copy.accelSample, 0.0f, L"accelSample did not survive");
     Assert::AreEqual(source.turnRateRadPerSec, copy.turnRateRadPerSec, 0.0f, L"turnRateRadPerSec did not survive");
     Assert::AreEqual(source.order, copy.order, L"the order state did not survive");
     Assert::AreEqual(Faction(source.factionId), Faction(copy.factionId), L"factionId did not survive");
     Assert::AreEqual(source.hullId, copy.hullId, L"hullId did not survive");
+  }
+
+  TEST_METHOD(EveryPositionArrivesWithinHalfALatticeStep)
+  {
+    // The wire puts a position on a 0.125 m lattice, so round-to-nearest costs at most 6.25 cm on
+    // each axis. Swept rather than sampled at one point, because the cases that break a quantizer
+    // are the ones a single spawn never visits: a sector border, a negative sector, and an offset
+    // that rounds up into the next sector rather than down into this one.
+    const float LOCALS[] = {0.0f, 0.0624f, 0.0625f, 0.0626f, 1.0f, 4096.0f, 8191.874f, 8191.9f, 8191.999f};
+    const float SECTORS[] = {0.0f, Game::SECTOR_SIZE_METRES, -Game::SECTOR_SIZE_METRES * 3.0f};
+
+    Game::World world;
+    std::vector<Game::ShipId> ships;
+    for (const float sector : SECTORS)
+    {
+      for (const float localX : LOCALS)
+      {
+        for (const float localZ : LOCALS)
+          ships.push_back(
+            world.SpawnShip(Game::LocalPos(sector + localX, sector + localZ), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette)));
+      }
+    }
+
+    CaptureTransport transport;
+    Game::SnapshotWriter writer;
+    Assert::IsTrue(writer.Write(world, transport) > 1u, L"the sweep did not fragment, so it is not testing the writer");
+
+    Game::SnapshotReceiver receiver;
+    FeedDatagrams(receiver, transport);
+    Assert::AreEqual(ships.size(), receiver.Latest().ships.size(), L"the sweep did not come back whole");
+
+    for (const Game::ShipId id : ships)
+    {
+      const Game::ShipSnapshot* copy = Find(receiver.Latest(), world.HandleOf(id));
+      Assert::IsTrue(copy != nullptr, L"a swept position went missing");
+      Assert::IsTrue(WorstAxisError(world.Ship(id).posWorld, copy->posWorld) <= WIRE_POSITION_BOUND_METRES,
+                     L"a swept position came back further than half a lattice step");
+    }
+  }
+
+  TEST_METHOD(EveryHeadingArrivesWithinHalfATurns16Step)
+  {
+    // An angle rides 65,536 steps to the circle, so rounding costs at most pi/2^16. The sweep
+    // deliberately includes both signs of pi: the decode's range is (-pi, pi], so a source of -pi
+    // comes back as +pi, and an assertion that compared numbers rather than angles would call the
+    // same bearing a failure of a whole turn.
+    const float HEADINGS[] = {0.0f,
+                              0.001f,
+                              -0.001f,
+                              1.0f,
+                              -1.0f,
+                              3.0f,
+                              -3.0f,
+                              DirectX::XM_PI,
+                              -DirectX::XM_PI,
+                              DirectX::XM_PIDIV2,
+                              -DirectX::XM_PIDIV2,
+                              2.3561945f,
+                              -2.3561945f,
+                              9.5873799e-5f,
+                              -9.5873799e-5f};
+
+    Game::World world;
+    std::vector<Game::ShipId> ships;
+    for (const float heading : HEADINGS)
+    {
+      ships.push_back(world.SpawnShip(Game::LocalPos(static_cast<float>(ships.size()) * 400.0f, 0.0f), heading,
+                                      static_cast<std::uint32_t>(Game::HullId::Corvette)));
+    }
+
+    CaptureTransport transport;
+    Game::SnapshotWriter writer;
+    Assert::IsTrue(writer.Write(world, transport) > 0u, L"nothing was sent");
+
+    Game::SnapshotReceiver receiver;
+    FeedDatagrams(receiver, transport);
+
+    for (const Game::ShipId id : ships)
+    {
+      const Game::ShipSnapshot* copy = Find(receiver.Latest(), world.HandleOf(id));
+      Assert::IsTrue(copy != nullptr, L"a swept heading went missing");
+      Assert::IsTrue(AngleError(world.Ship(id).headingRad, copy->headingRad) <= WIRE_ANGLE_BOUND_RAD,
+                     L"a swept heading came back further than half a turns16 step");
+      // Spawn sets prevHeading to the same value, so this pins the second angle field as well --
+      // the two are written by the same call and would drift together if either were mis-sized.
+      Assert::IsTrue(AngleError(world.Ship(id).prevHeading, copy->prevHeading) <= WIRE_ANGLE_BOUND_RAD,
+                     L"a swept prevHeading came back further than half a turns16 step");
+      Assert::IsTrue(copy->headingRad > -DirectX::XM_PI - WIRE_ANGLE_BOUND_RAD && copy->headingRad <= DirectX::XM_PI + WIRE_ANGLE_BOUND_RAD,
+                     L"a decoded heading left the range the decode promises");
+    }
+  }
+
+  TEST_METHOD(APrevPosArrivesAsAWholeNumberOfStepsFromItsOwnPosition)
+  {
+    // prevPos is not a second position on the wire: it is an integer step delta from posWorld, which
+    // is what makes the pair four bytes instead of twelve and what keeps the reconstruction exact
+    // rather than doubly rounded (Design/Archive/QuantizedWire-work-order.md 2.3). Two things follow, and
+    // both are asserted: the offset between the decoded pair is a whole number of steps, and it is
+    // within one step of the offset the simulation holds. The view divides that offset by one tick
+    // to get velocity, so it is the number this field exists for.
+    Game::World world;
+    const Game::ShipId ship = SpawnAt(world, 0.0f, 0.0f, Game::HullId::Interceptor);
+    const Game::ShipId order[] = {ship};
+    world.IssueMoveOrder(order, Game::LocalPos(3000.0f, 1500.0f), false, 0.0f);
+
+    float worstDelta = 0.0f;
+    float longestTravel = 0.0f;
+    for (int tick = 0; tick < 120; ++tick)
+    {
+      world.Step();
+
+      CaptureTransport transport;
+      Game::SnapshotWriter writer;
+      Assert::AreEqual(1u, writer.Write(world, transport), L"one ship did not fit in one fragment");
+      Game::SnapshotReceiver receiver;
+      FeedDatagrams(receiver, transport);
+      Assert::AreEqual(static_cast<std::size_t>(1), receiver.Latest().ships.size(), L"the ship did not arrive");
+
+      const Game::ShipState& source = world.Ship(ship);
+      const Game::ShipSnapshot& copy = receiver.Latest().ships[0];
+
+      const float wireX = Game::OffsetX(copy.prevPos, copy.posWorld);
+      const float wireZ = Game::OffsetZ(copy.prevPos, copy.posWorld);
+      Assert::AreEqual(std::round(wireX / WIRE_POSITION_STEP_METRES), wireX / WIRE_POSITION_STEP_METRES, 0.0f,
+                       L"the decoded prevPos was not a whole number of steps from posWorld");
+      Assert::AreEqual(std::round(wireZ / WIRE_POSITION_STEP_METRES), wireZ / WIRE_POSITION_STEP_METRES, 0.0f,
+                       L"the decoded prevPos was not a whole number of steps from posWorld");
+
+      const float trueX = Game::OffsetX(source.prevPos, source.posWorld);
+      const float trueZ = Game::OffsetZ(source.prevPos, source.posWorld);
+      worstDelta = std::max(worstDelta, std::max(std::fabs(wireX - trueX), std::fabs(wireZ - trueZ)));
+      longestTravel = std::max(longestTravel, std::max(std::fabs(trueX), std::fabs(trueZ)));
+
+      Assert::IsTrue(WorstAxisError(source.prevPos, copy.prevPos) <= WIRE_POSITION_BOUND_METRES,
+                     L"prevPos itself came back further than half a lattice step");
+    }
+
+    // One rounding at each end of the delta, so a tick of travel is right to a step.
+    Assert::IsTrue(worstDelta <= WIRE_POSITION_STEP_METRES, L"a tick of travel arrived more than one step wrong");
+    // And the ship actually moved, or every assertion above compared zero with zero.
+    Assert::IsTrue(longestTravel > 0.4f, L"the Interceptor never got moving, so the delta was never exercised");
+  }
+
+  TEST_METHOD(ASectorBorderIsCrossedWithoutAJump)
+  {
+    // The decode rebuilds prevPos by translating the decoded posWorld, so the sector carry is the
+    // simulation's own. If it were not, a ship crossing a border would decode into the sector it had
+    // just left and the view would see it jump a sector's width and come back.
+    Game::World world;
+    const Game::ShipId ship =
+      world.SpawnShip(Game::LocalPos(Game::SECTOR_SIZE_METRES - 60.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor));
+    const Game::ShipId order[] = {ship};
+    world.IssueMoveOrder(order, Game::LocalPos(Game::SECTOR_SIZE_METRES + 400.0f, 0.0f), false, 0.0f);
+
+    Game::WorldPos previous;
+    bool havePrevious = false;
+    bool crossed = false;
+    float worstStep = 0.0f;
+    for (int tick = 0; tick < 400; ++tick)
+    {
+      world.Step();
+
+      CaptureTransport transport;
+      Game::SnapshotWriter writer;
+      Assert::AreEqual(1u, writer.Write(world, transport), L"one ship did not fit in one fragment");
+      Game::SnapshotReceiver receiver;
+      FeedDatagrams(receiver, transport);
+      Assert::AreEqual(static_cast<std::size_t>(1), receiver.Latest().ships.size(), L"the ship did not arrive");
+      const Game::ShipSnapshot& copy = receiver.Latest().ships[0];
+
+      if (havePrevious)
+        worstStep = std::max(worstStep, Game::Distance(previous, copy.posWorld));
+      previous = copy.posWorld;
+      havePrevious = true;
+      crossed = crossed || copy.posWorld.sectorX == 1;
+
+      Assert::IsTrue(Game::Distance(copy.prevPos, copy.posWorld) < 1.0f,
+                     L"a record's prevPos was more than a tick of travel from its posWorld");
+    }
+
+    Assert::IsTrue(crossed, L"the ship never crossed the border, so nothing was tested");
+    // An Interceptor tops out at 34 m/s, so a tick is 0.567 m; anything near a sector's width is the
+    // carry going wrong rather than the ship going fast.
+    Assert::IsTrue(worstStep < 1.0f, L"a decoded position jumped further than one tick of travel");
+  }
+
+  TEST_METHOD(APositionAMillimetreShortOfABorderRoundsIntoTheNextSector)
+  {
+    // The nearest lattice point to 8,191.999 m is the next sector's origin, not the last step inside
+    // this one. Carrying rather than clamping is what keeps the encode monotonic across a border: a
+    // quantizer that clamped would put a ship a millimetre from the border 0.124 m back inside it,
+    // and the sign of the error would flip at the boundary.
+    Game::World world;
+    const Game::ShipId ship =
+      world.SpawnShip(Game::LocalPos(Game::SECTOR_SIZE_METRES - 0.001f, 0.001f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+
+    CaptureTransport transport;
+    Game::SnapshotWriter writer;
+    Assert::AreEqual(1u, writer.Write(world, transport), L"one ship did not fit in one fragment");
+    Game::SnapshotReceiver receiver;
+    FeedDatagrams(receiver, transport);
+
+    const Game::ShipSnapshot& copy = receiver.Latest().ships[0];
+    Assert::IsTrue(world.Ship(ship).posWorld.sectorX == 0, L"the spawn was not where this test needs it");
+    Assert::IsTrue(copy.posWorld.sectorX == 1, L"the encode did not carry into the next sector");
+    Assert::AreEqual(0.0f, copy.posWorld.localX, 0.0f, L"the carried offset is not the new sector's origin");
+    Assert::IsTrue(copy.posWorld.sectorZ == 0, L"a millimetre north changed sector");
+    Assert::AreEqual(0.0f, copy.posWorld.localZ, 0.0f, L"a millimetre did not round to the origin");
+    Assert::IsTrue(WorstAxisError(world.Ship(ship).posWorld, copy.posWorld) <= WIRE_POSITION_BOUND_METRES,
+                   L"the carry moved the ship further than half a step");
   }
 
   TEST_METHOD(FactionSurvivesTheWire)
@@ -470,7 +723,7 @@ public:
 
   TEST_METHOD(AWorldTooBigForOneDatagramFragmentsAndReassembles)
   {
-    // 200 ships against 13 per fragment. The point is not the number but that the count and the
+    // 200 ships against 23 per fragment. The point is not the number but that the count and the
     // order come back exactly, because a snapshot that reassembles out of order is a world where
     // ships have swapped places.
     Game::World world;

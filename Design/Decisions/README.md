@@ -77,3 +77,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0040](0040-a-departure-carries-a-cause.md) | A departure carries a cause on the wire | accepted |
 | [0041](0041-the-protector-response-reacts-to-stated-acts.md) | The protector response reacts to stated acts, not senses | accepted |
 | [0042](0042-a-route-never-asks-for-a-point-the-wall-forbids.md) | A route never asks for a point the wall forbids | accepted |
+| [0046](0046-the-wires-sector-index-is-32-bits.md) | The wire's sector index is 32 bits, and a position rides a 0.125 m lattice | accepted |
