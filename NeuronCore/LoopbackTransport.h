@@ -35,15 +35,20 @@ public:
     // Fixed at Connect, so nothing allocates once the game is running.
     std::uint32_t capacityDatagrams = 256;
 
+    // Drop every Nth datagram; 0 disables. Counted rather than randomised because AGENTS.md 5 bans
+    // unseeded randomness, and because reproducible loss is the only kind worth testing against.
+    std::uint32_t dropOneInN = 0;
+
     // The reliable lane's depth, counted separately and much shallower on purpose: a message on
     // that lane is up to MAX_RELIABLE_BYTES where a datagram is up to MAX_DATAGRAM_BYTES, so 256 of
     // them would be 2 MB an end for a lane that carries leaves and orders rather than a position per
     // ship per tick. Deep enough that an update's worth queues; shallow enough to be free.
+    //
+    // LAST, AND NEW FIELDS GO LAST TOO. This is an aggregate, and a caller may brace-initialise it
+    // positionally; inserting a field in the middle silently gives every such call site a different
+    // meaning, which is how this one first landed -- {0, 256, 3} quietly stopped meaning "drop one
+    // in three" and the loss test went red saying nothing had been dropped.
     std::uint32_t capacityReliableMessages = 32;
-
-    // Drop every Nth datagram; 0 disables. Counted rather than randomised because AGENTS.md 5 bans
-    // unseeded randomness, and because reproducible loss is the only kind worth testing against.
-    std::uint32_t dropOneInN = 0;
   };
 
   // Wires two ends to each other. Neither owns the other, and both must outlive the pair.

@@ -49,6 +49,9 @@ public:
     // The reliable lane's rings, counted separately and much shallower: a message there may be
     // MAX_RELIABLE_BYTES, so 256 of them would be 2 MB a ring for a lane carrying leaves and orders
     // rather than a position per ship per tick. Two rings of 32 is 256 KB each.
+    //
+    // Last, and new fields go last too: this is an aggregate and a caller may brace-initialise it
+    // positionally, so a field inserted in the middle changes what every such call site means.
     std::uint32_t capacityReliableMessages = 32;
   };
 

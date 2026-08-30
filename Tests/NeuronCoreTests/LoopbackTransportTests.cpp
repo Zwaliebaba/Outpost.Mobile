@@ -62,7 +62,7 @@ public:
     // seconds so the measurement reproduces on a slower machine (slice-2b 2.1).
     Neuron::LoopbackTransport client;
     Neuron::LoopbackTransport server;
-    Neuron::LoopbackTransport::Connect(client, server, {7, 256, 0});
+    Neuron::LoopbackTransport::Connect(client, server, {.latencyTicks = 7});
 
     AdvanceBoth(client, server, 0);
     Assert::IsTrue(SendByte(server, 9), L"the send failed");
@@ -84,7 +84,7 @@ public:
   {
     Neuron::LoopbackTransport client;
     Neuron::LoopbackTransport server;
-    Neuron::LoopbackTransport::Connect(client, server, {2, 256, 0});
+    Neuron::LoopbackTransport::Connect(client, server, {.latencyTicks = 2});
 
     AdvanceBoth(client, server, 0);
     for (std::uint8_t value = 0; value < 16; ++value)
@@ -105,7 +105,7 @@ public:
     // instead of blocking a frame on it. What must not happen is losing what is already in flight.
     Neuron::LoopbackTransport client;
     Neuron::LoopbackTransport server;
-    Neuron::LoopbackTransport::Connect(client, server, {0, 4, 0});
+    Neuron::LoopbackTransport::Connect(client, server, {.capacityDatagrams = 4});
 
     AdvanceBoth(client, server, 0);
     for (std::uint8_t value = 0; value < 4; ++value)
@@ -131,7 +131,7 @@ public:
     {
       Neuron::LoopbackTransport client;
       Neuron::LoopbackTransport server;
-      Neuron::LoopbackTransport::Connect(client, server, {0, 256, 3});
+      Neuron::LoopbackTransport::Connect(client, server, {.dropOneInN = 3});
       AdvanceBoth(client, server, 0);
       for (std::uint8_t value = 0; value < static_cast<std::uint8_t>(_sends); ++value)
         (void)SendByte(server, value);
