@@ -408,12 +408,21 @@ int WorldView::SelectedCount() const noexcept
   return count;
 }
 
-XMFLOAT3 WorldView::HullPointToWorld(float _restY, const DisplayPose& _pose, const XMFLOAT3& _local) const noexcept
+XMMATRIX WorldView::HullMatrix(const ShipView& _view, const DisplayPose& _pose) const noexcept
 {
-  const float cosH = std::cos(_pose.headingRad);
-  const float sinH = std::sin(_pose.headingRad);
-  return XMFLOAT3(ViewX(_pose.pos) + (_local.x * cosH + _local.z * sinH) * SHIP_SCALE, SHIP_HOVER_HEIGHT + (_restY + _local.y) * SHIP_SCALE,
-                  ViewZ(_pose.pos) + (-_local.x * sinH + _local.z * cosH) * SHIP_SCALE);
+  // Roll about the hull's own mid-height axis, not its base, or a banked ship pivots on one
+  // wingtip. SHIP_HOVER_HEIGHT is what keeps the low wing out of the ground while it does.
+  const float rollAxisY = _view.pickCentre.y;
+  return XMMatrixTranslation(0.0f, -rollAxisY, 0.0f) * XMMatrixRotationZ(_view.bankRad) *
+         XMMatrixTranslation(0.0f, rollAxisY + _view.restY, 0.0f) * XMMatrixScaling(SHIP_SCALE, SHIP_SCALE, SHIP_SCALE) *
+         XMMatrixRotationY(_pose.headingRad) * XMMatrixTranslation(ViewX(_pose.pos), SHIP_HOVER_HEIGHT, ViewZ(_pose.pos));
+}
+
+XMFLOAT3 WorldView::HullPointToWorld(const ShipView& _view, const DisplayPose& _pose, const XMFLOAT3& _local) const noexcept
+{
+  XMFLOAT3 world;
+  XMStoreFloat3(&world, XMVector3Transform(XMLoadFloat3(&_local), HullMatrix(_view, _pose)));
+  return world;
 }
 
 // One sample per nozzle per tick, so trail length means the same thing whatever the frame rate.
@@ -434,8 +443,7 @@ void WorldView::SampleTrails()
     view.trailHead = (view.trailHead + 1) % TRAIL_SAMPLES;
     for (size_t nozzle = 0; nozzle < view.exhausts.size(); ++nozzle)
     {
-      view.trail[nozzle * TRAIL_SAMPLES + static_cast<size_t>(view.trailHead)] =
-        HullPointToWorld(view.restY, pose, view.exhausts[nozzle].local);
+      view.trail[nozzle * TRAIL_SAMPLES + static_cast<size_t>(view.trailHead)] = HullPointToWorld(view, pose, view.exhausts[nozzle].local);
     }
     view.trailCount = std::min(view.trailCount + 1, TRAIL_SAMPLES);
   }
@@ -1018,12 +1026,7 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     const float z = ViewZ(pose.pos);
     const float heading = pose.headingRad;
 
-    // Roll about the hull's own mid-height axis, not its base, or a banked ship pivots on one
-    // wingtip. SHIP_HOVER_HEIGHT is what keeps the low wing out of the ground while it does.
-    const float rollAxisY = view.pickCentre.y;
-    const XMMATRIX hull = XMMatrixTranslation(0.0f, -rollAxisY, 0.0f) * XMMatrixRotationZ(view.bankRad) *
-                          XMMatrixTranslation(0.0f, rollAxisY + view.restY, 0.0f) * XMMatrixScaling(SHIP_SCALE, SHIP_SCALE, SHIP_SCALE) *
-                          XMMatrixRotationY(heading) * XMMatrixTranslation(x, SHIP_HOVER_HEIGHT, z);
+    const XMMATRIX hull = HullMatrix(view, pose);
     XMStoreFloat4x4(&world, hull);
 
     // Whose paint this hull wears -- in-scene IFF the moment a hull is on screen, rather than an
@@ -1342,7 +1345,7 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const Sc
           if (alpha <= 0.002f)
             continue;
           const float radius = std::max(0.1f, light.radiusMetres * NAV_LIGHT_GLOW_SCALE) * SHIP_SCALE;
-          m_glowSamples.push_back(Neuron::GlowSample{.posWorld = HullPointToWorld(view.restY, pose, light.local),
+          m_glowSamples.push_back(Neuron::GlowSample{.posWorld = HullPointToWorld(view, pose, light.local),
                                                      .radiusMetres = radius,
                                                      .colour = Rgba{light.colour.r, light.colour.g, light.colour.b, alpha}});
         }
