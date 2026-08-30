@@ -30,13 +30,13 @@ void WorldView::AddBody(const BodyView& _body)
   // what makes that split true rather than a convention nobody checks.
   XMStoreFloat3x3(&m_bodies.back().tumble, XMMatrixIdentity());
   m_bodyWorlds.reserve(m_bodies.size());
-  m_bodyTriangles += _body.triangleCount;
 }
 
 void WorldView::ClearBodies() noexcept
 {
   m_bodies.clear();
   m_bodyWorlds.clear();
+  m_bodyLod.clear();
   m_bodyTriangles = 0;
 }
 
@@ -1005,20 +1005,53 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
     m_bodyWorlds.push_back(bodyWorld);
   }
 
-  // Visibility is decided once per body, here, and the terrain and outline passes below reuse it:
-  // two passes over the same spheres would be two chances for them to disagree, and a body whose
-  // outline drew but whose land did not is a wireframe hanging in empty space.
+  // Visibility and the level of detail are decided once per body, here, and the terrain and
+  // outline passes below reuse both: two passes over the same spheres would be two chances for
+  // them to disagree, and a body whose outline drew but whose land did not is a wireframe hanging
+  // in empty space. The projected radius that chooses the level also finishes the culling: an
+  // asteroid smaller on screen than BODY_CULL_BELOW_PX is not submitted at all, which is the
+  // distance cull slice 9's frustum test always lacked (Design/BodyLod-work-order.md 2.3).
   m_bodyVisible.clear();
+  m_bodyLod.clear();
+  m_bodyTriangles = 0;
+  const float projScalePx = static_cast<float>(_gpu.HeightPx()) * 0.5f / std::tan(XMConvertToRadians(CAMERA_FOV_DEG) * 0.5f);
+  const XMFLOAT3 eye = m_camera->Eye();
   for (std::size_t i = 0; i < m_bodies.size(); ++i)
   {
-    const XMFLOAT3 centre(ViewX(m_bodies[i].centre), m_bodies[i].centreY, ViewZ(m_bodies[i].centre));
-    const float radius = m_bodies[i].boundingRadiusMetres * CULL_BODY_RADIUS_SCALE;
-    const bool visible = Neuron::IsSphereVisible(frustum, centre, radius);
+    const BodyView& body = m_bodies[i];
+    const XMFLOAT3 centre(ViewX(body.centre), body.centreY, ViewZ(body.centre));
+    const float radius = body.boundingRadiusMetres * CULL_BODY_RADIUS_SCALE;
+    bool visible = Neuron::IsSphereVisible(frustum, centre, radius);
+
+    const float dx = centre.x - eye.x;
+    const float dy = centre.y - eye.y;
+    const float dz = centre.z - eye.z;
+    const float distance = std::max(1.0f, std::sqrt(dx * dx + dy * dy + dz * dz));
+    const float projectedPx = body.boundingRadiusMetres / distance * projScalePx;
+    if (visible && !body.textured && projectedPx < BODY_CULL_BELOW_PX)
+      visible = false; // a rock too small to see; a world is never distance-culled
+
+    std::uint8_t lod = 0;
+    if (projectedPx < BODY_LOD2_BELOW_PX)
+      lod = 2;
+    else if (projectedPx < BODY_LOD1_BELOW_PX)
+      lod = 1;
+    // A level that failed to bake falls back to the finest that exists, so a partial content
+    // failure degrades to what the scene drew before levels existed.
+    while (lod > 0 && body.terrainLod[lod] == Neuron::INVALID_BODY)
+      --lod;
+
     m_bodyVisible.push_back(visible);
+    m_bodyLod.push_back(lod);
     if (visible)
+    {
       ++m_submittedCount;
+      m_bodyTriangles += body.triangleCountLod[lod];
+    }
     else
+    {
       ++m_culledCount;
+    }
   }
 
   const std::span<const Game::ShipSnapshot> state = Ships();
@@ -1105,16 +1138,16 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
       if (!m_bodyVisible[i])
         continue;
       if (m_bodies[i].textured)
-        m_bodyRenderer->DrawPlanet(_gpu, m_bodies[i].terrain, m_bodyWorlds[i]);
+        m_bodyRenderer->DrawPlanet(_gpu, m_bodies[i].terrainLod[m_bodyLod[i]], m_bodyWorlds[i]);
       else
-        m_bodyRenderer->DrawMain(_gpu, m_bodies[i].terrain, m_bodyWorlds[i]);
+        m_bodyRenderer->DrawMain(_gpu, m_bodies[i].terrainLod[m_bodyLod[i]], m_bodyWorlds[i]);
     }
     // The outline belongs to a generated body. Over a textured one it reads as a cage drawn on a
     // photograph, so a textured world is skipped here rather than being given a fainter one.
     for (std::size_t i = 0; i < m_bodies.size(); ++i)
     {
       if (m_bodyVisible[i] && !m_bodies[i].textured)
-        m_bodyRenderer->DrawOverlay(_gpu, m_bodies[i].terrain, m_bodyWorlds[i]);
+        m_bodyRenderer->DrawOverlay(_gpu, m_bodies[i].terrainLod[m_bodyLod[i]], m_bodyWorlds[i]);
     }
   }
 

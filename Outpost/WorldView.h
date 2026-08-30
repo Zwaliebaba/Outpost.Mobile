@@ -74,7 +74,12 @@ public:
   // rebase lands (WorldView.h's m_viewOrigin comment) a body moves with everything else for free.
   struct BodyView
   {
-    Neuron::BodyHandle terrain = Neuron::INVALID_BODY;
+    // Three grids of the same body, finest first; the level drawn is chosen per frame from the
+    // projected radius (Design/BodyLod-work-order.md 2.2). A level that failed to bake holds
+    // INVALID_BODY and the finest one that exists is drawn instead.
+    static constexpr std::uint32_t LOD_COUNT = 3;
+    Neuron::BodyHandle terrainLod[LOD_COUNT] = {Neuron::INVALID_BODY, Neuron::INVALID_BODY, Neuron::INVALID_BODY};
+    std::uint32_t triangleCountLod[LOD_COUNT] = {};
     // Drawn through BodyRenderer::DrawPlanet and given no outline pass: a smooth sphere wearing a
     // map rather than a generated height field (ViewTuning.h, BODY_PLANET_TEXTURED).
     bool textured = false;
@@ -88,7 +93,6 @@ public:
     // Euler angles that can be integrated separately.
     DirectX::XMFLOAT3X3 tumble{1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
     DirectX::XMFLOAT3 tumbleRadPerSec{0.0f, 0.0f, 0.0f};
-    std::uint32_t triangleCount = 0; // for the F1 readout only
     // The sphere the frustum test uses: the body's radius stretched by its longest ellipsoid axis
     // and raised by its tallest terrain. Both are fractions of the radius in BodyDesc, and both are
     // known on either bake path, so this is the extent rather than a guess at it.
@@ -365,7 +369,9 @@ public:
     return m_receiver.IsHostileToMe(_faction);
   }
 
-  // For the F1 readout: what the bodies on screen cost.
+  // For the F1 readout: what the bodies on screen cost *last frame* -- the levels actually chosen
+  // and drawn, not the sum of everything resident, which tripled when every body gained three
+  // grids (Design/BodyLod-work-order.md 2.1).
   [[nodiscard]] std::uint32_t BodyTriangleCount() const noexcept
   {
     return m_bodyTriangles;
@@ -528,8 +534,10 @@ private:
   std::uint32_t m_submittedCount = 0;
   std::uint32_t m_culledCount = 0;
 
-  // Decided once per body per frame and reused by the terrain and outline passes.
+  // Decided once per body per frame and reused by the terrain and outline passes, so the outline
+  // always cages the mesh that is actually drawn.
   std::vector<bool> m_bodyVisible;
+  std::vector<std::uint8_t> m_bodyLod;
 
   // The visible hulls, grouped by the mesh they draw with, so a fleet sharing a hull is one draw
   // (Design/MmoScalabilityReview.md G2). A plain vector rather than a map: there are ten meshes in

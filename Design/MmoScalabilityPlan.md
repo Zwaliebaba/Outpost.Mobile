@@ -1,6 +1,6 @@
 # The MMO scalability plan — the review as slices
 
-**Status: twenty of the twenty-four slices have landed.** The seam: 2 (the despawn log is
+**Status: complete — twenty-two of the twenty-four slices landed, one dropped, one folded.** The seam: 2 (the despawn log is
 cursored), 3 with 4 folded into it (the publisher), 5 and 6 (the reliable lane, and departures and
 orders on it, which retires finding E1), 7 (listener slots recycled), and the loopback fallback is
 gone (ADR 0028). The view: 8 (trail and glow batching), 9 (frustum culling), 10 (hull instancing).
@@ -15,7 +15,12 @@ gate this tree has been promising itself since Collision.md. Slice 18 opens the 
 second half -- a copy queue and render handles that can be freed -- built and run on Windows on
 arrival, which the branch it came from could not do. Slice 23 has taken its first project and been
 promoted over it, and slice 24 is in: a root is told what to be by a file rather than by a rebuild.
-**What is left is slices 19 and 20.**
+Slices 19 and 20 close the client track: textures ride the copy queue block-compressed with their
+mip chains, every pass allocates descriptors from one shared heap, and a body is three grids with
+the level chosen by its projected radius. **Nothing is left: every slice is landed, dropped
+(slice 1, made moot by 5-6) or folded (slice 4, into 3), except back-face culling for bodies,
+which slice 20 found blocked -- the cube faces wind three one way and three the other, recorded in
+its work order for whoever makes the winding consistent.**
 This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
 (tree at `de12b6d`) into an ordered slice plan in the shape `Design/README.md` defines: one slice,
 one branch, one pull request. The review is the evidence; this document is the work. Where a slice
@@ -164,8 +169,8 @@ Findings reference `MmoScalabilityReview.md`.
 | 16 | Global entity identity | `GameLogic` | M | 15 | U3 | ADR | [landed](Archive/EntityIdentity-work-order.md) |
 | 17 | The state codec and the replay gate | `GameLogic` | M | 16 | U3 |  | [landed](Archive/WorldState-work-order.md) |
 | 18 | Copy-queue uploader, store eviction | `NeuronClient` | M | 10 | G3 | ADR | landed, built and run (ADR 0044) |
-| 19 | Compressed textures, descriptor allocator | `NeuronClient` | M | 18 | G4 |  |  |
-| 20 | Body LOD and culling completion | `NeuronClient` | M | 9 | G5 |  |  |
+| 19 | Compressed textures, descriptor allocator | `NeuronClient` | M | 18 | G4 |  | [landed](CompressedTextures-work-order.md) |
+| 20 | Body LOD and culling completion | `NeuronClient` | M | 9 | G5 |  | [landed](BodyLod-work-order.md); back-face culling deferred, winding is per-face mixed |
 | 21 | Guard widening and the docs re-trued | `Build/`+prose | S | — | C2 C3 C4 |  | landed |
 | 22 | Legacy helper cleanup | `NeuronCore` | S | — | C1 |  | landed |
 | 23 | clang-tidy widens a project | `.github/` | S | — | C2 |  | landed; promoted 2026-08-30 |

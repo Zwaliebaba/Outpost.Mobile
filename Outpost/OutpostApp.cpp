@@ -368,44 +368,59 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
     const BodyDesc desc = RandomBody(_bodySeed, _radiusMetres);
     const ColourRamp& ramp = m_ramps[static_cast<std::size_t>(bodyClass)];
 
+    // Three grids of the same body, finest first: the body's own power, then one and two below it,
+    // clamped at the field's floor. The level drawn is the view's per-frame choice
+    // (Design/BodyLod-work-order.md 2.1). Lowering gridPower re-samples the same seeded noise more
+    // coarsely, which is the source design's own three-LOD scheme.
+    WorldView::BodyView view;
     BodyBuildStats stats;
-    BodyHandle handle = INVALID_BODY;
-    if (_textured)
+    for (std::uint32_t level = 0; level < WorldView::BodyView::LOD_COUNT; ++level)
     {
-      // A picture instead of a generated surface. None of the field, the ramp or the dither runs: a
-      // sphere of this radius and a map sampled off the direction is the whole of it. The
-      // description above is still drawn from the stream, because a body that skipped its draws
-      // would move every body generated after it.
-      std::vector<FxVertex> sphere;
-      BodyMeshBuilder::BuildSphere(_radiusMetres, BODY_PLANET_SPHERE_GRID_POWER, sphere);
-      handle = m_bodyRenderer.UploadBody(m_gpu, sphere);
-      stats.trianglesEmitted = static_cast<std::uint32_t>(sphere.size() / 3u);
-    }
-    else if constexpr (BODY_BAKE_ON_GPU)
-    {
-      // The kernel writes the vertices; this side only draws the random numbers into the block. No
-      // BodyField is constructed at all -- its two measurement passes over the grid are exactly what
-      // the first two dispatches replace.
-      const BodyParams params = BodyField::ParamsFor(desc);
-      handle = m_bodyRenderer.BakeBody(m_gpu, params, ramp);
+      BodyDesc levelDesc = desc;
+      const std::uint32_t basePower = _textured ? BODY_PLANET_SPHERE_GRID_POWER : desc.gridPower;
+      levelDesc.gridPower = std::max(BodyField::MIN_GRID_POWER, basePower - std::min(basePower, level));
 
-      // Every cell, because a baked body writes a degenerate triangle where the builder would have
-      // emitted nothing; there is no CPU-side count on this path to read instead.
-      const std::uint32_t cells = (1u << static_cast<std::uint32_t>(params.outsideMaxHeightGrid.z));
-      stats.trianglesEmitted = CUBE_FACE_COUNT * cells * cells * 2u;
-    }
-    else
-    {
-      std::vector<FxVertex> terrain;
-      BodyMeshBuilder::Build(BodyField(desc), ramp.Loaded() ? &ramp : nullptr, terrain, stats);
-      handle = m_bodyRenderer.UploadBody(m_gpu, terrain);
+      BodyBuildStats levelStats;
+      BodyHandle handle = INVALID_BODY;
+      if (_textured)
+      {
+        // A picture instead of a generated surface. None of the field, the ramp or the dither runs:
+        // a sphere of this radius and a map sampled off the direction is the whole of it. The
+        // description above is still drawn from the stream, because a body that skipped its draws
+        // would move every body generated after it.
+        std::vector<FxVertex> sphere;
+        BodyMeshBuilder::BuildSphere(_radiusMetres, levelDesc.gridPower, sphere);
+        handle = m_bodyRenderer.UploadBody(m_gpu, sphere);
+        levelStats.trianglesEmitted = static_cast<std::uint32_t>(sphere.size() / 3u);
+      }
+      else if constexpr (BODY_BAKE_ON_GPU)
+      {
+        // The kernel writes the vertices; this side only draws the random numbers into the block.
+        // No BodyField is constructed at all -- its two measurement passes over the grid are
+        // exactly what the first two dispatches replace.
+        const BodyParams params = BodyField::ParamsFor(levelDesc);
+        handle = m_bodyRenderer.BakeBody(m_gpu, params, ramp);
+
+        // Every cell, because a baked body writes a degenerate triangle where the builder would
+        // have emitted nothing; there is no CPU-side count on this path to read instead.
+        const std::uint32_t cells = (1u << static_cast<std::uint32_t>(params.outsideMaxHeightGrid.z));
+        levelStats.trianglesEmitted = CUBE_FACE_COUNT * cells * cells * 2u;
+      }
+      else
+      {
+        std::vector<FxVertex> terrain;
+        BodyMeshBuilder::Build(BodyField(levelDesc), ramp.Loaded() ? &ramp : nullptr, terrain, levelStats);
+        handle = m_bodyRenderer.UploadBody(m_gpu, terrain);
+      }
+      view.terrainLod[level] = handle;
+      view.triangleCountLod[level] = levelStats.trianglesEmitted;
+      if (level == 0)
+        stats = levelStats;
     }
 
-    if (handle == INVALID_BODY)
+    if (view.terrainLod[0] == INVALID_BODY)
       return;
 
-    WorldView::BodyView view;
-    view.terrain = handle;
     view.textured = _textured;
     view.centre = Game::LocalPos(std::sin(_bearingRad) * _distanceMetres, std::cos(_bearingRad) * _distanceMetres);
     view.centreY = _centreY;
@@ -427,7 +442,6 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
     }
     view.boundingRadiusMetres = _radiusMetres * reach;
     view.spinAxis = desc.spinAxis;
-    view.triangleCount = stats.trianglesEmitted;
     if (_asteroid)
     {
       // Two axes, so the rock turns end over end rather than about one pole. Named draws, not
