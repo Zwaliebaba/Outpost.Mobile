@@ -81,16 +81,19 @@ public:
     // Far enough that a subscriber standing at the origin cannot see it.
     (void)SpawnAt(world, Game::INTEREST_RADIUS_METRES * 4.0f, 0.0f);
 
-    Link near;
-    Link far;
+    // Not "near" and "far": both are legacy memory-model macros from <windows.h>, which the
+    // umbrella pulls in, so `Link near;` expands to `Link ;` and every use of it becomes a syntax
+    // error pointing at the dot rather than at the name.
+    Link nearLink;
+    Link farLink;
     Game::Publisher publisher;
 
     Game::Publisher::Desc nearDesc;
-    nearDesc.transport = &near.server;
+    nearDesc.transport = &nearLink.server;
     const Game::Publisher::Handle nearSub = publisher.Add(nearDesc);
 
     Game::Publisher::Desc farDesc;
-    farDesc.transport = &far.server;
+    farDesc.transport = &farLink.server;
     farDesc.centre = Game::LocalPos(Game::INTEREST_RADIUS_METRES * 4.0f, 0.0f);
     const Game::Publisher::Handle farSub = publisher.Add(farDesc);
     Assert::AreEqual(2u, publisher.Count(), L"the publisher did not take both subscribers");
@@ -98,18 +101,18 @@ public:
     // Run far enough that both phases have come due at least once.
     for (std::uint64_t tick = 0; tick < Game::INTEREST_UPDATE_EVERY_TICKS * 2; ++tick)
     {
-      near.Pump(tick);
-      far.Pump(tick);
+      nearLink.Pump(tick);
+      farLink.Pump(tick);
       world.Step();
       publisher.Publish(world);
-      near.Pump(tick);
-      far.Pump(tick);
+      nearLink.Pump(tick);
+      farLink.Pump(tick);
     }
 
     Game::SnapshotReceiver nearView;
     Game::SnapshotReceiver farView;
-    near.DrainInto(nearView);
-    far.DrainInto(farView);
+    nearLink.DrainInto(nearView);
+    farLink.DrainInto(farView);
 
     Assert::AreEqual(static_cast<std::size_t>(2), nearView.Latest().ships.size(), L"the near subscriber did not get its own two ships");
     Assert::AreEqual(static_cast<std::size_t>(1), farView.Latest().ships.size(), L"the far subscriber did not get the one ship near it");
@@ -241,7 +244,12 @@ public:
     Game::Publisher publisher;
     Game::Publisher::Desc desc;
     desc.transport = &link.server;
+    // The line that makes it a late subscriber rather than one that happens to miss the death
+    // because it never held the ship.
+    desc.openingDespawnCursor = world.DespawnHead();
     const Game::Publisher::Handle late = publisher.Add(desc);
+    Assert::IsFalse(world.DespawnsSince(0).empty(), L"the death was trimmed before the test could use it");
+    Assert::IsTrue(world.DespawnsSince(world.DespawnHead()).empty(), L"the head is not past the death");
     Assert::AreEqual(0u, publisher.RefusedLeaveCount(late), L"a fresh subscriber had already refused something");
 
     Game::SnapshotReceiver view;

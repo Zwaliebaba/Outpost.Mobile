@@ -40,6 +40,10 @@ public:
     Game::Publisher::Desc desc;
     desc.transport = &_transport;
     desc.faction = m_subscriberFaction;
+
+    // From the head, not from zero: the fleet is spawned before the link is opened, and a ship that
+    // died during boot is not something this client ever held (ADR 0026).
+    desc.openingDespawnCursor = m_world.DespawnHead();
     m_subscriber = m_publisher.Add(desc);
   }
 

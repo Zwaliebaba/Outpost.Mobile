@@ -39,9 +39,10 @@ Publisher::Handle Publisher::Add(const Desc& _desc)
   // sharing one. The slot is stable for its life.
   added.phase = slot % std::max(1u, _desc.interest.updateEveryTicks);
 
-  // A subscriber joining a running world is told about deaths from now on, and about none of the
-  // ships it never held (ADR 0026).
-  added.despawnCursor = 0;
+  // Whatever the caller said. Zero -- the default -- is "everything the log still holds", which is
+  // right for a subscriber present from the first tick and wrong for one joining a running world;
+  // that caller passes World::DespawnHead() (ADR 0026).
+  added.despawnCursor = _desc.openingDespawnCursor;
 
   m_subscriberSlot.push_back(slot);
   return Handle{slot, m_slots[slot].generation};

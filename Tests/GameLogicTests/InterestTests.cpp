@@ -21,6 +21,21 @@ public:
     return true;
   }
 
+  // Departures travel on the reliable lane since ADR 0028, so a double that captured only datagrams
+  // would silently drop half of an update that states one.
+  [[nodiscard]] bool SendReliable(const std::uint8_t* _bytes, std::uint32_t _count) override
+  {
+    if (_count > Neuron::MAX_RELIABLE_BYTES)
+      return false;
+    sentReliable.emplace_back(_bytes, _bytes + _count);
+    return true;
+  }
+
+  [[nodiscard]] std::uint32_t ReceiveReliable(std::uint8_t*, std::uint32_t) override
+  {
+    return 0;
+  }
+
   [[nodiscard]] std::uint32_t Receive(std::uint8_t*, std::uint32_t) override
   {
     return 0;
@@ -34,6 +49,7 @@ public:
   }
 
   std::vector<std::vector<std::uint8_t>> sent;
+  std::vector<std::vector<std::uint8_t>> sentReliable;
   std::uint32_t bytes = 0;
 };
 
@@ -249,9 +265,13 @@ public:
 
     // A leave removes exactly that one.
     link.sent.clear();
+    link.sentReliable.clear();
     world.Step();
     const Game::ShipHandle leaving[] = {world.HandleOf(second)};
     Assert::IsTrue(writer.WriteInterest(world, {}, leaving, {}, link) > 0, L"the leave did not send");
+    Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"the leave did not take the reliable lane");
+    for (const std::vector<std::uint8_t>& message : link.sentReliable)
+      (void)receiver.Accept(message);
     for (const std::vector<std::uint8_t>& datagram : link.sent)
       (void)receiver.Accept(datagram);
     Assert::AreEqual(static_cast<std::size_t>(1), receiver.Latest().ships.size(), L"a leave did not remove a ship");

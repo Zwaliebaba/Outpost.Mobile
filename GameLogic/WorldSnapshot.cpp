@@ -193,6 +193,12 @@ std::uint32_t ShipsPerSnapshotFragment() noexcept
   return (Neuron::MAX_DATAGRAM_BYTES - SNAPSHOT_HEADER_BYTES) / SHIP_RECORD_BYTES;
 }
 
+// Still derived from the datagram bound, though an order now travels on the reliable lane and could
+// be MAX_RELIABLE_BYTES long (ADR 0028). Keeping the smaller cap is deliberate: it is the number
+// every existing test and the client's selection logic already agree on, and raising it is a wire
+// change with nobody asking for it. The day a formation of more than this many ships is orderable,
+// it moves -- and it moves as its own slice, because the cap is what stops one click from becoming
+// an unbounded amount of pathfinding.
 std::uint32_t MaxShipsPerOrder() noexcept
 {
   return (Neuron::MAX_DATAGRAM_BYTES - ORDER_HEADER_BYTES) / HANDLE_BYTES;

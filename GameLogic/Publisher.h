@@ -63,6 +63,15 @@ public:
 
     // Where it is looking, until SetCentre says otherwise.
     WorldPos centre;
+
+    // Where in the world's despawn log this subscriber starts reading. A subscriber joining a
+    // running world passes World::DespawnHead(), so it is told about deaths from now on and about
+    // none of the ships it never held; zero means "everything the log still holds" and is right only
+    // for a subscriber present from the first tick (ADR 0026).
+    //
+    // It is a field rather than something Add works out for itself, because Add has no World and
+    // giving it one to read a single number would be a dependency for a default.
+    std::uint64_t openingDespawnCursor = 0;
   };
 
   // Adds a subscriber and returns its handle. Its phase is assigned here, from the slot it takes, so
