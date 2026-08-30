@@ -73,8 +73,10 @@ self-evident and the reasoning is the useful part:
 - The despawn log is trimmed once per tick to the minimum cursor across subscribers, which is what
   ADR 0026 built the cursors for. A removed subscriber stops holding the log back immediately.
 - Order budgets are per subscriber per tick, and what is over budget stays queued rather than being
-  discarded — it is read next tick, and the *event* is counted. A client that is permanently over
-  budget is visible in `DroppedOrderCount` without any policy having been decided about it.
+  discarded — it is read next tick, and the *tick* is counted. Nothing is thrown away, because
+  throwing away an order is throwing away a click the player made; a client that never stops sending
+  fills its own transport queue, and that queue's existing backpressure is what drops from there.
+  `ThrottledTickCount` is what makes the throttling visible without a policy having been decided.
 - `Publisher` is not a session layer and this record does not make it one. It does not know who a
   subscriber is, how it authenticated, or when it should go away. The day those exist they may well
   take it into a library of its own, and that will be a new record.

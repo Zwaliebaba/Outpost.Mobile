@@ -95,10 +95,10 @@ void Publisher::SetCentre(Handle _handle, const WorldPos& _centre) noexcept
     found->centre = _centre;
 }
 
-std::uint32_t Publisher::DroppedOrderCount(Handle _handle) const noexcept
+std::uint32_t Publisher::ThrottledTickCount(Handle _handle) const noexcept
 {
   const Subscriber* const found = Resolve(_handle);
-  return (found != nullptr) ? found->droppedOrders : 0u;
+  return (found != nullptr) ? found->throttledTicks : 0u;
 }
 
 std::uint32_t Publisher::RefusedLeaveCount(Handle _handle) const noexcept
@@ -133,10 +133,11 @@ void Publisher::ApplyOrders(World& _world)
       {
         if (read >= subscriber.ordersPerTick)
         {
-          // Over budget. Whatever is still queued stays queued and is read next tick; it is counted
-          // here rather than dropped silently, because a client that is always over budget is either
-          // misbehaving or being throttled, and both are worth being able to see.
-          ++subscriber.droppedOrders;
+          // Over budget. Nothing is discarded: what is still queued stays in the transport and is
+          // read next tick, so this counts a throttled tick rather than a lost order. Dropping here
+          // would throw away a click the player made, and the queue filling up is already the
+          // backpressure answer for a client that never stops sending.
+          ++subscriber.throttledTicks;
           break;
         }
 

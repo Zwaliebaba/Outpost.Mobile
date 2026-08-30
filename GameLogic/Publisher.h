@@ -100,9 +100,14 @@ public:
   // took a const reference and cast it away would be hiding exactly the mutation that matters.
   void Publish(World& _world);
 
-  // Diagnostics, per subscriber. Both should be zero and are worth watching if they are not: orders
-  // dropped for budget, and departures the reliable lane refused.
-  [[nodiscard]] std::uint32_t DroppedOrderCount(Handle _handle) const noexcept;
+  // Diagnostics, per subscriber. Both should be zero and are worth watching if they are not.
+  //
+  // Throttled ticks are ticks on which this subscriber still had orders waiting when its budget ran
+  // out. Nothing was thrown away -- what is over budget stays in the transport's queue and is read
+  // next tick -- so this counts the throttling, not a loss. A subscriber that throttles every tick
+  // is either misbehaving or under-budgeted; one that keeps it up long enough fills its own queue,
+  // and the transport's own backpressure is what drops from there.
+  [[nodiscard]] std::uint32_t ThrottledTickCount(Handle _handle) const noexcept;
   [[nodiscard]] std::uint32_t RefusedLeaveCount(Handle _handle) const noexcept;
 
   // Which tick within the update period a subscriber is due on. Exposed so a test can assert the
@@ -117,7 +122,7 @@ private:
     std::uint32_t ordersPerTick = 8;
     std::uint32_t phase = 0;
     std::uint64_t despawnCursor = 0;
-    std::uint32_t droppedOrders = 0;
+    std::uint32_t throttledTicks = 0;
     WorldPos centre;
     InterestSet interest;
     SnapshotWriter writer;

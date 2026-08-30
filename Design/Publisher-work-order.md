@@ -36,9 +36,12 @@ with the thing that creates one.
    sixth — the same total work, spread, and no tick carrying the whole world's egress.
 
 3. **Order budgets (E6).** Each entry drains its own transport, both lanes, and stops after
-   `ordersPerTick`. What is over budget is dropped exactly as a full queue already is, and counted
-   per entry so the drop is visible. The faction gate stays where it is — in the simulation, per ADR
-   0014 — and this adds a rate limit, not a second authority check.
+   `ordersPerTick`. **Implementation note:** the order says "dropped exactly as a full queue already
+   is", and what landed defers instead — what is over budget stays in the transport's queue and is
+   read next tick, and the *tick* is counted, not an order. Dropping would discard a click the player
+   made, while deferring costs nothing and lets the transport's own backpressure be the thing that
+   drops when a client truly never stops. The faction gate stays where it is — in the simulation, per
+   ADR 0014 — and this adds a rate limit, not a second authority check.
 
 4. **Despawn delivery (E2).** Each entry carries its own cursor. The publisher reads
    `DespawnsSince(cursor)` per subscriber, advances that entry's cursor, and trims once at the end
@@ -85,7 +88,8 @@ executable would strand it; `GameLogic` owns both tabled types and may include `
   - **no two of six subscribers are due on the same tick**, and each is due exactly once per period;
   - **every subscriber hears every death exactly once**, including one added mid-match, which hears
     only deaths after it joined;
-  - **the order after the budget is dropped and counted**, and the budget refills next tick;
+  - **the order after the budget waits rather than being lost, and the tick is counted**, and the
+    budget refills next tick;
   - **a subscriber removed mid-tick does not strand the trim** — the log still trims to the minimum
     of those that remain.
 - `TheSameOrderProducesTheSameRun` and the permutation test unchanged and green: none of this is

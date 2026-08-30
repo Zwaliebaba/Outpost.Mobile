@@ -62,9 +62,9 @@ public:
 
   // Diagnostics the HUD does not show yet, exposed because the numbers are worth having a name for:
   // both should be zero.
-  [[nodiscard]] std::uint32_t DroppedOrderCount() const noexcept
+  [[nodiscard]] std::uint32_t ThrottledTickCount() const noexcept
   {
-    return m_publisher.DroppedOrderCount(m_subscriber);
+    return m_publisher.ThrottledTickCount(m_subscriber);
   }
 
   [[nodiscard]] std::uint32_t RefusedLeaveCount() const noexcept

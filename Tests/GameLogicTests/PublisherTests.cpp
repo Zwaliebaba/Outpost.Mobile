@@ -200,10 +200,13 @@ public:
     Assert::IsTrue(Holds(viewB.Destroyed(), doomedHandle), L"the second subscriber lost the death to the first one's read");
   }
 
-  TEST_METHOD(OrdersPastTheBudgetAreDroppedAndCounted)
+  TEST_METHOD(OrdersPastTheBudgetWaitTheirTurnAndTheTickIsCounted)
   {
     // A client saturating its send rate buys formation solves and route planning at a leverage no
-    // other message has. The faction gate says whose ships; this says how often (E6).
+    // other message has. The faction gate says whose ships; this says how many per tick (E6).
+    //
+    // Over budget does not mean lost: the rest stay queued and are read next tick. What is counted
+    // is the tick on which the budget bound.
     Game::World world;
     const Game::ShipId ship = SpawnAt(world, 0.0f, 0.0f);
     const Game::ShipHandle handle = world.HandleOf(ship);
@@ -224,12 +227,12 @@ public:
     link.Pump(0);
 
     publisher.ApplyOrders(world);
-    Assert::AreEqual(1u, publisher.DroppedOrderCount(subscriber), L"going over budget was not counted");
+    Assert::AreEqual(1u, publisher.ThrottledTickCount(subscriber), L"going over budget was not counted");
 
     // What was over budget is still queued, not thrown away, and next tick reads more of it.
     link.Pump(1);
     publisher.ApplyOrders(world);
-    Assert::AreEqual(2u, publisher.DroppedOrderCount(subscriber), L"the budget did not refill");
+    Assert::AreEqual(2u, publisher.ThrottledTickCount(subscriber), L"the budget did not refill");
   }
 
   TEST_METHOD(ASubscriberAddedLaterHearsOnlyWhatFollowsIt)
