@@ -131,15 +131,21 @@ the lattice of §3.1. The existing `PATH_GRID_MAX_CELLS_PER_AXIS` stays as a **p
 where it is now reachable only by a single island genuinely 16 km across — an object no content in
 the tree can build.
 
+Measured after the slices landed; three of these rows were hand-derived when this was written and
+two of them were wrong — the Stargate's, which forgot that the lattice snaps outward, and the five
+stations', which forgot the two half-radii on the ends.
+
 | Island | Extent | Cells | Clearance field |
 |---|---|---|---|
-| One Structure, alone | 1,526 m | 48 × 48 = 2,304 | 9.0 kB |
-| One Stargate, alone | 1,287 m | 41 × 41 = 1,681 | 6.6 kB |
-| Five stations over 2 km | 3,024 m | 95 × 95 = 9,025 | 35.3 kB |
-| The per-island ceiling | 16,384 m | 513 × 513 = 263,169 | 1,028 kB |
+| One Structure, alone | 1,527 m | 48 × 48 = 2,304 | 9.0 kB |
+| One Stargate, alone | 1,287 m | 42 × 42 = 1,764 | 6.9 kB |
+| Five stations over 2 km | 3,527 m | 112 × 112 = 12,544 | 49.0 kB |
+| The largest island that builds | 16,384 m | 512 × 512 = 262,144 | 1,024 kB |
 
-A hundred separate Structures is 900 kB and a hundred rebuilds of 2,304 cells each. Today it is one
-grid that refuses to build.
+A hundred separate Structures is 900 kB and a hundred rebuilds of 2,304 cells each — and after slice
+4, one rebuild of 2,304 cells when one of them moves. Before this, it was one grid that refused to
+build. The ceiling is real but far off: a chain of Structures 700 m apart builds up to 16,228 m of
+extent and declines at 16,928 m, which is twenty-three of them welded end to end.
 
 ### 3.4 Routing: within an island, and between them
 
@@ -170,7 +176,7 @@ portal graph (§8) whose whole purpose is answering a question no content in thi
 |---|---|---|
 | Rebuild when one Structure moves, 30 stations in the world | 7.9 M evaluations, whole grid | 2,304 evaluations, one island |
 | Rebuild when architecture spreads past 16.4 km | the grid declines; A\* off worldwide | each island builds; A\* everywhere |
-| Resident clearance field, 30 scattered stations | 1,028 kB (or nothing) | ~270 kB |
+| Resident clearance field, 30 scattered stations | 1,024 kB (or nothing) | 270 kB |
 | A\* search space | the whole world's box | one island's box |
 
 Only the islands whose membership changed rebuild. An island is dirty when an obstacle enters it,

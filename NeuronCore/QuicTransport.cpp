@@ -47,7 +47,7 @@ static_assert(MAX_RELIABLE_BYTES <= 0xFFFFu, "a reliable frame header is two byt
 // It allocates nothing and logs nothing. Everything it learns it writes to an atomic or copies into
 // the inbound ring, and the owning thread picks it up in Poll. It calls exactly one MsQuic API, in
 // exactly one case -- shutting the connection down when the peer's datagram limit is too small,
-// which is what Design/QuicTransport.md 4.1 asks for and is the ordinary way to refuse a connection
+// which is what Design/Archive/QuicTransport.md 4.1 asks for and is the ordinary way to refuse a connection
 // from inside its own callback.
 struct QuicTransportCallbacks
 {
@@ -426,7 +426,7 @@ void QuicTransport::Close() noexcept
 
   // Closing here rather than in the destructor, because Outpost's shutdown order closes the client
   // end, then the listener, then the library -- and that order only means anything if this call is
-  // what ends the connection (Design/QuicTransport.md 6). A registration cannot close over a live
+  // what ends the connection (Design/Archive/QuicTransport.md 6). A registration cannot close over a live
   // connection, and MsQuic's answer to being asked is to wait rather than to fail.
   table->ConnectionClose(connection);
   m_connection = nullptr;

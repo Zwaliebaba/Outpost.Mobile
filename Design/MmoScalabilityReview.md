@@ -105,7 +105,7 @@ ship happens to re-enter view. Updates are also atomic across fragments and orde
 (`WorldSnapshot.cpp:369-375`), so completeness is (1−p)^F: at 2% loss a 3-fragment update completes
 94% of the time, a 13-fragment fleet-battle update 77%. The fix is already designed — leaves,
 destroys and orders on the reserved reliable QUIC stream (`PeerBidiStreamCount = 1` is negotiated,
-`NeuronCore/QuicApi.cpp:26`; Design/QuicTransport.md slices 3a/3b) — but unscheduled; until it
+`NeuronCore/QuicApi.cpp:26`; Design/Archive/QuicTransport.md slices 3a/3b) — but unscheduled; until it
 lands, correctness is loopback-only, not merely configuration. A zero-new-code interim backstop
 exists: a periodic full `Write` per subscriber.
 
@@ -114,7 +114,7 @@ exists: a periodic full `Write` per subscriber.
 `WorldSimulation` holds exactly one `Transport*`, one `InterestSet`, one `SnapshotWriter`, one
 hard-coded subscriber faction (`Outpost/WorldSimulation.h:167-179`). The engine below needs no
 signature change for N subscribers — the declared plan ("a table of {transport, interest set,
-faction}", Design/QuicTransport.md §10) checks out — but two things the one-liner undersells:
+faction}", Design/Archive/QuicTransport.md §10) checks out — but two things the one-liner undersells:
 `World::DespawnLog` is drain-once by the single publisher (`World.h:62-70`, and the header itself
 says "the day there are several it becomes per-subscriber"), so a second subscriber would silently
 miss deaths; and the session table lives in `Outpost/`, so a dedicated server executable must move

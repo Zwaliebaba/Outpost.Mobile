@@ -4,7 +4,7 @@
 #include <memory>
 
 // MsQuic's function table, forward-declared at the global scope where MsQuic itself declares it.
-// No header in this tree names an MsQuic type (Design/QuicTransport.md 3): only QuicApi.cpp,
+// No header in this tree names an MsQuic type (Design/Archive/QuicTransport.md 3): only QuicApi.cpp,
 // QuicTransport.cpp and QuicListener.cpp include <msquic.h>, so the day the package version changes
 // the blast radius is one directory rather than every translation unit that reaches the umbrella.
 struct QUIC_API_TABLE;
@@ -22,7 +22,7 @@ inline constexpr std::uint32_t QUIC_IDLE_TIMEOUT_MS = 10000;
 inline constexpr std::uint32_t QUIC_KEEP_ALIVE_MS = 2000;
 
 // How long boot waits for the handshake before it gives up and runs on the loopback instead
-// (Design/QuicTransport.md 6). It is also the bound on every wait in the tests, so a broken build
+// (Design/Archive/QuicTransport.md 6). It is also the bound on every wait in the tests, so a broken build
 // fails in seconds rather than in CI's timeout.
 inline constexpr std::uint32_t QUIC_HANDSHAKE_TIMEOUT_MS = 3000;
 

@@ -7,7 +7,7 @@ Date: 2026-08-30
 
 Until now the server half served exactly one subscriber, because it held exactly one of everything:
 one `Transport*`, one `InterestSet`, one `SnapshotWriter`, one faction, all fields on
-`Outpost/WorldSimulation.h`. `Design/QuicTransport.md` §10 named the debt when the migration landed
+`Outpost/WorldSimulation.h`. `Design/Archive/QuicTransport.md` §10 named the debt when the migration landed
 — "N clients is a `WorldSimulation` change — a table of `{transport, interest set, faction}` — and
 belongs to a design of its own."
 

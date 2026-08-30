@@ -85,7 +85,7 @@ public:
 
   ~Pair()
   {
-    // The order Design/QuicTransport.md 6 gives, and the order OutpostApp::Shutdown uses: the client
+    // The order Design/Archive/QuicTransport.md 6 gives, and the order OutpostApp::Shutdown uses: the client
     // end, then the listener and everything it accepted, then the library.
     m_client.Close();
     m_listener.Stop();
@@ -598,7 +598,7 @@ public:
 
   TEST_METHOD(ARefusedListenerReportsWhy)
   {
-    // The fallback in Design/QuicTransport.md 6 depends on this being a diagnostic. A listener that
+    // The fallback in Design/Archive/QuicTransport.md 6 depends on this being a diagnostic. A listener that
     // asserted on a taken port would take the game down over a number nobody chose deliberately.
     Neuron::QuicApi api;
     Neuron::QuicApi::Desc apiDesc;

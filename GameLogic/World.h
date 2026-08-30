@@ -160,7 +160,7 @@ public:
   // single island is wider than one grid may be. A declining island keeps its neighbours routing --
   // that is the whole gain over one grid for the world -- but it is indistinguishable from open
   // space to everything that reads it, so the count is surfaced rather than left to be inferred from
-  // ships that quietly stopped avoiding things (Design/RegionalPathfinding.md 3.3).
+  // ships that quietly stopped avoiding things (Design/Archive/RegionalPathfinding.md 3.3).
   [[nodiscard]] std::size_t PathIslandCount() const noexcept
   {
     return m_pathIslands.IslandCount();

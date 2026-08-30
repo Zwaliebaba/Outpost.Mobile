@@ -95,7 +95,7 @@ private:
   //
   // That transport is QUIC across 127.0.0.1 when it can be and the loopback when it cannot, and
   // neither half can tell which it got: the seam is four virtual functions and the choice is made
-  // here and nowhere else (Design/QuicTransport.md 6). Booting on the real stack is the point --
+  // here and nowhere else (Design/Archive/QuicTransport.md 6). Booting on the real stack is the point --
   // a path nobody runs is a path nobody notices breaking -- and the fallback is what keeps a taken
   // port or a locked-down key store from being the reason the game did not start.
   Game::World m_world;

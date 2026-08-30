@@ -189,8 +189,9 @@ const World::Patrol& World::PatrolOf(ShipId _id) const noexcept
 
 void World::StepPatrols()
 {
-  // A patrol issues an order, and an order plans a route, so the grid has to be current here for the
-  // same reason IssueMoveOrder rebuilds it: the first leg is planned on the tick after the spawn.
+  // A patrol issues an order, and an order plans a route, so the islands have to be current here for
+  // the same reason IssueMoveOrder rebuilds them: the first leg is planned on the tick after the
+  // spawn.
   RebuildStaticIfDirty();
 
   for (ShipId id = 0; id < ShipCount(); ++id)
@@ -595,7 +596,7 @@ void World::Step()
 float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _point, bool _hasFacing, float _facingRad,
                             FactionId _issuerFaction)
 {
-  // An order can arrive before the first tick, so the grid a route is planned against has to be
+  // An order can arrive before the first tick, so the islands a route is planned against have to be
   // current here rather than only at the top of Step.
   RebuildStaticIfDirty();
 

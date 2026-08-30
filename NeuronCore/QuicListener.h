@@ -14,7 +14,7 @@ namespace Neuron
 // The server end of the seam, and the half a loopback never needed: it opens a port, accepts a
 // connection, and yields a QuicTransport for it.
 //
-// It binds 127.0.0.1 and nothing else, by design (Design/QuicTransport.md 5 and 11): there is no
+// It binds 127.0.0.1 and nothing else, by design (Design/Archive/QuicTransport.md 5 and 11): there is no
 // NAT traversal here, no public port and no firewall prompt, so the address is not a parameter. A
 // port of 0 takes an ephemeral one, which is how the tests avoid fighting over a number, and Port()
 // reports what was bound.
@@ -45,7 +45,7 @@ public:
   QuicListener& operator=(const QuicListener&) = delete;
 
   // False and Reason() when the port is taken or MsQuic refuses -- never an assert, because the
-  // composition root's fallback to the loopback reads it and carries on (Design/QuicTransport.md 6).
+  // composition root's fallback to the loopback reads it and carries on (Design/Archive/QuicTransport.md 6).
   [[nodiscard]] bool Start(QuicApi& _api, std::uint16_t _port, const Desc& _desc);
 
   // Closes the listener, which waits for its own callbacks, and then every connection it accepted.

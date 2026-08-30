@@ -177,7 +177,7 @@ inline constexpr HullSpec HULL_SPECS[HULL_COUNT] = {
 // invented -- twice the largest mobile hull's bounding radius plus its clearance margin, because a
 // ship's centre has to stay that far clear of each surface to pass between them. A wider gap is one
 // the straight-line test flies through on its own; a narrower one is a wall A* has to find its way
-// around (Design/RegionalPathfinding.md 3.2).
+// around (Design/Archive/RegionalPathfinding.md 3.2).
 //
 // In the replay contract, and near the top of it: this decides the partition, the partition decides
 // which grid a route is planned in, and the grid decides the route. It is here rather than in

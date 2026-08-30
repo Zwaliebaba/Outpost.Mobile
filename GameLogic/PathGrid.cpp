@@ -133,12 +133,12 @@ void PathGrid::Rebuild(std::span<const Obstacle> _obstacles)
   // in the replay contract, so coarsening it here would change recorded outcomes as a side effect
   // of where someone put a building. Declining degrades to exactly the behaviour before this
   // phase -- straight-line steering with local avoidance -- and one grid per island of architecture
-  // is what will bound this properly (Design/RegionalPathfinding.md 3.3).
+  // is what will bound this properly (Design/Archive/RegionalPathfinding.md 3.3).
   if (width > PATH_GRID_MAX_CELLS_PER_AXIS || height > PATH_GRID_MAX_CELLS_PER_AXIS)
   {
     // Recorded, because a grid that declined is indistinguishable from one holding nothing: both
     // call every run clear. Whoever owns this grid can say so rather than leaving the ships it stops
-    // planning for to be the first sign (Design/RegionalPathfinding.md 3.3).
+    // planning for to be the first sign (Design/Archive/RegionalPathfinding.md 3.3).
     m_declined = true;
     return;
   }

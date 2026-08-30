@@ -17,7 +17,7 @@ namespace
 {
 // The application-layer protocol name both ends offer. It bumps the day the wire format's KIND_*
 // bytes change meaning, so that two builds which cannot talk refuse at the handshake rather than at
-// the parser (Design/QuicTransport.md 4.3).
+// the parser (Design/Archive/QuicTransport.md 4.3).
 constexpr const char* QUIC_ALPN = "outpost-2";
 
 // One bidirectional stream is negotiated, and QuicTransport opens it: it is the reliable lane
@@ -88,7 +88,7 @@ bool QuicApi::Open(const Desc& _desc)
   m_clientConfig = clientConfig;
 
   // The placeholder, declared as one. TLS 1.3 still encrypts and integrity-checks the connection;
-  // what it does not do is tell this client who it is talking to (Design/QuicTransport.md 7).
+  // what it does not do is tell this client who it is talking to (Design/Archive/QuicTransport.md 7).
   const MsQuicCredentialConfig clientCredential(QUIC_CREDENTIAL_FLAG_CLIENT | QUIC_CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION);
   status = m_table->ConfigurationLoadCredential(clientConfig, &clientCredential);
   if (QUIC_FAILED(status))

@@ -62,15 +62,24 @@ behaviour as before islands, so nothing regressed — but it is the one place is
 the world local, and it will be the next thing to bite at MMO churn. Building or destroying a
 station in a busy system is a fleet-wide replan.
 
-The rebuild is likewise all-or-nothing for now: an obstacle set that changed rebuilds every island's
-grid, not just the islands whose membership moved. That is this design's own slice 4
-(`Design/RegionalPathfinding.md` §9), and it is a separate cost from this one — slice 4 makes the
+The rebuild was all-or-nothing when this was written: an obstacle set that changed rebuilt every
+island's grid, not just the islands whose membership moved. That was this design's own slice 4
+(`Design/Archive/RegionalPathfinding.md` §9), a separate cost from this one — slice 4 makes the
 *rebuild* local, and this record is about what makes the *replan* global.
 
-`PathGrid` keeps its own version and its own unchanged-obstacles gate even though nothing reads
-them through `PathIslands` today. They are what slice 4 needs to recognise an island that did not
-change, and deleting them now to add them back then would be churn.
+> **Slice 4 landed on 2026-08-30**, which discharges the two paragraphs above and sharpens the one
+> below. A rebuild now claims the grid of any island handed exactly the obstacles it already holds,
+> matched by content rather than by slot for the same reason this record gives: an island index is
+> not a handle. `PathGrid`'s own version and unchanged-obstacles gate are what recognise that, so
+> they are read now rather than merely kept. The numbers are in that design's §4: a hundred
+> scattered stations cost 1.575 ms for a whole rebuild and 0.064 ms when one moves, and the
+> evaluations go from the review's 7.9 M worst legal case to 2,304. **The replan is still global**,
+> which is what this record decided and what remains true — the rebuild being local is what makes
+> that the next thing worth measuring rather than the only thing.
 
-The measurement this wants is the one slice 4 already owes: rebuild cost against island count and
-obstacle count. A replan count belongs beside it, because the argument for keying islands by cell
-is a number and not a feeling.
+`PathGrid` kept its own version and its own unchanged-obstacles gate through slice 2 even though
+nothing read them through `PathIslands` then. They are what slice 4 needed to recognise an island
+that did not change, and deleting them to add them back would have been churn.
+
+The measurement this wants is a replan count beside slice 4's rebuild figures, because the argument
+for keying islands by cell is a number and not a feeling. Slice 4 supplied the rebuild half.

@@ -85,7 +85,7 @@ void PathIslands::Partition(std::span<const PathGrid::Obstacle> _obstacles)
   // Their order. The relation is symmetric so the components themselves do not depend on the walk --
   // but the obstacles arrive in ShipId order and ShipIds move under swap-and-pop (ADR 0005), so the
   // order they are *found* in does. Sorting by the lowest path cell any member sits in fixes that: a
-  // cell index is a world coordinate and moves for nobody (Design/RegionalPathfinding.md 3.2, 5).
+  // cell index is a world coordinate and moves for nobody (Design/Archive/RegionalPathfinding.md 3.2, 5).
   //
   // That key is unique to its island, so the order is total rather than merely usually total. Two
   // obstacles in one cell are at most a cell's diagonal apart -- 45 m -- and the smallest
@@ -237,7 +237,7 @@ bool PathIslands::FindPath(const WorldPos& _from, const WorldPos& _to, float _re
   // More than one island in the way, and no single grid can plan the whole run: the first island
   // cannot see the second. So the first island plans a leg, and the route reports itself unfinished
   // -- which is what makes World::AdvanceRoute come back for the rest on arrival, exactly as it
-  // already did for a route too long for one waypoint list (Design/RegionalPathfinding.md 3.4).
+  // already did for a route too long for one waypoint list (Design/Archive/RegionalPathfinding.md 3.4).
   //
   // The leg is aimed at the middle of the open water between the two: past where the first island
   // stops blocking the run, and short of where the next one starts. Aiming at the destination

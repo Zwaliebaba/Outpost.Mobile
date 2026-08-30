@@ -70,5 +70,5 @@ QUIC cannot open, and it is the only place a reproducible latency measurement ca
   the two directions are independent, a full queue drops the newest — are written a second time
   against a real connection, and a change to the contract has two places to make it.
 - **What is still owed.** One client (`WorldSimulation` holds one `Transport*`), one process, no
-  certificate validation, and no reliable lane. All four are named in `Design/QuicTransport.md` §11
+  certificate validation, and no reliable lane. All four are named in `Design/Archive/QuicTransport.md` §11
   and none is scheduled by this record.

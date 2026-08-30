@@ -14,7 +14,7 @@ namespace Neuron
 class QuicListener;
 
 // Where a client end dials. Both the composition root and the tests pass 127.0.0.1, because nothing
-// in this design listens on anything else (Design/QuicTransport.md 11); the field exists so that the
+// in this design listens on anything else (Design/Archive/QuicTransport.md 11); the field exists so that the
 // day one does, it is an argument and not a rewrite.
 struct Endpoint
 {
@@ -118,7 +118,7 @@ private:
 
   void ReleaseApiHandle() noexcept;
 
-  // Both halves of the state table in Design/QuicTransport.md 4.1. Connected needs the handshake
+  // Both halves of the state table in Design/Archive/QuicTransport.md 4.1. Connected needs the handshake
   // *and* a datagram limit that covers MAX_DATAGRAM_BYTES, so the two events that can grant it both
   // come through here.
   void ReconsiderConnected();

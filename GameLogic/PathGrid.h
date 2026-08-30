@@ -13,7 +13,7 @@ namespace Game
 // A cell's index is a pure function of the position and of nothing else -- not of the obstacle set,
 // not of which grid is asking. That is what stops the same architecture producing a different route
 // because something was built a kilometre away, and it is what will let two grids overlap and agree
-// about every cell they share (Design/RegionalPathfinding.md 3.1, 5).
+// about every cell they share (Design/Archive/RegionalPathfinding.md 3.1, 5).
 //
 // Exact, because PATH_CELLS_PER_SECTOR is exact and the local offset is inside one sector by the
 // type's invariant. The index is a sector multiplied by 256, so it covers a factor of 256 less of
@@ -77,7 +77,7 @@ public:
   //
   // Both ends, from one walk, because a caller holding several grids needs both: `first` says which
   // grid the run meets soonest, and `last` says where it is past that one and can be aimed
-  // (Design/RegionalPathfinding.md 3.4).
+  // (Design/Archive/RegionalPathfinding.md 3.4).
   struct BlockedSpan
   {
     float first = 0.0f;
@@ -105,7 +105,7 @@ public:
   // than PATH_GRID_MAX_CELLS_PER_AXIS allows. A grid that declined behaves exactly like an empty
   // one -- every run is clear, every route is a straight line -- which is the right degradation and
   // an indistinguishable one, so it is counted rather than left to be inferred
-  // (Design/RegionalPathfinding.md 3.3).
+  // (Design/Archive/RegionalPathfinding.md 3.3).
   [[nodiscard]] bool Declined() const noexcept
   {
     return m_declined;

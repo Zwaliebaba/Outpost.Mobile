@@ -4,7 +4,7 @@ Status: accepted
 Date: 2026-08-30
 
 Supersedes in part: [0021](0021-the-network-transport-is-msquic.md), whose consequences made the
-loopback the fallback, and `Design/QuicTransport.md` §12 decision 2, which chose that arrangement.
+loopback the fallback, and `Design/Archive/QuicTransport.md` §12 decision 2, which chose that arrangement.
 
 ## Context
 
@@ -16,7 +16,7 @@ being shipped.
 The argument for it was that a taken port is a diagnostic and not a failed boot. That was reasonable
 while QUIC was new in the tree and nobody knew how often it would refuse. It has now booted over
 QUIC as a matter of course, and the fallback has become the thing the original decision was written
-to prevent: `Design/QuicTransport.md` §12 decision 2 chose QUIC-by-default over loopback-by-default
+to prevent: `Design/Archive/QuicTransport.md` §12 decision 2 chose QUIC-by-default over loopback-by-default
 because "a path nobody runs is a path nobody notices breaking", and the fallback is a path nobody
 runs.
 

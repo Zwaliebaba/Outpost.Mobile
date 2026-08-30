@@ -1,10 +1,10 @@
 # Work order — despawn delivery is cursored
 
-Slice 2 of [`MmoScalabilityPlan.md`](MmoScalabilityPlan.md). One slice, `GameLogic`, and the head of
+Slice 2 of [`MmoScalabilityPlan.md`](../MmoScalabilityPlan.md). One slice, `GameLogic`, and the head of
 the simulation track: slice 3's publisher cannot hold N subscribers until the despawn log stops
 being drain-once.
 
-The finding it retires is E2 in [`MmoScalabilityReview.md`](MmoScalabilityReview.md): with two
+The finding it retires is E2 in [`MmoScalabilityReview.md`](../MmoScalabilityReview.md): with two
 subscribers, whichever one publishes first drains the log and the second never hears the death.
 `World.h` predicted this in as many words -- "there is one publisher today; the day there are
 several it becomes per-subscriber" -- so the sentence changes in this commit and the day is here.

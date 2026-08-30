@@ -176,7 +176,7 @@ public:
 
   // Deaths accumulate across every message in a drain, so the consumer says when it has drawn them
   // rather than the receiver guessing. Without this, two leave messages in one pump would leave the
-  // first one's dead unexploded (Design/ReliableFormat-work-order.md).
+  // first one's dead unexploded (Design/Archive/ReliableFormat-work-order.md).
   void ClearDestroyed() noexcept
   {
     m_destroyed.clear();

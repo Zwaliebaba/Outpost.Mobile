@@ -1,7 +1,7 @@
 # Work order — the reliable lane
 
 Slice 3a of [`QuicTransport.md`](QuicTransport.md) §14, scheduled on 2026-08-30 when the owner
-lifted §12 decision 4. Also slice 5 of [`MmoScalabilityPlan.md`](MmoScalabilityPlan.md), which is
+lifted §12 decision 4. Also slice 5 of [`MmoScalabilityPlan.md`](../MmoScalabilityPlan.md), which is
 where the cost of waiting was priced: finding E1 in the review — a lost leave or destroyed list is a
 client that is permanently wrong, and a 13-fragment update completes 77% of the time at 2% loss.
 
@@ -65,7 +65,7 @@ the same arena shape, taken once at `Reserve`, and it must not introduce a secon
 lane ignores. `QuicApi.cpp`'s settings block, where `PeerBidiStreamCount` is already 1 — read the
 comment there before changing anything, because that number was reserved for this.
 
-`Design/QuicTransport.md` §4.2 and ADR 0022 are the threading contract. Note that the ADR
+`Design/Archive/QuicTransport.md` §4.2 and ADR 0022 are the threading contract. Note that the ADR
 under-reports the worker-side API surface today (`ConnectionSetConfiguration` in `Adopt` and
 `ConnectionShutdown` in `ReconsiderConnected` are both worker-side); if this slice adds a worker-side
 call, the ADR gets a sentence in the same commit rather than a third undocumented one.

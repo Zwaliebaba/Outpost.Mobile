@@ -24,7 +24,7 @@ inline constexpr std::uint32_t MAX_DATAGRAM_BYTES = 1152;
 // it: a datagram is bounded by what the path will carry in one piece, a reliable message by what the
 // receiver is willing to hold while the rest of it arrives. The lane is a stream underneath, so a
 // message may exceed an MTU and be reassembled -- what it may not do is grow without a bound the
-// receiver agreed to (Design/ReliableLane-work-order.md).
+// receiver agreed to (Design/Archive/ReliableLane-work-order.md).
 inline constexpr std::uint32_t MAX_RELIABLE_BYTES = 8192;
 
 enum class ConnectionState : std::uint8_t
@@ -60,7 +60,7 @@ public:
   //
   // What belongs here: a fact that is wrong forever if it is lost -- a leave, a death, an order.
   // What does not: anything a later message supersedes, above all a position, where a late one is
-  // worse than a lost one (Design/QuicTransport.md 8).
+  // worse than a lost one (Design/Archive/QuicTransport.md 8).
   // Level 4 warns on an unused parameter, and these are named rather than left blank because the
   // names are the documentation of what an implementation is being handed.
   [[nodiscard]] virtual bool SendReliable([[maybe_unused]] const std::uint8_t* _bytes, [[maybe_unused]] std::uint32_t _count)

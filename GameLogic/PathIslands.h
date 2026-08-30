@@ -17,7 +17,7 @@ namespace Game
 // world* rather than for the space between them. HullSpec.h is explicit that this is not a graceful
 // degradation: a capital's look-ahead is deliberately shorter than its own turning circle, so a
 // single distant outpost turns every Carrier in the game into a ship that flies into things
-// (Design/RegionalPathfinding.md 1.1).
+// (Design/Archive/RegionalPathfinding.md 1.1).
 //
 // Two obstacles belong to the same island when the gap between their surfaces is narrower than
 // IslandGapMetres() -- narrower, that is, than the widest corridor a hull could need. A wider gap is
@@ -29,7 +29,7 @@ namespace Game
 // things. What it gives up is optimality *between* islands -- a ship cannot see that going round
 // island two is cheaper than through it until it gets there. That is the right trade at this scale;
 // the alternative is a portal graph answering a question no content in this tree asks yet
-// (Design/RegionalPathfinding.md 3.4, 6).
+// (Design/Archive/RegionalPathfinding.md 3.4, 6).
 class PathIslands
 {
 public:
@@ -48,7 +48,7 @@ public:
   // waypoint is _to itself, false when the last waypoint is the furthest safe point along the way
   // and the follower re-plans from there.
   //
-  // Three cases (Design/RegionalPathfinding.md 3.4). The run is clear of every island, and the
+  // Three cases (Design/Archive/RegionalPathfinding.md 3.4). The run is clear of every island, and the
   // answer is the destination. It meets exactly one, and that island plans it. It meets more than
   // one, and the first island plans as far as it can while the answer says the route is unfinished
   // -- because the second island is still in the way however well the first one planned, and an
@@ -66,7 +66,7 @@ public:
   // How many islands the last rebuild actually built a clearance field for. The rest were handed the
   // obstacles they already held and kept the grid they had, which is the whole of slice 4: one
   // station moving in a world of thirty pays for its own island and not for the world
-  // (Design/RegionalPathfinding.md 4). Read off a benchmark rather than inferred from a timing.
+  // (Design/Archive/RegionalPathfinding.md 4). Read off a benchmark rather than inferred from a timing.
   [[nodiscard]] std::uint32_t RebuiltIslandCount() const noexcept
   {
     return m_rebuiltIslands;
@@ -76,7 +76,7 @@ public:
   // PATH_GRID_MAX_CELLS_PER_AXIS allows. Its neighbours keep routing -- that is the whole gain over
   // one grid -- but ships crossing *it* fall back to straight-line steering, and a declining island
   // is otherwise indistinguishable from open space. Counted so it can be read off the screen rather
-  // than inferred from ships that stopped avoiding things (Design/RegionalPathfinding.md 3.3).
+  // than inferred from ships that stopped avoiding things (Design/Archive/RegionalPathfinding.md 3.3).
   [[nodiscard]] std::size_t DeclinedCount() const noexcept
   {
     std::size_t declined = 0;
@@ -121,7 +121,7 @@ private:
   // What each island's grid was built from, one list per entry of m_islands and in the same order.
   // A rebuild that hands an island the same obstacles it already holds keeps that grid rather than
   // computing the same clearance field again, which is the difference between paying for the world
-  // and paying for what moved (Design/RegionalPathfinding.md 4).
+  // and paying for what moved (Design/Archive/RegionalPathfinding.md 4).
   //
   // Matched by content and not by position, because the islands are ordered by where they sit in the
   // world and building anything renumbers every island after it. An island index is not a handle,

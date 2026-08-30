@@ -1,16 +1,30 @@
 # The MMO scalability plan — the review as slices
 
-**Status: slices 2, 5 and 6 have landed — the despawn log is cursored, the seam has a reliable
-lane, and departures and orders travel on it, which retires finding E1. The loopback fallback is
-gone (ADR 0028). Slice 3, the publisher, has landed with slice 4 folded into it, and slice 7 with it.** This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
+**Status: thirteen of the twenty-four slices have landed.** The seam: 2 (the despawn log is
+cursored), 3 with 4 folded into it (the publisher), 5 and 6 (the reliable lane, and departures and
+orders on it, which retires finding E1), 7 (listener slots recycled), and the loopback fallback is
+gone (ADR 0028). The view: 8 (trail and glow batching), 9 (frustum culling), 10 (hull instancing).
+The simulation: 11 (a localized gather radius), 13 (churn-gated static rebuilds), and 14 — all four
+slices of its own design, so architecture is islands on a world-fixed lattice and the 16.4 km cliff
+is gone. The tree: 21 (the guards widened) and 22 (the dead helper deleted). Slice 12 was decided
+rather than built: 60 Hz stays. **What is left is phase 3 — slices 15 through 20 — plus 23 and 24.**
+This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
 (tree at `de12b6d`) into an ordered slice plan in the shape `Design/README.md` defines: one slice,
 one branch, one pull request. The review is the evidence; this document is the work. Where a slice
-already has a design in the tree — the reliable lane lives in [`QuicTransport.md`](QuicTransport.md)
+already has a design in the tree — the reliable lane lives in [`QuicTransport.md`](Archive/QuicTransport.md)
 §14 — this plan schedules it and does not restate it.
 
-**On this branch:** the review, the plan and slices 2, 3, 5, 6 and 7 land as one pull request rather
-than one per slice (owner's call, 2026-08-30). The commits are ordered and each stands alone, so the
-history still reads slice by slice; the convention resumes for whatever is cut next.
+**On this branch:** the review, the plan and every landed slice go as one pull request rather than
+one per slice (owner's call, 2026-08-30). The commits are ordered and each stands alone, so the
+history still reads slice by slice; the convention resumes for whatever is cut next. Slice 14 kept
+its own four commits, one per slice of its design.
+
+**Owed before this merges: the screenshots for slices 8, 9 and 10**, two window sizes each. They
+were written into those slices' acceptance and they have not been supplied — nothing in the
+container this was built in has Windows, D3D12 or any way to put a frame on a screen. Each slice
+says so where its acceptance is (§6 slices 8, 9, 10) along with what was checked instead: a code
+read, arithmetic on the numbers the change turns on, and the whole test suite. A reviewer on Windows
+should take the six before merging; everything else in the acceptance lists is met.
 
 Work orders are cut from §6 one slice at a time, when a slice is actually next — not in advance,
 because every slice that lands changes the ground the next order stands on. Each order carries the
@@ -37,8 +51,8 @@ AGENTS.md).
 three-way elimination and lands in the same place: `NeuronServer` may not name `InterestSet`;
 `Outpost` owns it today and a second executable would strand it; GameLogic already owns both types
 being tabled and may include `Transport.h`. `QuicTransport.md` §10 asked for "a design of its own"
-for exactly this — §2 and slices 2–4 of this plan are that design, and the owner may lift them into
-a standalone `Design/Publisher.md` when scheduling if the shape grows in review.
+for exactly this — §2 and slices 2–4 of this plan are that design. It landed as written and never
+grew enough in review to want a document of its own; ADR 0030 is where the decision lives.
 
 **Despawn delivery becomes sequence-cursored.** `World::DespawnLog` is drain-once by one publisher,
 and `World.h` itself says it becomes per-subscriber "the day there are several." The shape: the log
@@ -85,7 +99,7 @@ Named here so no slice takes them silently:
 
 1. ~~**Schedule the reliable lane now**~~ — **taken 2026-08-30: scheduled.** The wait in
    QuicTransport.md §12 decision 4 is lifted there, and the two work orders
-   ([3a](ReliableLane-work-order.md), [3b](ReliableFormat-work-order.md)) are written.
+   ([3a](Archive/ReliableLane-work-order.md), [3b](Archive/ReliableFormat-work-order.md)) are written.
 2. ~~**The tick rate**~~ — **taken 2026-08-30: 60 Hz stays.** Capacity is bought by putting fewer
    entities in a shard, not fewer ticks in a second. Slice 12 therefore has no code in it: it is the
    decision record, stating that the rate is fixed, that the tunneling margin in `SimTuning.h` is
@@ -123,19 +137,19 @@ Findings reference `MmoScalabilityReview.md`.
 | # | Slice | Layer | Size | Depends on | Findings | ADR | Status |
 |---|---|---|---|---|---|---|---|
 | 1 | Ghost backstop: periodic full refresh | `Outpost` | S | — | E1 interim |  | dropped: 5–6 scheduled |
-| 2 | Sequence-cursored despawn delivery | `GameLogic` | M | — | E2 | ADR | [landed](DespawnCursors-work-order.md) |
-| 3 | The publisher: subscriber table, phases, budgets | `GameLogic` | M | 2 | E2 E4 E6 | ADR | [landed](Publisher-work-order.md) |
+| 2 | Sequence-cursored despawn delivery | `GameLogic` | M | — | E2 | ADR | [landed](Archive/DespawnCursors-work-order.md) |
+| 3 | The publisher: subscriber table, phases, budgets | `GameLogic` | M | 2 | E2 E4 E6 | ADR | [landed](Archive/Publisher-work-order.md) |
 | 4 | The root joins the publisher | `Outpost` | S | 3 | E2 |  | folded into 3 |
-| 5 | Reliable lane on both transports (= QuicTransport 3a) | `NeuronCore` | M | — | E1 |  | [landed](ReliableLane-work-order.md) |
-| 6 | Leaves, destroys, orders go reliable (= QuicTransport 3b) | `GameLogic` | M | 5 | E1 | ADR | [landed](ReliableFormat-work-order.md) |
+| 5 | Reliable lane on both transports (= QuicTransport 3a) | `NeuronCore` | M | — | E1 |  | [landed](Archive/ReliableLane-work-order.md) |
+| 6 | Leaves, destroys, orders go reliable (= QuicTransport 3b) | `GameLogic` | M | 5 | E1 | ADR | [landed](Archive/ReliableFormat-work-order.md) |
 | 7 | Listener slot reclamation, per-role rings | `NeuronCore` | S | — | E3 | ADR | landed |
 | 8 | Trail and glow batching | `NeuronClient`+`Outpost` | S | — | G1 |  | landed |
 | 9 | Frustum culling | `NeuronClient`+`Outpost` | S | — | G2 |  | landed |
-| 10 | Hull instancing | `NeuronClient`+`Outpost` | M | 9 | G2 |  |   landed |
+| 10 | Hull instancing | `NeuronClient`+`Outpost` | M | 9 | G2 |  | landed |
 | 11 | Localized gather radius, threat pre-filter | `GameLogic` | M | — | U2 |  | landed |
 | 12 | The tick-rate decision | `GameLogic` | S | — | E7 | ADR | decided: 60 Hz stays |
 | 13 | Churn-gated static rebuilds | `GameLogic` | S | — | U4 |  | landed |
-| 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR | landed, all four slices of [its design](RegionalPathfinding.md) |
+| 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR | landed, all four slices of [its design](Archive/RegionalPathfinding.md) |
 | 15 | The quantized wire | `GameLogic` | M | 6 | E5 |  |  |
 | 16 | Global entity identity | `GameLogic` | M | 15 | U3 | ADR |  |
 | 17 | The state codec and the replay gate | `GameLogic` | M | 16 | U3 |  |  |
@@ -182,7 +196,7 @@ several" changes in the same commit — the day arrived.
 joining late sees only deaths after its cursor; the replay gate untouched (the log is publish-side).
 **ADR.** World's despawn contract moves from drain-once to cursors — supersedes the header's note.
 
-**Landed.** Work order: [`DespawnCursors-work-order.md`](DespawnCursors-work-order.md). `DespawnLog()`
+**Landed.** Work order: [`DespawnCursors-work-order.md`](Archive/DespawnCursors-work-order.md). `DespawnLog()`
 and `ClearDespawnLog()` became `DespawnHead()`, `DespawnsSince(cursor)` and
 `TrimDespawnsBefore(cursor)`; `WorldSimulation` holds one cursor; ADR 0027 records why. Three
 `GameLogicTests` rows replace the one that drained.
@@ -216,13 +230,13 @@ stated assumption: still one subscriber in practice, now as a table of one.
 
 #### Slices 5 and 6 — the reliable lane (= QuicTransport.md slices 3a and 3b) — **scheduled**
 
-Fully specified in [`QuicTransport.md`](QuicTransport.md) §14, steps and acceptance included —
+Fully specified in [`QuicTransport.md`](Archive/QuicTransport.md) §14, steps and acceptance included —
 `SendReliable`/`ReceiveReliable` with refusing defaults, the loopback lane exempt from
 `dropOneInN`, the reserved bidirectional stream with 2-byte framing, `KIND_LEAVE`, orders going
 reliable, the ALPN bump to `outpost-2`, and the drop-everything test in which every leave and
 every order still arrives. The work orders are written from that design when the owner takes §4
 decision 1 — taken on 2026-08-30 — and are now written:
-[3a](ReliableLane-work-order.md) and [3b](ReliableFormat-work-order.md). Slice 1's backstop is
+[3a](Archive/ReliableLane-work-order.md) and [3b](Archive/ReliableFormat-work-order.md). Slice 1's backstop is
 dropped rather than built: it existed only to blunt E1 while the lane was unscheduled, and the lane
 is the real answer.
 
@@ -454,14 +468,16 @@ against a brute-force static-set oracle, plus three `PathfindingTests` rows.
 
 The 16.4 km cliff (`PathGrid.cpp:64-65`) is real rework: per-cluster grids keyed by obstacle
 islands, route stitching between them, and the decline path retired. It gets its own design
-(`Design/RegionalPathfinding.md` — problem, cluster rule, memory budget, its slices) before any
+(`Design/Archive/RegionalPathfinding.md` — problem, cluster rule, memory budget, its slices) before any
 work order, per `Design/README.md`'s "design (if non-trivial)". This plan only fixes its position:
 after slice 13, before any content spreads architecture past one grid. The `FindPath`/waypoint seam
 and the route follower are the interfaces that design must keep.
 
-**The design is written** ([`RegionalPathfinding.md`](RegionalPathfinding.md), ADR 0033), which is
-what this slice was: it yields four slices of its own, listed in its §9, and none of them is
-implemented here. What the writing turned up is worth carrying back:
+**As landed**, this slice became five commits: the design
+([`RegionalPathfinding.md`](Archive/RegionalPathfinding.md), ADR 0033), then each of the four slices
+it yields in its §9, in order. The cliff is gone — two stations 20 km apart both route, where before
+neither did — and the measurements are in that design's §4 and §9. What the *writing* turned up,
+before any of it was built, is still worth carrying back:
 
 - **A third failure the review did not have. Now fixed.** The grid's lattice was a function of its
   contents — `m_origin` was the corner of the bounding box over the obstacles, so adding an obstacle
@@ -476,7 +492,15 @@ implemented here. What the writing turned up is worth carrying back:
   the content: a lone Structure is 9 kB, thirty scattered stations about 270 kB.
 - **The stitching already exists.** `World::AdvanceRoute` re-plans on arriving at the end of a route
   whose `reachesDestination` is false, which is exactly what a route across islands is. No portal
-  graph, and none needed while the space between islands is open.
+  graph, and none needed while the space between islands is open. This held: the crossing needed no
+  new machinery in the follower, only a leg aimed at the open water between two islands and an
+  answer that says the route is unfinished.
+
+One decision the design did not anticipate came out of building it, and has its own record: the
+router's version stays the whole world's rather than becoming per-island, because an island index is
+not a handle and the partition renumbers on every change (ADR 0034). So a change to architecture
+anywhere still re-plans every routed ship — the one place islands did *not* make the world local,
+and the next thing to bite.
 
 ### Phase 3 — make it an MMO (slices 15–20)
 

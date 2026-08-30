@@ -53,7 +53,7 @@ island the straight line enters is returned with `reachesDestination` false, and
 `World::AdvanceRoute` already re-plans on arriving at the end of an incomplete route. The stitching
 is the behaviour that already ships.
 
-`Design/RegionalPathfinding.md` is the design; this record is why the shape is that one.
+`Design/Archive/RegionalPathfinding.md` is the design; this record is why the shape is that one.
 
 ## Alternatives
 
@@ -86,7 +86,9 @@ stations goes from 7.9 M distance evaluations to 2,304, because only its own isl
 
 The 16.4 km cliff becomes local. An island genuinely 16 km across still declines, but it declines
 alone: its neighbours keep routing, where today one such island disables the world. That failure
-should be traced rather than silent, which is a diagnostic the current code does not have either.
+should be traced rather than silent, which is a diagnostic the code did not have either. Slice 3
+supplied it: `PathGrid::Declined()`, `PathIslands::DeclinedCount()`, and a `DECLINED` field in the
+F1 readout, because a grid that declined calls every run clear exactly as an empty one does.
 
 **Routes across islands are no longer globally optimal.** A ship cannot see that going round island
 two is cheaper than through it until it arrives at island two. That is bought deliberately, and it is
@@ -94,7 +96,9 @@ what makes the portal graph unnecessary.
 
 **A long crossing is several A\* runs where it was one.** Each is small — one island's box rather
 than the world's — but the count is new, and the benchmark should show it rather than leave it to be
-noticed.
+noticed. Slice 3 is what makes that count small rather than merely bounded: the first leg is aimed at
+the open water past the first island, and measured over 72 crossings from starts all round it, the
+shortest first leg is 1,484 m rather than the 125 m a truncated route gave.
 
 `IslandGapMetres()` is derived from the hull table, so adding a hull larger than a Carrier changes
 the partition and therefore changes routes. That is correct, and it is a replay-contract change; it

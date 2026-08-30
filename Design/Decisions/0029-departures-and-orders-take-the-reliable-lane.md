@@ -11,7 +11,7 @@ carries the same ship again — and the leave half does not. A leave is stated o
 repeated, so a lost one is a ship that stays on a client's screen for the rest of the match, moving
 nowhere, alive to a player and dead to the server.
 
-`Design/QuicTransport.md` §8 recorded the defect when the migration landed and left it for a later
+`Design/Archive/QuicTransport.md` §8 recorded the defect when the migration landed and left it for a later
 slice. `Design/MmoScalabilityReview.md` finding E1 priced it: an update is dropped whole if any
 fragment is missing, so completeness is (1 − p)^F, and at 2% loss a 13-fragment fleet-battle update
 completes 77% of the time. On `127.0.0.1` none of this bites. On a real path all of it does, and the

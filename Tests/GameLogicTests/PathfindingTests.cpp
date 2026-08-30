@@ -286,7 +286,7 @@ public:
     // PATH_GRID_MAX_CELLS_PER_AXIS, it declines to build, and A* goes off for *every ship in the
     // world* rather than for the space between them. Run against that grid, neither ship below
     // arrives at all: each flies its straight line, hugs its station at 265 m and orbits until the
-    // tick budget runs out (Design/RegionalPathfinding.md 1.1).
+    // tick budget runs out (Design/Archive/RegionalPathfinding.md 1.1).
     for (const float station : {0.0f, 20000.0f})
     {
       Game::World world;
@@ -317,7 +317,7 @@ public:
     // The partition rule, at its own boundary. A gap wider than IslandGapMetres is one the
     // straight-line test flies through with no plan at all, so the two are separate problems; a
     // narrower one is a wall A* has to find its way around, so they are one
-    // (Design/RegionalPathfinding.md 3.2).
+    // (Design/Archive/RegionalPathfinding.md 3.2).
     //
     // The threshold is derived rather than chosen: twice the widest mobile hull's bounding radius
     // plus its clearance margin, because a ship's centre has to stay that far clear of each surface
@@ -349,7 +349,7 @@ public:
     // The partition is a function of the obstacle set, but the obstacles arrive in ShipId order and
     // ShipIds move under swap-and-pop (ADR 0005) -- so the order the islands are *found* in would
     // follow the ids if it were left to the walk. It is not: they are sorted by the lowest path cell
-    // any member sits in, which is a world coordinate (Design/RegionalPathfinding.md 3.2, 5).
+    // any member sits in, which is a world coordinate (Design/Archive/RegionalPathfinding.md 3.2, 5).
     //
     // Said twice. First directly, because the order is what the rule is about: the same two stations
     // in opposite array orders must come back as the same island in the same slot. Then end to end,
@@ -404,7 +404,7 @@ public:
     // because the first one cannot see the second. The first island plans as far as its own far
     // side and the route reports itself unfinished, which is what makes World::AdvanceRoute come
     // back for the rest on arrival -- the same rule that already handled a route too long for one
-    // waypoint list (Design/RegionalPathfinding.md 3.4).
+    // waypoint list (Design/Archive/RegionalPathfinding.md 3.4).
     Game::World world;
     (void)world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, STRUCTURE);
     (void)world.SpawnShip(Game::LocalPos(0.0f, 3000.0f), 0.0f, STRUCTURE);
@@ -442,7 +442,7 @@ public:
     // the route at the last *turn*, because the string-pull stops adding waypoints the moment the
     // way ahead is clear and the far side is only ever reached by the destination waypoint that has
     // to be dropped. Measured over 72 crossings from starts all round the first island, the shortest
-    // first leg went from 125 m to 1,484 m (Design/RegionalPathfinding.md 3.4).
+    // first leg went from 125 m to 1,484 m (Design/Archive/RegionalPathfinding.md 3.4).
     const float clearance = Game::HullSpecOf(Game::HullId::Corvette).BoundingRadiusMetres() + Game::PATH_CLEARANCE_MARGIN_METRES;
     const float radius = Game::HullSpecOf(Game::HullId::Structure).BoundingRadiusMetres();
     const std::vector<Game::PathGrid::Obstacle> inLine = {{Game::LocalPos(0.0f, 0.0f), radius}, {Game::LocalPos(0.0f, 3000.0f), radius}};
@@ -474,7 +474,7 @@ public:
     // world past PATH_GRID_MAX_CELLS_PER_AXIS; per island, only an island genuinely 16 km across can
     // do it, and when one does its neighbours keep routing. That is the gain -- and it comes with a
     // failure that looks exactly like success, because a grid that declined calls every run clear
-    // just as an empty one does. So it is counted (Design/RegionalPathfinding.md 3.3).
+    // just as an empty one does. So it is counted (Design/Archive/RegionalPathfinding.md 3.3).
     const float radius = Game::HullSpecOf(Game::HullId::Structure).BoundingRadiusMetres();
     std::vector<Game::PathGrid::Obstacle> obstacles;
 
@@ -514,7 +514,7 @@ public:
     // anywhere cost a clearance field over the whole world; per island it costs its own. Measured
     // over a hundred scattered stations, a whole rebuild is 1.58 ms and one station moving is
     // 0.064 ms, and the evaluations go from the review's 7.9 M worst legal case to 2,304
-    // (Design/RegionalPathfinding.md 4).
+    // (Design/Archive/RegionalPathfinding.md 4).
     //
     // Matched by content and not by slot, because the islands are ordered by where they sit in the
     // world and building anything renumbers every island after it -- an island index is not a
@@ -575,7 +575,7 @@ public:
     // under every fixed point in the world -- and cell centres are what ClearanceAt samples and what
     // A* searches. The same architecture, approached from the same place, could then give a
     // different route because of something built somewhere else entirely
-    // (Design/RegionalPathfinding.md 1.3, 3.1).
+    // (Design/Archive/RegionalPathfinding.md 1.3, 3.1).
     //
     // Invisible today, because every rebuild bumps the version and every route re-plans, so the
     // shifted answer is simply the new answer. It stops being invisible the moment routes are

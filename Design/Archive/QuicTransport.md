@@ -1,11 +1,11 @@
 # The QUIC transport — moving the seam onto MsQuic
 
-**Status: all four slices have landed.** The game boots over QUIC, the seam has a reliable lane,
-and departures and orders travel on it (ADR 0029). §13 lists the slices; §14 is the
-implementation plan. Every open question was put to the owner on 2026-08-29 and settled (§12), and
-two of those settlements have since moved: the fallback in §6 is gone (ADR 0028), and the reliable
-lane (slices 3a and 3b) is scheduled with its work orders written, the wait in §12 decision 4
-having been lifted on 2026-08-30.
+**Status: all four slices have landed, and this document is archived.** The game boots over QUIC,
+the seam has a reliable lane, and departures and orders travel on it (ADR 0029). §13 lists the
+slices; §14 is the implementation plan. Every open question was put to the owner on 2026-08-29 and
+settled (§12), and two of those settlements have since moved: the fallback in §6 is gone (ADR 0028),
+and the reliable lane of slices 3a and 3b — which §12 decision 4 was waiting on, released on
+2026-08-30 — is built.
 
 This document proposes how the client/server seam stops being a loopback and becomes a network:
 a `QuicTransport` in `NeuronCore` over MsQuic 2.6.1, the package the tree restored on 2026-08-29
@@ -392,8 +392,8 @@ moment 1 merges; 3b follows 3a because the lane must exist before the format cho
 
 | # | Slice | Layer | Depends on | Status | Work order |
 |---|---|---|---|---|---|
-| 1 | `QuicApi`, `QuicTransport`, `QuicListener`, `DevCertificate`, the tests, ADRs 0018–0020 | `NeuronCore` | — | landed | [slice 1](Archive/QuicTransport-slice-1.md) |
-| 2 | The composition root: boot over QUIC, fallback, log, AGENTS.md text | `Outpost` | 1 | landed | [slice 2](Archive/QuicTransport-slice-2.md) |
+| 1 | `QuicApi`, `QuicTransport`, `QuicListener`, `DevCertificate`, the tests, ADRs 0018–0020 | `NeuronCore` | — | landed | [slice 1](QuicTransport-slice-1.md) |
+| 2 | The composition root: boot over QUIC, fallback, log, AGENTS.md text | `Outpost` | 1 | landed | [slice 2](QuicTransport-slice-2.md) |
 | 3a | A reliable lane on `Transport`, on both implementations | `NeuronCore` | 1 | landed | [slice 3a](ReliableLane-work-order.md) |
 | 3b | Leaves, destroyed lists and orders go reliable | `GameLogic` | 3a | landed | [slice 3b](ReliableFormat-work-order.md) |
 

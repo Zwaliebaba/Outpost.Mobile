@@ -147,7 +147,7 @@ void OutpostApp::Init(HINSTANCE _instance)
   // The wire the two halves meet on: QUIC across 127.0.0.1, and nothing else. Every frame of every
   // run crosses the real stack, because there is no second path for it to cross instead -- and a
   // boot that cannot open the wire fails here rather than quietly running on something else
-  // (ADR 0028, Design/QuicTransport.md 6).
+  // (ADR 0028, Design/Archive/QuicTransport.md 6).
   OpenQuicLink();
   m_simulation.Connect(*m_serverQuic);
 
@@ -662,7 +662,7 @@ void OutpostApp::Shutdown()
 {
   // In this order, and before the device goes away: a registration cannot close while a connection
   // on it lives, so the client end closes first, then the listener with everything it accepted, then
-  // the library (Design/QuicTransport.md 6). Nothing is logged here -- a shutdown path does nothing
+  // the library (Design/Archive/QuicTransport.md 6). Nothing is logged here -- a shutdown path does nothing
   // rather than report (AGENTS.md 5).
   if (m_linkOpen)
   {

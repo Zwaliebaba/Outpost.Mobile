@@ -21,7 +21,7 @@ constexpr std::uint8_t KIND_MOVE_ORDER = 2;
 //
 // They moved because a lost leave is a ghost ship for the rest of the match: a snapshot is
 // superseded by the next one and heals itself, a leave is stated once and never repeated
-// (Design/MmoScalabilityReview.md E1, Design/ReliableFormat-work-order.md). Duplicating them onto
+// (Design/MmoScalabilityReview.md E1, Design/Archive/ReliableFormat-work-order.md). Duplicating them onto
 // both lanes was the alternative and lost -- two paths carrying the same fact is two paths to
 // reason about, and the unreliable copy would still be the one that arrived first.
 constexpr std::uint8_t KIND_LEAVE = 3;
@@ -557,7 +557,7 @@ bool WriteMoveOrder(const MoveOrder& _order, Neuron::Transport& _transport)
     out.Handle(handle);
 
   // On the reliable lane: a dropped order is a click the player made and the game ignored, which is
-  // the one failure mode no amount of interpolation covers up (Design/QuicTransport.md 8).
+  // the one failure mode no amount of interpolation covers up (Design/Archive/QuicTransport.md 8).
   return _transport.SendReliable(bytes.data(), static_cast<std::uint32_t>(bytes.size()));
 }
 

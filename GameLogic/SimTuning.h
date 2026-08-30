@@ -242,7 +242,7 @@ inline constexpr float PATH_CLEARANCE_MARGIN_METRES = 8.0f;
 // on the cell size says it is a power of two no larger than a sector. That exactness is what lets a
 // cell's index be a pure function of a position: the sector pair contributes whole cells and the
 // local offset contributes the rest, with no cell straddling the join (PathGrid.h, PathCellX;
-// Design/RegionalPathfinding.md 3.1).
+// Design/Archive/RegionalPathfinding.md 3.1).
 inline constexpr std::int64_t PATH_CELLS_PER_SECTOR = static_cast<std::int64_t>(SECTOR_SIZE_METRES / PATH_CELL_SIZE_METRES);
 static_assert(static_cast<float>(PATH_CELLS_PER_SECTOR) * PATH_CELL_SIZE_METRES == SECTOR_SIZE_METRES,
               "a sector must be a whole number of path cells across");
@@ -252,11 +252,14 @@ static_assert(static_cast<float>(PATH_CELLS_PER_SECTOR) * PATH_CELL_SIZE_METRES 
 // would cost everything and change nothing.
 inline constexpr float PATH_REPLAN_DEVIATION_METRES = 64.0f;
 
-// How much open ground the grid keeps around the architecture in it, so a route always has room to
-// go round the outside, and the ceiling on how many cells that may come to. Past the ceiling the
-// grid declines to build and steering falls back to what it did before pathfinding existed --
-// coarsening the cells instead would change recorded outcomes as a side effect of where someone
-// put a building.
+// How much open ground a grid keeps around the architecture in it, so a route always has room to go
+// round the outside, and the ceiling on how many cells that may come to. Both are per *island* now
+// (PathIslands.h), which is what turned the ceiling from a cliff into a local one: it was reachable
+// by two stations 20 km apart, and it is now reachable only by a single island genuinely 16 km
+// across. Past it that island declines to build and steering across it falls back to what it did
+// before pathfinding existed, while its neighbours keep routing -- coarsening the cells instead
+// would change recorded outcomes as a side effect of where someone put a building
+// (Design/Archive/RegionalPathfinding.md 3.3).
 inline constexpr float PATH_GRID_MARGIN_METRES = 512.0f;
 inline constexpr int PATH_GRID_MAX_CELLS_PER_AXIS = 512;
 

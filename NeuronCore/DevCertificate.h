@@ -6,7 +6,7 @@
 
 namespace Neuron
 {
-// A self-signed server certificate for a tree that has no PKI (Design/QuicTransport.md 7, ADR 0023).
+// A self-signed server certificate for a tree that has no PKI (Design/Archive/QuicTransport.md 7, ADR 0023).
 //
 // Schannel will not run a QUIC server without a certificate whose private key it can reach, and this
 // repository has no certificate store to read one from, no configuration file to name one in, and no
