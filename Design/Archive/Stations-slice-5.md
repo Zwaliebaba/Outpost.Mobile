@@ -1,6 +1,6 @@
 # Work order — Stations slice 5: the Vanguard scene
 
-Implements slice 5 of [`Stations.md`](Stations.md) §16: the starting system laid out, a Vanguard
+Implements slice 5 of [`Stations.md`](../Stations.md) §16: the starting system laid out, a Vanguard
 station at every planet of it, the planets drawn where the layout says, the Vanguard's azure on the
 hulls and the overview, the marks on the minimap, and `CONTACTS` counting what the wire says is
 hostile rather than what is merely not the player's (design §5.3, §9.3, §9.4).

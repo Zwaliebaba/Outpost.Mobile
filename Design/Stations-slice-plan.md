@@ -398,7 +398,7 @@ radius, no threat scan, no proximity trigger; the NPC reads exactly two things i
 
 ## 8. Slice 5 — the Vanguard scene
 
-**Written, in review** — work order [`Stations-slice-5.md`](Stations-slice-5.md), no decision
+**Landed** on 2026-08-30 in pull request #24 — work order [`Stations-slice-5.md`](Archive/Stations-slice-5.md), no decision
 record. Built as planned, with two things the plan did not spell out: the asteroid field draws
 different numbers from `BODY_START_SEED` once the worlds stop drawing from it, so the rocks move
 under this slice while the worlds and the stations do not; and `STATIONS ONLINE` counts every
@@ -443,6 +443,9 @@ slice's own out-of-scope rule and the thing to check first in review.
 ---
 
 ## 9. Slice 6 — docking and the response, on screen
+
+**Written, in review** — work order [`Stations-slice-6.md`](Stations-slice-6.md), no decision
+record. Built as planned.
 
 **Layer:** `Outpost`. **Depends on:** 3, 4, 5. **Blocks:** nothing; it closes the phase.
 

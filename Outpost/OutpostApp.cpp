@@ -167,6 +167,7 @@ void OutpostApp::Init(HINSTANCE _instance)
   // Who this client is. One subscriber today, so it is the player's faction at both sites; the day
   // a login exists it arrives with the session and only this line changes.
   m_view.SetOwnFaction(m_ownFaction);
+  m_view.SetFactionNames(FACTION_NAMES);
   m_view.SetBodyRenderer(m_bodyRenderer);
 
   // Where the sphere sits, how bright it is and how hard a star scintillates are the game's choices,
@@ -607,6 +608,45 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
     // BodyRenderer keeps every handle for the run (OutpostApp.h says so beside the key list).
     ReseedBodies();
     break;
+  case VK_F6:
+  {
+    // Debug hook, under F4's charter: a tuning aid may reach past the wire and a gameplay path never
+    // may. Nothing in the game can attack a station yet -- the combat design owes the trigger -- so
+    // the first selected own ship is declared an aggressor against the nearest Vanguard station,
+    // and the response can be watched (Design/Stations.md 8.1). No client message exists for this,
+    // or ever will: a client that can declare an aggression can make anybody a criminal (ADR 0041).
+    const std::span<const Game::ShipSnapshot> ships = m_view.Ships();
+    Game::ShipHandle attacker;
+    for (std::size_t i = 0; i < ships.size() && attacker.generation == 0; ++i)
+    {
+      if (m_view.IsSelected(i))
+        attacker = ships[i].handle;
+    }
+    const Game::ShipId attackerId = m_world.Resolve(attacker);
+    if (attackerId == Game::INVALID_SHIP_ID)
+      break;
+
+    Game::World::StationId nearest = Game::World::INVALID_STATION_ID;
+    float nearestMetres = 0.0f;
+    for (Game::World::StationId station = 0; station < m_world.StationCount(); ++station)
+    {
+      const Game::World::Station& row = m_world.StationOf(station);
+      const Game::ShipId structure = m_world.Resolve(row.structure);
+      if (row.ownerFaction != Game::FACTION_VANGUARD || structure == Game::INVALID_SHIP_ID)
+        continue;
+      const float metres = Game::Distance(m_world.Ship(attackerId).posWorld, m_world.Ship(structure).posWorld);
+      if (nearest == Game::World::INVALID_STATION_ID || metres < nearestMetres)
+      {
+        nearest = station;
+        nearestMetres = metres;
+      }
+    }
+    if (nearest == Game::World::INVALID_STATION_ID)
+      break;
+    m_world.RecordAggression(attacker, nearest);
+    m_log.Push(EventLog::Severity::Alert, static_cast<float>(m_host.Tick()) * Game::TICK_DT, "VANGUARD PROVOKED");
+    break;
+  }
   case '1':
     m_timeScale = 0.25f;
     break;
