@@ -111,6 +111,13 @@ public:
     return m_listener.Port();
   }
 
+  // How many connections the listener has seen come and go. Since ADR 0030 this is how a departure
+  // is reported: the transport leaves Accepted() and this rises.
+  [[nodiscard]] std::uint32_t RecycledCount() const noexcept
+  {
+    return m_listener.RecycledCount();
+  }
+
   [[nodiscard]] Neuron::QuicApi& Api() noexcept
   {
     return m_api;
@@ -451,19 +458,29 @@ public:
     Assert::AreEqual(7, static_cast<int>(got[0]), L"the payload changed in flight");
   }
 
-  TEST_METHOD(AClosedPeerDrainsThenCloses)
+  TEST_METHOD(AClosedPeerIsReportedRatherThanGoingSilent)
   {
-    // Two of the five ConnectionStates the loopback never used. A peer that goes away has to become
-    // visible as a state rather than as a silence, or the composition root has nothing to report.
+    // A peer that goes away has to be visible rather than silent, or the composition root has
+    // nothing to report. What makes it visible changed with ADR 0030: the listener recycles the
+    // accepted end the moment its connection closes, so the report is the transport leaving
+    // Accepted() and RecycledCount rising -- not a state read off a pointer the pool has taken back.
+    // Reading the state there would race the recycle and, once recycled, would say Disconnected.
     Pair pair;
     pair.RequireConnected();
 
     Neuron::QuicTransport* const server = pair.Server();
+    Assert::IsNotNull(server, L"the pair reported connected without an accepted end");
+
     pair.Client().Close();
 
-    Assert::IsTrue(pair.PumpUntil([&] { return server->State() == Neuron::ConnectionState::Closed; }, Neuron::QUIC_IDLE_TIMEOUT_MS),
-                   L"the accepted end never noticed its peer had gone");
-    Assert::IsFalse(SendByte(*server, 1), L"a closed end accepted a datagram");
+    // Closed is still a state the client half reaches and reports, which is the half of the original
+    // guarantee that does not belong to the listener.
+    Assert::IsTrue(pair.Client().State() == Neuron::ConnectionState::Closed, L"a closed end did not report Closed");
+
+    Assert::IsTrue(pair.PumpUntil([&] { return pair.RecycledCount() == 1; }, Neuron::QUIC_IDLE_TIMEOUT_MS),
+                   L"the listener never reported that the peer had gone");
+    Assert::IsNull(pair.Server(), L"a departed connection was still listed as accepted");
+    Assert::IsFalse(SendByte(*server, 1), L"a departed end accepted a datagram");
   }
 
   TEST_METHOD(ASlotIsRecycledWhenItsClientLeaves)

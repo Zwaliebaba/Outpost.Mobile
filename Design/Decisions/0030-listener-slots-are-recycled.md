@@ -67,6 +67,14 @@ being ready to serve.
   pointer is not a dangling one, but a caller that keeps one is looking at a transport that now
   belongs to somebody else. Nothing in the tree does this today; the session table (ADR 0029) holds
   its own handle.
+- **A departure is no longer observable as a state on the accepted end**, and that cost was found by
+  a test rather than foreseen here: `AClosedPeerDrainsThenCloses` waited for `Closed` on the pointer
+  the listener owns, and the recycle takes that pointer back and resets it to `Disconnected` in the
+  same `Poll`. Reading the state there is a race against the pool. The report is now the transport
+  leaving `Accepted()` and `RecycledCount()` rising, which is what a session layer wants anyway —
+  it needs to know *that* a subscriber went, not which of five states it passed through. The test
+  was rewritten to assert that, and keeps the state assertion on the client half, which no pool
+  owns.
 - Recycling allocates once per departed client, on the owning thread: `Reserve` reuses every vector
   it already sized except the in-flight flags, which are atomics and cannot be assigned. That is not
   on any per-datagram path, and making it zero would mean a `Reset` that duplicates `Reserve`'s

@@ -240,8 +240,14 @@ public:
     // Its cursor opens at the head, so it is not told about ships it never held (ADR 0026).
     Game::World world;
     const Game::ShipId first = SpawnAt(world, 0.0f, 0.0f);
-    const Game::ShipId second = SpawnAt(world, 40.0f, 0.0f);
+
+    // The survivor is held as a HANDLE, taken before the despawn. Its ShipId does not survive:
+    // despawning the first ship swap-and-pops the last one into index 0, so the id captured at
+    // spawn would name a ship that is no longer there -- which is the whole reason handles exist
+    // (ADR 0005), and this test got it wrong first time round.
+    const Game::ShipHandle survivor = world.HandleOf(SpawnAt(world, 40.0f, 0.0f));
     Assert::IsTrue(world.DespawnShip(world.HandleOf(first)), L"the despawn failed");
+    Assert::AreNotEqual(Game::INVALID_SHIP_ID, world.Resolve(survivor), L"the survivor's handle stopped resolving");
 
     Link link;
     Game::Publisher publisher;
@@ -267,7 +273,7 @@ public:
 
     Assert::IsTrue(view.Destroyed().empty(), L"a late subscriber was told about a death that preceded it");
     Assert::AreEqual(static_cast<std::size_t>(1), view.Latest().ships.size(), L"the late subscriber did not get the surviving ship");
-    Assert::IsTrue(view.Latest().ships[0].handle == world.HandleOf(second), L"the late subscriber got the wrong ship");
+    Assert::IsTrue(view.Latest().ships[0].handle == survivor, L"the late subscriber got the wrong ship");
   }
 
   TEST_METHOD(RemovingASubscriberDoesNotStrandTheLog)
