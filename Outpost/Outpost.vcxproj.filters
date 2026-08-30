@@ -7,6 +7,9 @@
     <ClCompile Include="OutpostApp.cpp">
       <Filter>Boot</Filter>
     </ClCompile>
+    <ClCompile Include="ServerConfig.cpp">
+      <Filter>Boot</Filter>
+    </ClCompile>
     <ClCompile Include="ShipExplosion.cpp">
       <Filter>View</Filter>
     </ClCompile>
@@ -23,6 +26,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="OutpostApp.h">
+      <Filter>Boot</Filter>
+    </ClInclude>
+    <ClInclude Include="ServerConfig.h">
       <Filter>Boot</Filter>
     </ClInclude>
     <ClInclude Include="WorldSimulation.h">
@@ -177,6 +183,9 @@
   <ItemGroup>
     <None Include="packages.config">
       <Filter>Project Files</Filter>
+    </None>
+    <None Include="Assets\Server.cfg">
+      <Filter>Assets</Filter>
     </None>
     <None Include="Assets\Fonts\EditorFont.dds">
       <Filter>Assets\Fonts</Filter>

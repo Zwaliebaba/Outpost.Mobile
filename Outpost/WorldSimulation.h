@@ -1,9 +1,12 @@
 #pragma once
 
+#include "ServerConfig.h"
+
 #include "Publisher.h"
 #include "World.h"
 
 #include "Simulation.h"
+
 #include "Transport.h"
 
 #include <cstdint>
@@ -35,11 +38,19 @@ public:
 
   // Connects the one subscriber this executable has. A dedicated server would call Publisher::Add
   // once per session instead, which is the whole of what changes there.
-  void Connect(Neuron::Transport& _transport)
+  //
+  // The three knobs come out of the configuration file rather than out of the Desc defaults, which
+  // is what makes them a property of the deployment instead of the build (ADR 0043). They are per
+  // subscriber and not global, which is the shape Publisher::Desc already had -- so a spectator or
+  // a distant region can be given different ones without touching anybody else's.
+  void Connect(Neuron::Transport& _transport, const ServerConfig& _config)
   {
     Game::Publisher::Desc desc;
     desc.transport = &_transport;
     desc.faction = m_subscriberFaction;
+    desc.interest.radiusMetres = _config.interestRadiusMetres;
+    desc.interest.updateEveryTicks = _config.interestUpdateEveryTicks;
+    desc.ordersPerTick = _config.ordersPerTick;
 
     // From the head, not from zero: the fleet is spawned before the link is opened, and a ship that
     // died during boot is not something this client ever held (ADR 0027).

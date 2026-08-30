@@ -36,12 +36,6 @@ const HullMesh HULL_MESHES[] = {{L"Bomber", Game::HullId::Bomber},
 
 const Game::HullId STARTING_FLEET[] = {Game::HullId::Bomber, Game::HullId::Corvette, Game::HullId::Frigate};
 
-// The port the in-process server listens on and the in-process client dials, on 127.0.0.1 only.
-// Arbitrary and unregistered. Here rather than in a configuration file because there is no
-// configuration file (AGENTS.md 5). Since the fallback went (ADR 0028) this number can be the reason
-// the game does not start, which is why the failure below names it rather than reporting "no link".
-constexpr std::uint16_t OUTPOST_QUIC_PORT = 30081;
-
 // For the one log line that has to say what a connection was doing when it ran out of time.
 [[nodiscard]] const char* LinkStateName(Neuron::ConnectionState _state) noexcept
 {
@@ -153,12 +147,17 @@ void OutpostApp::Init(HINSTANCE _instance)
   hostDesc.tickHz = Game::TICK_HZ;
   m_host.Init(hostDesc, m_simulation);
 
+  // Before the link opens and before the world is configured, because both read out of it. Nothing
+  // above this line is allowed to depend on a configured value, which is the whole reason it is one
+  // call at one place rather than a read wherever a value is wanted.
+  LoadServerConfig();
+
   // The wire the two halves meet on: QUIC across 127.0.0.1, and nothing else. Every frame of every
   // run crosses the real stack, because there is no second path for it to cross instead -- and a
   // boot that cannot open the wire fails here rather than quietly running on something else
   // (ADR 0028, Design/Archive/QuicTransport.md 6).
   OpenQuicLink();
-  m_simulation.Connect(*m_serverQuic);
+  m_simulation.Connect(*m_serverQuic, m_config);
 
   m_view.Init(m_clientQuic, m_camera, m_meshes, m_sceneRenderer.UnitQuad());
   m_view.SetTracker(m_pointers);
@@ -180,8 +179,10 @@ void OutpostApp::Init(HINSTANCE _instance)
   m_view.SetSkyRenderer(m_skyRenderer, skyTuning);
   // Hull vertices go to default heaps (SceneRenderer::UploadMesh), so their copies are recorded
   // rather than written, and something has to run them. One bracket for all of them, not one each.
+  m_gpu.BeginCopies();
   m_gpu.BeginUploads();
   LoadHullMeshes();
+  m_gpu.SubmitCopies();
   m_gpu.ExecuteAndWait();
   m_sceneRenderer.DiscardStaging();
 
@@ -214,6 +215,7 @@ void OutpostApp::Init(HINSTANCE _instance)
   skyDesc.starTexture = TEXTURE_DIR + L"Glow.dds";
   skyDesc.burstTexture = TEXTURE_DIR + L"Starburst.dds";
 
+  m_gpu.BeginCopies();
   m_gpu.BeginUploads();
   m_bodyRenderer.Init(m_gpu, bodyDesc);
   m_skyRenderer.Init(m_gpu, skyDesc);
@@ -226,6 +228,7 @@ void OutpostApp::Init(HINSTANCE _instance)
   }
   SpawnStartingBodies(BODY_START_SEED);
   BuildSky(SKY_SEED);
+  m_gpu.SubmitCopies();
   m_gpu.ExecuteAndWait();
   m_bodyRenderer.DiscardStaging();
   m_skyRenderer.DiscardStaging();
@@ -235,6 +238,31 @@ void OutpostApp::Init(HINSTANCE _instance)
   m_log.PushFormat(EventLog::Severity::Info, 0.0f, "STATIONS ONLINE | %u", m_world.StationCount());
 
   m_window.Show();
+}
+
+void OutpostApp::LoadServerConfig()
+{
+  // Bare name, so FileSys::ResolvePath puts it under <exe>\Assets\ like every mesh and font. The
+  // executable ships one stating exactly the defaults, so both paths through here are exercised by
+  // somebody: the shipped file by every run, and the missing-file path by a checkout that has not
+  // deployed assets.
+  const std::string text = TextFile::ReadFileA(SERVER_CONFIG_FILE);
+  if (text.empty())
+    return; // no file, or an empty one: the defaults are what the game booted on before it existed
+
+  std::string error;
+  if (!ParseServerConfig(text, m_config, error))
+  {
+    // Reported and not obeyed. The parser applied nothing, so m_config is still the defaults -- and
+    // this root logs rather than exits because there is a window and a person in front of it. A
+    // headless root prints the same message and exits non-zero (ADR 0043).
+    m_log.PushFormat(EventLog::Severity::Alert, 0.0f, "CONFIG REFUSED | %s", error.c_str());
+    DebugTrace("Server.cfg refused: {}\n", error.c_str());
+    return;
+  }
+
+  m_log.PushFormat(EventLog::Severity::Info, 0.0f, "CONFIG | PORT %u | BACKLOG %u", static_cast<unsigned>(m_config.port),
+                   static_cast<unsigned>(m_config.backlog));
 }
 
 void OutpostApp::OpenQuicLink()
@@ -248,14 +276,16 @@ void OutpostApp::OpenQuicLink()
   if (!m_quic.Open(quicDesc))
     ThrowLinkFailure("the QUIC library would not open", m_quic.Reason());
 
-  if (!m_listener.Start(m_quic, OUTPOST_QUIC_PORT, {}))
+  QuicListener::Desc listenerDesc;
+  listenerDesc.backlog = m_config.backlog;
+  if (!m_listener.Start(m_quic, m_config.port, listenerDesc))
   {
     const std::string reason = m_listener.Reason();
     m_quic.Close();
     ThrowLinkFailure("the port was refused", reason.c_str());
   }
 
-  if (!m_clientQuic.Connect(m_quic, {"127.0.0.1", OUTPOST_QUIC_PORT}, {}))
+  if (!m_clientQuic.Connect(m_quic, {"127.0.0.1", m_config.port}, {}))
   {
     const std::string reason = m_clientQuic.Reason();
     m_listener.Stop();
@@ -282,7 +312,7 @@ void OutpostApp::OpenQuicLink()
     {
       m_serverQuic = accepted[0];
       m_linkOpen = true;
-      m_log.PushFormat(EventLog::Severity::Friendly, 0.0f, "LINK | QUIC | 127.0.0.1:%u | %.1f MS", static_cast<unsigned>(OUTPOST_QUIC_PORT),
+      m_log.PushFormat(EventLog::Severity::Friendly, 0.0f, "LINK | QUIC | 127.0.0.1:%u | %.1f MS", static_cast<unsigned>(m_config.port),
                        elapsedMs);
       return;
     }
@@ -473,11 +503,23 @@ void OutpostApp::BuildSky(std::uint64_t _seed)
 void OutpostApp::ReseedBodies()
 {
   m_view.ClearBodies();
+
+  // The scene is now released rather than left on the GPU. What F5 cost before this was the memory
+  // of every scene it had ever replaced -- BodyRenderer only ever appended, so a handle was an index
+  // and nothing could say a body was finished with (Design/MmoScalabilityReview.md G3, ADR 0044).
+  // The buffers themselves go at DiscardStaging below, which is the first point the GPU is known to
+  // be done with them.
+  m_bodyRenderer.FreeAllBodies();
   ++m_bodyRerollCount;
 
+  m_gpu.BeginCopies();
   m_gpu.BeginUploads();
   SpawnStartingBodies(BODY_START_SEED + m_bodyRerollCount);
   BuildSky(SKY_SEED + m_bodyRerollCount);
+  // Copies first, always: SubmitCopies enqueues the graphics queue's wait on the copy fence, so any
+  // direct-queue work submitted after it is correctly ordered behind the copies and any submitted
+  // before it is not (ADR 0044).
+  m_gpu.SubmitCopies();
   m_gpu.ExecuteAndWait();
   m_bodyRenderer.DiscardStaging();
   m_skyRenderer.DiscardStaging();

@@ -11,7 +11,8 @@
 # Both linters gate. clang-format runs in its own Linux job: it only reads C++ text, so putting it
 # on a Windows runner would cost several times as much for the same answer. clang-tidy has to parse
 # the code, so it runs on Windows after the build; it arrived non-blocking and was promoted on a
-# clean run, which is how a linter should arrive.
+# clean run, which is how a linter should arrive. It gates over GameLogic and reports over
+# NeuronServer, which is that same arrival happening again one project at a time.
 #
 # Runner notes, because these are the parts most likely to need adjusting on the first red run:
 #
@@ -151,21 +152,29 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'tests failed' }
 
       - name: Run clang-tidy
-        # This gates. It arrived non-blocking, came back clean on its second run once the header
+        # GameLogic gates. It arrived non-blocking, came back clean on its second run once the header
         # filter stopped admitting generated C++/WinRT and two pre-existing files were fixed, and
         # was promoted -- which was the promise it made.
         #
-        # A finding here is therefore yours: GameLogic was clean under LLVM 22 on this runner, so
+        # A finding there is therefore yours: GameLogic was clean under LLVM 22 on this runner, so
         # anything new the step reports arrived with your change. The exception is a runner image
         # that brings a newer clang-tidy with checks that did not exist before; that is a real
         # possibility because the version is the VS-bundled one and not pinned. If a run goes red
         # on a day nobody touched GameLogic, compare the LLVM version line against the last green
         # run before assuming the code moved.
         #
-        # Scoped to GameLogic: it is the layer where the checks matter most (determinism), and the
-        # only one that does not reach the D3D12 headers. It does still reach C++/WinRT
-        # through NeuronCore.h, and those headers are generated during the build -- which is why
-        # this runs after it, and why the generated directory is discovered rather than assumed.
+        # NeuronServer joined it ADVISORY, and that is the point of this step's shape: the exit code
+        # is GameLogic's count alone, so a finding in NeuronServer is printed and does not fail the
+        # job. That is the tree's own rule for how a linter starts gating (AGENTS.md 6), and it is
+        # not a formality here -- the runner's clang-tidy is the VS-bundled LLVM 22 while the sweep
+        # that found NeuronServer clean was clang-tidy 18 on Linux, and .clang-tidy's own status
+        # block records that the newer one has already seen a defect the older one did not. Two
+        # green runs and promotion is one line: add NeuronServer's count to the exit.
+        #
+        # Why NeuronServer next: it is the smallest project, it is headless, and it is the only one
+        # besides GameLogic that does not reach the D3D12 headers. Both still reach C++/WinRT through
+        # NeuronCore.h, and that projection is generated during the build -- which is why this runs
+        # after it, and why the generated directory is discovered rather than assumed.
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -179,7 +188,6 @@ jobs:
                        Where-Object { $_.FullName -notlike '*\packages\*' } |
                        ForEach-Object { $_.Parent.FullName } | Select-Object -Unique
           Write-Host "generated projection directories: $($generated -join ', ')"
-          $includes = @('GameLogic', 'NeuronCore') + $generated | ForEach-Object { "/I$_" }
 
           # Import the developer environment so INCLUDE names the Windows SDK and the STL; clang's
           # cl driver reads it the same way cl.exe does.
@@ -187,16 +195,28 @@ jobs:
           Enter-VsDevShell -VsInstallPath $install -SkipAutomaticLocation `
                            -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null
 
-          $failed = 0
-          foreach ($source in Get-ChildItem GameLogic -Filter *.cpp)
+          # Walked rather than spelled twice, so the day a third project joins it is one entry in
+          # this list. The file list inside each is read off disk for the same reason the test
+          # suites are: a file added by a later slice is checked the day it lands.
+          $counts = @{}
+          foreach ($project in @('GameLogic', 'NeuronServer'))
           {
-            if ($source.Name -eq 'pch.cpp') { continue }
-            Write-Host "--- $($source.Name)"
-            & $tidy --quiet $source.FullName -- --driver-mode=cl /std:c++20 /EHsc /D_DEBUG @includes
-            if ($LASTEXITCODE -ne 0) { $failed++ }
+            $includes = @($project, 'NeuronCore') + $generated | ForEach-Object { "/I$_" }
+            $failed = 0
+            foreach ($source in Get-ChildItem $project -Filter *.cpp)
+            {
+              if ($source.Name -eq 'pch.cpp') { continue }
+              Write-Host "--- $project/$($source.Name)"
+              & $tidy --quiet $source.FullName -- --driver-mode=cl /std:c++20 /EHsc /D_DEBUG @includes
+              if ($LASTEXITCODE -ne 0) { $failed++ }
+            }
+            $counts[$project] = $failed
+            Write-Host "clang-tidy reported findings in $failed file(s) of $project"
           }
-          Write-Host "clang-tidy reported findings in $failed file(s)"
-          exit $failed
+
+          # GameLogic alone decides the exit code; NeuronServer is advisory until two runs come back
+          # clean and somebody promotes it, which is this line growing a `+ $counts['NeuronServer']`.
+          exit $counts['GameLogic']
 
       - name: Upload logs
         # Failures are the case these are wanted in, and a green run's logs cost storage for

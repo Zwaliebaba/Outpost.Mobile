@@ -472,17 +472,17 @@ BodyHandle BodyRenderer::BakeBody(GpuDevice& _gpu, const BodyParams& _params, co
   m_staging.push_back(std::move(rampStaging));
   m_bakeHeaps.push_back(std::move(bakeHeap));
 
-  m_bodies.push_back(std::move(mesh));
-  return static_cast<BodyHandle>(m_bodies.size() - 1);
+  return Place(std::move(mesh));
 }
 
 void BodyRenderer::ReadBackBody(GpuDevice& _gpu, BodyHandle _body, std::vector<FxVertex>& _out)
 {
   _out.clear();
-  if (_body >= m_bodies.size() || m_bodies[_body].vertexCount == 0)
+  const std::uint32_t body = m_bodySlots.SlotOf(_body);
+  if (body == HandleStore::INVALID_SLOT || m_bodies[body].vertexCount == 0)
     return;
 
-  const GpuMesh& mesh = m_bodies[_body];
+  const GpuMesh& mesh = m_bodies[body];
   const std::uint64_t bytes = static_cast<std::uint64_t>(mesh.vertexCount) * sizeof(FxVertex);
 
   GpuPtr<ID3D12Resource> readback;
@@ -530,14 +530,54 @@ BodyHandle BodyRenderer::UploadBody(GpuDevice& _gpu, std::span<const FxVertex> _
   mesh.vertexCount = static_cast<std::uint32_t>(_verts.size());
 
   m_staging.push_back(std::move(staging));
-  m_bodies.push_back(std::move(mesh));
-  return static_cast<BodyHandle>(m_bodies.size() - 1);
+  return Place(std::move(mesh));
+}
+
+// Takes a slot for a finished body and puts it there. One place, because both producers -- the
+// compute bake and the CPU upload -- end here and a second copy of this would be the one that
+// forgot to grow the array (ADR 0044).
+BodyHandle BodyRenderer::Place(GpuMesh&& _mesh)
+{
+  const HandleStore::Allocation slot = m_bodySlots.Alloc();
+  if (slot.handle == HandleStore::INVALID_HANDLE)
+  {
+    DebugTrace("body store is full; this body is not drawn\n");
+    return INVALID_BODY;
+  }
+  if (slot.slot >= m_bodies.size())
+    m_bodies.resize(slot.slot + 1);
+  m_bodies[slot.slot] = std::move(_mesh);
+  return slot.handle;
+}
+
+bool BodyRenderer::FreeBody(BodyHandle _body) noexcept
+{
+  const std::uint32_t slot = m_bodySlots.Free(_body);
+  if (slot == HandleStore::INVALID_SLOT)
+    return false;
+  m_retired.push_back(std::move(m_bodies[slot].vb));
+  m_bodies[slot] = GpuMesh{};
+  return true;
+}
+
+void BodyRenderer::FreeAllBodies() noexcept
+{
+  m_bodySlots.FreeAll(
+    [this](std::uint32_t _slot)
+    {
+      m_retired.push_back(std::move(m_bodies[_slot].vb));
+      m_bodies[_slot] = GpuMesh{};
+    });
 }
 
 void BodyRenderer::DiscardStaging() noexcept
 {
   m_staging.clear();
   m_bakeHeaps.clear();
+  // Retired buffers go with the staging ones and for the same reason: both are resources the GPU
+  // may still have been reading when the caller let go of them, and this is the call that says the
+  // bracket has run.
+  m_retired.clear();
   m_outlineStaging = nullptr;
   m_planetStaging = nullptr;
 }
@@ -583,10 +623,11 @@ void BodyRenderer::DrawPlanet(GpuDevice& _gpu, BodyHandle _body, const XMFLOAT4X
 
 void BodyRenderer::Draw(GpuDevice& _gpu, ID3D12PipelineState* _pso, BodyHandle _body, const XMFLOAT4X4& _world, std::uint32_t _srvSlot)
 {
-  if (_body >= m_bodies.size() || m_bodies[_body].vertexCount == 0)
+  const std::uint32_t body = m_bodySlots.SlotOf(_body);
+  if (body == HandleStore::INVALID_SLOT || m_bodies[body].vertexCount == 0)
     return;
 
-  const GpuMesh& mesh = m_bodies[_body];
+  const GpuMesh& mesh = m_bodies[body];
 
   // BeginFrame has bound both of these already, so today this is a restatement. The text overlay's
   // Flush rebinds the target *without* depth, and the day the passes are reordered this is what
