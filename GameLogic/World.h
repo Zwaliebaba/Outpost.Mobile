@@ -47,6 +47,13 @@ struct DespawnRecord
 // the view stops holding a reference to it (AGENTS.md 2).
 class World
 {
+  // The state codec reads and writes every field below, which is what a save and a shard handoff
+  // are made of. A friendship naming two functions is a targeted, reviewable grant; the alternative
+  // is thirty accessors that exist for one caller and widen this class's surface for every other
+  // caller forever (Design/Archive/WorldState-work-order.md 2.3).
+  friend void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes);
+  friend bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld);
+
 public:
   // What one ship's standing patrol is. The anchor is a handle rather than a position so that the
   // station's death ends the patrol instead of leaving three ships solemnly orbiting the site of a

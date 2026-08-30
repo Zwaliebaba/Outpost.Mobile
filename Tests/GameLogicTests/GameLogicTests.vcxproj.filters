@@ -77,6 +77,9 @@
     <ClCompile Include="SpatialIndexTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="WorldStateTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="WorldTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

@@ -64,6 +64,13 @@ constexpr std::uint32_t LEAVE_HEADER_BYTES = 1 + 8 + 4 + 4 + 4;
 constexpr std::uint32_t SHIP_RECORD_BYTES = 8 + 8 + 4 + 4 + 4 + 12 + 1 + 1 + 1 + 4;
 // kind, orderId, hasFacing, facingRad, destination, handleCount
 constexpr std::uint32_t ORDER_HEADER_BYTES = 1 + 4 + 1 + 4 + 24 + 4;
+// The saved state's magic and format byte. Not a KIND_* value: a state buffer is not a datagram and
+// never meets SnapshotReceiver::Accept, so the magic is what turns feeding it to one into a refusal
+// rather than a misread. The format byte is what makes a disagreement between two builds a refusal
+// too -- there is nothing to migrate from yet, and a version nobody checks is a version nobody has.
+constexpr std::uint32_t WORLD_STATE_MAGIC = 0x54535750u; // 'PWST' little-endian: Persisted World STate
+constexpr std::uint8_t WORLD_STATE_FORMAT = 1;
+
 // An EntityId is a u64, which is exactly what a {slot, generation} pair cost. So identity became
 // global for no bytes at all: the ship record stays 47, a fragment stays 23 ships, and the order cap
 // stays 139 (ADR 0047).
@@ -258,6 +265,19 @@ public:
     U64(_entity);
   }
 
+  void Bool(bool _value)
+  {
+    U8(_value ? std::uint8_t{1} : std::uint8_t{0});
+  }
+
+  // Not on the wire any more -- identity replaced it there (ADR 0047) -- but a saved world is an
+  // image of one process, and a handle is what that process's tables are keyed by.
+  void Handle(ShipHandle _handle)
+  {
+    U32(_handle.slot);
+    U32(_handle.generation);
+  }
+
 private:
   std::vector<std::uint8_t>* m_out;
 };
@@ -353,6 +373,19 @@ public:
   EntityId Entity()
   {
     return U64();
+  }
+
+  bool Bool()
+  {
+    return U8() != 0;
+  }
+
+  ShipHandle Handle()
+  {
+    ShipHandle handle;
+    handle.slot = U32();
+    handle.generation = U32();
+    return handle;
   }
 
 private:
@@ -774,6 +807,378 @@ void SnapshotReceiver::Apply()
     if (!found)
       m_latest.ships.push_back(ship);
   }
+}
+
+// --- the state codec ------------------------------------------------------------------------------
+//
+// Everything Step READS is written; everything Step DERIVES is rebuilt from what was. The derived
+// list is the spatial index (rebuilt from prevPos on every tick anyway), the path islands (rebuilt
+// here at load time, for the reason below), the neighbourhood extent, every scratch vector, and the
+// two candidate counters, which are readouts and not inputs
+// (Design/Archive/WorldState-work-order.md 2).
+
+namespace
+{
+// One ship's simulation state, all fifteen fields -- including the five WorldSnapshot deliberately
+// withholds, which is the whole reason this codec had to exist beside it rather than reuse it.
+void WriteShipState(ByteWriter& _out, const ShipState& _ship)
+{
+  _out.Pos(_ship.posWorld);
+  _out.F32(_ship.headingRad);
+  _out.F32(_ship.speed);
+  _out.F32(_ship.turnRateRadPerSec);
+  _out.Pos(_ship.prevPos);
+  _out.F32(_ship.prevHeading);
+  _out.U8(static_cast<std::uint8_t>(_ship.order));
+  _out.Pos(_ship.steerTargetPos);
+  _out.F32(_ship.orderFacingRad);
+  _out.Bool(_ship.orderHasFacing);
+  _out.F32(_ship.orderSpeedCapMetresPerSec);
+  _out.F32(_ship.avoidHeadingRad);
+  _out.F32(_ship.accelSample);
+  _out.U32(_ship.hullId);
+  _out.U8(_ship.factionId);
+}
+
+void ReadShipState(ByteReader& _in, ShipState& _outShip)
+{
+  _outShip.posWorld = _in.Pos();
+  _outShip.headingRad = _in.F32();
+  _outShip.speed = _in.F32();
+  _outShip.turnRateRadPerSec = _in.F32();
+  _outShip.prevPos = _in.Pos();
+  _outShip.prevHeading = _in.F32();
+  _outShip.order = static_cast<OrderState>(_in.U8());
+  _outShip.steerTargetPos = _in.Pos();
+  _outShip.orderFacingRad = _in.F32();
+  _outShip.orderHasFacing = _in.Bool();
+  _outShip.orderSpeedCapMetresPerSec = _in.F32();
+  _outShip.avoidHeadingRad = _in.F32();
+  _outShip.accelSample = _in.F32();
+  _outShip.hullId = _in.U32();
+  _outShip.factionId = _in.U8();
+}
+} // namespace
+
+void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes)
+{
+  _outBytes.clear();
+  ByteWriter out(_outBytes);
+  out.U32(WORLD_STATE_MAGIC);
+  out.U8(WORLD_STATE_FORMAT);
+
+  out.U64(_world.m_tick);
+  out.U16(_world.m_shard);
+  out.U64(_world.m_nextEntitySerial);
+  out.U64(_world.m_despawnBase);
+
+  // The standings, row by row and with no count: FACTION_LIMIT is a compile-time constant on both
+  // ends, and a build that disagreed about it would have failed the format byte first.
+  for (std::uint32_t owner = 0; owner < FACTION_LIMIT; ++owner)
+  {
+    for (std::uint32_t other = 0; other < FACTION_LIMIT; ++other)
+      out.U8(static_cast<std::uint8_t>(_world.m_standings.rows[owner][other]));
+  }
+
+  const std::uint32_t shipCount = static_cast<std::uint32_t>(_world.m_ships.size());
+  out.U32(shipCount);
+  for (const ShipState& ship : _world.m_ships)
+    WriteShipState(out, ship);
+
+  // The four tables parallel to m_ships, in the same order, so none of them carries a count of its
+  // own: they are the same length as m_ships by construction and a length that disagreed would be a
+  // defect this format cannot express.
+  const std::uint32_t currentVersion = _world.m_pathIslands.Version();
+  for (const World::Route& route : _world.m_routes)
+  {
+    out.U32(route.count);
+    // Only the live waypoints. Entries past `count` are whatever a longer route left behind, they
+    // are never read, and writing them would make two worlds that behave identically compare
+    // unequal (work order 2.2).
+    for (std::uint32_t at = 0; at < route.count; ++at)
+      out.Pos(route.waypoint[at]);
+    out.Pos(route.destination);
+    out.Pos(route.legStart);
+    out.F32(route.requiredClearanceMetres);
+    out.U32(route.cursor);
+    // Arrived with ADR 0042, after this codec's first branch: the ticks a ship has pushed against a
+    // wall toward this route's point. Left out, a reload would reset every blocked counter and the
+    // replayed world would end orders on different ticks than the run that saved it.
+    out.U32(route.blockedTicks);
+    // Whether it was planned against the architecture as it stands -- not the number that says so.
+    // A grid version is an epoch counter with no meaning outside the run that produced it, and a
+    // loaded world's islands get whatever number their rebuild produces (work order 2.1).
+    out.Bool(route.gridVersion == currentVersion);
+    out.Bool(route.reachesDestination);
+  }
+
+  for (const World::Patrol& patrol : _world.m_patrols)
+  {
+    out.Handle(patrol.anchor);
+    out.F32(patrol.ringRadiusMetres);
+    out.F32(patrol.cruiseSpeedMetresPerSec);
+    out.U32(patrol.waypointIndex);
+    out.Bool(patrol.active);
+  }
+
+  for (const World::Docking& docking : _world.m_dockings)
+  {
+    out.Handle(docking.station);
+    out.Bool(docking.active);
+  }
+
+  for (const World::ProtectorDuty& duty : _world.m_protectors)
+  {
+    out.U32(duty.home);
+    out.Handle(duty.target);
+    out.Bool(duty.active);
+  }
+
+  // The slot table, which is what makes every handle in the four tables above still mean something
+  // after a reload. m_shipSlot and m_entityRows are both inverses of it and are rebuilt rather than
+  // written, so there is one statement of this relation in the file and not three.
+  out.U32(static_cast<std::uint32_t>(_world.m_slots.size()));
+  for (const World::Slot& slot : _world.m_slots)
+  {
+    out.U32(slot.ship);
+    out.U32(slot.generation);
+    out.Entity(slot.entity);
+  }
+
+  // In order: reuse is last-in-first-out and the order is the reproduction.
+  out.U32(static_cast<std::uint32_t>(_world.m_freeSlots.size()));
+  for (const std::uint32_t slot : _world.m_freeSlots)
+    out.U32(slot);
+
+  out.U32(static_cast<std::uint32_t>(_world.m_despawnLog.size()));
+  for (const DespawnRecord& record : _world.m_despawnLog)
+  {
+    out.Handle(record.handle);
+    out.Entity(record.entity);
+    out.U8(static_cast<std::uint8_t>(record.cause));
+  }
+
+  out.U32(static_cast<std::uint32_t>(_world.m_stations.size()));
+  for (const World::Station& station : _world.m_stations)
+  {
+    out.Handle(station.structure);
+    out.U8(station.ownerFaction);
+    out.U32(station.protectorHullId);
+    out.U32(station.protectorComplement);
+    out.U32(station.launchEveryTicks);
+    out.U32(station.targetCap);
+    out.U32(station.launchCooldownTicks);
+    out.U32(static_cast<std::uint32_t>(station.targets.size()));
+    for (const ShipHandle target : station.targets)
+      out.Handle(target);
+    out.U32(static_cast<std::uint32_t>(station.docked.size()));
+    for (const World::DockedShip& docked : station.docked)
+    {
+      out.U32(docked.hullId);
+      out.U8(docked.factionId);
+    }
+  }
+}
+
+bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
+{
+  ByteReader in(_bytes);
+  if (in.U32() != WORLD_STATE_MAGIC || in.U8() != WORLD_STATE_FORMAT)
+    return false;
+
+  const std::uint64_t tick = in.U64();
+  const ShardId shard = static_cast<ShardId>(in.U16());
+  const std::uint64_t nextSerial = in.U64();
+  const std::uint64_t despawnBase = in.U64();
+
+  StandingTable standings{};
+  for (std::uint32_t owner = 0; owner < FACTION_LIMIT; ++owner)
+  {
+    for (std::uint32_t other = 0; other < FACTION_LIMIT; ++other)
+      standings.rows[owner][other] = static_cast<Standing>(in.U8());
+  }
+  if (!in.Ok())
+    return false;
+
+  // Everything below is read into locals and moved into _outWorld only once the whole buffer has
+  // been read and checked. That is what "fails closed" means here: a truncation on the last station
+  // cannot leave a world half replaced, with nothing saying which half (AGENTS.md 5).
+  //
+  // Every count is checked against what is actually left before it is used to size anything, so a
+  // hostile or corrupt length asks for one allocation of a bounded size rather than a huge one. The
+  // smallest record in this format is a byte, so Remaining() is a sound bound on every count.
+  const std::uint32_t shipCount = in.U32();
+  if (!in.Ok() || shipCount > in.Remaining())
+    return false;
+
+  std::vector<ShipState> ships(shipCount);
+  for (ShipState& ship : ships)
+    ReadShipState(in, ship);
+
+  std::vector<World::Route> routes(shipCount);
+  for (World::Route& route : routes)
+  {
+    route.count = in.U32();
+    if (!in.Ok() || route.count > MAX_PATH_WAYPOINTS)
+      return false;
+    for (std::uint32_t at = 0; at < route.count; ++at)
+      route.waypoint[at] = in.Pos();
+    route.destination = in.Pos();
+    route.legStart = in.Pos();
+    route.requiredClearanceMetres = in.F32();
+    route.cursor = in.U32();
+    route.blockedTicks = in.U32();
+    // Held as the relation it was written as; the number it becomes is filled in below, once the
+    // islands this world will actually route against have been rebuilt.
+    route.gridVersion = in.Bool() ? 1u : 0u;
+    route.reachesDestination = in.Bool();
+    if (!in.Ok() || route.cursor > route.count)
+      return false;
+  }
+
+  std::vector<World::Patrol> patrols(shipCount);
+  for (World::Patrol& patrol : patrols)
+  {
+    patrol.anchor = in.Handle();
+    patrol.ringRadiusMetres = in.F32();
+    patrol.cruiseSpeedMetresPerSec = in.F32();
+    patrol.waypointIndex = in.U32();
+    patrol.active = in.Bool();
+  }
+
+  std::vector<World::Docking> dockings(shipCount);
+  for (World::Docking& docking : dockings)
+  {
+    docking.station = in.Handle();
+    docking.active = in.Bool();
+  }
+
+  std::vector<World::ProtectorDuty> protectors(shipCount);
+  for (World::ProtectorDuty& duty : protectors)
+  {
+    duty.home = in.U32();
+    duty.target = in.Handle();
+    duty.active = in.Bool();
+  }
+  if (!in.Ok())
+    return false;
+
+  const std::uint32_t slotCount = in.U32();
+  if (!in.Ok() || slotCount > in.Remaining())
+    return false;
+  std::vector<World::Slot> slots(slotCount);
+  for (World::Slot& slot : slots)
+  {
+    slot.ship = in.U32();
+    slot.generation = in.U32();
+    slot.entity = in.Entity();
+    // A slot naming a ship that is not there would make HandleOf and Resolve disagree, which is the
+    // one corruption that shows up as a ship steering somebody else's order rather than as a crash.
+    if (!in.Ok() || (slot.ship != INVALID_SHIP_ID && slot.ship >= shipCount))
+      return false;
+  }
+
+  const std::uint32_t freeCount = in.U32();
+  if (!in.Ok() || freeCount > in.Remaining())
+    return false;
+  std::vector<std::uint32_t> freeSlots(freeCount);
+  for (std::uint32_t& slot : freeSlots)
+  {
+    slot = in.U32();
+    if (!in.Ok() || slot >= slotCount)
+      return false;
+  }
+
+  const std::uint32_t despawnCount = in.U32();
+  if (!in.Ok() || despawnCount > in.Remaining())
+    return false;
+  std::vector<DespawnRecord> despawnLog(despawnCount);
+  for (DespawnRecord& record : despawnLog)
+  {
+    record.handle = in.Handle();
+    record.entity = in.Entity();
+    record.cause = static_cast<DespawnCause>(in.U8());
+  }
+
+  const std::uint32_t stationCount = in.U32();
+  if (!in.Ok() || stationCount > in.Remaining())
+    return false;
+  std::vector<World::Station> stations(stationCount);
+  for (World::Station& station : stations)
+  {
+    station.structure = in.Handle();
+    station.ownerFaction = in.U8();
+    station.protectorHullId = in.U32();
+    station.protectorComplement = in.U32();
+    station.launchEveryTicks = in.U32();
+    station.targetCap = in.U32();
+    station.launchCooldownTicks = in.U32();
+
+    const std::uint32_t targetCount = in.U32();
+    if (!in.Ok() || targetCount > in.Remaining())
+      return false;
+    station.targets.resize(targetCount);
+    for (ShipHandle& target : station.targets)
+      target = in.Handle();
+
+    const std::uint32_t dockedCount = in.U32();
+    if (!in.Ok() || dockedCount > in.Remaining())
+      return false;
+    station.docked.resize(dockedCount);
+    for (World::DockedShip& docked : station.docked)
+    {
+      docked.hullId = in.U32();
+      docked.factionId = in.U8();
+    }
+  }
+
+  if (!in.Ok())
+    return false;
+
+  // Committed, and not before. From here nothing can fail.
+  _outWorld.m_tick = tick;
+  _outWorld.m_shard = shard;
+  _outWorld.m_nextEntitySerial = nextSerial;
+  _outWorld.m_despawnBase = despawnBase;
+  _outWorld.m_standings = standings;
+  _outWorld.m_ships = std::move(ships);
+  _outWorld.m_routes = std::move(routes);
+  _outWorld.m_patrols = std::move(patrols);
+  _outWorld.m_dockings = std::move(dockings);
+  _outWorld.m_protectors = std::move(protectors);
+  _outWorld.m_slots = std::move(slots);
+  _outWorld.m_freeSlots = std::move(freeSlots);
+  _outWorld.m_despawnLog = std::move(despawnLog);
+  _outWorld.m_stations = std::move(stations);
+
+  // The two inverses of the slot table, rebuilt rather than read. m_entityRows is sorted by id
+  // because that is the invariant its binary search rests on, and building it by walking the slots
+  // in order and sorting once is cheaper and harder to get wrong than inserting one at a time.
+  _outWorld.m_shipSlot.assign(_outWorld.m_ships.size(), 0);
+  _outWorld.m_entityRows.clear();
+  for (std::uint32_t slot = 0; slot < _outWorld.m_slots.size(); ++slot)
+  {
+    const World::Slot& entry = _outWorld.m_slots[slot];
+    if (entry.ship == INVALID_SHIP_ID)
+      continue;
+    _outWorld.m_shipSlot[entry.ship] = slot;
+    _outWorld.m_entityRows.push_back(World::EntityRow{entry.entity, slot});
+  }
+  std::sort(_outWorld.m_entityRows.begin(), _outWorld.m_entityRows.end(),
+            [](const World::EntityRow& _a, const World::EntityRow& _b) { return _a.entity < _b.entity; });
+
+  // The architecture, rebuilt here rather than on the first Step. It has to be here: the routes
+  // above were written as "current" or "stale" and the number that says which is whatever this
+  // rebuild produces, so a rebuild that happened one tick later would bump the version under every
+  // route just marked current and re-plan the lot (work order 2.1).
+  _outWorld.m_staticIndexDirty = true;
+  _outWorld.RebuildStaticIfDirty();
+
+  const std::uint32_t currentVersion = _outWorld.m_pathIslands.Version();
+  for (World::Route& route : _outWorld.m_routes)
+    route.gridVersion = (route.gridVersion != 0) ? currentVersion : currentVersion - 1u;
+
+  return true;
 }
 
 bool WriteMoveOrder(const MoveOrder& _order, Neuron::Transport& _transport)
