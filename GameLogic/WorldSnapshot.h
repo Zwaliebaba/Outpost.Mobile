@@ -302,6 +302,24 @@ private:
   bool m_hasSnapshot = false;
 };
 
+// The authoritative state, as against the view of it.
+//
+// A snapshot exists to WITHHOLD -- steerTargetPos, the order's facing and speed cap, the avoidance
+// heading, and every intent table beside m_ships -- so the snapshot path structurally cannot carry a
+// save or a handoff, and until now nothing else could either (Design/MmoScalabilityReview.md U3).
+// These two carry all of it, at full fidelity: this is a save, so the wire's 0.125 m lattice and its
+// turns16 have no business here and every position is a whole WorldPos.
+//
+// What is written and what is rebuilt is argued in Design/Archive/WorldState-work-order.md 2. The
+// short version: everything Step READS is written, and everything Step DERIVES -- the spatial index,
+// the path islands, the neighbourhood extent, every scratch vector -- is rebuilt from what was.
+//
+// Read refuses and changes nothing on a buffer that is truncated, that carries the wrong magic, or
+// that carries a format byte this build does not know. It never throws and never asserts, which is
+// AGENTS.md 5's rule for anything parsing content and the discipline SnapshotReceiver already keeps.
+void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes);
+[[nodiscard]] bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld);
+
 // Orders travel the other way. Written by the client half, read and applied by the server half.
 [[nodiscard]] bool WriteMoveOrder(const MoveOrder& _order, Neuron::Transport& _transport);
 [[nodiscard]] bool ReadMoveOrder(std::span<const std::uint8_t> _datagram, MoveOrder& _outOrder);

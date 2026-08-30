@@ -1,15 +1,17 @@
 # The MMO scalability plan — the review as slices
 
-**Status: sixteen of the twenty-four slices have landed.** The seam: 2 (the despawn log is
+**Status: seventeen of the twenty-four slices have landed.** The seam: 2 (the despawn log is
 cursored), 3 with 4 folded into it (the publisher), 5 and 6 (the reliable lane, and departures and
 orders on it, which retires finding E1), 7 (listener slots recycled), and the loopback fallback is
 gone (ADR 0028). The view: 8 (trail and glow batching), 9 (frustum culling), 10 (hull instancing).
 The simulation: 11 (a localized gather radius), 13 (churn-gated static rebuilds), and 14 — all four
 slices of its own design, so architecture is islands on a world-fixed lattice and the 16.4 km cliff
 is gone. The tree: 21 (the guards widened) and 22 (the dead helper deleted). Slice 12 was decided
-rather than built: 60 Hz stays. Phase 3 has opened with 15 and 16: the ship record is 47 bytes and
-a fragment carries 23 of them instead of 13, and an entity has an identity that outlives the World
-that minted it. **What is left is slices 17 through 20, plus 23 and 24.**
+rather than built: 60 Hz stays. Phase 3 has opened with 15 and 16 -- the ship record is 47 bytes
+and a fragment carries 23 of them instead of 13, and an entity has an identity that outlives the
+World that minted it -- and slice 17 closes its simulation half: a world can be written out, read
+back and replayed to byte equality, which is the gate this tree has been promising itself since
+Collision.md. **What is left is slices 18 through 20, plus 23 and 24.**
 This design converts [`MmoScalabilityReview.md`](MmoScalabilityReview.md)
 (tree at `de12b6d`) into an ordered slice plan in the shape `Design/README.md` defines: one slice,
 one branch, one pull request. The review is the evidence; this document is the work. Where a slice
@@ -154,7 +156,7 @@ Findings reference `MmoScalabilityReview.md`.
 | 14 | Regional pathfinding | `GameLogic` | L | 13 | U1 | ADR | landed, all four slices of [its design](Archive/RegionalPathfinding.md) |
 | 15 | The quantized wire | `GameLogic` | M | 6 | E5 | ADR | [landed](Archive/QuantizedWire-work-order.md) |
 | 16 | Global entity identity | `GameLogic` | M | 15 | U3 | ADR | [landed](Archive/EntityIdentity-work-order.md) |
-| 17 | The state codec and the replay gate | `GameLogic` | M | 16 | U3 |  |  |
+| 17 | The state codec and the replay gate | `GameLogic` | M | 16 | U3 |  | [landed](Archive/WorldState-work-order.md) |
 | 18 | Copy-queue uploader, store eviction | `NeuronClient` | M | 10 | G3 | ADR |  |
 | 19 | Compressed textures, descriptor allocator | `NeuronClient` | M | 18 | G4 |  |  |
 | 20 | Body LOD and culling completion | `NeuronClient` | M | 9 | G5 |  |  |
@@ -617,6 +619,48 @@ review verified nothing resists this), slice 16's ids.
 **Acceptance.** Save→load→replay equality, every field, every tick, in the suite; AGENTS.md §8's
 "replay-equality test" checklist line becomes literally true and Collision.md's admission is
 updated in the same commit.
+
+**As landed.** `WriteWorldState`/`ReadWorldState` sit beside the snapshot functions and reach every
+private field of `World` through two `friend` declarations — a targeted grant naming two functions,
+against thirty accessors that would exist for one caller and widen the class for every other one
+forever. Work order: [`WorldState-work-order.md`](Archive/WorldState-work-order.md).
+
+**What is written and what is rebuilt** is the design of the slice. Everything `Step` reads is
+written; everything it derives — the spatial index, the path islands, the neighbourhood extent,
+every scratch vector, the two candidate counters — is rebuilt from what was. `m_shipSlot` and
+`m_entityRows` are both inverses of the slot table and are rebuilt too, so the file states that
+relation once rather than three times.
+
+**Two things had to be handled rather than serialized**, and both would have been silent:
+
+- **A route's grid version is written as a relation, not a number.** It is an epoch counter with no
+  meaning outside the run that produced it, so the codec writes *whether the route was current* and
+  the loader fills in the number its own rebuild produced. And the island rebuild has to happen
+  during the load, not on the first `Step` — otherwise that first tick bumps the version under every
+  route just marked current, and every routed ship re-plans on the tick after a reload and on no
+  other. Both mutations were tried and both go red.
+- **The free-slot list is written in order.** Reuse is last-in-first-out, so the order *is* the
+  reproduction; a rebuilt list puts the next ship in a different slot.
+
+**The gate compares state, not a field list.** The test saves at tick T, reloads into a fresh
+`World`, steps both 300 ticks comparing every pose on every tick, and then writes both states and
+asserts the bytes are equal. The second half is what fails the day somebody adds a field to `World`
+that `Step` reads and forgets the codec — it needs no list to keep in step with. AGENTS.md §8 gained
+a checklist line saying exactly that.
+
+**The gate was measured against itself.** Eight deliberate defects were introduced into the codec
+one at a time and the suite re-run: a dropped `avoidHeadingRad`, reset standings, routes marked
+always-current, the island rebuild deferred a tick, a dropped free-slot list, a dropped station
+ledger, a dropped patrol waypoint index, and a dropped protector duty. **Six went red immediately;
+two did not, and both were holes in the test rather than in the codec** — the free-slot order was
+never asked for after a reload, and the ledger comparison was two empty lists because nothing in the
+scene had finished docking. Both are closed, and both mutations now go red. A gate that has not been
+made to fail is a gate nobody has checked.
+
+**Collision.md is not edited.** `Design/README.md` says a design is never rewritten to match what
+was built — "where the code diverged, the decision record says so and the design keeps its
+argument" — and its §14 is an argument, not a status line. This acceptance sentence predates the
+move to `Archive/`, exactly as slice 15's `AGENTS.md` R6 sentence did.
 
 #### Slice 18 — copy-queue uploader and store eviction (`NeuronClient`, M + ADR)
 

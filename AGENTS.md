@@ -726,8 +726,13 @@ configurations you built.
       server do not name each other, nothing names the executable, and no graphics header reaches
       NeuronCore or NeuronServer.
 - [ ] No `argv`, no environment reads, no `XMVECTOR` stored in a struct or container, no `RH` call.
-- [ ] GameLogic touched? The replay-equality test in `GameLogicTests` still passes, and nothing you
+- [ ] GameLogic touched? Both replay gates in `GameLogicTests` still pass — the four same-process
+      rerun rows (`TheSameOrderProducesTheSameRun` and its siblings) and `WorldStateTests`, which
+      saves a world, reloads it into a fresh one and replays both to byte equality — and nothing you
       added reads a clock, draws unseeded randomness, or keys on a pointer.
+- [ ] Added a field to `World` that `Step` reads? `WriteWorldState` carries it, or `ReadWorldState`
+      rebuilds it. `WorldStateTests::ASavedWorldReplaysToTheSameRun` compares two whole states and
+      goes red if neither happened.
 - [ ] New engine setting? It is MSVC-native (§6) — literal, per `Configuration|Platform`, no
       custom MSBuild — and it went into all nine `.vcxproj` files identically, for every
       configuration, with `python Build/CheckProjectFiles.py` agreeing.
