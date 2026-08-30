@@ -266,6 +266,13 @@ void Hud::DrawDebug(TextRenderer& _text, const Layout& _layout, const Frame& _fr
   width = advance * static_cast<float>(std::strlen(line));
   _text.DrawTextLine(FontId::Ui, (static_cast<float>(_widthPx) - width) * 0.5f, top + lineHeight * 2.0f, HUD_TEXT_SCALE * s,
                      HUD_LABEL_COLOUR, line);
+
+  // The router. DECLINED is the one number here that is not a curiosity: an island that refused to
+  // build routes nothing and looks like open space, so this is where it says so.
+  std::snprintf(line, sizeof(line), "ISLANDS %u%sDECLINED %u", _frame.stats.pathIslandCount, SEPARATOR, _frame.stats.pathIslandsDeclined);
+  width = advance * static_cast<float>(std::strlen(line));
+  _text.DrawTextLine(FontId::Ui, (static_cast<float>(_widthPx) - width) * 0.5f, top + lineHeight * 3.0f, HUD_TEXT_SCALE * s,
+                     HUD_LABEL_COLOUR, line);
 }
 
 void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view,

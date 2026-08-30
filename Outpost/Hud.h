@@ -49,6 +49,12 @@ public:
     // nothing both look exactly like a working one until you count.
     std::uint32_t submittedCount = 0;
     std::uint32_t culledCount = 0;
+    // The router (Design/RegionalPathfinding.md 3.3). An island that refused to build is the one
+    // failure here that looks exactly like success: every route through it is a straight line and
+    // every ship crossing it steers locally, which is what the world looked like before there was a
+    // planner at all. DECLINED above zero is the only thing that says so.
+    std::uint32_t pathIslandCount = 0;
+    std::uint32_t pathIslandsDeclined = 0;
   };
 
   // The rail's icons, which are the images the composition root lists in TextRenderer::Desc, in

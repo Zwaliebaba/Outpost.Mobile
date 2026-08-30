@@ -89,6 +89,7 @@ void PathGrid::Rebuild(std::span<const Obstacle> _obstacles)
   m_clearance.clear();
   m_width = 0;
   m_height = 0;
+  m_declined = false;
   if (_obstacles.empty())
     return;
 
@@ -134,7 +135,13 @@ void PathGrid::Rebuild(std::span<const Obstacle> _obstacles)
   // phase -- straight-line steering with local avoidance -- and one grid per island of architecture
   // is what will bound this properly (Design/RegionalPathfinding.md 3.3).
   if (width > PATH_GRID_MAX_CELLS_PER_AXIS || height > PATH_GRID_MAX_CELLS_PER_AXIS)
+  {
+    // Recorded, because a grid that declined is indistinguishable from one holding nothing: both
+    // call every run clear. Whoever owns this grid can say so rather than leaving the ships it stops
+    // planning for to be the first sign (Design/RegionalPathfinding.md 3.3).
+    m_declined = true;
     return;
+  }
 
   m_width = static_cast<std::uint32_t>(width);
   m_height = static_cast<std::uint32_t>(height);
@@ -183,17 +190,18 @@ float PathGrid::ClearanceAt(const WorldPos& _pos) const noexcept
 
 bool PathGrid::IsClearBetween(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres) const
 {
-  return FirstBlockedFraction(_from, _to, _requiredClearanceMetres) > 1.0f;
+  return BlockedAlong(_from, _to, _requiredClearanceMetres).first > 1.0f;
 }
 
-float PathGrid::FirstBlockedFraction(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres) const
+PathGrid::BlockedSpan PathGrid::BlockedAlong(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres) const
 {
   // Greater than one, rather than any particular value: a caller compares it against one to ask
   // "clear?" and against another grid's answer to ask "which first?", and both work as long as a
   // clear run sorts after every blocked one.
   constexpr float NEVER = 2.0f;
+  BlockedSpan blocked{.first = NEVER, .last = NEVER};
   if (m_clearance.empty())
-    return NEVER;
+    return blocked;
 
   // Half a cell per step, so nothing can be stepped over: the clearance field varies over a cell,
   // and sampling at cell spacing would walk straight through the corner of a Structure.
@@ -202,10 +210,13 @@ float PathGrid::FirstBlockedFraction(const WorldPos& _from, const WorldPos& _to,
   for (int step = 0; step <= steps; ++step)
   {
     const float along = static_cast<float>(step) / static_cast<float>(steps);
-    if (ClearanceAt(Lerp(_from, _to, along)) < _requiredClearanceMetres)
-      return along;
+    if (ClearanceAt(Lerp(_from, _to, along)) >= _requiredClearanceMetres)
+      continue;
+    if (blocked.first > 1.0f)
+      blocked.first = along;
+    blocked.last = along;
   }
-  return NEVER;
+  return blocked;
 }
 
 bool PathGrid::FindPath(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres, std::vector<WorldPos>& _outWaypoints)

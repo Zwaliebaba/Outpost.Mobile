@@ -434,6 +434,80 @@ public:
     Assert::IsTrue(further > wall, std::format(L"the ship came within {:.1f} m of the second station", further).c_str());
   }
 
+  TEST_METHOD(TheFirstLegOfACrossingReachesPastTheFirstIsland)
+  {
+    // The refinement over simply truncating what the first island planned. A crossing is planned in
+    // the first island only, and its leg is aimed at the open water on the run -- past where the
+    // first island stops blocking it, short of where the next one starts. Truncating instead ends
+    // the route at the last *turn*, because the string-pull stops adding waypoints the moment the
+    // way ahead is clear and the far side is only ever reached by the destination waypoint that has
+    // to be dropped. Measured over 72 crossings from starts all round the first island, the shortest
+    // first leg went from 125 m to 1,484 m (Design/RegionalPathfinding.md 3.4).
+    const float clearance = Game::HullSpecOf(Game::HullId::Corvette).BoundingRadiusMetres() + Game::PATH_CLEARANCE_MARGIN_METRES;
+    const float radius = Game::HullSpecOf(Game::HullId::Structure).BoundingRadiusMetres();
+    const std::vector<Game::PathGrid::Obstacle> inLine = {{Game::LocalPos(0.0f, 0.0f), radius}, {Game::LocalPos(0.0f, 3000.0f), radius}};
+    Game::PathIslands islands;
+    islands.Rebuild(inLine);
+    Assert::AreEqual(size_t{2}, islands.IslandCount(), L"two stations 3 km apart were not two islands");
+
+    const Game::WorldPos from = Game::LocalPos(0.0f, -1500.0f);
+    std::vector<Game::WorldPos> route;
+    Assert::IsFalse(islands.FindPath(from, Game::LocalPos(0.0f, 4500.0f), clearance, route),
+                    L"a route across two islands reported itself finished");
+    Assert::IsTrue(!route.empty(), L"a route across two islands produced no waypoints at all");
+
+    // Past the first station and short of the second, both by a wide margin: the leg is the gap
+    // between them, not a step out of the first one's shadow.
+    const float reached = WorldZ(route.back());
+    Assert::IsTrue(reached > radius * 2.0f, std::format(L"the first leg only reached z = {:.1f} m", reached).c_str());
+    Assert::IsTrue(reached < 3000.0f - radius * 2.0f,
+                   std::format(L"the first leg aimed into the second station at z = {:.1f} m", reached).c_str());
+
+    // And it is a place a ship can be: clear of every island, not merely clear of the first.
+    for (size_t at = 0; at < islands.IslandCount(); ++at)
+      Assert::IsTrue(islands.Island(at).ClearanceAt(route.back()) >= clearance, L"the first leg was aimed at a point inside an island");
+  }
+
+  TEST_METHOD(AnIslandThatDeclinesSaysSoAndLeavesItsNeighbourRouting)
+  {
+    // The per-island ceiling. One grid over everything meant a single distant outpost put the whole
+    // world past PATH_GRID_MAX_CELLS_PER_AXIS; per island, only an island genuinely 16 km across can
+    // do it, and when one does its neighbours keep routing. That is the gain -- and it comes with a
+    // failure that looks exactly like success, because a grid that declined calls every run clear
+    // just as an empty one does. So it is counted (Design/RegionalPathfinding.md 3.3).
+    const float radius = Game::HullSpecOf(Game::HullId::Structure).BoundingRadiusMetres();
+    std::vector<Game::PathGrid::Obstacle> obstacles;
+
+    // A wall of architecture 16.8 km long, each piece close enough to the next to be one island:
+    // 700 m apart leaves a 196 m surface gap, inside IslandGapMetres, so the gap rule welds them.
+    for (int at = 0; at < 25; ++at)
+      obstacles.push_back({Game::LocalPos(static_cast<float>(at) * 700.0f, 0.0f), radius});
+    const std::size_t wallPieces = obstacles.size();
+    // And one station well clear of it, which must be unaffected.
+    obstacles.push_back({Game::LocalPos(-6000.0f, 0.0f), radius});
+
+    Game::PathIslands islands;
+    islands.Rebuild(obstacles);
+    Assert::AreEqual(size_t{2}, islands.IslandCount(), L"the wall and the lone station were not two islands");
+    Assert::AreEqual(size_t{1}, islands.DeclinedCount(), L"a 16.8 km island did not decline, or the lone station did");
+    Assert::IsTrue(wallPieces > 20, L"the wall was built from too few pieces to reach the ceiling");
+
+    const float clearance = Game::HullSpecOf(Game::HullId::Corvette).BoundingRadiusMetres() + Game::PATH_CLEARANCE_MARGIN_METRES;
+    std::vector<Game::WorldPos> route;
+
+    // The neighbour still routes, which is the whole point: before islands, this world had one grid
+    // and it declined, so nothing in it routed at all.
+    Assert::IsTrue(islands.FindPath(Game::LocalPos(-6000.0f, -800.0f), Game::LocalPos(-6000.0f, 800.0f), clearance, route),
+                   L"the route round the lone station did not complete");
+    Assert::IsTrue(route.size() > 1, L"the lone station did not force a route round it");
+
+    // And a run through the declining island is the straight line it was before there was a planner,
+    // which is the honest degradation rather than a refusal to move.
+    Assert::IsTrue(islands.FindPath(Game::LocalPos(5000.0f, -800.0f), Game::LocalPos(5000.0f, 800.0f), clearance, route),
+                   L"a run through a declining island refused");
+    Assert::AreEqual(size_t{1}, route.size(), L"a declining island planned a route it has no grid for");
+  }
+
   TEST_METHOD(ADistantObstacleDoesNotMoveTheCells)
   {
     // The lattice is the world's, not the grid's. Before this, a grid's origin was the corner of the

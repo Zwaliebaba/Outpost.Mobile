@@ -71,11 +71,19 @@ public:
   // both the fast path -- most orders need no plan at all -- and what the string-pull is built on.
   [[nodiscard]] bool IsClearBetween(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres) const;
 
-  // How far along that run the clearance first fails, as a fraction of it, and greater than one when
-  // it never does. IsClearBetween is this compared with one; the fraction itself is what tells a
-  // caller holding several grids which of them the run meets *first*, which is the question a route
-  // across more than one island turns on (Design/RegionalPathfinding.md 3.4).
-  [[nodiscard]] float FirstBlockedFraction(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres) const;
+  // Where along that run this grid blocks it, as fractions of the run: the first sample that fails
+  // the clearance and the last one that does. Both greater than one when it never blocks, so a clear
+  // run sorts after every blocked one and IsClearBetween is `first > 1`.
+  //
+  // Both ends, from one walk, because a caller holding several grids needs both: `first` says which
+  // grid the run meets soonest, and `last` says where it is past that one and can be aimed
+  // (Design/RegionalPathfinding.md 3.4).
+  struct BlockedSpan
+  {
+    float first = 0.0f;
+    float last = 0.0f;
+  };
+  [[nodiscard]] BlockedSpan BlockedAlong(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres) const;
 
   // A route as a short waypoint list. True when the last waypoint is _to itself; false when the
   // route ran out of list before it got there, in which case the last waypoint is the furthest safe
@@ -93,6 +101,16 @@ public:
     return m_version;
   }
 
+  // Whether the last rebuild refused, because the obstacles it was given need more cells on an axis
+  // than PATH_GRID_MAX_CELLS_PER_AXIS allows. A grid that declined behaves exactly like an empty
+  // one -- every run is clear, every route is a straight line -- which is the right degradation and
+  // an indistinguishable one, so it is counted rather than left to be inferred
+  // (Design/RegionalPathfinding.md 3.3).
+  [[nodiscard]] bool Declined() const noexcept
+  {
+    return m_declined;
+  }
+
 private:
   // The cell a position falls in, pulled into the window and flattened. Clamped rather than
   // rejected because a route may start or end outside the grid entirely, and the nearest edge cell
@@ -103,6 +121,7 @@ private:
   std::vector<float> m_clearance; // metres to the nearest obstacle surface, per cell
   std::uint32_t m_width = 0;
   std::uint32_t m_height = 0;
+  bool m_declined = false;
   // Which cells of the world lattice this grid holds, as the index of its south-west one. A grid
   // chooses its window, never where the cells are: store a WorldPos origin instead and the lattice
   // becomes a function of the obstacles, which is the defect this shape exists to remove.

@@ -245,7 +245,7 @@ Four, in dependency order. The first changes no observable behaviour and is wort
 |---|---|---|---|---|---|---|
 | 1 | The lattice is fixed to the world: global cell indices, grids as windows | `GameLogic` | S | — | — | landed |
 | 2 | Islands: cluster the static set, one grid each, `FindPath` picks the island | `GameLogic` | M | 1 | ADR 0034 | landed |
-| 3 | Crossing islands: case 3, and the diagnostic for an island that declines | `GameLogic` | S | 2 | — | |
+| 3 | Crossing islands: case 3, and the diagnostic for an island that declines | `GameLogic` | S | 2 | — | landed |
 | 4 | Dirty-island rebuilds and the benchmark row that shows the cost | `GameLogic` | S | 2 | — | |
 
 **Slice 1 — the fixed lattice. Landed.** `PathCellX`/`PathCellZ`/`PathCellCentre` in `PathGrid.h`
@@ -289,12 +289,30 @@ the far side of the first island, the follower arrives and re-plans, and the cle
 304 m. Seventy-two crossings of three islands from starts all round the first one arrive, none
 stalls, and the whole set runs in 0.8 s.
 
-**Slice 3 — crossing, refined.** What is left of case 3 after slice 2: planning *deliberately* to a
-chosen point on the first island's far side rather than truncating at whatever the string-pull last
-kept, which also removes the one shape slice 2 can be slow in — a start pressed against a wall,
-where the kept waypoint is a cell away and the follower re-plans after 32 m. Plus the diagnostic for
-an island at the ceiling that declines. Acceptance: a route across three islands arrives, in more
-than one plan; an island at the ceiling declines and traces, and its neighbours still route.
+**Slice 3 — crossing, refined. Landed.** The first leg of a crossing is now aimed at the **open
+water on the run**: the midpoint between where the first island stops blocking it and where the next
+one starts. `PathGrid::FirstBlockedFraction` became `BlockedAlong`, returning both ends of the
+blocked span from the same single walk, because a caller holding several grids needs both — `first`
+says which grid the run meets soonest and `last` says where it is past that one and can be aimed.
+
+Truncating what came back was slice 2's shape and it aims short, because the string-pull stops
+adding waypoints the moment the way ahead is clear: the far side is only ever reached by the
+destination waypoint that then has to be dropped, so the route ends at the last *turn*. Measured
+over 72 crossings from starts all round the first island, the shortest first leg goes from **125 m
+to 1,484 m**. Closest approach across the same 72 is unchanged at 283 m against a 251 m capsule, and
+none stalls. Where the two islands overlap along the run — the second starts blocking before the
+first stops — there is no open water on the line to aim at, and slice 2's truncation is kept as the
+fallback.
+
+**An island that declines now says so.** `PathGrid::Declined()` records the ceiling refusal, which
+was previously indistinguishable from holding nothing: both call every run clear. `PathIslands::
+DeclinedCount()` sums it, `World` exposes it, and the F1 readout has an `ISLANDS n DECLINED n` row
+beside the culling counters, for the same reason those are there — a router that quietly stopped
+planning looks exactly like one with nothing to plan around. Checked with a wall of 25 Structures
+700 m apart, one island 16.8 km across: it declines, its DECLINED count is 1, a station 6 km away
+still routes round itself in four waypoints, and a run through the declining island is the straight
+line it was before there was a planner. Under one grid that whole world declined and nothing routed
+at all.
 
 **Slice 4 — dirty islands.** Only islands whose membership changed rebuild. Acceptance: a benchmark
 row showing rebuild cost against island count and obstacle count, beside the 7.9 M figure in §1.2.

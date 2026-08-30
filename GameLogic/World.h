@@ -156,6 +156,20 @@ public:
     return m_extent;
   }
 
+  // How many islands the architecture came to, and how many of those refused to build because a
+  // single island is wider than one grid may be. A declining island keeps its neighbours routing --
+  // that is the whole gain over one grid for the world -- but it is indistinguishable from open
+  // space to everything that reads it, so the count is surfaced rather than left to be inferred from
+  // ships that quietly stopped avoiding things (Design/RegionalPathfinding.md 3.3).
+  [[nodiscard]] std::size_t PathIslandCount() const noexcept
+  {
+    return m_pathIslands.IslandCount();
+  }
+  [[nodiscard]] std::size_t DeclinedPathIslandCount() const noexcept
+  {
+    return m_pathIslands.DeclinedCount();
+  }
+
   // The remaining waypoints of a ship's planned route, current one first. Server-side only: a path
   // is never wire data, and a client sees the resulting motion through snapshots like any other
   // (Design/Archive/Collision.md 12). Exposed for tests and for a debug overlay.

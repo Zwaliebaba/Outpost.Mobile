@@ -150,25 +150,33 @@ bool PathIslands::FindPath(const WorldPos& _from, const WorldPos& _to, float _re
     return true;
   }
 
-  // Which islands the run actually meets, and which of them it meets first. Asking every island is
+  // Where each island blocks the run, and which of them blocks it soonest. Asking every island is
   // right rather than merely simple: an island the run passes clear of answers "never" from its own
   // clearance field, so there is no separate test for "is this island near the line" to disagree
   // with the one that decides the route.
-  std::size_t first = 0;
+  std::size_t first = m_islands.size();
   float firstAt = NEVER_BLOCKED;
+  float firstEndsAt = NEVER_BLOCKED;
+  float nextAt = NEVER_BLOCKED; // where the soonest *other* island starts blocking
   std::size_t met = 0;
   for (std::size_t at = 0; at < m_islands.size(); ++at)
   {
-    const float blocked = m_islands[at].FirstBlockedFraction(_from, _to, _requiredClearanceMetres);
-    if (blocked > 1.0f)
+    const PathGrid::BlockedSpan blocked = m_islands[at].BlockedAlong(_from, _to, _requiredClearanceMetres);
+    if (blocked.first > 1.0f)
       continue;
     ++met;
     // Strictly less, so a tie goes to the earlier island -- and the islands are already in a
     // world-fixed order, which is what makes that a rule and not an accident.
-    if (blocked < firstAt)
+    if (blocked.first < firstAt)
     {
-      firstAt = blocked;
+      nextAt = std::min(nextAt, firstAt); // the one it displaces is now the next
+      firstAt = blocked.first;
+      firstEndsAt = blocked.last;
       first = at;
+    }
+    else
+    {
+      nextAt = std::min(nextAt, blocked.first);
     }
   }
 
@@ -178,21 +186,35 @@ bool PathIslands::FindPath(const WorldPos& _from, const WorldPos& _to, float _re
     return true;
   }
 
-  const bool complete = m_islands[first].FindPath(_from, _to, _requiredClearanceMetres, _outWaypoints);
   if (met == 1)
-    return complete;
+    return m_islands[first].FindPath(_from, _to, _requiredClearanceMetres, _outWaypoints);
 
-  // More than one island in the way. The first one planned as far as it could see and then aimed its
-  // last waypoint at the destination, which is past the second island -- so steering at it would fly
-  // the ship into exactly what the first grid cannot see. Dropping that waypoint ends the route on
-  // the far side of the first island instead; the follower arrives there and World::AdvanceRoute
-  // re-plans, which meets the second island and plans through that. Incremental, and it is the
-  // behaviour the follower already had for a route too long for one waypoint list
-  // (Design/RegionalPathfinding.md 3.4).
+  // More than one island in the way, and no single grid can plan the whole run: the first island
+  // cannot see the second. So the first island plans a leg, and the route reports itself unfinished
+  // -- which is what makes World::AdvanceRoute come back for the rest on arrival, exactly as it
+  // already did for a route too long for one waypoint list (Design/RegionalPathfinding.md 3.4).
   //
-  // Only where there is something left to steer at. A single waypoint is A*'s "walled in with
-  // nowhere to go" answer, and dropping it would leave a route of none at all, which the follower
-  // reads as "not routed" and which would leave the ship standing still.
+  // The leg is aimed at the middle of the open water between the two: past where the first island
+  // stops blocking the run, and short of where the next one starts. Aiming at the destination
+  // instead and truncating whatever came back was the first shape of this, and it ends the route at
+  // the last *turn* rather than past the island -- the string-pull stops adding waypoints once the
+  // way ahead is clear, so the far side is only ever reached by the destination waypoint that has to
+  // be dropped. Measured on two stations 3 km apart, that left the ship 261.8 m from the second one
+  // against a 251.2 m capsule; aiming at the gap leaves 304 m.
+  if (firstEndsAt < nextAt)
+  {
+    const WorldPos openWater = Lerp(_from, _to, (firstEndsAt + nextAt) * 0.5f);
+    (void)m_islands[first].FindPath(_from, openWater, _requiredClearanceMetres, _outWaypoints);
+    return false;
+  }
+
+  // The two islands overlap along the run -- the second starts blocking before the first stops --
+  // so there is no open water on the line to aim at and the midpoint would be inside a wall. Fall
+  // back to the first shape: plan at the destination and drop the waypoint that aims past the second
+  // island. Only where there is something left to steer at, because a single waypoint is A*'s
+  // "walled in with nowhere to go" answer and dropping it would leave a route of none at all, which
+  // the follower reads as "not routed" and which would leave the ship standing still.
+  (void)m_islands[first].FindPath(_from, _to, _requiredClearanceMetres, _outWaypoints);
   if (_outWaypoints.size() > 1)
     _outWaypoints.pop_back();
   return false;

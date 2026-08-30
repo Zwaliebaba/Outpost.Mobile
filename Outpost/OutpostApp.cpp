@@ -599,6 +599,8 @@ void OutpostApp::Render()
   // is the frame whose cost the numbers beside it describe.
   frame.stats.submittedCount = m_view.SubmittedCount();
   frame.stats.culledCount = m_view.CulledCount();
+  frame.stats.pathIslandCount = static_cast<std::uint32_t>(m_world.PathIslandCount());
+  frame.stats.pathIslandsDeclined = static_cast<std::uint32_t>(m_world.DeclinedPathIslandCount());
   frame.showDebug = m_showDebug;
   frame.sector = m_view.WorldPosAt(m_camera.Target().x, m_camera.Target().z);
   frame.hullNames = HULL_NAMES;

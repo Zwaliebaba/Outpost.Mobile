@@ -63,6 +63,22 @@ public:
     return m_islands.size();
   }
 
+  // How many of them refused to build, because a single island is genuinely wider than
+  // PATH_GRID_MAX_CELLS_PER_AXIS allows. Its neighbours keep routing -- that is the whole gain over
+  // one grid -- but ships crossing *it* fall back to straight-line steering, and a declining island
+  // is otherwise indistinguishable from open space. Counted so it can be read off the screen rather
+  // than inferred from ships that stopped avoiding things (Design/RegionalPathfinding.md 3.3).
+  [[nodiscard]] std::size_t DeclinedCount() const noexcept
+  {
+    std::size_t declined = 0;
+    for (const PathGrid& island : m_islands)
+    {
+      if (island.Declined())
+        ++declined;
+    }
+    return declined;
+  }
+
   // The grid over one island, in the world-fixed order Rebuild put them in. For diagnostics and
   // tests; routing goes through FindPath, which is the whole point of the class.
   [[nodiscard]] const PathGrid& Island(std::size_t _at) const noexcept
