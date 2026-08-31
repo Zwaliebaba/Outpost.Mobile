@@ -1,8 +1,9 @@
 # Fleets — composition at a station, five slots, and command at fleet grain
 
-**Status: agreed with the owner on 2026-08-31. Slices 1 and 2 — the table, and compose and launch
-— are written and in review; their work orders are [`Fleets-slice-1.md`](Fleets-slice-1.md) and
-[`Fleets-slice-2.md`](Fleets-slice-2.md).** Four decisions were put to the owner
+**Status: agreed with the owner on 2026-08-31. Slices 1 to 3 — the table, compose and launch, and
+orders at fleet grain — are written and in review; their work orders are
+[`Fleets-slice-1.md`](Fleets-slice-1.md), [`Fleets-slice-2.md`](Fleets-slice-2.md) and
+[`Fleets-slice-3.md`](Fleets-slice-3.md).** Four decisions were put to the owner
 and taken (§15); each was the recommended option. §16 lists the slices and the dependencies between
 them.
 
@@ -883,10 +884,10 @@ whichever slice makes them false.
 |---|---|---|---|---|
 | 1 | **The table**: `Fleet`, `FLEET_SLOTS`/`MAX_FLEET_SHIPS`, the pass skeleton (prune/retire only), codec coverage, `AFleetlessWorldTicksAsToday`, the replay and save gates over the row — *in review*, [work order](Fleets-slice-1.md) | `GameLogic` | — | [fleets are simulation state at fleet grain](Decisions/0048-fleets-are-simulation-state-at-fleet-grain.md) |
 | 2 | **Compose and launch**: `ComposeFleet` + gates, the manifest, the metronome + rally, `FLEET_LAUNCH_EVERY_TICKS`, dismantle-on-dock and retire-on-loss falling out of the prune, their tests — *in review*, [work order](Fleets-slice-2.md) | `GameLogic` | 1 | — |
-| 3 | **Fleet orders**: `FleetOrderKind`, the `FleetOrder` message + `IssueFleetOrder` + lowering, the cruise rule, `Stop`, `Mine` reserved-and-refused, patience, retirement of the ship-list order messages, their tests | `GameLogic` | 2 | orders name a fleet, not ships |
+| 3 | **Fleet orders**: `FleetOrderKind`, the `FleetOrder` message + `IssueFleetOrder` + lowering, the cruise rule, `Stop`, `Attack` and `Mine` reserved-and-refused, patience, their tests — *in review*, [work order](Fleets-slice-3.md). The ship-list messages' retirement moved to slice 6, which is where the client stops sending them | `GameLogic` | 2 | [orders name a fleet, not ships](Decisions/0049-orders-name-a-fleet-not-ships.md) |
 | 4 | **The defense**: `RecordHostileAct`, `HullSpec::combatant`, threat/anchor/alert + the posture, `FLEET_ENGAGE_RANGE_METRES`/`FLEET_ALERT_TICKS`, the ordered attack sharing the chassis, their tests | `GameLogic` | 3 | a fleet reacts to stated acts, at fleet grain (extends ADR 0041) |
 | 5 | **The fleet wire**: `FleetRoster` + join-time delivery, the status block + publish-side centroid, `LedgerRequest`/`LedgerReply` and the `ComposeOrder` that has no use without them (§5.2 — unlisted here until slice 2 placed it), receiver surfaces, their tests | `GameLogic` | 2 (roster), 4 (status bits) | the ledger is asked for, not broadcast — the first request/reply on the wire |
-| 6 | **The fleet bar**: buttons rebound (tap = select + fly-to, hold = sheet stub, glow, counts), selection at fleet grain, `FleetOrder` sending, group machinery and its log lines retired, the boot scene as Fleet 1, F7, minimap fleet digits, screenshots at two sizes | `Outpost` | 3, 5 | — |
+| 6 | **The fleet bar**: buttons rebound (tap = select + fly-to, hold = sheet stub, glow, counts), selection at fleet grain, `FleetOrder` sending, group machinery and its log lines retired, the ship-list order messages retired with them, the boot scene as Fleet 1, F7, minimap fleet digits, screenshots at two sizes | `Outpost` | 3, 5 | — |
 | 7 | **Assembly**: the station long-press, `LedgerRequest` flow, the assembly screen, compose + launch end to end on screen, screenshots | `Outpost` | 5, 6 | — |
 | 8 | **The sheet**: status lines, member rows, the command row + target-tap arming, refusal and alert log lines complete, screenshots of the three states | `Outpost` | 6 (7 for a docked-adjacent demo) | — |
 
