@@ -197,6 +197,11 @@ void WorldView::ApplySnapshot()
   // launched into a selected fleet is ringed the moment its roster arrives, which is what deriving
   // the flag buys over carrying it.
   RefreshSelection();
+  RefreshKnownHulls();
+
+  // After ExplodeTheLost, because it is what set the docked-out flags this reads, and last because
+  // it is the pass that takes the copy of the rosters the next update will attribute against.
+  ReportFleetEvents();
 }
 
 // A ShipView that was not carried is a ship that has left the snapshot, and this is the only place
@@ -229,8 +234,12 @@ void WorldView::ExplodeTheLost(std::uint64_t _tick)
     bool inside = false;
     for (const Game::EntityId gone : docked)
       inside = inside || gone == entity;
-    if (inside && m_carryScratch[at].faction == m_ownFaction)
+    if (!inside)
+      continue;
+    if (m_carryScratch[at].faction == m_ownFaction)
       ++ownDocked;
+
+    NoteFleetDeparture(entity, true);
   }
   if (ownDocked > 0 && m_log != nullptr)
     m_log->PushFormat(EventLog::Severity::Friendly, SimTimeSec(), "DOCKED | %d SHIPS", ownDocked);
@@ -248,6 +257,8 @@ void WorldView::ExplodeTheLost(std::uint64_t _tick)
       died = died || dead == entity;
     if (!died)
       continue; // it left this client's view, which is not a death and never was
+
+    NoteFleetDeparture(entity, false);
 
     const ShipView& lost = m_carryScratch[at];
     // A ship that despawned before it was ever drawn, or whose mesh never loaded, has nowhere to
@@ -439,10 +450,10 @@ const char* WorldView::FleetActivity(int _slot) const noexcept
   }
 }
 
-void WorldView::PressFleetButton(int _slot, bool _longPress)
+WorldView::ButtonPress WorldView::PressFleetButton(int _slot, bool _longPress)
 {
   if (_slot < 0 || _slot >= FLEET_SLOTS)
-    return;
+    return ButtonPress::Nothing;
 
   if (!IsFleetHeld(_slot))
   {
@@ -451,24 +462,153 @@ void WorldView::PressFleetButton(int _slot, bool _longPress)
     // silent, and a deliberate hold is a question.
     if (_longPress && m_log)
       m_log->PushFormat(EventLog::Severity::Info, SimTimeSec(), "FLEET %d | COMPOSE AT A STATION", _slot + 1);
-    return;
+    return ButtonPress::Nothing;
   }
 
+  // A hold opens the sheet, and selects the fleet on the way: reading a fleet and holding it are
+  // the same act under decision 1, and a sheet whose commands went to some other fleet would be
+  // the one way this panel could lie.
   if (_longPress)
   {
-    // The sheet is slice 8. This is the line its header will carry, which is worth having now: it
-    // makes the gesture discoverable, and it is the only place a player can read what a fleet
-    // outside the interest set is doing (Design/Fleets.md 9.3).
-    if (m_log)
-      m_log->PushFormat(EventLog::Severity::Info, SimTimeSec(), "FLEET %d | %d SHIPS | %s", _slot + 1, FleetCount(_slot),
-                        FleetActivity(_slot));
-    return;
+    SelectFleet(_slot, false);
+    return ButtonPress::OpenSheet;
   }
 
   // Selecting and attending are one gesture. A shift-held tap on a button is not a thing the bar
   // offers -- the modifier belongs to the world, where a hull is tapped -- so this selects whole.
   SelectFleet(_slot, false);
   FocusFleet(_slot);
+  return ButtonPress::Selected;
+}
+
+void WorldView::ArmFleetOrder(ArmedOrder _kind)
+{
+  m_armed = _kind;
+  if (m_armed == ArmedOrder::None || m_log == nullptr)
+    return;
+
+  const char* verb = (m_armed == ArmedOrder::Move) ? "MOVE" : ((m_armed == ArmedOrder::Attack) ? "ATTACK" : "DOCK");
+  m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "%s | TAP A TARGET", verb);
+}
+
+void WorldView::IssueStopOrder()
+{
+  Game::FleetOrder order;
+  order.kind = Game::FleetOrderKind::Stop;
+  const std::uint32_t sent = SendToSelectedFleets(order);
+  if (sent > 0 && m_log)
+    m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "STOP | %d %s", static_cast<int>(sent), (sent == 1) ? "FLEET" : "FLEETS");
+}
+
+std::uint32_t WorldView::HullOfMember(Game::EntityId _entity) const noexcept
+{
+  for (const KnownHull& known : m_knownHulls)
+  {
+    if (known.entity == _entity)
+      return known.hullId;
+  }
+  return Game::HULL_COUNT;
+}
+
+void WorldView::RefreshKnownHulls()
+{
+  // Anything in a roster this update, remembered from the record if one is in view and carried over
+  // from what was already known if not. Rebuilt rather than patched, so the list is exactly the
+  // current rosters and cannot outlive them.
+  std::vector<KnownHull> rebuilt;
+  rebuilt.reserve(static_cast<std::size_t>(FLEET_SLOTS) * Game::MAX_FLEET_SHIPS);
+
+  const std::span<const Game::ShipSnapshot> state = Ships();
+  for (int slot = 0; slot < FLEET_SLOTS; ++slot)
+  {
+    for (const Game::EntityId member : m_receiver.RosterOf(static_cast<std::uint8_t>(slot)))
+    {
+      std::uint32_t hullId = Game::HULL_COUNT;
+      for (const Game::ShipSnapshot& ship : state)
+      {
+        if (ship.entity == member)
+        {
+          hullId = ship.hullId;
+          break;
+        }
+      }
+      if (hullId == Game::HULL_COUNT)
+        hullId = HullOfMember(member); // out of view now; what it was when it last was not
+      rebuilt.push_back(KnownHull{member, hullId});
+    }
+  }
+  m_knownHulls.swap(rebuilt);
+}
+
+// Which slot a departing member left, and how, recorded against the moment its slot empties.
+//
+// Against the roster of the update BEFORE this one: rosters ride the reliable lane and are applied
+// ahead of the records, so by the time a departure is read the entity is in none of them.
+//
+// The LAST departure wins rather than any docking ever seen, which is what Design/Fleets.md 9.6's
+// "on the last capture" means: a fleet that lands one hull and then loses the rest was lost, and a
+// sticky flag would have called it docked (ADR 0040).
+void WorldView::NoteFleetDeparture(Game::EntityId _entity, bool _docked) noexcept
+{
+  for (int slot = 0; slot < FLEET_SLOTS; ++slot)
+  {
+    for (const Game::EntityId member : m_lastRoster[slot])
+    {
+      if (member == _entity)
+        m_slotDockedOut[slot] = _docked;
+    }
+  }
+}
+
+// The three lines only this half can draw. The alert's edge could have stayed in the HUD, where it
+// began; the other two could not, because the departure lists say whether a slot emptied by docking
+// or by dying and ExplodeTheLost clears them -- so all of Design/Fleets.md 9.6's fleet lines are
+// here rather than split across two files by which one happened to need what.
+void WorldView::ReportFleetEvents()
+{
+  const std::uint8_t mask = m_receiver.FleetMask();
+  for (int slot = 0; slot < FLEET_SLOTS; ++slot)
+  {
+    const bool held = (mask & (1u << slot)) != 0;
+    const bool wasHeld = (m_lastFleetMask & (1u << slot)) != 0;
+
+    if (held)
+    {
+      const std::uint8_t bits = FleetStatusBits(slot);
+      const bool alert = (bits & Game::FLEET_STATUS_UNDER_ATTACK) != 0;
+      // The rising edge only. The bit holds for ten seconds and a fight keeps refilling it, so a
+      // line per update would bury everything else the log has to say (Design/Fleets.md 7.3).
+      if (alert && !m_wasUnderAttack[slot] && m_log)
+        m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "FLEET %d UNDER ATTACK", slot + 1);
+      m_wasUnderAttack[slot] = alert;
+
+      const bool launching = (bits & Game::FLEET_STATUS_KIND_MASK) == Game::FLEET_STATUS_LAUNCHING;
+      // The falling edge of launching is the manifest emptying, which is the moment the fleet is
+      // whole -- the one thing about a launch that is worth a line rather than a number ticking up.
+      if (!launching && m_wasLaunching[slot] && m_log)
+        m_log->PushFormat(EventLog::Severity::Friendly, SimTimeSec(), "FLEET %d | %d SHIPS OUT", slot + 1, FleetCount(slot));
+      m_wasLaunching[slot] = launching;
+    }
+    else if (wasHeld && m_log)
+    {
+      // The slot cleared. Which line it earns is the departure's stated cause, which is exactly
+      // what ADR 0040 put on the wire and what nothing had read at fleet grain until now.
+      if (m_slotDockedOut[slot])
+        m_log->PushFormat(EventLog::Severity::Friendly, SimTimeSec(), "FLEET %d | DOCKED", slot + 1);
+      else
+        m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "FLEET %d LOST", slot + 1);
+    }
+
+    if (!held)
+    {
+      m_wasUnderAttack[slot] = false;
+      m_wasLaunching[slot] = false;
+      m_slotDockedOut[slot] = false;
+    }
+    m_lastRoster[slot].assign(m_receiver.RosterOf(static_cast<std::uint8_t>(slot)).begin(),
+                              m_receiver.RosterOf(static_cast<std::uint8_t>(slot)).end());
+  }
+  m_lastFleetMask = mask;
 }
 
 void WorldView::FocusFleet(int _slot)
@@ -1073,6 +1213,50 @@ void WorldView::OnOrderDrag(float _x0Px, float _y0Px, float _x1Px, float _y1Px)
 void WorldView::OnTap(float _xPx, float _yPx, bool _shiftHeld, bool _doubleTap)
 {
   CancelFocus(); // the player is working the world again, so the camera stops flying
+
+  // An armed command takes the tap before anything else means anything, and clears whether or not
+  // the tap landed on something it can use: one prompt, one tap (Design/Fleets.md 9.3).
+  if (m_armed != ArmedOrder::None)
+  {
+    const ArmedOrder armed = m_armed;
+    m_armed = ArmedOrder::None;
+    if (m_tracker)
+      m_tracker->ResetTapHistory();
+
+    if (armed == ArmedOrder::Attack)
+    {
+      const int hostile = PickHostile(_xPx, _yPx);
+      if (hostile >= 0)
+      {
+        IssueAttackOrder(static_cast<std::size_t>(hostile));
+        return;
+      }
+    }
+    else if (armed == ArmedOrder::Dock)
+    {
+      const int station = PickStation(_xPx, _yPx);
+      if (station >= 0)
+      {
+        IssueDockOrder(static_cast<std::size_t>(station));
+        return;
+      }
+    }
+    else
+    {
+      XMFLOAT3 point;
+      if (m_camera->RayToGround(_xPx, _yPx, point))
+      {
+        IssueMoveOrder(point, false, 0.0f);
+        return;
+      }
+    }
+
+    // The tap did not supply what the command needed. Cancelled, and said so -- a prompt that
+    // vanished with nothing happening reads as a broken game.
+    if (m_log)
+      m_log->PushFormat(EventLog::Severity::Info, SimTimeSec(), "ORDER CANCELLED");
+    return;
+  }
 
   // A tapped hull selects its whole FLEET, not the hull. A hull whose roster has not arrived yet
   // selects nothing and says nothing: that is a launch one update old, not an error.

@@ -100,19 +100,24 @@ public:
   void Draw(Neuron::TextRenderer& _text, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view, const Neuron::Camera& _camera,
             const EventLog& _log, const Frame& _frame, float _dpiScale, std::uint32_t _widthPx, std::uint32_t _heightPx);
 
-  // The alert pulse's clock and the log line its rising edge earns. Called once a frame by the
-  // composition root, before Draw, because the HUD never reads a clock itself and this is the one
-  // piece of it that has to advance whether or not anything was redrawn.
+  // The alert pulse's clock. Called once a frame by the composition root, before Draw, because the
+  // HUD never reads a clock itself and this is the one piece of it that has to advance whether or
+  // not anything was redrawn.
   //
-  // _log is the one thing the HUD writes to, and only this: FLEET %d UNDER ATTACK on the tick the
-  // bit lights (Design/Fleets.md 9.6). Everything else here reads.
-  void UpdateAlerts(const WorldView& _view, EventLog& _log, float _dtSec, float _simTimeSec);
+  // The log line the rising edge earns is WorldView's now: two of Design/Fleets.md 9.6's other lines
+  // turn on a departure's stated cause, which only that half sees, and splitting one section's log
+  // across two files by which line happened to need what is the shape to avoid
+  // (Design/Fleets-slice-8.md 2.1).
+  void UpdatePulse(float _dtSec);
 
   // Reports true when the event landed on a panel and was used up, so a tap on the bottom bar can
   // never fall through to the tracker as a ground order. A contact that went down on a panel is
   // kept until it lifts, whatever it drifts over in between.
-  [[nodiscard]] bool HandlePointer(const Neuron::PointerEvent& _event, WorldView& _view, float _dpiScale, std::uint32_t _widthPx,
-                                   std::uint32_t _heightPx);
+  // _outOpenSheet is set to the slot a long press asked to read, or left alone. Reported rather
+  // than acted on, because a panel is the composition root's to own and this class's job ends at
+  // saying where a contact landed.
+  [[nodiscard]] bool HandlePointer(const Neuron::PointerEvent& _event, WorldView& _view, int& _outOpenSheet, float _dpiScale,
+                                   std::uint32_t _widthPx, std::uint32_t _heightPx);
 
   // Drops a capture this class is holding, for PointerTracker::CancelContacts's reason: a contact
   // that went down on a panel and lifts after something modal has taken the pointer away never
@@ -192,9 +197,5 @@ private:
   // class does: the alert bit itself is the simulation's (Design/Fleets.md 7.3), and how loudly a
   // button says so is the HUD's. Real time, so a paused game still pulses.
   float m_alertPhaseSec = 0.0f;
-
-  // Whether each slot was under attack on the previous frame, so FLEET %d UNDER ATTACK is logged on
-  // the rising edge only. The bit holds for ten seconds, so an edgeless log would be a metronome.
-  bool m_wasUnderAttack[WorldView::FLEET_SLOTS] = {};
 };
 } // namespace Outpost

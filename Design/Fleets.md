@@ -1,11 +1,12 @@
 # Fleets — composition at a station, five slots, and command at fleet grain
 
-**Status: agreed with the owner on 2026-08-31. Slices 1 to 7 are written and in review — the table,
-compose and launch, orders at fleet grain, the defense, the fleet wire, the fleet bar and assembly —
-with work orders [1](Fleets-slice-1.md), [2](Fleets-slice-2.md), [3](Fleets-slice-3.md),
-[4](Fleets-slice-4.md), [5](Fleets-slice-5.md), [6](Fleets-slice-6.md) and [7](Fleets-slice-7.md).
-That is the whole feature but the fleet sheet: a fleet can be composed at a station, launched,
-selected, ordered and watched defending itself.** Four decisions were put to the owner
+**Status: agreed with the owner on 2026-08-31. All eight slices are written and in review** — the
+table, compose and launch, orders at fleet grain, the defense, the fleet wire, the fleet bar,
+assembly and the sheet — with work orders [1](Fleets-slice-1.md), [2](Fleets-slice-2.md),
+[3](Fleets-slice-3.md), [4](Fleets-slice-4.md), [5](Fleets-slice-5.md), [6](Fleets-slice-6.md),
+[7](Fleets-slice-7.md) and [8](Fleets-slice-8.md). **This design moves to `Design/Archive/` in the
+commit that marks the slices landed, which is after the pull request merges** — `Design/` holds what
+is unfinished, and nothing has merged yet (Design/README.md). Four decisions were put to the owner
 and taken (§15); each was the recommended option. §16 lists the slices and the dependencies between
 them.
 
@@ -709,6 +710,11 @@ orders, and `GROUP %d` log lines go with it. Per button, from roster + status bl
   already exists, so the records stream in as the camera arrives and the coarse centroid hands
   over to real hulls.
 
+> **Amendment, 2026-08-31 (slice 8).** **Hold does not open the sheet on its own — it selects the
+> fleet first.** Reading a fleet and taking hold of it are the same act under decision 1, and a sheet
+> whose four commands went to some other fleet is the one way this panel could lie. It follows that
+> the sheet closes when its fleet stops being selected, as well as when its slot empties.
+
 > **Amendment, 2026-08-31 (slice 6).** "`SetCentre` already exists" is true and "the interest set
 > follows the camera" was not: `SetCentre` was being fed the centroid of the subscriber's own ships,
 > so tapping a distant fleet flew the camera to a sky the server never sent a hull to. Slice 6 makes
@@ -767,6 +773,21 @@ left where the damage model will want it.
 
 `MINE` is absent until the mining design lands (§6.6). No queue is shown because none exists
 (§14).
+
+> **Amendment, 2026-08-31 (slice 8).** Three things about the sheet are narrower in the code.
+>
+> **A member's hull may be unknown.** A roster names entities and a fleet the camera is not at has
+> no records, so the hull ids are not there to read. The client remembers one hull per roster member
+> — bounded to the current rosters, forty entries at the very most, rather than a growing memory of
+> every ship it has ever held — and a member it has never seen draws as `UNKNOWN` rather than as a
+> guess ([slice 8](Fleets-slice-8.md) §2.2).
+>
+> **`ENGAGED | DEFENDING`, not an em dash.** The UI atlas holds Latin-1 from 192 up and an em dash
+> is not in it, so the bar the HUD already uses as a field separator stands in.
+>
+> **The armed prompt is drawn, not only logged.** §9.3 has it replacing the sheet, and it does: the
+> panel's own place carries the one line while a command waits for its tap, so the state is visible
+> while it is live rather than only in the log entry that announced it.
 
 ### 9.4 The station screen — assembly
 
@@ -832,6 +853,19 @@ minimap agreeing with the button.
 (`FLEET SLOTS FULL`, `COMPOSE REFUSED | %s HOSTILE`). All through the existing
 `EventLog::PushFormat`, severities per the house palette: launches Friendly, alerts Alert,
 refusals Alert, counts Info.
+
+> **Amendment, 2026-08-31 (slice 8).** **All of these live in `WorldView`, including the alert edge
+> that started in the HUD.** Two of them — `DOCKED` and `LOST` — turn on a departure's stated cause
+> (ADR 0040), which only that half sees and which `ExplodeTheLost` clears as it reads; splitting one
+> section's log across two files by which line happened to need what is the shape to avoid.
+>
+> **`DOCKED` and `LOST` are told apart by the *last* departure, not by any docking seen.** A fleet
+> that lands one hull and then loses the rest was lost, which is what "on the last capture" means.
+>
+> **The two refusal lines the gates imply have moved with their gates**: composing in a hostile port
+> is refused before the ledger is even asked for, so the line is `LEDGER REFUSED | %s HOSTILE` on the
+> long press (§9.4's amendment), and a full slot table is not a refusal a player can reach — the
+> assembly screen draws taken slots inert, so there is nothing to refuse.
 
 ---
 
@@ -1033,7 +1067,7 @@ whichever slice makes them false.
 | 5 | **The fleet wire**: `FleetRoster` + join-time delivery, the status block + publish-side centroid, `LedgerRequest`/`LedgerReply` and the `ComposeOrder` that has no use without them (§5.2 — unlisted here until slice 2 placed it), receiver surfaces, their tests — *in review*, [work order](Fleets-slice-5.md) | `GameLogic` | 2 (roster), 4 (status bits) | [the ledger is asked for, not broadcast](Decisions/0051-the-ledger-is-asked-for-not-broadcast.md) |
 | 6 | **The fleet bar**: buttons rebound (tap = select + fly-to, hold = sheet stub, glow, counts), selection at fleet grain, `FleetOrder` sending, group machinery and its log lines retired, the ship-list order messages retired with them, the boot scene as Fleet 1, F7, minimap fleet digits, screenshots at two sizes — *in review*, [work order](Fleets-slice-6.md) | `Outpost` | 3, 5 | — |
 | 7 | **Assembly**: the station long-press, `LedgerRequest` flow, the assembly screen, compose + launch end to end on screen, screenshots — *in review*, [work order](Fleets-slice-7.md) | `Outpost` | 5, 6 | — |
-| 8 | **The sheet**: status lines, member rows, the command row + target-tap arming, refusal and alert log lines complete, screenshots of the three states | `Outpost` | 6 (7 for a docked-adjacent demo) | — |
+| 8 | **The sheet**: status lines, member rows, the command row + target-tap arming, refusal and alert log lines complete, screenshots of the three states — *in review*, [work order](Fleets-slice-8.md) | `Outpost` | 6 (7 for a docked-adjacent demo) | — |
 
 The whole of `GameLogic` is now written: slices 1–5 are decided by their tests and by the suites
 staying green; 6–8 by screenshots and by what they must not touch. The seam holds throughout: nothing reaches the client outside the

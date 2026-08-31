@@ -568,4 +568,17 @@ inline constexpr float HUD_ASSEMBLY_LEFT_FRACTION = 0.52f;
 // enough that the station it belongs to is still visible behind it.
 inline constexpr Neuron::Rgba HUD_ASSEMBLY_SCRIM{0.0f, 0.0f, 0.0f, 0.55f};
 inline constexpr float HUD_ASSEMBLY_DISABLED_ALPHA = 0.35f;
+
+// --- the fleet sheet ------------------------------------------------------------------------------
+// One fleet's panel, held over the bottom bar by a long press on its button (Design/Fleets.md 9.3).
+// Anchored to the bar rather than centred, because unlike the assembly screen it is not modal: the
+// fleet it describes is still flying behind it, and a panel in the middle of the screen would be
+// standing on the thing the player opened it to watch.
+inline constexpr float HUD_SHEET_WIDTH_PX = 380.0f;
+inline constexpr float HUD_SHEET_HEIGHT_PX = 132.0f;
+inline constexpr float HUD_SHEET_PAD_PX = 14.0f;
+inline constexpr float HUD_SHEET_COMMAND_H_PX = 30.0f;
+inline constexpr float HUD_SHEET_COMMAND_GAP_PX = 6.0f;
+// The armed prompt that replaces the panel between a command and the tap that supplies its target.
+inline constexpr float HUD_SHEET_PROMPT_H_PX = 30.0f;
 } // namespace Outpost

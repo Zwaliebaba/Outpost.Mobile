@@ -648,6 +648,8 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
     // that Escape does not close is a modal a player gets stuck in.
     if (m_assembly.IsOpen())
       m_assembly.Close();
+    else if (m_sheet.IsOpen())
+      m_sheet.Close();
     // Drops the selection next; only quits once nothing is selected. By fleets rather than by
     // records: a fleet can be selected with every one of its hulls outside the interest set, and
     // Escape must still drop it.
@@ -807,7 +809,14 @@ void OutpostApp::Update()
     // never reach the tracker as an order.
     if (m_assembly.HandlePointer(event, m_view, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx()))
       continue;
-    if (m_hud.HandlePointer(event, m_view, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx()))
+    if (m_sheet.HandlePointer(event, m_view, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx()))
+      continue;
+
+    int openSheet = -1;
+    const bool usedByHud = m_hud.HandlePointer(event, m_view, openSheet, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
+    if (openSheet >= 0)
+      m_sheet.Open(openSheet);
+    if (usedByHud)
       continue;
     m_pointers.Apply(event, m_camera, m_view);
   }
@@ -842,6 +851,7 @@ void OutpostApp::Update()
     // leaving a claimed slot, or a stuck capture, behind for good.
     m_pointers.CancelContacts();
     m_hud.CancelCapture();
+    m_sheet.Close(); // one panel at a time; the modal one wins
   }
 
   // Where the player is looking becomes what the server sends. The composition root is the only
@@ -893,7 +903,9 @@ void OutpostApp::Render()
     frame.contacts += m_view.IsHostileToMe(ship.factionId) ? 1 : 0;
   m_hud.Draw(m_textRenderer, m_view.Ships(), m_view, m_camera, m_log, frame, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
 
-  // After the HUD, because it is modal: it draws its own scrim over everything, the bar included.
+  // The sheet sits over the bar, then the assembly screen over everything: it is modal and draws
+  // its own scrim, the bar and the sheet included.
+  m_sheet.Draw(m_textRenderer, m_view, HULL_NAMES, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
   m_assembly.Draw(m_textRenderer, m_view, HULL_NAMES, FACTION_NAMES, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
 
   m_textRenderer.Flush(m_gpu); // the overlay goes on last, before the frame is presented
@@ -938,7 +950,8 @@ void OutpostApp::Run()
     // of thing and ride the same clock.
     m_view.UpdateFeedback(dtSec);
     m_view.UpdateFocus(dtSec);
-    m_hud.UpdateAlerts(m_view, m_log, dtSec, static_cast<float>(m_host.Tick()) * Game::TICK_DT);
+    m_hud.UpdatePulse(dtSec);
+    m_sheet.Update(m_view);
 
     Render();
   }

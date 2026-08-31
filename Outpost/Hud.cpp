@@ -300,22 +300,12 @@ float Hud::AlertPulse() const noexcept
   return HUD_FLEET_ALERT_MIN_ALPHA + (1.0f - HUD_FLEET_ALERT_MIN_ALPHA) * wave;
 }
 
-void Hud::UpdateAlerts(const WorldView& _view, EventLog& _log, float _dtSec, float _simTimeSec)
+void Hud::UpdatePulse(float _dtSec)
 {
   // Real time and wrapped at the period, for the reason WorldView::m_navTimeSec is wrapped: a float
   // second counter left running loses enough precision after a few hours that consecutive frames
   // land on the same argument and the pulse freezes.
   m_alertPhaseSec = std::fmod(m_alertPhaseSec + _dtSec, HUD_FLEET_ALERT_PERIOD_SEC);
-
-  for (int slot = 0; slot < WorldView::FLEET_SLOTS; ++slot)
-  {
-    const bool alert = _view.IsFleetUnderAttack(slot);
-    // The rising edge only. The bit holds for ten seconds and a fight refills it, so a line per
-    // frame -- or even per act -- would bury every other thing the log has to say.
-    if (alert && !m_wasUnderAttack[slot])
-      _log.PushFormat(EventLog::Severity::Alert, _simTimeSec, "FLEET %d UNDER ATTACK", slot + 1);
-    m_wasUnderAttack[slot] = alert;
-  }
 }
 
 void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view,
@@ -755,7 +745,8 @@ void Hud::Draw(TextRenderer& _text, std::span<const Game::ShipSnapshot> _ships, 
 // Input. A press that starts on a panel belongs to the HUD until it lifts; nothing about it reaches
 // the tracker, so it can neither pick a hull nor lay down an order through the bar.
 
-bool Hud::HandlePointer(const PointerEvent& _event, WorldView& _view, float _dpiScale, std::uint32_t _widthPx, std::uint32_t _heightPx)
+bool Hud::HandlePointer(const PointerEvent& _event, WorldView& _view, int& _outOpenSheet, float _dpiScale, std::uint32_t _widthPx,
+                        std::uint32_t _heightPx)
 {
   const Layout layout = ComputeLayout(_dpiScale, _widthPx, _heightPx);
 
@@ -797,9 +788,14 @@ bool Hud::HandlePointer(const PointerEvent& _event, WorldView& _view, float _dpi
     m_activeRail = (m_activeRail == m_pressedRail) ? -1 : m_pressedRail;
 
   // What a press MEANS is the view's, not the HUD's: this class knows where a contact landed and
-  // WorldView knows what a fleet slot is. The same division the selection calls already keep.
+  // WorldView knows what a fleet slot is. The same division the selection calls already keep -- and
+  // opening a panel is a third thing, which belongs to neither, so it is reported upward.
   if (m_pressedFleet >= 0 && layout.fleets[m_pressedFleet].Contains(_event.xPx, _event.yPx))
-    _view.PressFleetButton(m_pressedFleet, m_clock.ElapsedMs(m_downQpc, _event.timestampQpc) >= HUD_LONG_PRESS_MS);
+  {
+    const bool held = m_clock.ElapsedMs(m_downQpc, _event.timestampQpc) >= HUD_LONG_PRESS_MS;
+    if (_view.PressFleetButton(m_pressedFleet, held) == WorldView::ButtonPress::OpenSheet)
+      _outOpenSheet = m_pressedFleet;
+  }
 
   m_captured = false;
   m_pressedRail = -1;

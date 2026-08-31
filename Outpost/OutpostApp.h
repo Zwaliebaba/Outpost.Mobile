@@ -3,6 +3,7 @@
 #include "BodyCatalogue.h"
 #include "EventLog.h"
 #include "AssemblyScreen.h"
+#include "FleetSheet.h"
 #include "Hud.h"
 #include "ServerConfig.h"
 #include "WorldSimulation.h"
@@ -157,6 +158,10 @@ private:
   // The station's assembly view. Modal, so it sits ahead of the HUD in the pointer chain and is
   // drawn after it (Design/Fleets.md 9.4).
   AssemblyScreen m_assembly;
+
+  // One fleet's sheet, over the bar. Not modal, so it takes only what lands on itself and sits
+  // between the assembly screen and the HUD in the chain (Design/Fleets.md 9.3).
+  FleetSheet m_sheet;
   Neuron::FrameClock m_clock;
 
   // One ramp per class, indexed by BodyClass. A ramp that fails to load leaves its class drawing the

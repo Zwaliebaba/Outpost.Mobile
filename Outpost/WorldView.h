@@ -373,11 +373,59 @@ public:
   // logs the line the sheet's header will carry, so the gesture is discoverable and says something
   // true. An empty slot is inert to a tap and answers a hold with the one thing there is to say
   // (Design/Fleets.md 9.1).
-  void PressFleetButton(int _slot, bool _longPress);
+  // What a press meant, so the panel stays the caller's to open. The view keeps knowing what a
+  // fleet slot is and the UI keeps knowing what a panel is -- slice 6's division, and this is the
+  // first press that needs a third answer.
+  enum class ButtonPress : std::uint8_t
+  {
+    Nothing,
+    Selected,
+    OpenSheet
+  };
 
-  // What a fleet is doing, as the one word the sheet's header shows and the log stub prints.
-  // Decoded from the status byte's low three bits (Design/Fleets.md 8.2, 9.3).
+  ButtonPress PressFleetButton(int _slot, bool _longPress);
+
+  // What a fleet is doing, as the one word the sheet's header shows. Decoded from the status
+  // byte's low three bits (Design/Fleets.md 8.2, 9.3).
   [[nodiscard]] const char* FleetActivity(int _slot) const noexcept;
+
+  // Who is in a slot, as the server last stated it. Entities, because that is what a roster carries
+  // and what outlives a record leaving the interest set.
+  [[nodiscard]] std::span<const Game::EntityId> RosterOf(int _slot) const noexcept
+  {
+    return (_slot >= 0 && _slot < FLEET_SLOTS) ? m_receiver.RosterOf(static_cast<std::uint8_t>(_slot)) : std::span<const Game::EntityId>();
+  }
+
+  // What hull a roster member is, as last seen, or HULL_COUNT for one this half has never held a
+  // record for.
+  //
+  // Remembered rather than read, because a roster names entities and a fleet the camera is not at
+  // has no records to read a hull id off. Bounded to the current rosters -- forty entries at the
+  // very most -- rather than growing for the length of a match, which is the whole reason this is
+  // one narrow answer and not a general memory of departed ships (Design/Fleets-slice-8.md 2.2).
+  [[nodiscard]] std::uint32_t HullOfMember(Game::EntityId _entity) const noexcept;
+
+  // The order a sheet button armed, waiting for the world tap that supplies its target. None until
+  // one is pressed, and cleared by the next tap whether or not it landed on something the order can
+  // use (Design/Fleets.md 9.3).
+  enum class ArmedOrder : std::uint8_t
+  {
+    None,
+    Move,
+    Attack,
+    Dock
+  };
+
+  void ArmFleetOrder(ArmedOrder _kind);
+
+  [[nodiscard]] ArmedOrder Armed() const noexcept
+  {
+    return m_armed;
+  }
+
+  // Sends Stop to every selected fleet. The one sheet command that needs no target, so it is the
+  // one that does not arm anything.
+  void IssueStopOrder();
 
   // Where the view reports what the player did. Optional: with no log nothing is reported.
   void SetEventLog(EventLog& _log) noexcept
@@ -544,6 +592,18 @@ private:
   // and none of them learns what a fleet is. Carrying it instead would leave a hull launched into a
   // selected fleet unringed until something else touched the selection.
   void RefreshSelection() noexcept;
+
+  // The §9.6 lines this half is the only one that can draw: the alert's rising edge, the manifest
+  // emptying, and a slot clearing by a docking rather than by a death. Called at the end of
+  // ApplySnapshot, after ExplodeTheLost has said which departures were which.
+  void ReportFleetEvents();
+
+  // Records which slot a departing member left and whether it docked or died, for the two lines
+  // that turn on the difference. Called from ExplodeTheLost, which is where the causes arrive.
+  void NoteFleetDeparture(Game::EntityId _entity, bool _docked) noexcept;
+
+  // Refreshes the remembered hulls from the records in view and prunes them to the current rosters.
+  void RefreshKnownHulls();
   [[nodiscard]] static MotionSample SampleOf(const Game::ShipSnapshot& _ship, std::uint64_t _tick) noexcept;
 
   // A point authored on the hull, in mesh space, to where it is drawn. The plume's trail sampler
@@ -708,6 +768,28 @@ private:
   // the station alone cannot either, because the last reply is still there from the previous ask.
   Game::EntityId m_ledgerAsked = Game::INVALID_ENTITY_ID;
   std::uint32_t m_ledgerAskedAtCount = 0;
+
+  ArmedOrder m_armed = ArmedOrder::None;
+
+  // What the last update said, so this one can report the edges §9.6 asks for. All four are
+  // presentation: nothing here is simulated, saved or sent.
+  //
+  // The previous rosters are kept because a departing member is out of every roster by the time
+  // ExplodeTheLost runs -- rosters ride the reliable lane and apply before the records -- so
+  // matching against the update before is what says which slot a docking or a death belonged to.
+  std::vector<Game::EntityId> m_lastRoster[FLEET_SLOTS];
+  std::uint8_t m_lastFleetMask = 0;
+  bool m_wasUnderAttack[FLEET_SLOTS] = {};
+  bool m_wasLaunching[FLEET_SLOTS] = {};
+  bool m_slotDockedOut[FLEET_SLOTS] = {};
+
+  // One entry per roster member, so the sheet can name a hull the camera has left behind.
+  struct KnownHull
+  {
+    Game::EntityId entity = Game::INVALID_ENTITY_ID;
+    std::uint32_t hullId = 0;
+  };
+  std::vector<KnownHull> m_knownHulls;
 
   EventLog* m_log = nullptr;
   std::span<const char* const> m_factionNames;
