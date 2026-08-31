@@ -154,7 +154,22 @@ void Publisher::ApplyOrders(World& _world)
         // to nothing too, which is what stops a client ordering a ship this world does not own.
         MoveOrder order;
         DockOrder dockOrder;
-        if (ReadMoveOrder(message, order))
+        FleetOrder fleetOrder;
+        if (ReadFleetOrder(message, fleetOrder))
+        {
+          // The smallest branch here, and deliberately: an order that names a fleet resolves one id
+          // instead of a list, and the authority gate below is a comparison rather than a filter
+          // over everything the message carried (ADR 0049). The subscriber's faction is what the
+          // gate reads, so a client cannot order a slot that is not its own.
+          World::FleetCommand command;
+          command.kind = fleetOrder.kind;
+          command.point = fleetOrder.point;
+          command.facingRad = fleetOrder.facingRad;
+          command.hasFacing = fleetOrder.hasFacing;
+          command.station = _world.ResolveEntity(fleetOrder.station);
+          (void)_world.IssueFleetOrder(subscriber.faction, fleetOrder.slot, command);
+        }
+        else if (ReadMoveOrder(message, order))
         {
           m_resolvedScratch.clear();
           for (const EntityId entity : order.ships)

@@ -687,6 +687,68 @@ public:
     Assert::IsFalse(Game::WriteDockOrder(empty, refused), L"an empty dock order was sent");
   }
 
+  TEST_METHOD(AFleetOrderRoundTrips)
+  {
+    Game::World world;
+    const Game::ShipId post = SpawnAt(world, 900.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+
+    // One fixed-size message whatever the fleet's size: there is no ship list in it at all, which is
+    // what makes an order stop scaling with the group it moves (ADR 0049).
+    Game::FleetOrder sent;
+    sent.slot = 3;
+    sent.kind = Game::FleetOrderKind::Move;
+    sent.point = Game::LocalPos(1200.0f, -640.0f);
+    sent.facingRad = 0.75f;
+    sent.hasFacing = true;
+    sent.station = world.EntityIdOf(post);
+
+    CaptureTransport link;
+    Assert::IsTrue(Game::WriteFleetOrder(sent, link), L"the fleet order did not send");
+    Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"a fleet order did not take the reliable lane");
+
+    Game::FleetOrder read;
+    Assert::IsTrue(Game::ReadFleetOrder(link.sentReliable[0], read), L"the fleet order did not decode");
+    Assert::AreEqual(static_cast<std::uint32_t>(sent.slot), static_cast<std::uint32_t>(read.slot), L"the slot did not survive the wire");
+    Assert::IsTrue(read.kind == sent.kind, L"the kind did not survive the wire");
+    Assert::IsTrue(IsSamePosition(read.point, sent.point), L"the point did not survive the wire");
+    Assert::AreEqual(sent.facingRad, read.facingRad, 0.0f, L"the facing did not survive the wire");
+    Assert::IsTrue(read.hasFacing == sent.hasFacing, L"the facing flag did not survive the wire");
+    Assert::IsTrue(read.station == sent.station, L"the station did not survive the wire");
+
+    // Every kind, including the two that are reserved: the byte travels whether or not the
+    // simulation will act on it, which is the point of having spent it.
+    for (std::uint8_t kind = 0; kind <= static_cast<std::uint8_t>(Game::FleetOrderKind::Mine); ++kind)
+    {
+      Game::FleetOrder each = sent;
+      each.kind = static_cast<Game::FleetOrderKind>(kind);
+      CaptureTransport each_link;
+      Assert::IsTrue(Game::WriteFleetOrder(each, each_link), L"a kind was refused by the writer");
+      Game::FleetOrder back;
+      Assert::IsTrue(Game::ReadFleetOrder(each_link.sentReliable[0], back), L"a kind did not decode");
+      Assert::IsTrue(back.kind == each.kind, L"a kind changed on the wire");
+    }
+
+    // The readers of the other two kinds must decline it, or the adapter's try-one-then-the-other
+    // would apply the wrong order.
+    Game::MoveOrder asMove;
+    Game::DockOrder asDock;
+    Assert::IsFalse(Game::ReadMoveOrder(link.sentReliable[0], asMove), L"a fleet order decoded as a move order");
+    Assert::IsFalse(Game::ReadDockOrder(link.sentReliable[0], asDock), L"a fleet order decoded as a dock order");
+
+    // A slot that does not exist and a kind this build has never heard of are content, and content
+    // fails closed rather than being passed to a gate that would have to guess.
+    CaptureTransport refused;
+    Game::FleetOrder badSlot = sent;
+    badSlot.slot = static_cast<std::uint8_t>(Game::FLEET_SLOTS);
+    Assert::IsFalse(Game::WriteFleetOrder(badSlot, refused), L"a slot past the fifth was sent");
+    Assert::IsTrue(refused.sentReliable.empty(), L"a refused fleet order put bytes on the wire");
+
+    std::vector<std::uint8_t> corrupt = link.sentReliable[0];
+    corrupt[6] = static_cast<std::uint8_t>(Game::FleetOrderKind::Mine) + 1;
+    Game::FleetOrder never;
+    Assert::IsFalse(Game::ReadFleetOrder(corrupt, never), L"a kind past the last one decoded");
+  }
+
   TEST_METHOD(ADeathAndADepartureDifferOnTheWire)
   {
     // The distinction the client's explosion hangs on. Until now a leave meant both, so a hostile

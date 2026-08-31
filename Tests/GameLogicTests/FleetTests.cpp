@@ -116,7 +116,7 @@ void Want(std::vector<std::uint32_t>& _counts, Game::HullId _hull, std::uint32_t
   return static_cast<int>(_result);
 }
 
-[[nodiscard]] int Code(Game::World::ComposeResult _result, int)
+[[nodiscard]] int Code(Game::World::FleetOrderResult _result)
 {
   return static_cast<int>(_result);
 }
@@ -154,6 +154,34 @@ std::vector<Game::ShipId> LiveMembers(const Game::World& _world, Game::World::Fl
       ids.push_back(id);
   }
   return ids;
+}
+
+// A fleet of _count Corvettes, composed at a station and flown all the way out of it. Every test
+// below that orders a fleet starts from one, because an order is only interesting once there is
+// something in space to give it to.
+Game::World::FleetId LaunchedFleet(Game::World& _world, Game::World::StationId _station, std::uint8_t _slot, int _count,
+                                   Game::HullId _hull = Game::HullId::Corvette)
+{
+  DockShips(_world, _station, _hull, _count);
+  std::vector<std::uint32_t> counts = ZeroCounts();
+  Want(counts, _hull, static_cast<std::uint32_t>(_count));
+  Assert::AreEqual(Code(Game::World::ComposeResult::Composed), Code(_world.ComposeFleet(_station, _slot, counts, Game::FACTION_PLAYER)),
+                   L"the compose was refused");
+  for (int tick = 0; tick < _count * static_cast<int>(Game::FLEET_LAUNCH_EVERY_TICKS) + 400; ++tick)
+    _world.Step();
+  const Game::World::FleetId fleet = _world.FleetInSlot(Game::FACTION_PLAYER, _slot);
+  Assert::AreEqual(static_cast<std::uint32_t>(_count), _world.FleetOf(fleet).memberCount, L"the fleet did not finish launching");
+  return fleet;
+}
+
+Game::World::FleetCommand MoveTo(const Game::WorldPos& _point, bool _hasFacing = false, float _facingRad = 0.0f)
+{
+  Game::World::FleetCommand command;
+  command.kind = Game::FleetOrderKind::Move;
+  command.point = _point;
+  command.hasFacing = _hasFacing;
+  command.facingRad = _facingRad;
+  return command;
 }
 } // namespace
 
@@ -850,6 +878,400 @@ public:
       Assert::IsTrue(a == b, L"two identical composes diverged");
     }
     Assert::AreEqual(5u, first.FleetOf(first.FleetInSlot(Game::FACTION_PLAYER, 0)).memberCount, L"the launch did not finish");
+  }
+
+  // --- orders at fleet grain (slice 3) -----------------------------------------------------------
+
+  TEST_METHOD(AFleetOrderLowersToAFormation)
+  {
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    const Game::World::FleetId fleet = LaunchedFleet(world, station, 0, 3);
+
+    const Game::WorldPos point = Game::LocalPos(1500.0f, 1000.0f);
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered),
+                     Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, MoveTo(point, true, 1.2f))), L"the fleet order was refused");
+    Assert::IsTrue(world.FleetOf(fleet).orderKind == Game::FleetOrderKind::Move, L"the standing order was not kept");
+
+    // About 1.6 km from the rally, which is 54 s at a Corvette's 30 m/s. The budget is that with
+    // room for the acceleration and the formation, not a round number.
+    for (int tick = 0; tick < 4500; ++tick)
+      world.Step();
+
+    // Arrived, and in formation about the point: the wedge is spaced off the largest hull, so three
+    // Corvettes sit within a couple of slot spacings of it.
+    const float spacing = Game::SlotSpacingMetres(Game::HullSpecOf(Game::HullId::Corvette).BoundingRadiusMetres());
+    for (const Game::ShipId member : LiveMembers(world, world.FleetInSlot(Game::FACTION_PLAYER, 0)))
+    {
+      Assert::IsTrue(Game::Distance(world.Ship(member).posWorld, point) < 3.0f * spacing, L"a member did not arrive about the point");
+      // The ordered facing was honored: every hull ends up pointing the same way.
+      Assert::AreEqual(1.2f, world.Ship(member).headingRad, 0.05f, L"a member did not settle on the ordered facing");
+    }
+  }
+
+  TEST_METHOD(AFleetOrderNamesAFleetNotShips)
+  {
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    const Game::World::FleetId mine = LaunchedFleet(world, station, 1, 2);
+
+    // A slot nobody holds, and a slot that does not exist.
+    const Game::WorldPos point = Game::LocalPos(2000.0f, 0.0f);
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::NoSuchFleet), Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, MoveTo(point))),
+                     L"an empty slot took an order");
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::NoSuchFleet),
+                     Code(world.IssueFleetOrder(Game::FACTION_PLAYER, static_cast<std::uint8_t>(Game::FLEET_SLOTS), MoveTo(point))),
+                     L"a slot past the fifth took an order");
+
+    // And somebody else's slot 1. The gate is one comparison, and this is the thing it refuses.
+    const Game::FactionId other = static_cast<Game::FactionId>(3);
+    const Game::ShipId theirs =
+      world.SpawnShip(Game::LocalPos(-3000.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), other);
+    const Game::ShipId theirShips[] = {theirs};
+    Assert::AreNotEqual(Game::World::INVALID_FLEET_ID, world.FormFleet(other, 1, theirShips), L"the other faction's fleet was refused");
+
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered), Code(world.IssueFleetOrder(other, 1, MoveTo(point))),
+                     L"the owner could not order its own slot");
+    Assert::IsTrue(world.FleetOf(mine).orderKind == Game::FleetOrderKind::Idle, L"one faction's order reached another faction's slot");
+  }
+
+  TEST_METHOD(AFleetCruisesAtItsSlowestMember)
+  {
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    DockShips(world, station, Game::HullId::Interceptor, 2);
+    DockShips(world, station, Game::HullId::Hauler, 1);
+
+    std::vector<std::uint32_t> counts = ZeroCounts();
+    Want(counts, Game::HullId::Interceptor, 2);
+    Want(counts, Game::HullId::Hauler, 1);
+    Assert::AreEqual(Code(Game::World::ComposeResult::Composed), Code(world.ComposeFleet(station, 0, counts, Game::FACTION_PLAYER)),
+                     L"the compose was refused");
+    for (int tick = 0; tick < 3 * static_cast<int>(Game::FLEET_LAUNCH_EVERY_TICKS) + 300; ++tick)
+      world.Step();
+
+    const float haulerTop = Game::HullSpecOf(Game::HullId::Hauler).maxSpeedMetresPerSec;
+    Assert::IsTrue(haulerTop < Game::HullSpecOf(Game::HullId::Interceptor).maxSpeedMetresPerSec,
+                   L"the scene has no slow ship in it, so this proves nothing");
+
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered),
+                     Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, MoveTo(Game::LocalPos(3000.0f, 0.0f)))),
+                     L"the fleet order was refused");
+    world.Step();
+    for (const Game::ShipId member : LiveMembers(world, world.FleetInSlot(Game::FACTION_PLAYER, 0)))
+    {
+      Assert::AreEqual(haulerTop, world.Ship(member).orderSpeedCapMetresPerSec, 0.0f, L"a member is not held to the fleet's pace");
+      Assert::IsTrue(world.Ship(member).speed <= haulerTop + 0.001f, L"a member outran the fleet");
+    }
+
+    // And it survives a dock order, whose approach the dock pass re-issues -- zeroing the cap each
+    // time it does. A cap written once at lowering would be gone by the second tick.
+    const Game::ShipId structure = world.Resolve(world.StationOf(station).structure);
+    Game::World::FleetCommand dock;
+    dock.kind = Game::FleetOrderKind::Dock;
+    dock.station = structure;
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered), Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, dock)),
+                     L"the dock order was refused");
+    for (int tick = 0; tick < 200; ++tick)
+    {
+      world.Step();
+      const Game::World::FleetId fleet = world.FleetInSlot(Game::FACTION_PLAYER, 0);
+      if (fleet == Game::World::INVALID_FLEET_ID)
+        break;
+      for (const Game::ShipId member : LiveMembers(world, fleet))
+        Assert::AreEqual(haulerTop, world.Ship(member).orderSpeedCapMetresPerSec, 0.0f, L"a docking fleet lost its cruise cap");
+    }
+  }
+
+  TEST_METHOD(AFleetDockOrderCarriesTheDockGates)
+  {
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    const Game::World::FleetId fleet = LaunchedFleet(world, station, 0, 2);
+    const Game::ShipId structure = world.Resolve(world.StationOf(station).structure);
+
+    // A record that is not a station at all.
+    Game::World::FleetCommand dock;
+    dock.kind = Game::FleetOrderKind::Dock;
+    dock.station = LiveMembers(world, fleet).front();
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::NotAStation), Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, dock)),
+                     L"a fleet was told to dock at a ship");
+    Assert::IsTrue(world.FleetOf(fleet).orderKind == Game::FleetOrderKind::Idle, L"a refused order was written to the row");
+
+    // A station whose owner has turned. The dock gate's own refusal, surfaced with a name.
+    const Game::ShipId criminal = world.SpawnShip(Game::LocalPos(-4000.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
+    world.RecordAggression(world.HandleOf(criminal), station);
+    dock.station = structure;
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::RefusedStanding), Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, dock)),
+                     L"an aggressor was let back into the port it attacked");
+    Assert::IsTrue(world.FleetOf(fleet).orderKind == Game::FleetOrderKind::Idle, L"a refused order was written to the row");
+  }
+
+  TEST_METHOD(ADockOrderAtFleetGrainDismantlesIt)
+  {
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    (void)LaunchedFleet(world, station, 2, 2);
+    const Game::ShipId structure = world.Resolve(world.StationOf(station).structure);
+
+    Game::World::FleetCommand dock;
+    dock.kind = Game::FleetOrderKind::Dock;
+    dock.station = structure;
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered), Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 2, dock)),
+                     L"the dock order was refused");
+
+    for (int tick = 0; tick < 3000 && world.FleetCount() != 0; ++tick)
+      world.Step();
+
+    Assert::AreEqual(0u, world.FleetCount(), L"a fleet ordered home did not dismantle");
+    Assert::AreEqual(2u, static_cast<std::uint32_t>(world.StationOf(station).docked.size()), L"the ledger did not get its rows back");
+  }
+
+  TEST_METHOD(StopHaltsAFleet)
+  {
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    const Game::World::FleetId fleet = LaunchedFleet(world, station, 0, 3);
+
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered),
+                     Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, MoveTo(Game::LocalPos(6000.0f, 6000.0f)))),
+                     L"the fleet order was refused");
+    for (int tick = 0; tick < 200; ++tick)
+      world.Step();
+    for (const Game::ShipId member : LiveMembers(world, fleet))
+      Assert::IsTrue(world.Ship(member).speed > 1.0f, L"the fleet never got under way, so stopping it proves nothing");
+
+    Game::World::FleetCommand stop;
+    stop.kind = Game::FleetOrderKind::Stop;
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered), Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, stop)),
+                     L"the stop was refused");
+
+    // A brake, and the row holds no order at all afterwards: stopping is asking for Idle.
+    Assert::IsTrue(world.FleetOf(fleet).orderKind == Game::FleetOrderKind::Idle, L"stopping left a standing order behind");
+    for (const Game::ShipId member : LiveMembers(world, fleet))
+    {
+      Assert::AreEqual(Game::OrderState::Idle, world.Ship(member).order, L"a member is still under orders");
+      Assert::AreEqual(0.0f, world.Ship(member).orderSpeedCapMetresPerSec, 0.0f, L"a stopped member kept a cruise cap");
+      Assert::IsFalse(world.DockingOf(member).active, L"a stopped member is still trying to dock");
+    }
+
+    // And it stays stopped: nothing in the pass re-issues an order the fleet no longer has.
+    for (int tick = 0; tick < 300; ++tick)
+      world.Step();
+    for (const Game::ShipId member : LiveMembers(world, fleet))
+      Assert::AreEqual(Game::OrderState::Idle, world.Ship(member).order, L"a stopped fleet started moving again");
+    Assert::AreEqual(1u, world.FleetCount(), L"stopping retired the fleet");
+  }
+
+  TEST_METHOD(TheReservedKindsAreRefused)
+  {
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    const Game::World::FleetId fleet = LaunchedFleet(world, station, 0, 2);
+
+    // Both bytes are spent -- that is what reserving one is for -- and both are refused until the
+    // design that gives each of them meaning lands.
+    for (const Game::FleetOrderKind kind : {Game::FleetOrderKind::Attack, Game::FleetOrderKind::Mine})
+    {
+      Game::World::FleetCommand command;
+      command.kind = kind;
+      Assert::AreEqual(Code(Game::World::FleetOrderResult::Unsupported), Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, command)),
+                       L"a kind with no design behind it was accepted");
+    }
+    Assert::IsTrue(world.FleetOf(fleet).orderKind == Game::FleetOrderKind::Idle, L"a refused kind was written to the row");
+  }
+
+  TEST_METHOD(AFleetIsPatient)
+  {
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    const Game::World::FleetId fleet = LaunchedFleet(world, station, 0, 3);
+
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered),
+                     Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, MoveTo(Game::LocalPos(1200.0f, 0.0f)))),
+                     L"the fleet order was refused");
+    for (int tick = 0; tick < 3500; ++tick)
+      world.Step();
+
+    const std::vector<Game::ShipId> members = LiveMembers(world, fleet);
+    std::vector<Game::ShipHandle> handles;
+    for (const Game::ShipId member : members)
+      handles.push_back(world.HandleOf(member));
+    const Game::WorldPos slot = world.Ship(members[0]).posWorld;
+    Assert::AreEqual(Game::OrderState::Idle, world.Ship(members[0]).order, L"the fleet has not settled, so this proves nothing");
+
+    // Something barges through the formation: a Carrier holds its line far harder than a Corvette,
+    // so the member is shoved off the slot it had arrived on.
+    const Game::ShipId barge = world.SpawnShip(slot, 0.0f, static_cast<std::uint32_t>(Game::HullId::Carrier));
+    const Game::ShipHandle bargeHandle = world.HandleOf(barge);
+    for (int tick = 0; tick < 120; ++tick)
+      world.Step();
+    const float shoved = Game::Distance(world.Ship(world.Resolve(handles[0])).posWorld, slot);
+    Assert::IsTrue(shoved > 2.0f * Game::ArrivalRadiusMetres(Game::HullSpecOf(Game::HullId::Corvette)),
+                   L"nothing shoved the member, so patience has nothing to be patient about");
+
+    // The barge leaves, and the fleet re-forms: the member is re-issued the leg it already had,
+    // rather than the whole formation being solved again.
+    Assert::IsTrue(world.DespawnShip(bargeHandle), L"the barge would not despawn");
+    for (int tick = 0; tick < 900; ++tick)
+      world.Step();
+
+    const Game::ShipId returned = world.Resolve(handles[0]);
+    Assert::AreNotEqual(Game::INVALID_SHIP_ID, returned, L"the shoved member is gone");
+    Assert::IsTrue(Game::Distance(world.Ship(returned).posWorld, slot) < shoved,
+                   L"a shoved member never came back to the slot its order left it on");
+    Assert::IsTrue(Game::Distance(world.Ship(returned).posWorld, slot) <
+                     4.0f * Game::ArrivalRadiusMetres(Game::HullSpecOf(Game::HullId::Corvette)),
+                   L"a shoved member did not re-form");
+
+    // The others were not re-planned out from under it.
+    for (std::size_t at = 1; at < handles.size(); ++at)
+      Assert::AreEqual(Game::OrderState::Idle, world.Ship(world.Resolve(handles[at])).order, L"an untouched member was re-ordered");
+  }
+
+  TEST_METHOD(AFleetOrderedIntoAWallSettles)
+  {
+    // Patience re-issues the leg of a member that stopped short of its order, and a destination the
+    // geometry forbids is short of it for ever. What stops that being an A* a tick is that patience
+    // reads the member's ROUTE destination, which AdvanceRoute has already moved to where the ship
+    // stands (ADR 0042) -- not the fleet's order point, which is still inside the wall. This is the
+    // test that says so: patience rewritten to re-derive the point from the fleet would pass every
+    // other assertion in this file and fail only here.
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    const Game::World::FleetId fleet = LaunchedFleet(world, station, 0, 2);
+
+    // Into the middle of the station itself, which is a tap a player is entitled to make.
+    const Game::ShipId structure = world.Resolve(world.StationOf(station).structure);
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered),
+                     Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, MoveTo(world.Ship(structure).posWorld))),
+                     L"the fleet order was refused");
+
+    for (int tick = 0; tick < 1200; ++tick)
+      world.Step();
+
+    // Settled: as close as the geometry allows, and staying there.
+    //
+    // Counted rather than watched, and that difference is the whole test. The loop it guards against
+    // is invisible from outside a tick: the ship would be set Moving at the top of Step and put back
+    // to Idle before the tick ended, because the point it was re-aimed at is the one it is already
+    // standing on. Sampling the order state finds a settled fleet either way; only the planner's own
+    // count says whether an A* ran.
+    const std::uint64_t before = world.RoutePlanCount();
+    for (int tick = 0; tick < 300; ++tick)
+      world.Step();
+    const std::uint64_t plans = world.RoutePlanCount() - before;
+
+    Assert::IsTrue(world.FleetOf(fleet).memberCount > 0, L"the fleet is gone, so this proves nothing");
+    for (const Game::ShipId member : LiveMembers(world, fleet))
+      Assert::AreEqual(Game::OrderState::Idle, world.Ship(member).order, L"a member never settled");
+    Assert::AreEqual(static_cast<std::uint64_t>(0), plans, L"a fleet ordered somewhere it cannot reach never stops re-planning");
+  }
+
+  TEST_METHOD(ALateLaunchJoinsTheStandingOrder)
+  {
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    DockShips(world, station, Game::HullId::Corvette, 4);
+
+    std::vector<std::uint32_t> counts = ZeroCounts();
+    Want(counts, Game::HullId::Corvette, 4);
+    Assert::AreEqual(Code(Game::World::ComposeResult::Composed), Code(world.ComposeFleet(station, 0, counts, Game::FACTION_PLAYER)),
+                     L"the compose was refused");
+
+    // Two out, two still inside, and the order arrives mid-launch -- which the design allows.
+    for (int tick = 0; tick < static_cast<int>(Game::FLEET_LAUNCH_EVERY_TICKS) + 5; ++tick)
+      world.Step();
+    Assert::AreEqual(2u, world.FleetOf(world.FleetInSlot(Game::FACTION_PLAYER, 0)).memberCount, L"the scene is not mid-launch");
+
+    const Game::WorldPos point = Game::LocalPos(1500.0f, 1000.0f);
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered), Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, MoveTo(point))),
+                     L"the fleet order was refused");
+
+    // Long enough for the two hulls still inside to launch on the metronome and then fly the leg.
+    for (int tick = 0; tick < 5500; ++tick)
+      world.Step();
+
+    const Game::World::FleetId fleet = world.FleetInSlot(Game::FACTION_PLAYER, 0);
+    Assert::AreEqual(4u, world.FleetOf(fleet).memberCount, L"the launch did not finish under a standing order");
+    const float spacing = Game::SlotSpacingMetres(Game::HullSpecOf(Game::HullId::Corvette).BoundingRadiusMetres());
+    for (const Game::ShipId member : LiveMembers(world, fleet))
+    {
+      Assert::IsTrue(Game::Distance(world.Ship(member).posWorld, point) < 4.0f * spacing,
+                     L"a hull born after the order flew to the rally instead of joining it");
+    }
+  }
+
+  TEST_METHOD(TheStandingOrderSurvivesTheRoundTrip)
+  {
+    Game::World original;
+    const Game::World::StationId station = MakeStationAt(original, 0.0f, 0.0f);
+    const Game::World::FleetId fleet = LaunchedFleet(original, station, 3, 2);
+
+    const Game::WorldPos point = Game::LocalPos(2600.0f, -1400.0f);
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered),
+                     Code(original.IssueFleetOrder(Game::FACTION_PLAYER, 3, MoveTo(point, true, -0.8f))), L"the order was refused");
+    for (int tick = 0; tick < 200; ++tick)
+      original.Step();
+
+    std::vector<std::uint8_t> saved;
+    Game::WriteWorldState(original, saved);
+    Game::World reloaded;
+    Assert::IsTrue(Game::ReadWorldState(saved, reloaded), L"the state did not load");
+
+    const Game::World::Fleet& before = original.FleetOf(fleet);
+    const Game::World::Fleet& after = reloaded.FleetOf(reloaded.FleetInSlot(Game::FACTION_PLAYER, 3));
+    Assert::IsTrue(before.orderKind == after.orderKind, L"the standing order's kind did not survive");
+    Assert::IsTrue(IsSamePosition(before.orderPoint, after.orderPoint), L"the standing order's point did not survive");
+    Assert::AreEqual(before.orderFacingRad, after.orderFacingRad, 0.0f, L"the standing order's facing did not survive");
+    Assert::IsTrue(before.orderHasFacing == after.orderHasFacing, L"the standing order's facing flag did not survive");
+
+    std::vector<std::uint8_t> a;
+    std::vector<std::uint8_t> b;
+    for (int tick = 0; tick < 600; ++tick)
+    {
+      original.Step();
+      reloaded.Step();
+      Game::WriteWorldState(original, a);
+      Game::WriteWorldState(reloaded, b);
+      Assert::IsTrue(a == b, L"a reloaded world flew a different order");
+    }
+  }
+
+  TEST_METHOD(TheSameFleetOrderProducesTheSameRun)
+  {
+    Game::World first;
+    Game::World second;
+    for (Game::World* world : {&first, &second})
+    {
+      BuildFleetlessScene(*world);
+      const Game::World::StationId station = MakeStationAt(*world, 5000.0f, 0.0f, 1.4f);
+      DockShips(*world, station, Game::HullId::Interceptor, 2);
+      DockShips(*world, station, Game::HullId::Frigate, 1);
+
+      std::vector<std::uint32_t> counts = ZeroCounts();
+      Want(counts, Game::HullId::Interceptor, 2);
+      Want(counts, Game::HullId::Frigate, 1);
+      Assert::AreEqual(Code(Game::World::ComposeResult::Composed), Code(world->ComposeFleet(station, 0, counts, Game::FACTION_PLAYER)),
+                       L"the compose was refused");
+      for (int tick = 0; tick < 60; ++tick)
+        world->Step();
+      Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered),
+                       Code(world->IssueFleetOrder(Game::FACTION_PLAYER, 0, MoveTo(Game::LocalPos(6800.0f, 1600.0f), true, 0.3f))),
+                       L"the fleet order was refused");
+    }
+
+    std::vector<std::uint8_t> a;
+    std::vector<std::uint8_t> b;
+    for (int tick = 0; tick < 900; ++tick)
+    {
+      first.Step();
+      second.Step();
+      Game::WriteWorldState(first, a);
+      Game::WriteWorldState(second, b);
+      Assert::IsTrue(a == b, L"two identical fleet orders diverged");
+    }
+    Assert::AreEqual(3u, first.FleetOf(first.FleetInSlot(Game::FACTION_PLAYER, 0)).memberCount, L"the fleet lost a member");
   }
 };
 } // namespace GameLogicTests

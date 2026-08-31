@@ -35,6 +35,10 @@ constexpr std::uint8_t KIND_LEAVE = 3;
 // discriminated kind is what the format already uses to say so.
 constexpr std::uint8_t KIND_DOCK_ORDER = 4;
 
+// An order that names a fleet rather than the ships in it (ADR 0049). It is the smallest message on
+// this lane and the only one whose size does not depend on how many ships it moves.
+constexpr std::uint8_t KIND_FLEET_ORDER = 5;
+
 // kind, complete, snapshotId, fragmentIndex, fragmentCount, tick, recordCount, hostileMask
 //
 // The mask is appended rather than inserted, so every field a reader already knew stays where it
@@ -69,7 +73,7 @@ constexpr std::uint32_t ORDER_HEADER_BYTES = 1 + 4 + 1 + 4 + 24 + 4;
 // rather than a misread. The format byte is what makes a disagreement between two builds a refusal
 // too -- there is nothing to migrate from yet, and a version nobody checks is a version nobody has.
 constexpr std::uint32_t WORLD_STATE_MAGIC = 0x54535750u; // 'PWST' little-endian: Persisted World STate
-constexpr std::uint8_t WORLD_STATE_FORMAT = 3;           // 2: the fleet table joined the file. 3: its launch manifest
+constexpr std::uint8_t WORLD_STATE_FORMAT = 4;           // 2: the fleet table. 3: its launch manifest. 4: its standing order
 
 // An EntityId is a u64, which is exactly what a {slot, generation} pair cost. So identity became
 // global for no bytes at all: the ship record stays 47, a fragment stays 23 ships, and the order cap
@@ -996,6 +1000,11 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes)
     for (std::uint32_t at = 0; at < fleet.manifestCount; ++at)
       out.U32(fleet.manifest[at]);
     out.U32(fleet.launchCooldownTicks);
+    out.U8(static_cast<std::uint8_t>(fleet.orderKind));
+    out.Pos(fleet.orderPoint);
+    out.F32(fleet.orderFacingRad);
+    out.Bool(fleet.orderHasFacing);
+    out.Handle(fleet.orderStation);
   }
 }
 
@@ -1189,6 +1198,15 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
     for (std::uint32_t at = 0; at < fleet.manifestCount; ++at)
       fleet.manifest[at] = in.U32();
     fleet.launchCooldownTicks = in.U32();
+
+    const std::uint8_t orderKind = in.U8();
+    if (!in.Ok() || orderKind > static_cast<std::uint8_t>(FleetOrderKind::Mine))
+      return false;
+    fleet.orderKind = static_cast<FleetOrderKind>(orderKind);
+    fleet.orderPoint = in.Pos();
+    fleet.orderFacingRad = in.F32();
+    fleet.orderHasFacing = in.Bool();
+    fleet.orderStation = in.Handle();
   }
 
   if (!in.Ok())
@@ -1332,6 +1350,49 @@ bool ReadDockOrder(std::span<const std::uint8_t> _datagram, DockOrder& _outOrder
   if (!in.Ok())
     return false;
 
+  _outOrder.station = station;
+  return true;
+}
+
+bool WriteFleetOrder(const FleetOrder& _order, Neuron::Transport& _transport)
+{
+  if (_order.slot >= FLEET_SLOTS || _order.kind > FleetOrderKind::Mine)
+    return false;
+
+  std::vector<std::uint8_t> bytes;
+  ByteWriter out(bytes);
+  out.U8(KIND_FLEET_ORDER);
+  out.U32(0); // order id, reserved: nothing acknowledges an order yet
+  out.U8(_order.slot);
+  out.U8(static_cast<std::uint8_t>(_order.kind));
+  out.U8(_order.hasFacing ? 1u : 0u);
+  out.F32(_order.facingRad);
+  out.Pos(_order.point);
+  out.Entity(_order.station);
+  return _transport.SendReliable(bytes.data(), static_cast<std::uint32_t>(bytes.size()));
+}
+
+bool ReadFleetOrder(std::span<const std::uint8_t> _datagram, FleetOrder& _outOrder)
+{
+  ByteReader in(_datagram);
+  if (in.U8() != KIND_FLEET_ORDER)
+    return false;
+
+  (void)in.U32(); // order id
+  const std::uint8_t slot = in.U8();
+  const std::uint8_t kind = in.U8();
+  const bool hasFacing = in.U8() != 0;
+  const float facingRad = in.F32();
+  const WorldPos point = in.Pos();
+  const EntityId station = in.Entity();
+  if (!in.Ok() || slot >= FLEET_SLOTS || kind > static_cast<std::uint8_t>(FleetOrderKind::Mine))
+    return false;
+
+  _outOrder.slot = slot;
+  _outOrder.kind = static_cast<FleetOrderKind>(kind);
+  _outOrder.point = point;
+  _outOrder.facingRad = facingRad;
+  _outOrder.hasFacing = hasFacing;
   _outOrder.station = station;
   return true;
 }

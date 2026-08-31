@@ -170,6 +170,27 @@ enum class OrderState : std::uint8_t
   Aligning // arrived; turning onto the ordered facing
 };
 
+// What a fleet was told to do, as against what one ship is doing about it. OrderState is a ship's
+// business and this is a fleet's, and the two never mean the same thing: every member of a fleet
+// under Move is Moving, Aligning or Idle at its own slot at different moments of the same order.
+//
+// Declared whole so the byte never renumbers, and two of the six are refused for now, each for its
+// own reason. Attack waits for the slice that gives it the protector's pursuit chassis and a
+// combatant flag to aim it with; Mine waits for a mining design and for something in the world to
+// mine, since a rock is presentation and a ship flies through it (ADR 0016, Design/Fleets.md 6.6).
+//
+// Stop is a kind a message carries and never a standing order a row holds: stopping is asking for
+// Idle, and what the row stores is what it was left in.
+enum class FleetOrderKind : std::uint8_t
+{
+  Idle,
+  Move,
+  Dock,
+  Attack,
+  Stop,
+  Mine
+};
+
 // One ship, as the simulation sees it. Everything here is advanced only in World::Step, and there
 // is nothing in it a renderer needs that a snapshot could not carry over a wire.
 //

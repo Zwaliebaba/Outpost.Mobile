@@ -203,6 +203,58 @@ public:
     Assert::IsTrue(Holds(viewB.Destroyed(), doomedEntity), L"the second subscriber lost the death to the first one's read");
   }
 
+  TEST_METHOD(AFleetOrderArrivesThroughTheSeam)
+  {
+    // The adapter's whole job for this kind: read it, resolve the one id it carries, and hand the
+    // subscriber's faction to the gate. There is no ship list to filter, which is what the message
+    // was shaped for (ADR 0049).
+    Game::World world;
+    const Game::ShipId ship = SpawnAt(world, 0.0f, 0.0f);
+    const Game::ShipId ships[] = {ship};
+    Assert::AreNotEqual(Game::World::INVALID_FLEET_ID, world.FormFleet(Game::FACTION_PLAYER, 2, ships), L"the fleet was refused");
+
+    Link link;
+    Game::Publisher publisher;
+    Game::Publisher::Desc desc;
+    desc.transport = &link.server;
+    desc.faction = Game::FACTION_PLAYER;
+    (void)publisher.Add(desc);
+
+    link.Pump(0);
+    Game::FleetOrder order;
+    order.slot = 2;
+    order.kind = Game::FleetOrderKind::Move;
+    order.point = Game::LocalPos(900.0f, 0.0f);
+    Assert::IsTrue(Game::WriteFleetOrder(order, link.client), L"the order was refused by the lane");
+    link.Pump(0);
+
+    publisher.ApplyOrders(world);
+    Assert::IsTrue(world.FleetOf(world.FleetInSlot(Game::FACTION_PLAYER, 2)).orderKind == Game::FleetOrderKind::Move,
+                   L"a fleet order did not reach the world through the seam");
+    Assert::AreEqual(Game::OrderState::Moving, world.Ship(ship).order, L"the fleet's member was not put under way");
+
+    // The same message from a subscriber of another faction reaches the same gate and is refused by
+    // it: a client cannot order a slot that is not its own, and the adapter never had to check.
+    Game::World other;
+    const Game::ShipId theirs = SpawnAt(other, 0.0f, 0.0f);
+    const Game::ShipId theirShips[] = {theirs};
+    Assert::AreNotEqual(Game::World::INVALID_FLEET_ID, other.FormFleet(Game::FACTION_PLAYER, 2, theirShips), L"the fleet was refused");
+
+    Link stranger;
+    Game::Publisher strangerPublisher;
+    Game::Publisher::Desc strangerDesc;
+    strangerDesc.transport = &stranger.server;
+    strangerDesc.faction = Game::FACTION_VANDAL;
+    (void)strangerPublisher.Add(strangerDesc);
+
+    stranger.Pump(0);
+    Assert::IsTrue(Game::WriteFleetOrder(order, stranger.client), L"the order was refused by the lane");
+    stranger.Pump(0);
+    strangerPublisher.ApplyOrders(other);
+    Assert::IsTrue(other.FleetOf(other.FleetInSlot(Game::FACTION_PLAYER, 2)).orderKind == Game::FleetOrderKind::Idle,
+                   L"one faction ordered another faction's slot");
+  }
+
   TEST_METHOD(OrdersPastTheBudgetWaitTheirTurnAndTheTickIsCounted)
   {
     // A client saturating its send rate buys formation solves and route planning at a leverage no

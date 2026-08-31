@@ -409,6 +409,25 @@ that goes Idle short of it, which is what the dock approach already does and wha
 arrive whole through traffic, and what makes late launches join the formation with no special
 case.
 
+> **Amendment, 2026-08-31 (slice 3).** Two of this section's sentences are narrower in the code.
+>
+> **A late launch joins the order by its own step, not by patience.** "Late launches join the
+> formation with no special case" is one case: the launch re-issues the standing order over every
+> member including the one just born, which re-solves the formation for the count that is actually
+> out. Patience cannot do it, because a hull that has never been given the order has nothing to be
+> patient about.
+>
+> **Patience reads the member's route destination and never the fleet's order point**, and that is
+> load-bearing rather than incidental. A route whose point the wall forbids ends as close as the
+> geometry allows, and `AdvanceRoute` moves the destination to where the ship stands so that it is
+> never re-planned back at a point it cannot reach
+> ([ADR 0042](Decisions/0042-a-route-never-asks-for-a-point-the-wall-forbids.md)). Patience inherits
+> that by reading the route; a patience that re-derived the point from the fleet would discard it and
+> re-plan every member of a fleet ordered into a wall on every tick, for ever — invisible from
+> outside a tick, because the ship would be set Moving at the top of `Step` and put back to Idle
+> before the end of it. `World::RoutePlanCount()` is the readout that makes it visible, and
+> `AFleetOrderedIntoAWallSettles` is the test that reads it ([slice 3](Fleets-slice-3.md) §2.5).
+
 ### 6.3 The cruise rule — slowest member (owner decision 3)
 
 At lowering, every member's `orderSpeedCapMetresPerSec` is set to the slowest member's

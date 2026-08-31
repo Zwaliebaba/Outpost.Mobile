@@ -113,6 +113,21 @@ struct DockOrder
   EntityId station = INVALID_ENTITY_ID; // the station's structure
 };
 
+// What one fleet order carries up the wire.
+//
+// It carries no ship list at all, and that is the whole point rather than an economy: one small
+// fixed-size message whatever the fleet's size, so MaxShipsPerOrder does not apply to it and never
+// will, and a fleet of eight costs a client exactly what a fleet of one does (ADR 0049).
+struct FleetOrder
+{
+  std::uint8_t slot = 0;
+  FleetOrderKind kind = FleetOrderKind::Idle;
+  WorldPos point;                       // Move
+  float facingRad = 0.0f;               // Move
+  bool hasFacing = false;               // Move
+  EntityId station = INVALID_ENTITY_ID; // Dock
+};
+
 // How many ships fit in one datagram of each kind. Derived from MAX_DATAGRAM_BYTES rather than
 // chosen, so the day the record grows these follow it.
 [[nodiscard]] std::uint32_t ShipsPerSnapshotFragment() noexcept;
@@ -330,4 +345,10 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes);
 // two caps differing by two is a fact nobody will remember and no test would pin.
 [[nodiscard]] bool WriteDockOrder(const DockOrder& _order, Neuron::Transport& _transport);
 [[nodiscard]] bool ReadDockOrder(std::span<const std::uint8_t> _datagram, DockOrder& _outOrder);
+
+// A fleet order, on the same reliable lane and in the same shape. The reader refuses a slot past
+// FLEET_SLOTS and a kind past the last one it knows, because a malformed message is content and
+// content fails closed rather than being passed on to a gate that would have to guess (AGENTS.md 5).
+[[nodiscard]] bool WriteFleetOrder(const FleetOrder& _order, Neuron::Transport& _transport);
+[[nodiscard]] bool ReadFleetOrder(std::span<const std::uint8_t> _datagram, FleetOrder& _outOrder);
 } // namespace Game

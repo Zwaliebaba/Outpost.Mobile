@@ -199,6 +199,19 @@ public:
     std::uint32_t manifest[MAX_FLEET_SHIPS]{};
     std::uint32_t manifestCount = 0;
     std::uint32_t launchCooldownTicks = 0;
+
+    // The standing order, at fleet grain. Members derive their own intent from it and keep deriving
+    // it for as long as it stands, which is what makes a fleet arrive whole through traffic and
+    // what makes a hull launched after the order join it rather than the rally (Design/Fleets.md 6).
+    //
+    // The station is a handle rather than an id, for ADR 0005's reason and the docking table's: an
+    // order that outlives the station it names must stop resolving rather than name whatever ship
+    // took that index.
+    FleetOrderKind orderKind = FleetOrderKind::Idle;
+    WorldPos orderPoint;         // Move
+    float orderFacingRad = 0.0f; // Move
+    bool orderHasFacing = false; // Move
+    ShipHandle orderStation;     // Dock
   };
 
   // Adds a ship at rest. Returns its id, which is its index for as long as nothing is despawned.
@@ -492,6 +505,47 @@ public:
   // that offered them cannot disagree with what the launch finds.
   ComposeResult ComposeFleet(StationId _station, std::uint8_t _slot, std::span<const std::uint32_t> _hullCounts, FactionId _issuerFaction);
 
+  // What happened to a fleet order. Returned for the local host's log and for tests, like every
+  // other order result here; nothing returns over the wire.
+  enum class FleetOrderResult : std::uint8_t
+  {
+    Ordered,
+    NoSuchFleet,
+    NotAStation,
+    RefusedStanding,
+    Unsupported
+  };
+
+  // Everything one fleet order asks for, with the ids already resolved. The wire names entities and
+  // this names ships, and the publisher is where the two meet (ADR 0047).
+  struct FleetCommand
+  {
+    FleetOrderKind kind = FleetOrderKind::Idle;
+    WorldPos point;                   // Move
+    float facingRad = 0.0f;           // Move
+    bool hasFacing = false;           // Move
+    ShipId station = INVALID_SHIP_ID; // Dock: the station's structure
+  };
+
+  // Orders the fleet in _slot. This is the design's title sentence as a signature: an order names a
+  // FLEET, so the authority gate is one comparison -- does the issuer's faction own a live fleet in
+  // that slot -- where a ship-list order needs a filter over every id in it, and an order stops
+  // scaling with the number of ships in the group (ADR 0049).
+  //
+  // The gate is here and not in the adapter for ADR 0014's reason, and every refusal changes
+  // nothing:
+  //
+  //   NoSuchFleet      no live fleet of _issuerFaction in that slot, a slot past the fifth included;
+  //   NotAStation      Dock: the named record is not a live station row;
+  //   RefusedStanding  Dock: that station's owner holds the issuer hostile -- IssueDockOrder's own
+  //                    gate, surfaced rather than restated;
+  //   Unsupported      Attack and Mine, which wait for the designs that give them meaning.
+  //
+  // An accepted order replaces whatever standing order was there. Stop is the one kind that leaves
+  // the row Idle rather than holding one: it is a brake, and "order the fleet to where it already
+  // is" is a formation shuffle rather than a stop.
+  FleetOrderResult IssueFleetOrder(FactionId _issuerFaction, std::uint8_t _slot, const FleetCommand& _command);
+
   // One fixed tick. The only thing in the game that advances simulation state.
   //
   // Standing NPC intent is issued first, before pass 0 -- the position an adapter's incoming orders
@@ -537,6 +591,19 @@ public:
   [[nodiscard]] std::uint64_t QueriedCandidateCount() const noexcept
   {
     return m_queriedCandidates;
+  }
+
+  // How many routes have been planned since this world began. A readout, never read by the
+  // simulation, and here for the reason the two counters above are: a planner quietly running every
+  // tick and one running only when something changed look exactly alike from the outside -- the
+  // ships are in the right places either way -- until somebody counts.
+  //
+  // A route is a pure function of the static set and the two endpoints, so re-planning without one
+  // of those changing costs an A* and buys nothing (PlanRoute). The number is what lets a test say
+  // that rather than a comment claiming it.
+  [[nodiscard]] std::uint64_t RoutePlanCount() const noexcept
+  {
+    return m_routePlans;
   }
 
   // What the last gather asked the index for, so a test can see the radius narrow rather than infer
@@ -641,6 +708,16 @@ private:
   // both refuse a slot past the fifth and a slot already held, and neither may invent its own answer
   // to that question.
   [[nodiscard]] bool CanTakeSlot(FactionId _ownerFaction, std::uint8_t _slot) const noexcept;
+
+  // Puts a fleet's standing order onto the ships that are out, through the same calls a player's
+  // click has always gone through. Called when the order is given and again whenever a launch adds
+  // a member, so a hull born after the order joins the formation solved for it rather than the
+  // rally it would otherwise have flown to.
+  void LowerFleetOrder(Fleet& _fleet);
+
+  // The slowest member's top speed, or 0 when the fleet has nothing out: what every member's order
+  // speed cap is set to while the fleet is going somewhere together (Design/Fleets.md 6.3).
+  [[nodiscard]] float FleetCruiseSpeedMetresPerSec(const Fleet& _fleet) const noexcept;
 
   void SnapshotPreviousTick() noexcept;
   void RebuildStaticIfDirty();
@@ -814,6 +891,7 @@ private:
   NeighbourhoodExtent m_extent;
 
   // Counted per tick and reset by each gather: a readout, never read by the simulation.
+  std::uint64_t m_routePlans = 0;
   std::uint64_t m_gatheredCandidates = 0;
   std::uint64_t m_queriedCandidates = 0;
   std::vector<ShipId> m_queryScratch;
