@@ -5,7 +5,8 @@ Date: 2026-08-31
 
 ## Context
 
-[`Design/Fleets.md`](../Fleets.md) §6 makes the fleet the unit of command. The tree already has two
+[`Design/Archive/Fleets.md`](../Archive/Fleets.md) §6 makes the fleet the unit of command. The tree
+already has two
 order messages and they are both ship lists: `MoveOrder` and `DockOrder` each carry up to
 `MaxShipsPerOrder()` entity ids, and `World` gates them by filtering the list down to the issuer's
 own ships (ADR 0014).

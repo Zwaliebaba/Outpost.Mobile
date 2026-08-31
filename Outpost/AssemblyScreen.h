@@ -11,7 +11,7 @@
 namespace Outpost
 {
 // The station's assembly view: what this client has docked here, a draft drawn out of it, and the
-// slot the draft becomes a fleet in (Design/Fleets.md 9.4).
+// slot the draft becomes a fleet in (Design/Archive/Fleets.md 9.4).
 //
 // Its own class rather than more of Hud, for three reasons that each stand alone. It holds state the
 // HUD has no business in -- a draft, a chosen slot, the station it belongs to -- where the HUD holds

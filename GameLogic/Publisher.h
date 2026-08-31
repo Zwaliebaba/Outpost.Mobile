@@ -134,7 +134,7 @@ private:
     // nothing that is simulated, is outside the replay contract and is not saved. It also makes
     // join-time delivery free -- a new subscriber's lists are empty, so its first Publish finds
     // every occupied slot changed and sends the lot, which is the despawn cursor's own joining rule
-    // arriving at fleets with no second mechanism (Design/Fleets.md 8.1, ADR 0027).
+    // arriving at fleets with no second mechanism (Design/Archive/Fleets.md 8.1, ADR 0027).
     //
     // Membership is the whole of what is diffed; occupancy is not tracked here because it does not
     // have to be. A slot that empties always passes through a roster change on its way out -- the

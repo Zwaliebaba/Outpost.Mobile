@@ -227,7 +227,7 @@ void Publisher::Publish(World& _world)
     // Rosters first, and on every tick rather than on the due ones. A roster is what says who is in
     // a fleet; the status block that rides the update says where it is and what it is doing, and a
     // block describing a membership the client has not been told yet is a button that cannot draw
-    // itself (Design/Fleets.md 8.1).
+    // itself (Design/Archive/Fleets.md 8.1).
     PublishRosters(_world, subscriber);
 
     if (subscriber.interest.IsDueOn(_world.Tick(), subscriber.phase))
@@ -299,7 +299,7 @@ void Publisher::PublishOne(const World& _world, Subscriber& _subscriber)
   // four of five fleets are routinely outside the interest set, so a player whose camera is over
   // empty space would be told nothing about any of them. A zero-record fragment carrying a status
   // block is 28 to 98 bytes at the update rate, and it is the only thing that says where they are
-  // (Design/Fleets.md 8.2, Design/Fleets-slice-5.md 2.8).
+  // (Design/Archive/Fleets.md 8.2, Design/Archive/Fleets-slice-5.md 2.8).
   if (m_sendScratch.empty() && _subscriber.interest.Left().empty() && !HasAnyFleet(_world, _subscriber.faction))
     return;
 

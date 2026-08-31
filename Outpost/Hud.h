@@ -104,10 +104,10 @@ public:
   // HUD never reads a clock itself and this is the one piece of it that has to advance whether or
   // not anything was redrawn.
   //
-  // The log line the rising edge earns is WorldView's now: two of Design/Fleets.md 9.6's other lines
+  // The log line the rising edge earns is WorldView's now: two of Design/Archive/Fleets.md 9.6's other lines
   // turn on a departure's stated cause, which only that half sees, and splitting one section's log
   // across two files by which line happened to need what is the shape to avoid
-  // (Design/Fleets-slice-8.md 2.1).
+  // (Design/Archive/Fleets-slice-8.md 2.1).
   void UpdatePulse(float _dtSec);
 
   // Reports true when the event landed on a panel and was used up, so a tap on the bottom bar can
@@ -194,7 +194,7 @@ private:
   // The under-attack pulse's clock, and the edge it is read against.
   //
   // Presentation state, and it belongs here rather than in the view for the reason the rest of this
-  // class does: the alert bit itself is the simulation's (Design/Fleets.md 7.3), and how loudly a
+  // class does: the alert bit itself is the simulation's (Design/Archive/Fleets.md 7.3), and how loudly a
   // button says so is the HUD's. Real time, so a paused game still pulses.
   float m_alertPhaseSec = 0.0f;
 };

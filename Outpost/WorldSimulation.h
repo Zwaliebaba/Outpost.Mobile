@@ -72,7 +72,7 @@ public:
   // 3 flies the camera fifty kilometres; under a centre that averaged every own ship, the interest
   // set stayed where that average was and not one hull of fleet 3 was ever sent, so the button flew
   // the camera to an empty sky. The design says the interest set follows the camera
-  // (Design/Fleets.md 9.1) and this class's own note anticipated it: the day a real player has a
+  // (Design/Archive/Fleets.md 9.1) and this class's own note anticipated it: the day a real player has a
   // camera, the centre comes from there.
   //
   // It is not on the wire and does not need to be. The composition root holds both halves and may

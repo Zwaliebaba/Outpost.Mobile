@@ -102,7 +102,7 @@ struct WorldSnapshot
 // fixed-size message whatever the fleet's size, so there is no cap for one to exceed and never will
 // be, and a fleet of eight costs a client exactly what a fleet of one does (ADR 0049). It is the
 // only order that moves ships now -- the two that carried lists retired with the control groups
-// that sent them (Design/Fleets-slice-6.md 2.10).
+// that sent them (Design/Archive/Fleets-slice-6.md 2.10).
 struct FleetOrder
 {
   std::uint8_t slot = 0;
@@ -119,7 +119,7 @@ struct FleetOrder
 // A statement of membership rather than a delta: a roster for a slot replaces that slot's list
 // whole, so a lost one is repaired by the next rather than compounding. It carries no position and
 // no order -- those ride the status block in every update, because they change every tick and this
-// changes at human speed (Design/Fleets.md 8.1).
+// changes at human speed (Design/Archive/Fleets.md 8.1).
 //
 // An empty members list is a fleet with nobody in space: a composed one whose manifest has not
 // begun to pour, or one that has just lost its last ship. It is NOT "the slot is free" -- that is
@@ -152,7 +152,7 @@ struct LedgerReply
 };
 
 // A draft, sent. The slot and the counts the assembly screen assembled; every gate is World's
-// (Design/Fleets.md 5.2), and the issuing faction is the subscriber's rather than anything stated
+// (Design/Archive/Fleets.md 5.2), and the issuing faction is the subscriber's rather than anything stated
 // here -- the same rule every other order on this lane follows.
 struct ComposeOrder
 {
@@ -166,7 +166,7 @@ struct ComposeOrder
 // Not a message. It is decoded out of the snapshot header, which is where it rides so that a
 // player is told about all five fleets whether or not any of them is in the interest set -- four of
 // five routinely are not, which is the whole point of a fleet being able to be elsewhere
-// (Design/Fleets.md 8.2).
+// (Design/Archive/Fleets.md 8.2).
 struct FleetStatus
 {
   WorldPos position;       // the centroid of live members, or the launch station while none is out
@@ -314,7 +314,7 @@ public:
   //
   // This, and not an empty roster, is what says a slot is held. A roster is stated once on the
   // reliable lane and can be refused; the mask rides every update, so it heals itself -- the same
-  // trade hostileMask made, for the same reason (Design/Fleets.md 8.1, 8.2).
+  // trade hostileMask made, for the same reason (Design/Archive/Fleets.md 8.1, 8.2).
   [[nodiscard]] std::uint8_t FleetMask() const noexcept
   {
     return m_fleetMask;
@@ -442,7 +442,7 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes);
 // There is exactly one kind of them that moves ships, and it names a fleet (ADR 0049). The
 // ship-list move and dock orders that stood here retired with the control groups that sent them:
 // nothing wrote one once selection was fleet-grain, and a wire message nothing writes is a second
-// way to command waiting to be found (Design/Fleets-slice-6.md 2.10).
+// way to command waiting to be found (Design/Archive/Fleets-slice-6.md 2.10).
 //
 // The reader refuses a slot past FLEET_SLOTS and a kind past the last one it knows, because a
 // malformed message is content and content fails closed rather than being passed on to a gate that

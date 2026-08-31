@@ -65,7 +65,7 @@ struct HullSpec
 
   // Whether this hull answers an attack. A fleet's defense turns its combatants on whoever was
   // stated to have shot at it and leaves the rest flying the order they were given, so this is what
-  // decides which half of a mixed fleet reacts (Design/Fleets.md 6.5, 7.2).
+  // decides which half of a mixed fleet reacts (Design/Archive/Fleets.md 6.5, 7.2).
   //
   // Authored rather than derived, for avoidanceAuthority's reason: a hull that is armed but precious
   // -- a Q-ship, an armed hauler -- has to stay expressible, and a flag inferred from a weapon table

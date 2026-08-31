@@ -10,7 +10,7 @@
 
 namespace Outpost
 {
-// One fleet, read: what it is, what is in it, and what it can be told to do (Design/Fleets.md 9.3).
+// One fleet, read: what it is, what is in it, and what it can be told to do (Design/Archive/Fleets.md 9.3).
 //
 // A panel over the bar rather than a modal screen, which is the whole difference between this and
 // AssemblyScreen: the world keeps working behind it, and it consumes only what lands on itself. A
@@ -58,7 +58,7 @@ public:
                                    std::uint32_t _heightPx);
 
 private:
-  // The four the design names. MINE is absent until the mining design lands (Design/Fleets.md 6.6),
+  // The four the design names. MINE is absent until the mining design lands (Design/Archive/Fleets.md 6.6),
   // and it is absent from this array rather than drawn disabled: a button that has never worked is
   // a promise, and the design would rather make none.
   static constexpr int COMMANDS = 4;

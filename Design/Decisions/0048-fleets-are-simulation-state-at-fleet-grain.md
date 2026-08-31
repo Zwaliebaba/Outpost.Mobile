@@ -5,8 +5,9 @@ Date: 2026-08-31
 
 ## Context
 
-[`Design/Fleets.md`](../Fleets.md) makes the fleet the unit of command: at most five per faction, at
-most eight ships each, composed at a station, ordered as one thing, defending itself when attacked.
+[`Design/Archive/Fleets.md`](../Archive/Fleets.md) makes the fleet the unit of command: at most
+five per faction, at most eight ships each, composed at a station, ordered as one thing, defending
+itself when attacked.
 The tree already has something that looks like the answer — `WorldView::CONTROL_GROUPS`, five
 remembered selections on the same five HUD buttons — and the cheapest reading of the brief is that a
 fleet is a control group that got stricter.
@@ -66,8 +67,8 @@ Four things forced it, and each is one the client could not have done:
   reach. There is no migration to pay for, because a mismatched format byte is a refusal and nothing
   in this tree keeps a saved world across a build.
 - **`FLEET_SLOTS` and `MAX_FLEET_SHIPS` are contract constants.** Changing either changes which
-  fleets can be formed, which changes recorded outcomes. `Design/Fleets.md` §4.2 argues the eight
-  against formation span, the separation measurements and the interest radius.
+  fleets can be formed, which changes recorded outcomes. `Design/Archive/Fleets.md` §4.2 argues the
+  eight against formation span, the separation measurements and the interest radius.
 - **Members are handles, so the despawn path gains nothing.** A member that docked or died stops
   resolving and the fleet pass prunes it in place; there is no fifth parallel table for `DespawnShip`
   to repair, and a ship whose `ShipId` moved by swap-and-pop is still the same member.

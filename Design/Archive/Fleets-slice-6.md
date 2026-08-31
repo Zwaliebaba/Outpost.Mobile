@@ -22,7 +22,7 @@ That second half is what makes it one slice rather than two. Control groups and 
 the same five buttons, the same number keys' worth of muscle memory, and the same
 selection model — so a slice that added fleets beside groups would ship a game with two ways to
 command that disagree about what a selection is. The design took that decision once
-([ADR 0049](Decisions/0049-orders-name-a-fleet-not-ships.md)): an order names a fleet. This slice is
+([ADR 0049](../Decisions/0049-orders-name-a-fleet-not-ships.md)): an order names a fleet. This slice is
 that decision reaching the screen, and the group machinery leaving with it.
 
 ---

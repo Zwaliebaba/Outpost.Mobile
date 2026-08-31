@@ -181,7 +181,7 @@ public:
     // 22 and not the 23 that stood here through the quantized wire: the fleet status block joined
     // the header, and it is sized against its WORST case -- five fleets, 71 bytes -- rather than
     // against what an update happens to carry, so that this stays one number every caller and every
-    // test agree on (Design/Fleets-slice-5.md 2.2).
+    // test agree on (Design/Archive/Fleets-slice-5.md 2.2).
     Assert::AreEqual(22u, Game::ShipsPerSnapshotFragment(), L"the record plus the fleet block no longer fits 22 ships in a datagram");
     Assert::IsTrue(Game::ShipsPerSnapshotFragment() < 64, L"the record got suspiciously small");
   }
@@ -736,7 +736,7 @@ public:
 
     // An empty roster is a message and not an omission: it is what a fleet with nobody in space
     // states, which is both a composed one and one that has just lost its last ship. What it does
-    // NOT mean is that the slot is free -- that is the status block's mask (Design/Fleets.md 8.1).
+    // NOT mean is that the slot is free -- that is the status block's mask (Design/Archive/Fleets.md 8.1).
     Game::FleetRoster none;
     none.slot = 0;
     CaptureTransport emptyLink;

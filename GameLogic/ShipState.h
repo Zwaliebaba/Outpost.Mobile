@@ -40,9 +40,9 @@ inline constexpr std::uint32_t FACTION_LIMIT = 8;
 // Both are in the replay contract: they decide which FormFleet calls are accepted, so a build that
 // disagreed about either would form a fleet this one refuses. They sit beside FACTION_LIMIT because
 // all three are per-faction ceilings, and because the fleet wire's slot mask will lean on
-// FLEET_SLOTS exactly as the hostileMask leans on FACTION_LIMIT (Design/Fleets.md 8.2).
+// FLEET_SLOTS exactly as the hostileMask leans on FACTION_LIMIT (Design/Archive/Fleets.md 8.2).
 //
-// Eight is measured rather than liked (Design/Fleets.md 4.2). A Carrier-led wedge of eight spans
+// Eight is measured rather than liked (Design/Archive/Fleets.md 4.2). A Carrier-led wedge of eight spans
 // about 1 km, inside the 2,000 m interest radius, while twelve is outside it -- a fleet whose far
 // wing its own player cannot see. A compressed pack of eight unjams in 0.4 s against 2.5 s at
 // sixteen, which is SEPARATION_ITERATIONS' own measurement read as a fleet size. And five fleets of
@@ -177,7 +177,7 @@ enum class OrderState : std::uint8_t
 // Declared whole so the byte never renumbers, and two of the six are refused for now, each for its
 // own reason. Attack waits for the slice that gives it the protector's pursuit chassis and a
 // combatant flag to aim it with; Mine waits for a mining design and for something in the world to
-// mine, since a rock is presentation and a ship flies through it (ADR 0016, Design/Fleets.md 6.6).
+// mine, since a rock is presentation and a ship flies through it (ADR 0016, Design/Archive/Fleets.md 6.6).
 //
 // Stop is a kind a message carries and never a standing order a row holds: stopping is asking for
 // Idle, and what the row stores is what it was left in.

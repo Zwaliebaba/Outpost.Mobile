@@ -11,7 +11,8 @@ thing reacting is eight ships instead of one.
 
 ## Context
 
-[`Design/Fleets.md`](../Fleets.md) §7 says a fleet defends itself when it is attacked. There is
+[`Design/Archive/Fleets.md`](../Archive/Fleets.md) §7 says a fleet defends itself when it is
+attacked. There is
 still no combat, so — exactly as with the protector response — what lands is the whole framework
 around an absent act, driven by `RecordHostileAct` and a debug key.
 
@@ -68,7 +69,8 @@ both call, so the two cannot drift apart.
 - **The two bounds bind in different situations, and neither is redundant.** No hull in the table
   covers a kilometre in the ten seconds one act buys, so a hit-and-run attacker is released by the
   **alert**; a sustained fight, whose acts keep refilling the alert, is released by the **leash**
-  when it drifts off the ground it started on. `Design/Fleets.md` §7.2 reads as though the leash
+  when it drifts off the ground it started on. `Design/Archive/Fleets.md` §7.2 reads as though the
+  leash
   does both, and an amendment there records that it does not.
 - **The alert outlives the engagement**, which is what makes the wire's two bits differ: a fleet can
   be *under attack* and no longer *engaged*. An explicit order clears the threat and leaves the alert

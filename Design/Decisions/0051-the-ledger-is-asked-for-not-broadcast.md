@@ -8,7 +8,8 @@ issues an order; this one asks a question and is answered.
 
 ## Context
 
-[`Design/Fleets.md`](../Fleets.md) §9.4 opens an assembly screen on a long-press of a station: it
+[`Design/Archive/Fleets.md`](../Archive/Fleets.md) §9.4 opens an assembly screen on a long-press of
+a station: it
 lists the hulls the player has docked there, and a draft of them becomes a fleet. The screen cannot
 be drawn from what a client already holds. A station's ledger is deliberately absent from the ship
 record — `Design/Archive/Stations.md` 6.2 put it on the withheld list beside the garrison numbers

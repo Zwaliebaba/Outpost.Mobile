@@ -11,7 +11,7 @@ namespace
 {
 constexpr char TIMES[] = "\xD7";
 
-// In the order the design lists them, and MINE is not among them (Design/Fleets.md 9.3, 6.6).
+// In the order the design lists them, and MINE is not among them (Design/Archive/Fleets.md 9.3, 6.6).
 constexpr const char* COMMAND_LABELS[] = {"MOVE", "ATTACK", "DOCK", "STOP"};
 constexpr WorldView::ArmedOrder COMMAND_ARMS[] = {WorldView::ArmedOrder::Move, WorldView::ArmedOrder::Attack, WorldView::ArmedOrder::Dock,
                                                   WorldView::ArmedOrder::None};
@@ -133,7 +133,7 @@ void FleetSheet::Draw(TextRenderer& _text, const WorldView& _view, std::span<con
     char status[64] = {};
     if ((bits & Game::FLEET_STATUS_KIND_MASK) == Game::FLEET_STATUS_LAUNCHING)
     {
-      // The roster's size against the status block's count -- the two numbers Design/Fleets.md 8.2's
+      // The roster's size against the status block's count -- the two numbers Design/Archive/Fleets.md 8.2's
       // amendment named this line as the use for.
       std::snprintf(status, sizeof(status), "LAUNCHING %d OF %d", out, _view.FleetCount(m_slot));
     }
@@ -253,7 +253,7 @@ bool FleetSheet::HandlePointer(const PointerEvent& _event, WorldView& _view, flo
 
     // STOP needs no target, so it is the one command that sends immediately. The other three arm
     // the next world tap and close, which is what turns a named verb into an order
-    // (Design/Fleets.md 9.3).
+    // (Design/Archive/Fleets.md 9.3).
     if (COMMAND_ARMS[at] == WorldView::ArmedOrder::None)
       _view.IssueStopOrder();
     else
