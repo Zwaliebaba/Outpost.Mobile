@@ -332,6 +332,18 @@ inline constexpr float DOCK_CAPTURE_METRES = 60.0f;
 // (Design/Archive/Stations.md 8.3).
 inline constexpr float PURSUIT_REPLAN_METRES = 64.0f;
 
+// --- fleets --------------------------------------------------------------------------------------
+// How long a station waits between the hulls of one fleet. In the contract, and near the top of it:
+// it decides on which tick a ship starts existing, which is DOCK_CAPTURE_METRES' own sentence read
+// backwards.
+//
+// The cadence is not what keeps a launch from jamming -- 0.75 s buys a Corvette about 5.6 m from a
+// standing start, well inside its own hull, and the geometry is what actually holds the ships apart
+// (World::StepFleets). What it buys is that a launch reads as a launch: eight hulls are out in
+// 5.25 s, one at a time, instead of appearing at once (Design/Fleets.md 5.3).
+inline constexpr std::uint32_t FLEET_LAUNCH_EVERY_TICKS = 45;
+static_assert(FLEET_LAUNCH_EVERY_TICKS > 0, "a launch cadence of zero would spawn a whole fleet on one tick");
+
 // --- interest management -----------------------------------------------------------------------
 // Not in the replay contract, and that is worth saying because everything around it is: these change
 // what is *sent*, never what is *simulated*. A recording made at one radius replays identically at

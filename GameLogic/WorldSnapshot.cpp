@@ -69,7 +69,7 @@ constexpr std::uint32_t ORDER_HEADER_BYTES = 1 + 4 + 1 + 4 + 24 + 4;
 // rather than a misread. The format byte is what makes a disagreement between two builds a refusal
 // too -- there is nothing to migrate from yet, and a version nobody checks is a version nobody has.
 constexpr std::uint32_t WORLD_STATE_MAGIC = 0x54535750u; // 'PWST' little-endian: Persisted World STate
-constexpr std::uint8_t WORLD_STATE_FORMAT = 2;           // 2: the fleet table joined the file
+constexpr std::uint8_t WORLD_STATE_FORMAT = 3;           // 2: the fleet table joined the file. 3: its launch manifest
 
 // An EntityId is a u64, which is exactly what a {slot, generation} pair cost. So identity became
 // global for no bytes at all: the ship record stays 47, a fragment stays 23 ships, and the order cap
@@ -991,6 +991,11 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes)
     out.U32(fleet.memberCount);
     for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
       out.Handle(fleet.members[at]);
+    out.Handle(fleet.launchStructure);
+    out.U32(fleet.manifestCount);
+    for (std::uint32_t at = 0; at < fleet.manifestCount; ++at)
+      out.U32(fleet.manifest[at]);
+    out.U32(fleet.launchCooldownTicks);
   }
 }
 
@@ -1173,6 +1178,17 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
     // already, and a second check here would only turn a self-repairing world into a refused load.
     for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
       fleet.members[at] = in.Handle();
+
+    fleet.launchStructure = in.Handle();
+    fleet.manifestCount = in.U32();
+    // The invariant ComposeFleet establishes and every launch preserves. A file that broke it would
+    // launch a ship into a row with nowhere to put it, which is memory past the end of a member
+    // array rather than a wrong number.
+    if (!in.Ok() || fleet.manifestCount > MAX_FLEET_SHIPS || fleet.memberCount + fleet.manifestCount > MAX_FLEET_SHIPS)
+      return false;
+    for (std::uint32_t at = 0; at < fleet.manifestCount; ++at)
+      fleet.manifest[at] = in.U32();
+    fleet.launchCooldownTicks = in.U32();
   }
 
   if (!in.Ok())

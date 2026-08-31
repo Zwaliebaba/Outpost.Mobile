@@ -186,6 +186,19 @@ public:
 
     ShipHandle members[MAX_FLEET_SHIPS];
     std::uint32_t memberCount = 0;
+
+    // The launch manifest: hulls composed into this fleet and still inside the station. The rows
+    // left the ledger when the fleet was composed, so nothing else can claim them, and the
+    // metronome in StepFleets is what turns them into ships (Design/Fleets.md 5.2, 5.3).
+    //
+    // memberCount + manifestCount <= MAX_FLEET_SHIPS is the invariant compose establishes and every
+    // launch preserves: a launch moves one hull from the second count to the first, and a loss only
+    // lowers the first. The codec checks it, because a file that broke it would launch a ship into a
+    // row with nowhere to put it.
+    ShipHandle launchStructure; // the station the manifest is inside; its death strands the manifest
+    std::uint32_t manifest[MAX_FLEET_SHIPS]{};
+    std::uint32_t manifestCount = 0;
+    std::uint32_t launchCooldownTicks = 0;
   };
 
   // Adds a ship at rest. Returns its id, which is its index for as long as nothing is despawned.
@@ -417,10 +430,11 @@ public:
   // The last is the fleet-only model held where it is cheapest to hold: one ship is in one fleet,
   // checked at the only place that makes a membership (Design/Fleets.md 15, decision 1).
   //
-  // This is not ComposeFleet, which is the next slice's. Composing takes hulls out of a station's
-  // ledger and leaves a manifest for the launch metronome; forming takes ships that are in space,
-  // which is what the starting fleet needs and what composing is written in terms of once there is
-  // a manifest for it to fill.
+  // This is not ComposeFleet. Composing takes hulls out of a station's ledger and leaves a manifest
+  // for the launch metronome; forming takes ships that are already in space, which is what the
+  // starting fleet needs. A composed fleet begins with no members at all, so it cannot go through
+  // this function -- what the two share is the slot gate, and they share it by both asking
+  // CanTakeSlot rather than by one calling the other.
   FleetId FormFleet(FactionId _ownerFaction, std::uint8_t _slot, std::span<const ShipId> _ships);
 
   // The fleet in one of an owner's slots, or INVALID_FLEET_ID. This pair is the only reference to a
@@ -441,6 +455,42 @@ public:
   {
     return static_cast<std::uint32_t>(m_fleets.size());
   }
+
+  // What happened to a compose. Returned for the local host's log and for tests; nothing returns
+  // over the wire, because an order is fire-and-forget and the client's affordance already knew --
+  // IssueDockOrder's sentence, and for its reason (Design/Fleets.md 5.2).
+  enum class ComposeResult : std::uint8_t
+  {
+    Composed,
+    NotAStation,
+    RefusedStanding,
+    SlotTaken,
+    TooMany,
+    NotDocked
+  };
+
+  // Makes a fleet in _slot for _issuerFaction out of hulls docked at _station, and leaves them in
+  // its manifest for the launch metronome to spawn.
+  //
+  // _hullCounts is indexed by hull id. Five gates, in this order, each refusing the whole call and
+  // changing nothing -- the dock gate's rule rather than the move gate's, because a fleet built from
+  // some of what was asked for is a fleet nobody asked for:
+  //
+  //   NotAStation      _station is not a live station row;
+  //   RefusedStanding  the station's owner holds the issuer hostile -- you do not assemble a battle
+  //                    group in a hostile port, which is the dock gate's mirror;
+  //   SlotTaken        a slot past FLEET_SLOTS, or one this faction already holds. One gate and one
+  //                    result: a slot that does not exist is not available either;
+  //   TooMany          nothing asked for, or more than MAX_FLEET_SHIPS. One result for one gate, so
+  //                    an empty compose reads as TooMany too;
+  //   NotDocked        the issuer's OWN rows in this ledger do not cover it -- including any count
+  //                    against a hull id past HULL_COUNT, which no ledger can hold.
+  //
+  // Only the issuer's own rows are counted and drawn: who else is docked in a station is nobody's
+  // business, which is the line Design/Archive/Stations.md 6.2 drew around the ledger. The rows leave
+  // the ledger now rather than one per launch, so a second compose cannot claim them and a screen
+  // that offered them cannot disagree with what the launch finds.
+  ComposeResult ComposeFleet(StationId _station, std::uint8_t _slot, std::span<const std::uint32_t> _hullCounts, FactionId _issuerFaction);
 
   // One fixed tick. The only thing in the game that advances simulation state.
   //
@@ -586,6 +636,11 @@ private:
   // the fleet was formed in. Retire removes a fleet with nothing left in it, by swap-and-pop and
   // walking backwards, so the row brought in from the end is one this walk has already looked at.
   void StepFleets();
+
+  // Whether _ownerFaction could take _slot right now. The one gate FormFleet and ComposeFleet share:
+  // both refuse a slot past the fifth and a slot already held, and neither may invent its own answer
+  // to that question.
+  [[nodiscard]] bool CanTakeSlot(FactionId _ownerFaction, std::uint8_t _slot) const noexcept;
 
   void SnapshotPreviousTick() noexcept;
   void RebuildStaticIfDirty();
@@ -736,6 +791,10 @@ private:
   // deliberately NOT parallel to m_ships: a fleet is a thing ships belong to, where a patrol is
   // something a ship has. Rows retire, so an index is not a name -- FleetInSlot is.
   std::vector<Fleet> m_fleets;
+
+  // A fleet's live members as ship ids, gathered for the rally order so that a launch allocates
+  // nothing. Reused, like every other scratch here.
+  std::vector<ShipId> m_fleetShipScratch;
 
   // Who holds whom hostile. Mutated only by RecordAggression, which arrives from outside the tick;
   // read pointwise and never iterated, so no pass of Step depends on its contents in array order.

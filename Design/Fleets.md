@@ -1,7 +1,8 @@
 # Fleets — composition at a station, five slots, and command at fleet grain
 
-**Status: agreed with the owner on 2026-08-31. Slice 1 — the table — is written and in review;
-its work order is [`Fleets-slice-1.md`](Fleets-slice-1.md).** Four decisions were put to the owner
+**Status: agreed with the owner on 2026-08-31. Slices 1 and 2 — the table, and compose and launch
+— are written and in review; their work orders are [`Fleets-slice-1.md`](Fleets-slice-1.md) and
+[`Fleets-slice-2.md`](Fleets-slice-2.md).** Four decisions were put to the owner
 and taken (§15); each was the recommended option. §16 lists the slices and the dependencies between
 them.
 
@@ -318,6 +319,28 @@ formation solved for the order, which the per-ship patience of §4.4 does with n
 `FLEET_LAUNCH_EVERY_TICKS` is contract (it decides on which tick a ship starts existing —
 `DOCK_CAPTURE_METRES`'s own sentence, reversed); the rally geometry is derived from constants
 already in the contract, so nothing new joins it there.
+
+> **Amendment, 2026-08-31 (slice 2).** Three things about this section are narrower in the code than
+> on the page, and each is a place where the design named an intent the simulation could not reach.
+>
+> **"Outward" is the station's own heading**, not the bearing from the system's star. `World` has no
+> star and must not learn about one: the layout is content the composition root reads (ADR 0037), so
+> a simulation reaching for the universe origin would be baking content into the tick. A station's
+> facing is already simulation state and already authored by whoever spawns it, which makes it the
+> honest place to keep "this way is out".
+>
+> **The fan runs to one side of the door**, indexed by the slot the hull is launching into — which
+> is the manifest's own remaining count, so it strictly decreases and no two launches of one fleet
+> ever share a bearing, not even across a loss. A fan centred on the outward bearing would shift by
+> half a step whenever the composed count changed, and two launches could then land on one bearing.
+>
+> **"Later spawns join the formation solved for the order" is one order per ship**, not one order
+> re-issued over every member. The composed size is `memberCount + manifestCount` read back, so each
+> hull can be given its own final slot the moment it launches, and the spawn fan and the slot lane
+> run the same way round. The re-issuing form was written first and reshuffles who is where on every
+> launch, so ships already on station cross each other: measured at 1.0 cm of capsule overlap during
+> a Corvette launch, against none once each ship keeps the slot it was born for
+> ([slice 2](Fleets-slice-2.md) §2.4).
 
 ### 5.4 What launching is not
 
@@ -840,10 +863,10 @@ whichever slice makes them false.
 | # | Slice | Layer | Depends on | Decision records due |
 |---|---|---|---|---|
 | 1 | **The table**: `Fleet`, `FLEET_SLOTS`/`MAX_FLEET_SHIPS`, the pass skeleton (prune/retire only), codec coverage, `AFleetlessWorldTicksAsToday`, the replay and save gates over the row — *in review*, [work order](Fleets-slice-1.md) | `GameLogic` | — | [fleets are simulation state at fleet grain](Decisions/0048-fleets-are-simulation-state-at-fleet-grain.md) |
-| 2 | **Compose and launch**: `ComposeFleet` + gates, the manifest, the metronome + rally, `FLEET_LAUNCH_EVERY_TICKS`, dismantle-on-dock and retire-on-loss falling out of the prune, their tests | `GameLogic` | 1 | — |
+| 2 | **Compose and launch**: `ComposeFleet` + gates, the manifest, the metronome + rally, `FLEET_LAUNCH_EVERY_TICKS`, dismantle-on-dock and retire-on-loss falling out of the prune, their tests — *in review*, [work order](Fleets-slice-2.md) | `GameLogic` | 1 | — |
 | 3 | **Fleet orders**: `FleetOrderKind`, the `FleetOrder` message + `IssueFleetOrder` + lowering, the cruise rule, `Stop`, `Mine` reserved-and-refused, patience, retirement of the ship-list order messages, their tests | `GameLogic` | 2 | orders name a fleet, not ships |
 | 4 | **The defense**: `RecordHostileAct`, `HullSpec::combatant`, threat/anchor/alert + the posture, `FLEET_ENGAGE_RANGE_METRES`/`FLEET_ALERT_TICKS`, the ordered attack sharing the chassis, their tests | `GameLogic` | 3 | a fleet reacts to stated acts, at fleet grain (extends ADR 0041) |
-| 5 | **The fleet wire**: `FleetRoster` + join-time delivery, the status block + publish-side centroid, `LedgerRequest`/`LedgerReply`, receiver surfaces for all three, their tests | `GameLogic` | 2 (roster), 4 (status bits) | the ledger is asked for, not broadcast — the first request/reply on the wire |
+| 5 | **The fleet wire**: `FleetRoster` + join-time delivery, the status block + publish-side centroid, `LedgerRequest`/`LedgerReply` and the `ComposeOrder` that has no use without them (§5.2 — unlisted here until slice 2 placed it), receiver surfaces, their tests | `GameLogic` | 2 (roster), 4 (status bits) | the ledger is asked for, not broadcast — the first request/reply on the wire |
 | 6 | **The fleet bar**: buttons rebound (tap = select + fly-to, hold = sheet stub, glow, counts), selection at fleet grain, `FleetOrder` sending, group machinery and its log lines retired, the boot scene as Fleet 1, F7, minimap fleet digits, screenshots at two sizes | `Outpost` | 3, 5 | — |
 | 7 | **Assembly**: the station long-press, `LedgerRequest` flow, the assembly screen, compose + launch end to end on screen, screenshots | `Outpost` | 5, 6 | — |
 | 8 | **The sheet**: status lines, member rows, the command row + target-tap arming, refusal and alert log lines complete, screenshots of the three states | `Outpost` | 6 (7 for a docked-adjacent demo) | — |

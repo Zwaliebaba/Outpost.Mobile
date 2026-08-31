@@ -237,13 +237,16 @@ const World::Station& World::StationOf(StationId _id) const noexcept
   return m_stations[_id];
 }
 
+bool World::CanTakeSlot(FactionId _ownerFaction, std::uint8_t _slot) const noexcept
+{
+  return _slot < FLEET_SLOTS && _ownerFaction < FACTION_LIMIT && FleetInSlot(_ownerFaction, _slot) == INVALID_FLEET_ID;
+}
+
 World::FleetId World::FormFleet(FactionId _ownerFaction, std::uint8_t _slot, std::span<const ShipId> _ships)
 {
   // In the order the header lists them. Which one refuses is not observable -- every refusal is the
   // same invalid id and the same untouched table -- so the order is for the reader.
-  if (_slot >= FLEET_SLOTS || _ownerFaction >= FACTION_LIMIT)
-    return INVALID_FLEET_ID;
-  if (FleetInSlot(_ownerFaction, _slot) != INVALID_FLEET_ID)
+  if (!CanTakeSlot(_ownerFaction, _slot))
     return INVALID_FLEET_ID;
   if (_ships.empty() || _ships.size() > MAX_FLEET_SHIPS)
     return INVALID_FLEET_ID;
@@ -309,6 +312,92 @@ const World::Fleet& World::FleetOf(FleetId _id) const noexcept
 {
   static constexpr Fleet NONE;
   return (_id < m_fleets.size()) ? m_fleets[_id] : NONE;
+}
+
+World::ComposeResult World::ComposeFleet(StationId _station, std::uint8_t _slot, std::span<const std::uint32_t> _hullCounts,
+                                         FactionId _issuerFaction)
+{
+  if (_station >= m_stations.size())
+    return ComposeResult::NotAStation;
+
+  Station& station = m_stations[_station];
+  if (Resolve(station.structure) == INVALID_SHIP_ID)
+    return ComposeResult::NotAStation;
+
+  if (StandingOf(station.ownerFaction, _issuerFaction) == Standing::Hostile)
+    return ComposeResult::RefusedStanding;
+
+  if (!CanTakeSlot(_issuerFaction, _slot))
+    return ComposeResult::SlotTaken;
+
+  // Each count is bounded before it is summed, so no arithmetic here can overflow whatever a caller
+  // passes -- the total is at most HULL_COUNT * MAX_FLEET_SHIPS before the gate below sees it.
+  std::uint32_t wanted[HULL_COUNT] = {};
+  std::uint32_t total = 0;
+  for (std::size_t hull = 0; hull < _hullCounts.size(); ++hull)
+  {
+    if (_hullCounts[hull] == 0)
+      continue;
+    // No ledger holds a hull the table does not have, so a count past the end of it is the honest
+    // NotDocked rather than a silent truncation of what was asked for.
+    if (hull >= HULL_COUNT)
+      return ComposeResult::NotDocked;
+    if (_hullCounts[hull] > MAX_FLEET_SHIPS)
+      return ComposeResult::TooMany;
+    wanted[hull] = _hullCounts[hull];
+    total += _hullCounts[hull];
+  }
+  if (total == 0 || total > MAX_FLEET_SHIPS)
+    return ComposeResult::TooMany;
+
+  // The issuer's own rows, and only those: whose is docked in a station is nobody else's business
+  // (Design/Archive/Stations.md 6.2), so a player cannot compose a fleet out of somebody else's ships.
+  std::uint32_t available[HULL_COUNT] = {};
+  for (const DockedShip& docked : station.docked)
+  {
+    if (docked.factionId == _issuerFaction && docked.hullId < HULL_COUNT)
+      ++available[docked.hullId];
+  }
+  for (std::uint32_t hull = 0; hull < HULL_COUNT; ++hull)
+  {
+    if (wanted[hull] > available[hull])
+      return ComposeResult::NotDocked;
+  }
+
+  // Past every gate: from here nothing can fail, and the ledger may be written.
+  Fleet fleet;
+  fleet.ownerFaction = _issuerFaction;
+  fleet.slot = _slot;
+  fleet.launchStructure = station.structure;
+
+  // Ascending hull id, and stated rather than incidental: it is the launch order, the launch order
+  // is the order members join the fleet in, and that is the order a formation solve reads.
+  for (std::uint32_t hull = 0; hull < HULL_COUNT; ++hull)
+  {
+    for (std::uint32_t at = 0; at < wanted[hull]; ++at)
+      fleet.manifest[fleet.manifestCount++] = hull;
+  }
+
+  // The rows leave the ledger now rather than one per launch, so that two things cannot happen: a
+  // second compose claiming the same rows, and a ledger a screen has shown disagreeing with what the
+  // launch finds (Design/Fleets.md 5.2). Compacted in place, in array order, so which rows are drawn
+  // is a function of the ledger and not of anything else.
+  std::uint32_t drawn[HULL_COUNT] = {};
+  std::size_t live = 0;
+  for (std::size_t at = 0; at < station.docked.size(); ++at)
+  {
+    const DockedShip& docked = station.docked[at];
+    if (docked.factionId == _issuerFaction && docked.hullId < HULL_COUNT && drawn[docked.hullId] < wanted[docked.hullId])
+    {
+      ++drawn[docked.hullId];
+      continue;
+    }
+    station.docked[live++] = station.docked[at];
+  }
+  station.docked.resize(live);
+
+  m_fleets.push_back(fleet);
+  return ComposeResult::Composed;
 }
 
 std::span<const DespawnRecord> World::DespawnsSince(std::uint64_t _cursor) const noexcept
@@ -804,11 +893,144 @@ void World::StepFleets()
   // a slot is the name that survives -- so there is nothing for the swap to break.
   for (std::size_t at = m_fleets.size(); at-- > 0;)
   {
-    if (m_fleets[at].memberCount != 0)
+    if (m_fleets[at].memberCount != 0 || m_fleets[at].manifestCount != 0)
       continue;
     if (at + 1 < m_fleets.size())
       m_fleets[at] = m_fleets.back();
     m_fleets.pop_back();
+  }
+
+  // Launch. One hull off the manifest per FLEET_LAUNCH_EVERY_TICKS, at the station's skin, fanned
+  // across the station's outward bearing (Design/Fleets.md 5.3).
+  //
+  // This pass spawns during its own walk where StepProtectors collects and applies after one, and
+  // the difference is deliberate rather than an oversight: that pass walks the very tables a spawn
+  // appends to, and this one walks m_fleets, which a spawn does not touch.
+  for (Fleet& fleet : m_fleets)
+  {
+    if (fleet.manifestCount == 0)
+      continue;
+
+    const ShipId structure = Resolve(fleet.launchStructure);
+    if (structure == INVALID_SHIP_ID || StationAt(structure) == INVALID_STATION_ID)
+    {
+      // The door is gone, and launching is the only way out of a ledger, so the manifest can never
+      // become ships. Dropping it is what stops a fleet nothing can ever fill from holding one of
+      // five slots for ever; the retire above frees it on the next tick.
+      fleet.manifestCount = 0;
+      continue;
+    }
+
+    if (fleet.launchCooldownTicks > 0)
+    {
+      --fleet.launchCooldownTicks;
+      continue;
+    }
+
+    // Every distance below is the widest hull of the WHOLE composed set -- what is still inside and
+    // what is already out -- so the geometry does not move as the manifest empties.
+    std::uint32_t largestHullId = fleet.manifest[0];
+    float largestRadius = 0.0f;
+    for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+    {
+      const ShipId member = Resolve(fleet.members[at]);
+      if (member != INVALID_SHIP_ID && HullSpecOf(m_ships[member].hullId).BoundingRadiusMetres() > largestRadius)
+      {
+        largestHullId = m_ships[member].hullId;
+        largestRadius = HullSpecOf(largestHullId).BoundingRadiusMetres();
+      }
+    }
+    for (std::uint32_t at = 0; at < fleet.manifestCount; ++at)
+    {
+      if (HullSpecOf(fleet.manifest[at]).BoundingRadiusMetres() > largestRadius)
+      {
+        largestHullId = fleet.manifest[at];
+        largestRadius = HullSpecOf(largestHullId).BoundingRadiusMetres();
+      }
+    }
+
+    // Taken by value, and that is not a style choice: SpawnShip below appends to m_ships, which may
+    // reallocate it, and a reference into that vector would be dangling by the time the rally point
+    // is worked out. It reads correct for as long as the vector happens to have spare capacity,
+    // which is why the test that caught it is the one that reloads a world -- a world out of a file
+    // has exactly as much capacity as it has ships.
+    const WorldPos stationPos = m_ships[structure].posWorld;
+    // The station's own heading is which way is out. Design/Fleets.md 5.3 says the outward bearing
+    // from the system's star, and World has no star and must not learn about one -- the layout is
+    // content the composition root reads (ADR 0037). A station's facing is already simulation state
+    // and already authored by whoever spawned it, which makes it the honest place for a door.
+    const float outwardRad = m_ships[structure].headingRad;
+    // Safe to hold: a HullSpec is a row of a constexpr table, not of m_ships.
+    const HullSpec& stationHull = HullSpecOf(m_ships[structure].hullId);
+
+    const float spacing = SlotSpacingMetres(largestRadius);
+    const float standoff = stationHull.BoundingRadiusMetres() + largestRadius + AVOID_MARGIN_METRES;
+
+    // Which of the composed formation's slots this hull is launching into, and the whole of what
+    // decides where it appears and where it goes. It counts down with the manifest, so it is unique
+    // per launch whatever else happens to the fleet.
+    const int composedCount = static_cast<int>(fleet.memberCount + fleet.manifestCount);
+    const int slot = static_cast<int>(fleet.manifestCount) - 1;
+
+    // Two launches of one fleet can never be born touching, and that is construction rather than
+    // hope: consecutive spawn points sit one slot spacing apart on the circle they appear on, and
+    // the slot they are indexed by strictly decreases -- so no two launches of one fleet ever share
+    // a bearing, not even across a loss. The cadence is not what makes this safe; 0.75 s buys a
+    // Corvette about 5.6 m from a standing start, well inside its own hull.
+    //
+    // The fan runs to one side of the door rather than either side of it, and that is what keeps it
+    // independent of how many ships are left: a fan centred on the outward bearing would shift by
+    // half a step every time the composed count changed, and two launches could then land on one
+    // bearing after a loss.
+    const float laneStepRad = spacing / standoff;
+    const float bearingRad = outwardRad + static_cast<float>(slot) * laneStepRad;
+
+    WorldPos spawnPos = stationPos;
+    Translate(spawnPos, std::sin(bearingRad) * standoff, std::cos(bearingRad) * standoff);
+
+    // Off the front of the manifest, so the launch order is the ascending hull id ComposeFleet
+    // filled it in. The vacated entry is cleared for the reason a pruned member's is.
+    const std::uint32_t hullId = fleet.manifest[0];
+    for (std::uint32_t at = 1; at < fleet.manifestCount; ++at)
+      fleet.manifest[at - 1] = fleet.manifest[at];
+    --fleet.manifestCount;
+    fleet.manifest[fleet.manifestCount] = 0;
+
+    const ShipId launched = SpawnShip(spawnPos, bearingRad, hullId, fleet.ownerFaction);
+    fleet.members[fleet.memberCount++] = HandleOf(launched);
+
+    // Where the fleet forms up: outward, one slot spacing clear of the dock approach lane, so a
+    // fleet assembling is not standing in the doorway. Through DockApproachRangeMetres rather than
+    // its sum restated, so the launch and the dock cannot disagree about where a station's door is.
+    WorldPos rallyPos = stationPos;
+    const float rallyRange = DockApproachRangeMetres(stationHull, HullSpecOf(largestHullId)) + spacing;
+    Translate(rallyPos, std::sin(outwardRad) * rallyRange, std::cos(outwardRad) * rallyRange);
+
+    // Each ship gets its OWN slot of the formation the whole composed set will hold, decided once
+    // when it launches and never reassigned, and it is the same slot index its spawn bearing was
+    // taken from -- so the fan and the formation run the same way round and no two ships have to
+    // cross to reach their places.
+    //
+    // The alternative is to re-issue one order over every member after each launch and let
+    // IssueMoveOrder hand out slots by where the ships lie. That re-plans the whole fleet eight
+    // times and reshuffles who is where, so ships already on station cross each other on every
+    // launch -- which is how a formation that is merely forming up starts brushing. Measured, with
+    // the reassignment: 1.0 cm of capsule overlap during a Corvette launch.
+    const FormationShape shape = static_cast<FormationShape>(std::clamp(FORMATION_SHAPE, 0, 3));
+    const XMFLOAT2 local = FormationOffset(slot, composedCount, shape, spacing);
+    const float cosOut = std::cos(outwardRad);
+    const float sinOut = std::sin(outwardRad);
+    Translate(rallyPos, local.x * cosOut + local.y * sinOut, -local.x * sinOut + local.y * cosOut);
+
+    // One ship, to one point, facing the way the fleet faces. A one-ship formation puts it exactly
+    // there (FormationOffset's slot 0 of 1 is the origin), so the wedge is assembled a slot at a
+    // time rather than solved again on every launch.
+    m_fleetShipScratch.assign(1, launched);
+    (void)IssueMoveOrder(m_fleetShipScratch, rallyPos, true, outwardRad, fleet.ownerFaction);
+
+    // Minus one because the launch tick is one of the N: waiting the full count would put
+    // consecutive launches N + 1 ticks apart, and the constant's name would be off by a tick.
+    fleet.launchCooldownTicks = FLEET_LAUNCH_EVERY_TICKS - 1;
   }
 }
 
