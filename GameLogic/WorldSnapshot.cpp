@@ -73,7 +73,7 @@ constexpr std::uint32_t ORDER_HEADER_BYTES = 1 + 4 + 1 + 4 + 24 + 4;
 // rather than a misread. The format byte is what makes a disagreement between two builds a refusal
 // too -- there is nothing to migrate from yet, and a version nobody checks is a version nobody has.
 constexpr std::uint32_t WORLD_STATE_MAGIC = 0x54535750u; // 'PWST' little-endian: Persisted World STate
-constexpr std::uint8_t WORLD_STATE_FORMAT = 4;           // 2: the fleet table. 3: its launch manifest. 4: its standing order
+constexpr std::uint8_t WORLD_STATE_FORMAT = 5;           // 2: the fleet table. 3: its manifest. 4: its order. 5: its threat
 
 // An EntityId is a u64, which is exactly what a {slot, generation} pair cost. So identity became
 // global for no bytes at all: the ship record stays 47, a fragment stays 23 ships, and the order cap
@@ -1005,6 +1005,10 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes)
     out.F32(fleet.orderFacingRad);
     out.Bool(fleet.orderHasFacing);
     out.Handle(fleet.orderStation);
+    out.Handle(fleet.orderTarget);
+    out.Handle(fleet.threat);
+    out.Pos(fleet.threatAnchorPos);
+    out.U32(fleet.alertTicks);
   }
 }
 
@@ -1207,6 +1211,12 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
     fleet.orderFacingRad = in.F32();
     fleet.orderHasFacing = in.Bool();
     fleet.orderStation = in.Handle();
+    fleet.orderTarget = in.Handle();
+    // Nothing bounds the threat: a handle that resolves to nothing is a fleet that stands down on
+    // its first tick, which is the fail-closed direction already.
+    fleet.threat = in.Handle();
+    fleet.threatAnchorPos = in.Pos();
+    fleet.alertTicks = in.U32();
   }
 
   if (!in.Ok())
@@ -1369,6 +1379,7 @@ bool WriteFleetOrder(const FleetOrder& _order, Neuron::Transport& _transport)
   out.F32(_order.facingRad);
   out.Pos(_order.point);
   out.Entity(_order.station);
+  out.Entity(_order.target);
   return _transport.SendReliable(bytes.data(), static_cast<std::uint32_t>(bytes.size()));
 }
 
@@ -1385,6 +1396,7 @@ bool ReadFleetOrder(std::span<const std::uint8_t> _datagram, FleetOrder& _outOrd
   const float facingRad = in.F32();
   const WorldPos point = in.Pos();
   const EntityId station = in.Entity();
+  const EntityId target = in.Entity();
   if (!in.Ok() || slot >= FLEET_SLOTS || kind > static_cast<std::uint8_t>(FleetOrderKind::Mine))
     return false;
 
@@ -1394,6 +1406,7 @@ bool ReadFleetOrder(std::span<const std::uint8_t> _datagram, FleetOrder& _outOrd
   _outOrder.facingRad = facingRad;
   _outOrder.hasFacing = hasFacing;
   _outOrder.station = station;
+  _outOrder.target = target;
   return true;
 }
 } // namespace Game

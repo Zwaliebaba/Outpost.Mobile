@@ -344,6 +344,23 @@ inline constexpr float PURSUIT_REPLAN_METRES = 64.0f;
 inline constexpr std::uint32_t FLEET_LAUNCH_EVERY_TICKS = 45;
 static_assert(FLEET_LAUNCH_EVERY_TICKS > 0, "a launch cadence of zero would spawn a whole fleet on one tick");
 
+// How far an attacker may get from the place it struck before a fleet's combatants let it go, and
+// how long one act keeps a fleet roused. Both in the contract: the first decides when a defense
+// stands down, the second how long it lasts at all.
+//
+// A kilometre is argued rather than liked (Design/Fleets.md 7.2). It is half the interest radius, so
+// a defense never drags a watched fleet's escorts off the player's screen; it is about the span of
+// the widest formation eight hulls can make, so "inside the leash" and "among the fleet" are the same
+// neighborhood; and it is past every dock range in the hull table, so a fleet attacked at a station's
+// door defends the door.
+//
+// The leash is anchored where the act was stated and NOT on the fleet or the fight. A leash measured
+// from the pursuers would never release: they keep the distance small by chasing. Anchoring it on the
+// ground that was struck is what makes hit-and-run a tactic against a player rather than a way to
+// drag five fleets around by their tempers.
+inline constexpr float FLEET_ENGAGE_RANGE_METRES = 1000.0f;
+inline constexpr std::uint32_t FLEET_ALERT_TICKS = 600; // ten seconds
+
 // --- interest management -----------------------------------------------------------------------
 // Not in the replay contract, and that is worth saying because everything around it is: these change
 // what is *sent*, never what is *simulated*. A recording made at one radius replays identically at

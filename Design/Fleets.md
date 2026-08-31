@@ -2,8 +2,9 @@
 
 **Status: agreed with the owner on 2026-08-31. Slices 1 to 3 — the table, compose and launch, and
 orders at fleet grain — are written and in review; their work orders are
-[`Fleets-slice-1.md`](Fleets-slice-1.md), [`Fleets-slice-2.md`](Fleets-slice-2.md) and
-[`Fleets-slice-3.md`](Fleets-slice-3.md).** Four decisions were put to the owner
+[`Fleets-slice-1.md`](Fleets-slice-1.md), [`Fleets-slice-2.md`](Fleets-slice-2.md),
+[`Fleets-slice-3.md`](Fleets-slice-3.md) and [`Fleets-slice-4.md`](Fleets-slice-4.md) — the whole
+`GameLogic` half.** Four decisions were put to the owner
 and taken (§15); each was the recommended option. §16 lists the slices and the dependencies between
 them.
 
@@ -530,6 +531,33 @@ A fleet of nothing but Miners and Haulers glows and does not shoot back — the 
 *is* the design working, and what happens next is the player's order. That honesty is cheaper
 than teaching a Hauler to fight.
 
+> **Amendment, 2026-08-31 (slice 4).** Three things about this section are settled differently in the
+> code, and the first two are corrections rather than refinements.
+>
+> **Engagement is bounded by the alert as well as the leash**, and a fleet is engaged only while both
+> hold. §7.2 lists the leash and §7.3 says "the posture's stand-down reads it" without the two ever
+> meeting; §8.2 settles it by asking for *two* bits, which can only differ if the alert outlives the
+> engagement. Without the alert as a bound, one shot from an attacker that then parks 900 m from the
+> anchor and does nothing would hold a fleet's combatants out of their orders for ever.
+>
+> **The two bounds bind in different situations.** No hull in the table covers a kilometer in the ten
+> seconds one act buys, so a **hit-and-run attacker is released by the alert**, not by the leash this
+> section credits — and the leash is what releases a **sustained** fight, whose repeated acts keep
+> refilling the alert, once it has drifted off the ground it started on. Both bounds are real; the
+> sentence "pursue the attacker a kilometer from the ground it struck and it is released" describes
+> the second case only.
+>
+> **Standing down re-lowers the standing order; patience cannot do it.** Pursuit overwrites a
+> combatant's route destination with the target's position, and patience re-issues a member to its
+> own route destination — so leaving it to patience would send a combatant back to where its quarry
+> used to be. A fleet with no standing order stops its combatants instead
+> ([slice 4](Fleets-slice-4.md) §2.5, ADR 0050).
+>
+> There is also no `threatAimPos` on the row, though §4.1 lists one: what a pursuer last aimed at is
+> its own route's destination, which is where the protector already keeps it, and every combatant is
+> aimed at the target itself rather than at a slot around it — so their aim points are equal by
+> construction and a fleet-level copy would be a second source of truth for the codec to carry.
+
 ### 7.3 The alert
 
 `alertTicks` counts down from `FLEET_ALERT_TICKS` (600 — ten seconds) and any act on any member
@@ -885,7 +913,7 @@ whichever slice makes them false.
 | 1 | **The table**: `Fleet`, `FLEET_SLOTS`/`MAX_FLEET_SHIPS`, the pass skeleton (prune/retire only), codec coverage, `AFleetlessWorldTicksAsToday`, the replay and save gates over the row — *in review*, [work order](Fleets-slice-1.md) | `GameLogic` | — | [fleets are simulation state at fleet grain](Decisions/0048-fleets-are-simulation-state-at-fleet-grain.md) |
 | 2 | **Compose and launch**: `ComposeFleet` + gates, the manifest, the metronome + rally, `FLEET_LAUNCH_EVERY_TICKS`, dismantle-on-dock and retire-on-loss falling out of the prune, their tests — *in review*, [work order](Fleets-slice-2.md) | `GameLogic` | 1 | — |
 | 3 | **Fleet orders**: `FleetOrderKind`, the `FleetOrder` message + `IssueFleetOrder` + lowering, the cruise rule, `Stop`, `Attack` and `Mine` reserved-and-refused, patience, their tests — *in review*, [work order](Fleets-slice-3.md). The ship-list messages' retirement moved to slice 6, which is where the client stops sending them | `GameLogic` | 2 | [orders name a fleet, not ships](Decisions/0049-orders-name-a-fleet-not-ships.md) |
-| 4 | **The defense**: `RecordHostileAct`, `HullSpec::combatant`, threat/anchor/alert + the posture, `FLEET_ENGAGE_RANGE_METRES`/`FLEET_ALERT_TICKS`, the ordered attack sharing the chassis, their tests | `GameLogic` | 3 | a fleet reacts to stated acts, at fleet grain (extends ADR 0041) |
+| 4 | **The defense**: `RecordHostileAct`, `HullSpec::combatant`, threat/anchor/alert + the posture, `FLEET_ENGAGE_RANGE_METRES`/`FLEET_ALERT_TICKS`, the ordered attack sharing the chassis, their tests — *in review*, [work order](Fleets-slice-4.md) | `GameLogic` | 3 | [a fleet defends itself against stated acts, at fleet grain](Decisions/0050-a-fleet-defends-itself-against-stated-acts.md) |
 | 5 | **The fleet wire**: `FleetRoster` + join-time delivery, the status block + publish-side centroid, `LedgerRequest`/`LedgerReply` and the `ComposeOrder` that has no use without them (§5.2 — unlisted here until slice 2 placed it), receiver surfaces, their tests | `GameLogic` | 2 (roster), 4 (status bits) | the ledger is asked for, not broadcast — the first request/reply on the wire |
 | 6 | **The fleet bar**: buttons rebound (tap = select + fly-to, hold = sheet stub, glow, counts), selection at fleet grain, `FleetOrder` sending, group machinery and its log lines retired, the ship-list order messages retired with them, the boot scene as Fleet 1, F7, minimap fleet digits, screenshots at two sizes | `Outpost` | 3, 5 | — |
 | 7 | **Assembly**: the station long-press, `LedgerRequest` flow, the assembly screen, compose + launch end to end on screen, screenshots | `Outpost` | 5, 6 | — |

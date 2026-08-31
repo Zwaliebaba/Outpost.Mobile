@@ -212,6 +212,20 @@ public:
     float orderFacingRad = 0.0f; // Move
     bool orderHasFacing = false; // Move
     ShipHandle orderStation;     // Dock
+    ShipHandle orderTarget;      // Attack
+
+    // The defense (Design/Fleets.md 7). Who was last stated to have attacked a member, where that
+    // act was stated, and how long the fleet stays roused by it.
+    //
+    // The anchor is the ground that was struck and not the fleet or the fight, which is what makes
+    // the leash release at all: measured from the pursuers it never would, because chasing keeps the
+    // distance small. There is no aim point beside it -- what a pursuer last aimed at is its own
+    // route's destination, which is where the protector keeps it and where PURSUIT_REPLAN_METRES is
+    // measured from, and a second copy here would be one more thing for the codec to carry and for
+    // the two to disagree about.
+    ShipHandle threat;
+    WorldPos threatAnchorPos;
+    std::uint32_t alertTicks = 0;
   };
 
   // Adds a ship at rest. Returns its id, which is its index for as long as nothing is despawned.
@@ -352,6 +366,23 @@ public:
   // A stale attacker handle is a no-op. Slice 4 adds the second half: the attacked station
   // scrambles its garrison.
   void RecordAggression(ShipHandle _attacker, StationId _station);
+
+  // The server's judgment on a hostile act against a ship: the victim's fleet is roused against the
+  // attacker. RecordAggression's sentence one level down, and every word of it applies here --
+  // there is no client message for this and there never will be, because a client that could
+  // declare one could make anybody a target (Design/Archive/Stations.md 8.1, ADR 0041, ADR 0050).
+  //
+  // The fleet takes the attacker as its threat, the victim's position now as the leash's anchor, and
+  // a full FLEET_ALERT_TICKS. A victim that is not a live ship, or that is in no fleet, is recorded
+  // and ignored: a loose ship has no response of its own until some design gives it one.
+  //
+  // The attacker's liveness is deliberately not checked. Being shot by something that then died is
+  // still being shot, so the alert lights either way and the posture finds nothing to pursue and
+  // stands down on its own.
+  //
+  // It arrives from outside the tick -- an adapter, the composition root, a test -- like any order.
+  // Nothing inside Step states an act.
+  void RecordHostileAct(ShipHandle _attacker, ShipHandle _victim);
 
   // --- stations ----------------------------------------------------------------------------------
 
@@ -513,6 +544,7 @@ public:
     NoSuchFleet,
     NotAStation,
     RefusedStanding,
+    NoSuchTarget,
     Unsupported
   };
 
@@ -525,6 +557,7 @@ public:
     float facingRad = 0.0f;           // Move
     bool hasFacing = false;           // Move
     ShipId station = INVALID_SHIP_ID; // Dock: the station's structure
+    ShipId target = INVALID_SHIP_ID;  // Attack
   };
 
   // Orders the fleet in _slot. This is the design's title sentence as a signature: an order names a
@@ -539,7 +572,8 @@ public:
   //   NotAStation      Dock: the named record is not a live station row;
   //   RefusedStanding  Dock: that station's owner holds the issuer hostile -- IssueDockOrder's own
   //                    gate, surfaced rather than restated;
-  //   Unsupported      Attack and Mine, which wait for the designs that give them meaning.
+  //   NoSuchTarget     Attack: the named record is not a live ship;
+  //   Unsupported      Mine, which waits for a design that gives it meaning and something to mine.
   //
   // An accepted order replaces whatever standing order was there. Stop is the one kind that leaves
   // the row Idle rather than holding one: it is a brake, and "order the fleet to where it already
@@ -718,6 +752,14 @@ private:
   // The slowest member's top speed, or 0 when the fleet has nothing out: what every member's order
   // speed cap is set to while the fleet is going somewhere together (Design/Fleets.md 6.3).
   [[nodiscard]] float FleetCruiseSpeedMetresPerSec(const Fleet& _fleet) const noexcept;
+
+  // Aims one ship at another and keeps it aimed: re-planned when the ship has nothing to do, or when
+  // the target has walked PURSUIT_REPLAN_METRES from the point last aimed at, and never every tick.
+  //
+  // One function with two masters, which is what the design means by the fleet defense being the
+  // protector's chassis: the protector duty and the fleet posture both call it, so neither can drift
+  // from the other the first time one of them is retuned (Design/Fleets.md 3).
+  void PursueTarget(ShipId _ship, ShipId _target);
 
   void SnapshotPreviousTick() noexcept;
   void RebuildStaticIfDirty();

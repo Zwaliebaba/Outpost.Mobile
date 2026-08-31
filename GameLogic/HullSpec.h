@@ -63,6 +63,16 @@ struct HullSpec
   bool immovable = false; // structures: they take no correction, and traffic is projected out of them
   bool collidable = true; // a Stargate is flown through on purpose (Design/Archive/Collision.md 18.2)
 
+  // Whether this hull answers an attack. A fleet's defense turns its combatants on whoever was
+  // stated to have shot at it and leaves the rest flying the order they were given, so this is what
+  // decides which half of a mixed fleet reacts (Design/Fleets.md 6.5, 7.2).
+  //
+  // Authored rather than derived, for avoidanceAuthority's reason: a hull that is armed but precious
+  // -- a Q-ship, an armed hauler -- has to stay expressible, and a flag inferred from a weapon table
+  // that does not exist yet would be a guess with nothing able to disagree with it. In the replay
+  // contract like every other column here: it decides who turns.
+  bool combatant = false;
+
   [[nodiscard]] constexpr float BoundingRadiusMetres() const noexcept
   {
     return capsuleHalfLengthMetres + capsuleRadiusMetres;
@@ -101,17 +111,17 @@ struct HullSpec
 // radius, so slowing the capitals costs nothing there while giving the fleet the speed spread the
 // design asks for.
 inline constexpr HullSpec HULL_SPECS[HULL_COUNT] = {
-  // r         L        speed  accel  decel  turn rad/s  turn accel  auth   K   immov  collide
-  {1.115f, 2.390f, 34.0f, 30.0f, 38.0f, 3.4907f, 12.2173f, 0.6f, 8, false, true},   // Interceptor
-  {8.705f, 0.000f, 30.0f, 24.0f, 30.0f, 2.0944f, 7.3304f, 1.2f, 8, false, true},    // Bomber
-  {8.595f, 4.515f, 30.0f, 20.0f, 26.0f, 1.2217f, 4.1888f, 1.6f, 10, false, true},   // Corvette
-  {11.400f, 5.800f, 24.0f, 12.0f, 16.0f, 0.7854f, 2.7053f, 2.4f, 8, false, true},   // Miner
-  {10.405f, 11.910f, 28.0f, 14.0f, 18.0f, 0.5236f, 1.8326f, 3.0f, 12, false, true}, // Frigate
-  {23.105f, 5.605f, 22.0f, 9.0f, 12.0f, 0.3840f, 1.3090f, 3.6f, 10, false, true},   // Hauler
-  {21.640f, 18.735f, 24.0f, 8.0f, 11.0f, 0.2094f, 0.7330f, 5.0f, 14, false, true},  // Battleship
-  {39.670f, 67.870f, 20.0f, 5.0f, 7.0f, 0.0873f, 0.3142f, 9.0f, 16, false, true},   // Carrier
-  {131.610f, 0.000f, 0.0f, 30.0f, 38.0f, 3.4907f, 12.2173f, 1.0f, 4, true, false},  // Stargate
-  {251.180f, 0.590f, 0.0f, 30.0f, 38.0f, 3.4907f, 12.2173f, 1.0f, 4, true, true},   // Structure
+  // r         L        speed  accel  decel  turn rad/s  turn accel  auth   K   immov  collide  fights
+  {1.115f, 2.390f, 34.0f, 30.0f, 38.0f, 3.4907f, 12.2173f, 0.6f, 8, false, true, true},   // Interceptor
+  {8.705f, 0.000f, 30.0f, 24.0f, 30.0f, 2.0944f, 7.3304f, 1.2f, 8, false, true, true},    // Bomber
+  {8.595f, 4.515f, 30.0f, 20.0f, 26.0f, 1.2217f, 4.1888f, 1.6f, 10, false, true, true},   // Corvette
+  {11.400f, 5.800f, 24.0f, 12.0f, 16.0f, 0.7854f, 2.7053f, 2.4f, 8, false, true, false},  // Miner
+  {10.405f, 11.910f, 28.0f, 14.0f, 18.0f, 0.5236f, 1.8326f, 3.0f, 12, false, true, true}, // Frigate
+  {23.105f, 5.605f, 22.0f, 9.0f, 12.0f, 0.3840f, 1.3090f, 3.6f, 10, false, true, false},  // Hauler
+  {21.640f, 18.735f, 24.0f, 8.0f, 11.0f, 0.2094f, 0.7330f, 5.0f, 14, false, true, true},  // Battleship
+  {39.670f, 67.870f, 20.0f, 5.0f, 7.0f, 0.0873f, 0.3142f, 9.0f, 16, false, true, true},   // Carrier
+  {131.610f, 0.000f, 0.0f, 30.0f, 38.0f, 3.4907f, 12.2173f, 1.0f, 4, true, false, false}, // Stargate
+  {251.180f, 0.590f, 0.0f, 30.0f, 38.0f, 3.4907f, 12.2173f, 1.0f, 4, true, true, false},  // Structure
 };
 
 // An unknown hull id resolves to a working ship rather than to an inert one or to memory past the

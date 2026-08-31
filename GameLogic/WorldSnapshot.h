@@ -126,6 +126,7 @@ struct FleetOrder
   float facingRad = 0.0f;               // Move
   bool hasFacing = false;               // Move
   EntityId station = INVALID_ENTITY_ID; // Dock
+  EntityId target = INVALID_ENTITY_ID;  // Attack
 };
 
 // How many ships fit in one datagram of each kind. Derived from MAX_DATAGRAM_BYTES rather than

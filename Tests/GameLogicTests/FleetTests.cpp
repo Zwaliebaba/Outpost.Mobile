@@ -183,6 +183,53 @@ Game::World::FleetCommand MoveTo(const Game::WorldPos& _point, bool _hasFacing =
   command.facingRad = _facingRad;
   return command;
 }
+
+Game::World::FleetCommand AttackOf(Game::ShipId _target)
+{
+  Game::World::FleetCommand command;
+  command.kind = Game::FleetOrderKind::Attack;
+  command.target = _target;
+  return command;
+}
+
+// A fleet of one Corvette and one Miner, launched: the smallest mix that can tell a combatant from
+// a hull that carries ore, which is the whole of what the defense turns on.
+Game::World::FleetId MixedFleet(Game::World& _world, Game::World::StationId _station, std::uint8_t _slot)
+{
+  DockShips(_world, _station, Game::HullId::Corvette, 1);
+  DockShips(_world, _station, Game::HullId::Miner, 1);
+  std::vector<std::uint32_t> counts = ZeroCounts();
+  Want(counts, Game::HullId::Corvette, 1);
+  Want(counts, Game::HullId::Miner, 1);
+  Assert::AreEqual(Code(Game::World::ComposeResult::Composed), Code(_world.ComposeFleet(_station, _slot, counts, Game::FACTION_PLAYER)),
+                   L"the compose was refused");
+  for (int tick = 0; tick < 2 * static_cast<int>(Game::FLEET_LAUNCH_EVERY_TICKS) + 400; ++tick)
+    _world.Step();
+  const Game::World::FleetId fleet = _world.FleetInSlot(Game::FACTION_PLAYER, _slot);
+  Assert::AreEqual(2u, _world.FleetOf(fleet).memberCount, L"the fleet did not finish launching");
+  return fleet;
+}
+
+// The fleet's members split the way the defense splits them.
+Game::ShipId CombatantOf(const Game::World& _world, Game::World::FleetId _fleet)
+{
+  for (const Game::ShipId member : LiveMembers(_world, _fleet))
+  {
+    if (Game::HullSpecOf(_world.Ship(member).hullId).combatant)
+      return member;
+  }
+  return Game::INVALID_SHIP_ID;
+}
+
+Game::ShipId NonCombatantOf(const Game::World& _world, Game::World::FleetId _fleet)
+{
+  for (const Game::ShipId member : LiveMembers(_world, _fleet))
+  {
+    if (!Game::HullSpecOf(_world.Ship(member).hullId).combatant)
+      return member;
+  }
+  return Game::INVALID_SHIP_ID;
+}
 } // namespace
 
 TEST_CLASS(FleetTests)
@@ -1063,21 +1110,19 @@ public:
     Assert::AreEqual(1u, world.FleetCount(), L"stopping retired the fleet");
   }
 
-  TEST_METHOD(TheReservedKindsAreRefused)
+  TEST_METHOD(TheMineKindIsStillReserved)
   {
     Game::World world;
     const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
     const Game::World::FleetId fleet = LaunchedFleet(world, station, 0, 2);
 
-    // Both bytes are spent -- that is what reserving one is for -- and both are refused until the
-    // design that gives each of them meaning lands.
-    for (const Game::FleetOrderKind kind : {Game::FleetOrderKind::Attack, Game::FleetOrderKind::Mine})
-    {
-      Game::World::FleetCommand command;
-      command.kind = kind;
-      Assert::AreEqual(Code(Game::World::FleetOrderResult::Unsupported), Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, command)),
-                       L"a kind with no design behind it was accepted");
-    }
+    // The byte is spent -- that is what reserving one is for -- and refused until there is a mining
+    // design and something in the world to mine. Attack stopped being one of these when the defense
+    // landed and gave it a chassis to share.
+    Game::World::FleetCommand mine;
+    mine.kind = Game::FleetOrderKind::Mine;
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Unsupported), Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, mine)),
+                     L"a kind with no design behind it was accepted");
     Assert::IsTrue(world.FleetOf(fleet).orderKind == Game::FleetOrderKind::Idle, L"a refused kind was written to the row");
   }
 
@@ -1272,6 +1317,437 @@ public:
       Assert::IsTrue(a == b, L"two identical fleet orders diverged");
     }
     Assert::AreEqual(3u, first.FleetOf(first.FleetInSlot(Game::FACTION_PLAYER, 0)).memberCount, L"the fleet lost a member");
+  }
+
+  // --- the defense (slice 4) ---------------------------------------------------------------------
+
+  TEST_METHOD(TheHullTableSaysWhoFights)
+  {
+    // Authored, and the list is the design's. A hull that cannot move cannot answer an attack either.
+    const bool fights[Game::HULL_COUNT] = {true, true, true, false, true, false, true, true, false, false};
+    for (std::uint32_t hull = 0; hull < Game::HULL_COUNT; ++hull)
+    {
+      const Game::HullSpec& spec = Game::HullSpecOf(hull);
+      Assert::IsTrue(spec.combatant == fights[hull], L"a hull answers an attack when it should not, or the other way round");
+      if (spec.immovable)
+        Assert::IsFalse(spec.combatant, L"something that cannot move is expected to give chase");
+    }
+  }
+
+  TEST_METHOD(AHostileActRousesTheDefense)
+  {
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    const Game::World::FleetId fleet = MixedFleet(world, station, 0);
+    const Game::ShipId corvette = CombatantOf(world, fleet);
+    const Game::ShipId miner = NonCombatantOf(world, fleet);
+
+    const Game::WorldPos point = Game::LocalPos(1400.0f, 0.0f);
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered), Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, MoveTo(point))),
+                     L"the fleet order was refused");
+    for (int tick = 0; tick < 300; ++tick)
+      world.Step();
+
+    // Somebody shoots the Miner. Nothing in this tree can actually do that, which is the whole
+    // reason RecordHostileAct exists as a socket (ADR 0050).
+    const Game::ShipId raider =
+      world.SpawnShip(world.Ship(miner).posWorld, 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
+    const Game::ShipHandle raiderHandle = world.HandleOf(raider);
+    world.RecordHostileAct(raiderHandle, world.HandleOf(miner));
+
+    Assert::AreEqual(Game::FLEET_ALERT_TICKS, world.FleetOf(fleet).alertTicks, L"the act did not light the alert");
+    Assert::IsTrue(world.FleetOf(fleet).threat == raiderHandle, L"the fleet is not roused against its attacker");
+
+    for (int tick = 0; tick < 200; ++tick)
+      world.Step();
+
+    // The Corvette turns on the raider; the Miner keeps flying the order it was given, and does not
+    // flee -- fleeing is a judgment about where safety is, which is a sense this design has none of.
+    Assert::IsTrue(Game::Distance(world.Ship(corvette).posWorld, world.Ship(raider).posWorld) <
+                     Game::Distance(world.Ship(miner).posWorld, world.Ship(raider).posWorld),
+                   L"the combatant did not close on the attacker");
+    Assert::AreEqual(0.0f, world.Ship(corvette).orderSpeedCapMetresPerSec, 0.0f, L"a chase was held to the fleet's cruising pace");
+    Assert::AreEqual(Game::OrderState::Moving, world.Ship(miner).order, L"the non-combatant abandoned its order");
+    Assert::IsTrue(Game::Distance(world.Ship(miner).posWorld, point) < Game::Distance(world.Ship(corvette).posWorld, point),
+                   L"the non-combatant is not the one still going where it was sent");
+  }
+
+  TEST_METHOD(AnActOnAShipInNoFleetIsIgnored)
+  {
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    const Game::World::FleetId fleet = MixedFleet(world, station, 0);
+
+    const Game::ShipId loose =
+      world.SpawnShip(Game::LocalPos(-3000.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette), Game::FACTION_PLAYER);
+    const Game::ShipId raider =
+      world.SpawnShip(Game::LocalPos(-3040.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
+    world.RecordHostileAct(world.HandleOf(raider), world.HandleOf(loose));
+
+    Assert::AreEqual(0u, world.FleetOf(fleet).alertTicks, L"a loose ship's misfortune roused somebody else's fleet");
+    Assert::IsTrue(world.FleetOf(fleet).threat.generation == 0, L"a fleet took a threat it was never given");
+
+    // And a victim that is not a live ship at all changes nothing either.
+    Assert::IsTrue(world.DespawnShip(world.HandleOf(loose)), L"the despawn failed");
+    world.RecordHostileAct(world.HandleOf(raider), Game::ShipHandle{});
+    Assert::AreEqual(0u, world.FleetOf(world.FleetInSlot(Game::FACTION_PLAYER, 0)).alertTicks, L"a null victim roused a fleet");
+  }
+
+  TEST_METHOD(TheDefenseHoldsItsGround)
+  {
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    const Game::World::FleetId fleet = MixedFleet(world, station, 0);
+    const Game::ShipId corvette = CombatantOf(world, fleet);
+    const Game::ShipId miner = NonCombatantOf(world, fleet);
+
+    // A raider that keeps striking as it runs, so the ALERT never goes out and the leash is the only
+    // thing that can release the combatant. That is the situation the leash is actually for: no hull
+    // in the table covers a kilometer in the ten seconds one act buys, so a hit-and-run is released
+    // by the alert, and a running fight is what the leash bounds (Fleets.md 7.2's amendment).
+    const Game::ShipId raider =
+      world.SpawnShip(world.Ship(miner).posWorld, 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
+    const Game::ShipHandle raiderHandle = world.HandleOf(raider);
+    const Game::ShipHandle minerHandle = world.HandleOf(miner);
+    world.RecordHostileAct(raiderHandle, minerHandle);
+    const Game::WorldPos anchor = world.FleetOf(fleet).threatAnchorPos;
+
+    Game::WorldPos bolt = anchor;
+    Game::Translate(bolt, 0.0f, 4.0f * Game::FLEET_ENGAGE_RANGE_METRES);
+    const Game::ShipId raiderShips[] = {raider};
+    (void)world.IssueMoveOrder(raiderShips, bolt, false, 0.0f, Game::FACTION_VANDAL);
+
+    // Followed as the fight goes on, because every act re-states it: the ground the leash is measured
+    // from is where the LAST act happened, not where the first one did.
+    Game::WorldPos lastAnchor = anchor;
+    bool released = false;
+    for (int tick = 0; tick < 6000 && !released; ++tick)
+    {
+      lastAnchor = world.FleetOf(fleet).threatAnchorPos;
+      world.Step();
+      released = world.FleetOf(fleet).threat.generation == 0;
+      if (!released && tick % 120 == 0)
+        world.RecordHostileAct(raiderHandle, minerHandle);
+    }
+
+    Assert::IsTrue(released, L"the defense followed a raider off the ground it struck");
+    Assert::IsTrue(world.FleetOf(fleet).alertTicks > 0, L"the alert ran out first, so the leash is not what released it");
+    Assert::IsTrue(Game::Distance(world.Ship(raider).posWorld, lastAnchor) > Game::FLEET_ENGAGE_RANGE_METRES,
+                   L"the raider was released before it broke the leash");
+    Assert::IsTrue(IsSamePosition(world.FleetOf(fleet).threatAnchorPos, Game::WorldPos{}),
+                   L"a stood-down fleet is still holding the ground it was defending");
+
+    // With no standing order to go back to, the combatant stops rather than flying on to where its
+    // quarry used to be. Stopping is the Idle below; letting go is the gap opening after it, which
+    // is what a combatant still shadowing would not do.
+    const float gapAtRelease = Game::Distance(world.Ship(corvette).posWorld, world.Ship(raider).posWorld);
+    for (int tick = 0; tick < 900; ++tick)
+      world.Step();
+    Assert::AreEqual(Game::OrderState::Idle, world.Ship(corvette).order, L"a released combatant kept chasing");
+    Assert::IsTrue(Game::Distance(world.Ship(corvette).posWorld, world.Ship(raider).posWorld) > gapAtRelease + 300.0f,
+                   L"a released combatant is still keeping station on its quarry");
+  }
+
+  TEST_METHOD(ACombatantReturnsToItsOrder)
+  {
+    // What standing down has to mean when the fleet was in the middle of something. Pursuit
+    // overwrote the combatant's route destination with the target's position, so patience -- which
+    // re-issues a member to its own route destination -- would send it back to where its quarry used
+    // to be. The stand-down re-lowers the standing order instead, and this is the test that says the
+    // difference is real (Fleets.md 7.2's amendment).
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    const Game::World::FleetId fleet = MixedFleet(world, station, 0);
+    const Game::ShipId corvette = CombatantOf(world, fleet);
+    const Game::ShipId miner = NonCombatantOf(world, fleet);
+
+    const Game::WorldPos point = Game::LocalPos(1600.0f, 0.0f);
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered), Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, MoveTo(point))),
+                     L"the fleet order was refused");
+    for (int tick = 0; tick < 200; ++tick)
+      world.Step();
+
+    // Struck once, and the raider then sits still well inside the leash: only the alert running out
+    // can end this, which is what puts the stand-down on a schedule the test can wait for.
+    Game::WorldPos ambush = world.Ship(miner).posWorld;
+    Game::Translate(ambush, -300.0f, 0.0f);
+    const Game::ShipId raider = world.SpawnShip(ambush, 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
+    world.RecordHostileAct(world.HandleOf(raider), world.HandleOf(miner));
+
+    for (std::uint32_t tick = 0; tick < Game::FLEET_ALERT_TICKS / 2; ++tick)
+      world.Step();
+    Assert::IsTrue(Game::Distance(world.Ship(corvette).posWorld, world.Ship(raider).posWorld) < 400.0f,
+                   L"the combatant never turned on the raider, so this proves nothing");
+
+    for (std::uint32_t tick = 0; tick < Game::FLEET_ALERT_TICKS; ++tick)
+      world.Step();
+    Assert::IsTrue(world.FleetOf(fleet).threat.generation == 0, L"the alert never burned out");
+    Assert::IsTrue(world.FleetOf(fleet).orderKind == Game::FleetOrderKind::Move, L"the defense ate the standing order");
+
+    // And it goes to the fleet's order, not back to the raider it was shadowing.
+    for (int tick = 0; tick < 4000; ++tick)
+      world.Step();
+    const float spacing = Game::SlotSpacingMetres(Game::HullSpecOf(Game::HullId::Miner).BoundingRadiusMetres());
+    Assert::IsTrue(Game::Distance(world.Ship(corvette).posWorld, point) < 4.0f * spacing,
+                   L"a combatant that stood down did not resume its fleet's order");
+    Assert::IsTrue(Game::Distance(world.Ship(corvette).posWorld, world.Ship(raider).posWorld) > 1000.0f,
+                   L"a combatant that stood down went back to where its quarry was");
+  }
+
+  TEST_METHOD(TheAlertDecays)
+  {
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    const Game::World::FleetId fleet = MixedFleet(world, station, 0);
+    const Game::ShipId miner = NonCombatantOf(world, fleet);
+
+    // A raider that stays put well inside the leash: only the alert can end this engagement, which
+    // is what makes it one of the three things being engaged is.
+    const Game::ShipId raider =
+      world.SpawnShip(world.Ship(miner).posWorld, 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
+    const Game::ShipHandle raiderHandle = world.HandleOf(raider);
+    world.RecordHostileAct(raiderHandle, world.HandleOf(miner));
+
+    for (std::uint32_t tick = 0; tick < Game::FLEET_ALERT_TICKS - 1; ++tick)
+      world.Step();
+    Assert::IsTrue(world.FleetOf(fleet).alertTicks > 0, L"the alert went out early");
+    Assert::IsTrue(world.FleetOf(fleet).threat.generation != 0, L"the fleet stood down while it was still under attack");
+
+    // A second act refills it, which is what makes a running fight hold the button lit.
+    world.RecordHostileAct(raiderHandle, world.HandleOf(miner));
+    Assert::AreEqual(Game::FLEET_ALERT_TICKS, world.FleetOf(fleet).alertTicks, L"a fresh act did not refill the alert");
+
+    for (std::uint32_t tick = 0; tick < Game::FLEET_ALERT_TICKS + 1; ++tick)
+      world.Step();
+    Assert::AreEqual(0u, world.FleetOf(fleet).alertTicks, L"the alert never went out");
+    Assert::IsTrue(world.FleetOf(fleet).threat.generation == 0, L"the posture outlived the alert that bounds it");
+  }
+
+  TEST_METHOD(AnExplicitOrderStandsTheDefenseDown)
+  {
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    const Game::World::FleetId fleet = MixedFleet(world, station, 0);
+    const Game::ShipId miner = NonCombatantOf(world, fleet);
+
+    const Game::ShipId raider =
+      world.SpawnShip(world.Ship(miner).posWorld, 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
+    const Game::ShipHandle raiderHandle = world.HandleOf(raider);
+    world.RecordHostileAct(raiderHandle, world.HandleOf(miner));
+    for (int tick = 0; tick < 60; ++tick)
+      world.Step();
+    Assert::IsTrue(world.FleetOf(fleet).threat.generation != 0, L"the fleet was never roused");
+
+    // An explicit order outranks the standing behavior. The alert keeps burning: the button should
+    // not stop glowing because the player gave an order.
+    const std::uint32_t burning = world.FleetOf(fleet).alertTicks;
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered),
+                     Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, MoveTo(Game::LocalPos(1400.0f, 0.0f)))),
+                     L"the fleet order was refused");
+    Assert::IsTrue(world.FleetOf(fleet).threat.generation == 0, L"an explicit order did not stand the defense down");
+    Assert::AreEqual(burning, world.FleetOf(fleet).alertTicks, L"an order put the alert out");
+
+    // And the next act rouses it again, with a fresh anchor.
+    for (int tick = 0; tick < 200; ++tick)
+      world.Step();
+    world.RecordHostileAct(raiderHandle, world.HandleOf(NonCombatantOf(world, fleet)));
+    Assert::IsTrue(world.FleetOf(fleet).threat == raiderHandle, L"a fresh act did not re-rouse the defense");
+    Assert::IsFalse(IsSamePosition(world.FleetOf(fleet).threatAnchorPos, Game::LocalPos(0.0f, 0.0f)),
+                    L"the anchor is not where the second act happened");
+  }
+
+  TEST_METHOD(AnOrderedAttackAimsTheCombatants)
+  {
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    const Game::World::FleetId fleet = MixedFleet(world, station, 0);
+    const Game::ShipId corvette = CombatantOf(world, fleet);
+    const Game::ShipId miner = NonCombatantOf(world, fleet);
+
+    const Game::ShipId quarry =
+      world.SpawnShip(Game::LocalPos(1800.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
+    const Game::WorldPos minerWas = world.Ship(miner).posWorld;
+
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::NoSuchTarget),
+                     Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, AttackOf(world.ShipCount()))), L"a stale target was accepted");
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered), Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, AttackOf(quarry))),
+                     L"the attack order was refused");
+
+    // About 1.8 km at a Corvette's 30 m/s is a minute; the budget is that with room to spare.
+    for (int tick = 0; tick < 4500; ++tick)
+      world.Step();
+
+    // The Corvette shadows it -- avoidance is what holds it off the hull, which is what shadowing is
+    // until there is a weapon to fire. The Miner holds where the order found it.
+    Assert::IsTrue(Game::Distance(world.Ship(corvette).posWorld, world.Ship(quarry).posWorld) < 250.0f,
+                   L"the combatant did not close on its target");
+    Assert::IsTrue(Game::Distance(world.Ship(miner).posWorld, minerWas) < 60.0f, L"the non-combatant was dragged into the attack");
+    Assert::AreEqual(Game::OrderState::Idle, world.Ship(miner).order, L"the non-combatant did not hold");
+  }
+
+  TEST_METHOD(AnOrderedAttackHasNoLeash)
+  {
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    const Game::World::FleetId fleet = MixedFleet(world, station, 0);
+    const Game::ShipId corvette = CombatantOf(world, fleet);
+
+    const Game::ShipId quarry =
+      world.SpawnShip(Game::LocalPos(600.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Miner), Game::FACTION_VANDAL);
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered), Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, AttackOf(quarry))),
+                     L"the attack order was refused");
+
+    // Far past anything a defense would let go of. An ordered pursuit is a decision the player made,
+    // where the defense is a reaction the fleet had, so it runs until the target is gone.
+    Game::WorldPos escape = Game::LocalPos(600.0f, 0.0f);
+    Game::Translate(escape, 0.0f, 6.0f * Game::FLEET_ENGAGE_RANGE_METRES);
+    const Game::ShipId quarryShips[] = {quarry};
+    (void)world.IssueMoveOrder(quarryShips, escape, false, 0.0f, Game::FACTION_VANDAL);
+
+    // A Miner runs at 24 m/s, so two kilometers is 83 s. The Corvette is faster, which is what
+    // makes "it kept coming" a measurement rather than a tie.
+    for (int tick = 0; tick < 6000; ++tick)
+      world.Step();
+
+    Assert::IsTrue(Game::Distance(world.Ship(quarry).posWorld, Game::LocalPos(600.0f, 0.0f)) > 2.0f * Game::FLEET_ENGAGE_RANGE_METRES,
+                   L"the quarry never ran, so this proves nothing");
+    Assert::IsTrue(world.FleetOf(fleet).orderKind == Game::FleetOrderKind::Attack, L"the attack order lapsed");
+    Assert::IsTrue(Game::Distance(world.Ship(corvette).posWorld, world.Ship(quarry).posWorld) < 400.0f,
+                   L"an ordered pursuit gave up at a range a defense would have");
+  }
+
+  TEST_METHOD(AnOrderedAttackEndsWithItsTarget)
+  {
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    const Game::World::FleetId fleet = MixedFleet(world, station, 0);
+    const Game::ShipId corvette = CombatantOf(world, fleet);
+
+    const Game::ShipId quarry =
+      world.SpawnShip(Game::LocalPos(1800.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered), Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, AttackOf(quarry))),
+                     L"the attack order was refused");
+    for (int tick = 0; tick < 200; ++tick)
+      world.Step();
+    Assert::AreEqual(Game::OrderState::Moving, world.Ship(corvette).order, L"the combatant never set off");
+
+    Assert::IsTrue(world.DespawnShip(world.HandleOf(quarry)), L"the despawn failed");
+    world.Step();
+
+    Assert::IsTrue(world.FleetOf(fleet).orderKind == Game::FleetOrderKind::Idle, L"the order outlived its target");
+    for (const Game::ShipId member : LiveMembers(world, fleet))
+      Assert::AreEqual(Game::OrderState::Idle, world.Ship(member).order, L"the fleet flew on to where its quarry used to be");
+  }
+
+  TEST_METHOD(TheDefenseOutranksAStandingAttack)
+  {
+    Game::World world;
+    const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
+    const Game::World::FleetId fleet = MixedFleet(world, station, 0);
+    const Game::ShipId corvette = CombatantOf(world, fleet);
+    const Game::ShipId miner = NonCombatantOf(world, fleet);
+
+    const Game::ShipId quarry =
+      world.SpawnShip(Game::LocalPos(2400.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
+    Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered), Code(world.IssueFleetOrder(Game::FACTION_PLAYER, 0, AttackOf(quarry))),
+                     L"the attack order was refused");
+    for (int tick = 0; tick < 200; ++tick)
+      world.Step();
+
+    // And then somebody else shoots the Miner. The defense takes the combatants for as long as it
+    // lasts; the standing order is what they go back to.
+    const Game::ShipId ambusher =
+      world.SpawnShip(world.Ship(miner).posWorld, 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber), Game::FACTION_VANDAL);
+    const Game::ShipHandle ambusherHandle = world.HandleOf(ambusher);
+    world.RecordHostileAct(ambusherHandle, world.HandleOf(miner));
+    for (int tick = 0; tick < 200; ++tick)
+      world.Step();
+
+    Assert::IsTrue(Game::Distance(world.Ship(corvette).posWorld, world.Ship(ambusher).posWorld) <
+                     Game::Distance(world.Ship(corvette).posWorld, world.Ship(quarry).posWorld),
+                   L"the combatant kept chasing its order while it was being shot at");
+    Assert::IsTrue(world.FleetOf(fleet).orderKind == Game::FleetOrderKind::Attack, L"the defense ate the standing order");
+
+    // The ambusher dies, the alert burns out, and the fleet goes back to the target it was ordered
+    // at rather than standing about.
+    Assert::IsTrue(world.DespawnShip(ambusherHandle), L"the despawn failed");
+    for (int tick = 0; tick < 4500; ++tick)
+      world.Step();
+    Assert::IsTrue(world.FleetOf(fleet).threat.generation == 0, L"the fleet is still hunting a ship that is gone");
+    Assert::IsTrue(Game::Distance(world.Ship(corvette).posWorld, world.Ship(quarry).posWorld) < 400.0f,
+                   L"the combatant did not go back to the target it was ordered at");
+  }
+
+  TEST_METHOD(TheThreatSurvivesTheRoundTrip)
+  {
+    Game::World original;
+    const Game::World::StationId station = MakeStationAt(original, 0.0f, 0.0f);
+    const Game::World::FleetId fleet = MixedFleet(original, station, 1);
+    const Game::ShipId miner = NonCombatantOf(original, fleet);
+
+    const Game::ShipId raider =
+      original.SpawnShip(original.Ship(miner).posWorld, 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
+    original.RecordHostileAct(original.HandleOf(raider), original.HandleOf(miner));
+    for (int tick = 0; tick < 90; ++tick)
+      original.Step();
+
+    std::vector<std::uint8_t> saved;
+    Game::WriteWorldState(original, saved);
+    Game::World reloaded;
+    Assert::IsTrue(Game::ReadWorldState(saved, reloaded), L"the state did not load");
+
+    const Game::World::Fleet& before = original.FleetOf(fleet);
+    const Game::World::Fleet& after = reloaded.FleetOf(reloaded.FleetInSlot(Game::FACTION_PLAYER, 1));
+    Assert::IsTrue(before.threat == after.threat, L"the threat did not survive the reload");
+    Assert::IsTrue(IsSamePosition(before.threatAnchorPos, after.threatAnchorPos), L"the anchor did not survive the reload");
+    Assert::AreEqual(before.alertTicks, after.alertTicks, L"the alert did not survive the reload");
+    Assert::IsTrue(before.alertTicks > 0, L"the scene is not mid-defense, so this proves nothing");
+
+    std::vector<std::uint8_t> a;
+    std::vector<std::uint8_t> b;
+    for (int tick = 0; tick < 900; ++tick)
+    {
+      original.Step();
+      reloaded.Step();
+      Game::WriteWorldState(original, a);
+      Game::WriteWorldState(reloaded, b);
+      Assert::IsTrue(a == b, L"a reloaded world fought a different fight");
+    }
+  }
+
+  TEST_METHOD(TheSameDefenseProducesTheSameRun)
+  {
+    Game::World first;
+    Game::World second;
+    for (Game::World* world : {&first, &second})
+    {
+      BuildFleetlessScene(*world);
+      const Game::World::StationId station = MakeStationAt(*world, 5000.0f, 0.0f, 1.4f);
+      const Game::World::FleetId fleet = MixedFleet(*world, station, 0);
+      Assert::AreEqual(Code(Game::World::FleetOrderResult::Ordered),
+                       Code(world->IssueFleetOrder(Game::FACTION_PLAYER, 0, MoveTo(Game::LocalPos(6800.0f, 900.0f)))),
+                       L"the fleet order was refused");
+      for (int tick = 0; tick < 120; ++tick)
+        world->Step();
+
+      const Game::ShipId victim = NonCombatantOf(*world, fleet);
+      const Game::ShipId raider =
+        world->SpawnShip(world->Ship(victim).posWorld, 0.4f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
+      world->RecordHostileAct(world->HandleOf(raider), world->HandleOf(victim));
+    }
+
+    std::vector<std::uint8_t> a;
+    std::vector<std::uint8_t> b;
+    for (int tick = 0; tick < static_cast<int>(Game::FLEET_ALERT_TICKS) + 600; ++tick)
+    {
+      first.Step();
+      second.Step();
+      Game::WriteWorldState(first, a);
+      Game::WriteWorldState(second, b);
+      Assert::IsTrue(a == b, L"two identical defenses diverged");
+    }
+    Assert::IsTrue(first.FleetOf(first.FleetInSlot(Game::FACTION_PLAYER, 0)).threat.generation == 0,
+                   L"the alert never burned out, so the stand-down was never replayed");
   }
 };
 } // namespace GameLogicTests

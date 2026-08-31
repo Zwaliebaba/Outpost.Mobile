@@ -167,6 +167,7 @@ void Publisher::ApplyOrders(World& _world)
           command.facingRad = fleetOrder.facingRad;
           command.hasFacing = fleetOrder.hasFacing;
           command.station = _world.ResolveEntity(fleetOrder.station);
+          command.target = _world.ResolveEntity(fleetOrder.target);
           (void)_world.IssueFleetOrder(subscriber.faction, fleetOrder.slot, command);
         }
         else if (ReadMoveOrder(message, order))

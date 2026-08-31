@@ -186,6 +186,47 @@ void World::RecordAggression(ShipHandle _attacker, StationId _station)
     station.targets.push_back(_attacker);
 }
 
+void World::PursueTarget(ShipId _ship, ShipId _target)
+{
+  // Re-aimed when the ship has nothing to do, or when the target has walked far enough from the
+  // point last aimed at to be worth a new plan -- never every tick, which would cost everything and
+  // change nothing. The point last aimed at is the route's own destination, which is why a pursuer
+  // is sent at the target itself rather than at a slot around it: eight ships aimed at one point all
+  // answer this test the same way on the same tick.
+  ShipState& ship = m_ships[_ship];
+  const WorldPos& targetPos = m_ships[_target].posWorld;
+  const bool drifted = Distance(m_routes[_ship].destination, targetPos) > PURSUIT_REPLAN_METRES;
+  if (ship.order != OrderState::Idle && !drifted)
+    return;
+
+  ship.order = OrderState::Moving;
+  ship.orderHasFacing = false;
+  ship.orderSpeedCapMetresPerSec = 0.0f; // a chase runs at the hull's own speed
+  m_patrols[_ship].active = false;
+  // A fleet member may have been halfway into a station when the shooting started. On the protector
+  // path this is already false by the time a duty pursues, so it costs that caller nothing.
+  m_dockings[_ship].active = false;
+  PlanRoute(_ship, targetPos, HullSpecOf(ship.hullId).BoundingRadiusMetres() + PATH_CLEARANCE_MARGIN_METRES);
+}
+
+void World::RecordHostileAct(ShipHandle _attacker, ShipHandle _victim)
+{
+  const ShipId victim = Resolve(_victim);
+  if (victim == INVALID_SHIP_ID)
+    return;
+
+  const FleetId fleet = FleetAt(victim);
+  if (fleet == INVALID_FLEET_ID)
+    return; // nobody's to answer for: a loose ship has no response of its own
+
+  // The latest act wins, anchor and all. A fleet attacked at both ends holds one threat because the
+  // posture is one judgment and the wire is one bit (Design/Fleets.md 13).
+  Fleet& row = m_fleets[fleet];
+  row.threat = _attacker;
+  row.threatAnchorPos = m_ships[victim].posWorld;
+  row.alertTicks = FLEET_ALERT_TICKS;
+}
+
 const World::ProtectorDuty& World::ProtectorOf(ShipId _id) const noexcept
 {
   return m_protectors[_id];
@@ -439,6 +480,24 @@ void World::LowerFleetOrder(Fleet& _fleet)
     if (station != INVALID_SHIP_ID)
       (void)IssueDockOrder(m_fleetShipScratch, station, _fleet.ownerFaction);
   }
+  else if (_fleet.orderKind == FleetOrderKind::Attack)
+  {
+    // The combatants take the target and the rest hold where the order found them -- Stop's
+    // treatment, for them alone. The pass keeps the chase aimed from here on; this is where it
+    // starts (Design/Fleets.md 6.2).
+    const ShipId target = Resolve(_fleet.orderTarget);
+    for (const ShipId member : m_fleetShipScratch)
+    {
+      if (target != INVALID_SHIP_ID && HullSpecOf(m_ships[member].hullId).combatant)
+      {
+        PursueTarget(member, target);
+        continue;
+      }
+      m_ships[member].order = OrderState::Idle;
+      m_ships[member].orderSpeedCapMetresPerSec = 0.0f;
+      m_dockings[member].active = false;
+    }
+  }
 }
 
 World::FleetOrderResult World::IssueFleetOrder(FactionId _issuerFaction, std::uint8_t _slot, const FleetCommand& _command)
@@ -463,10 +522,17 @@ World::FleetOrderResult World::IssueFleetOrder(FactionId _issuerFaction, std::ui
       return FleetOrderResult::RefusedStanding;
     station = m_stations[row].structure;
   }
-  else if (_command.kind == FleetOrderKind::Attack || _command.kind == FleetOrderKind::Mine)
+  ShipHandle target;
+  if (_command.kind == FleetOrderKind::Attack)
   {
-    // Known to the wire, and refused until the design that gives each of them meaning lands. The
-    // byte is spent either way, which is the point of reserving it (ShipState.h, FleetOrderKind).
+    if (_command.target >= m_ships.size())
+      return FleetOrderResult::NoSuchTarget;
+    target = HandleOf(_command.target);
+  }
+  else if (_command.kind == FleetOrderKind::Mine)
+  {
+    // Known to the wire, and refused until there is a mining design and something in the world to
+    // mine. The byte is spent either way, which is the point of reserving it (ShipState.h).
     return FleetOrderResult::Unsupported;
   }
 
@@ -477,6 +543,8 @@ World::FleetOrderResult World::IssueFleetOrder(FactionId _issuerFaction, std::ui
     // at all -- stopping is asking for Idle, not for a destination.
     fleet.orderKind = FleetOrderKind::Idle;
     fleet.orderStation = ShipHandle{};
+    fleet.orderTarget = ShipHandle{};
+    fleet.threat = ShipHandle{};
     for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
     {
       const ShipId member = Resolve(fleet.members[at]);
@@ -494,6 +562,14 @@ World::FleetOrderResult World::IssueFleetOrder(FactionId _issuerFaction, std::ui
   fleet.orderFacingRad = _command.facingRad;
   fleet.orderHasFacing = _command.hasFacing;
   fleet.orderStation = station;
+  fleet.orderTarget = target;
+
+  // An explicit order outranks the standing behavior, which is the line IssueDockOrder already
+  // carries for patrols: the threat is dropped and everybody is re-tasked. The alert is left
+  // burning -- the button should not stop glowing because the player gave an order -- and if the
+  // attacker persists, the next stated act rouses the defense again with a fresh anchor
+  // (Design/Fleets.md 7.4).
+  fleet.threat = ShipHandle{};
   LowerFleetOrder(fleet);
   return FleetOrderResult::Ordered;
 }
@@ -884,20 +960,9 @@ void World::StepProtectors()
       m_ships[id].order = OrderState::Idle; // re-aim below rather than finish the leg home
     }
 
-    // Pursue. Re-aim when the ship has nothing to do, or when the target has walked far enough from
-    // the point last aimed at to be worth a new plan -- never every tick, which would cost
-    // everything and change nothing.
-    ShipState& ship = m_ships[id];
-    const WorldPos& targetPos = m_ships[target].posWorld;
-    const bool drifted = Distance(m_routes[id].destination, targetPos) > PURSUIT_REPLAN_METRES;
-    if (ship.order != OrderState::Idle && !drifted)
-      continue;
-
-    ship.order = OrderState::Moving;
-    ship.orderHasFacing = false;
-    ship.orderSpeedCapMetresPerSec = 0.0f; // the law does not cruise
-    m_patrols[id].active = false;
-    PlanRoute(id, targetPos, HullSpecOf(ship.hullId).BoundingRadiusMetres() + PATH_CLEARANCE_MARGIN_METRES);
+    // Pursue. The law does not cruise, and it does not give up: PursueTarget is the same chassis a
+    // fleet's defense turns on whoever shot at it (Design/Fleets.md 3).
+    PursueTarget(id, target);
   }
 
   // 2. The launch pass. Per station in index order, which is the only order there is.
@@ -1144,10 +1209,100 @@ void World::StepFleets()
     fleet.launchCooldownTicks = FLEET_LAUNCH_EVERY_TICKS - 1;
   }
 
-  // Cruise, and patience. Both are about a standing order rather than about the tick it was given
-  // on, which is why they are a pass and not a line inside IssueFleetOrder.
+  // The defense, then cruise and patience. All three are about a standing state rather than about
+  // the tick it was set on, which is why they are a pass and not a line inside IssueFleetOrder.
   for (Fleet& fleet : m_fleets)
   {
+    // The alert burns down whatever else happens, and takes the threat with it when it goes out: a
+    // stale handle left in the row is one more thing for the codec to carry and for a later reader
+    // to wonder about (Design/Fleets.md 7.3).
+    if (fleet.alertTicks > 0)
+      --fleet.alertTicks;
+
+    // Engaged is three things at once, and losing any of them stands the fleet down. The alert being
+    // one of them is what bounds a defense in time: without it, one shot from an attacker that then
+    // parks inside the leash and does nothing would hold a fleet's combatants out of their orders
+    // for ever. It is also what makes the wire's two bits differ -- a fleet can be under attack and
+    // no longer engaged, which is the alert outliving the fight (Design/Fleets.md 7.2, 7.3, 8.2).
+    bool engaged = false;
+    if (fleet.threat.generation != 0)
+    {
+      const ShipId threat = Resolve(fleet.threat);
+      engaged = fleet.alertTicks > 0 && threat != INVALID_SHIP_ID &&
+                Distance(m_ships[threat].posWorld, fleet.threatAnchorPos) <= FLEET_ENGAGE_RANGE_METRES;
+      if (!engaged)
+      {
+        // Stood down, once: the threat is dead, docked, past the leash, or the alert has burned out.
+        // The anchor goes with it -- what is stale is not left lying in the row for the codec to
+        // carry and a later reader to wonder about.
+        fleet.threat = ShipHandle{};
+        fleet.threatAnchorPos = WorldPos{};
+
+        // Back to the standing order, and NOT by leaving it to patience: pursuit overwrote each
+        // combatant's route destination with the target's position, so patience would send it back
+        // to where its quarry used to be. Re-lowering is what "return to the standing order" has to
+        // mean once the order has been suspended (Design/Fleets.md 7.2).
+        if (fleet.orderKind != FleetOrderKind::Idle)
+        {
+          LowerFleetOrder(fleet);
+        }
+        else
+        {
+          // Nothing else to do. Stopping is the honest answer to a fight ending with no orders.
+          for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+          {
+            const ShipId member = Resolve(fleet.members[at]);
+            if (member != INVALID_SHIP_ID && HullSpecOf(m_ships[member].hullId).combatant)
+            {
+              m_ships[member].order = OrderState::Idle;
+              m_ships[member].orderSpeedCapMetresPerSec = 0.0f;
+            }
+          }
+        }
+      }
+    }
+
+    // What the combatants are chasing, if anything. The defense outranks the standing order for as
+    // long as it lasts; an ordered attack is what they chase when nothing is chasing them.
+    ShipId chase = INVALID_SHIP_ID;
+    if (engaged)
+    {
+      chase = Resolve(fleet.threat);
+    }
+    else if (fleet.orderKind == FleetOrderKind::Attack)
+    {
+      chase = Resolve(fleet.orderTarget);
+      if (chase == INVALID_SHIP_ID)
+      {
+        // The target died or docked, which completes the order: the fleet reverts to Idle where it
+        // stands rather than flying on to where its quarry was (Design/Fleets.md 6.5).
+        fleet.orderKind = FleetOrderKind::Idle;
+        fleet.orderTarget = ShipHandle{};
+        for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+        {
+          const ShipId member = Resolve(fleet.members[at]);
+          if (member != INVALID_SHIP_ID)
+          {
+            m_ships[member].order = OrderState::Idle;
+            m_ships[member].orderSpeedCapMetresPerSec = 0.0f;
+          }
+        }
+      }
+    }
+
+    if (chase != INVALID_SHIP_ID)
+    {
+      // The combatants turn; everybody else carries on with whatever it was told, unmoved. They do
+      // not flee: fleeing is a judgment about where safety is, which is a sense, and this design has
+      // none (Design/Fleets.md 7.2, ADR 0041).
+      for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+      {
+        const ShipId member = Resolve(fleet.members[at]);
+        if (member != INVALID_SHIP_ID && HullSpecOf(m_ships[member].hullId).combatant)
+          PursueTarget(member, chase);
+      }
+    }
+
     if (fleet.orderKind != FleetOrderKind::Move && fleet.orderKind != FleetOrderKind::Dock)
       continue;
 
@@ -1166,6 +1321,11 @@ void World::StepFleets()
     {
       const ShipId member = Resolve(fleet.members[at]);
       if (member == INVALID_SHIP_ID)
+        continue;
+
+      // A combatant that is chasing has had its standing order suspended: neither the fleet's pace
+      // nor its patience applies to it until it stands down.
+      if (chase != INVALID_SHIP_ID && HullSpecOf(m_ships[member].hullId).combatant)
         continue;
 
       ShipState& ship = m_ships[member];

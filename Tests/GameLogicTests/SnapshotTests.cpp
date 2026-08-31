@@ -701,6 +701,7 @@ public:
     sent.facingRad = 0.75f;
     sent.hasFacing = true;
     sent.station = world.EntityIdOf(post);
+    sent.target = world.EntityIdOf(SpawnAt(world, -400.0f, 0.0f, Game::HullId::Interceptor, Game::FACTION_VANDAL));
 
     CaptureTransport link;
     Assert::IsTrue(Game::WriteFleetOrder(sent, link), L"the fleet order did not send");
@@ -714,6 +715,7 @@ public:
     Assert::AreEqual(sent.facingRad, read.facingRad, 0.0f, L"the facing did not survive the wire");
     Assert::IsTrue(read.hasFacing == sent.hasFacing, L"the facing flag did not survive the wire");
     Assert::IsTrue(read.station == sent.station, L"the station did not survive the wire");
+    Assert::IsTrue(read.target == sent.target, L"the attack target did not survive the wire");
 
     // Every kind, including the two that are reserved: the byte travels whether or not the
     // simulation will act on it, which is the point of having spent it.
