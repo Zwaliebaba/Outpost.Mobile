@@ -28,7 +28,7 @@ orders). A station's ledger is neither: it is large, it is private, it changes a
 exactly one client wants it at exactly one moment — when somebody long-presses a station. Broadcasting
 it would put every station's contents on every wire ten times a second for a screen nobody has open.
 So it is **asked for**, and the reply is the first server→client message in this tree that answers a
-question rather than announcing a fact ([ADR 0051](Decisions/0051-the-ledger-is-asked-for-not-broadcast.md)).
+question rather than announcing a fact ([ADR 0051](../Decisions/0051-the-ledger-is-asked-for-not-broadcast.md)).
 
 ---
 

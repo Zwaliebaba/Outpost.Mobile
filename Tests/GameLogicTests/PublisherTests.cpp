@@ -342,7 +342,7 @@ public:
   {
     // Who is in a fleet, stated whenever it changes and never otherwise. The publisher is told
     // about none of the four events that change it -- compose, launch, loss, retire -- and finds
-    // all of them by diffing what it last sent (Design/Fleets.md 8.1).
+    // all of them by diffing what it last sent (Design/Archive/Fleets.md 8.1).
     Game::World world;
     const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
     DockShips(world, station, Game::HullId::Corvette, 3);
@@ -373,7 +373,7 @@ public:
     // The design asks for a roster "on compose" and this slice does not send one, which is a
     // narrowing rather than an omission: a composed fleet has no membership yet, and that the slot
     // is now held rides the status block's mask -- stamped on every update, so it cannot be lost,
-    // which is a better place for occupancy than a message stated once (Design/Fleets.md 8.1).
+    // which is a better place for occupancy than a message stated once (Design/Archive/Fleets.md 8.1).
     //
     // It is also unobservable: the metronome starts cold, so the very first Step after a compose
     // already puts a hull in space. What the loop below pins is the consequence -- the first launch
@@ -454,7 +454,7 @@ public:
   {
     // The five buttons, and the only thing on this seam that describes a fleet the interest set has
     // never heard of. Every field is read from state the simulation already holds, except the
-    // position, which is derived here and held nowhere (Design/Fleets.md 8.2).
+    // position, which is derived here and held nowhere (Design/Archive/Fleets.md 8.2).
     Game::World world;
     const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
     const Game::WorldPos door = world.Ship(world.Resolve(world.StationOf(station).structure)).posWorld;
@@ -547,7 +547,7 @@ public:
                         L"an act did not light the engaged bit");
 
     // The attacker gone stands the fleet down while the alert is still burning, which is the one
-    // case the two bits were bought to tell apart (Design/Fleets.md 7.2, 7.3).
+    // case the two bits were bought to tell apart (Design/Archive/Fleets.md 7.2, 7.3).
     Assert::IsTrue(world.DespawnShip(world.HandleOf(raider)), L"the despawn failed");
     RunTick(world, publisher, link, tick++);
     link.DrainInto(receiver);
@@ -575,7 +575,7 @@ public:
     // The case the whole feature is for. This subscriber's camera is over empty space, so its
     // interest set never enters, leaves or refreshes anything -- and without the guard the update
     // that carries the status block is never sent at all, leaving a player who owns five fleets
-    // told about none of them (Design/Fleets-slice-5.md 2.8).
+    // told about none of them (Design/Archive/Fleets-slice-5.md 2.8).
     Game::World world;
     const Game::ShipId ship = SpawnAt(world, 0.0f, 0.0f);
     const Game::ShipId one[] = {ship};

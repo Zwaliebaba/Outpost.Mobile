@@ -165,7 +165,7 @@ public:
   // nothing else, which is why one lives in the view; a fleet's caps are rules an adapter must not
   // be able to talk its way past, its defense runs beyond every interest radius, and orders name
   // it -- so it is here, in the replay contract and in the save format with everything else Step
-  // reads (ADR 0048, Design/Fleets.md 4.1).
+  // reads (ADR 0048, Design/Archive/Fleets.md 4.1).
   //
   // Members are handles rather than a table parallel to m_ships, and that is what stops the despawn
   // repair gaining a fifth table: a member that docked or died simply stops resolving, and the
@@ -174,7 +174,7 @@ public:
   // reads or writes them, while a fleet row is small enough to be compared whole and a defined tail
   // is what makes a reloaded row equal the row that was saved.
   //
-  // Design/Fleets.md 4.1 spells the finished row: a launch manifest, a standing order, a threat and
+  // Design/Archive/Fleets.md 4.1 spells the finished row: a launch manifest, a standing order, a threat and
   // an alert. Each arrives with the slice that reads it, so that no field reaches the save format
   // before there is a test that can reach it.
   struct Fleet
@@ -189,7 +189,7 @@ public:
 
     // The launch manifest: hulls composed into this fleet and still inside the station. The rows
     // left the ledger when the fleet was composed, so nothing else can claim them, and the
-    // metronome in StepFleets is what turns them into ships (Design/Fleets.md 5.2, 5.3).
+    // metronome in StepFleets is what turns them into ships (Design/Archive/Fleets.md 5.2, 5.3).
     //
     // memberCount + manifestCount <= MAX_FLEET_SHIPS is the invariant compose establishes and every
     // launch preserves: a launch moves one hull from the second count to the first, and a loss only
@@ -202,7 +202,7 @@ public:
 
     // The standing order, at fleet grain. Members derive their own intent from it and keep deriving
     // it for as long as it stands, which is what makes a fleet arrive whole through traffic and
-    // what makes a hull launched after the order join it rather than the rally (Design/Fleets.md 6).
+    // what makes a hull launched after the order join it rather than the rally (Design/Archive/Fleets.md 6).
     //
     // The station is a handle rather than an id, for ADR 0005's reason and the docking table's: an
     // order that outlives the station it names must stop resolving rather than name whatever ship
@@ -214,7 +214,7 @@ public:
     ShipHandle orderStation;     // Dock
     ShipHandle orderTarget;      // Attack
 
-    // The defense (Design/Fleets.md 7). Who was last stated to have attacked a member, where that
+    // The defense (Design/Archive/Fleets.md 7). Who was last stated to have attacked a member, where that
     // act was stated, and how long the fleet stays roused by it.
     //
     // The anchor is the ground that was struck and not the fleet or the fight, which is what makes
@@ -472,7 +472,7 @@ public:
   //   5. a ship named twice, or one that is already in a fleet.
   //
   // The last is the fleet-only model held where it is cheapest to hold: one ship is in one fleet,
-  // checked at the only place that makes a membership (Design/Fleets.md 15, decision 1).
+  // checked at the only place that makes a membership (Design/Archive/Fleets.md 15, decision 1).
   //
   // This is not ComposeFleet. Composing takes hulls out of a station's ledger and leaves a manifest
   // for the launch metronome; forming takes ships that are already in space, which is what the
@@ -509,7 +509,7 @@ public:
   // zeros, because you do not take inventory in a port that would not let you assemble in it. They
   // live here, in one function both callers use, precisely so a screen cannot offer what a compose
   // will refuse -- which is the disagreement ComposeFleet's own ledger comment exists to prevent
-  // (Design/Fleets.md 5.2, 8.3).
+  // (Design/Archive/Fleets.md 5.2, 8.3).
   //
   // A station id past the table, or one whose structure is gone, reads zeros too. That is what a
   // ledger request over the wire is answered with, and it is the honest reading: an absent station
@@ -518,7 +518,7 @@ public:
 
   // What happened to a compose. Returned for the local host's log and for tests; nothing returns
   // over the wire, because an order is fire-and-forget and the client's affordance already knew --
-  // IssueDockOrder's sentence, and for its reason (Design/Fleets.md 5.2).
+  // IssueDockOrder's sentence, and for its reason (Design/Archive/Fleets.md 5.2).
   enum class ComposeResult : std::uint8_t
   {
     Composed,
@@ -766,7 +766,7 @@ private:
   void LowerFleetOrder(Fleet& _fleet);
 
   // The slowest member's top speed, or 0 when the fleet has nothing out: what every member's order
-  // speed cap is set to while the fleet is going somewhere together (Design/Fleets.md 6.3).
+  // speed cap is set to while the fleet is going somewhere together (Design/Archive/Fleets.md 6.3).
   [[nodiscard]] float FleetCruiseSpeedMetresPerSec(const Fleet& _fleet) const noexcept;
 
   // Aims one ship at another and keeps it aimed: re-planned when the ship has nothing to do, or when
@@ -774,7 +774,7 @@ private:
   //
   // One function with two masters, which is what the design means by the fleet defense being the
   // protector's chassis: the protector duty and the fleet posture both call it, so neither can drift
-  // from the other the first time one of them is retuned (Design/Fleets.md 3).
+  // from the other the first time one of them is retuned (Design/Archive/Fleets.md 3).
   void PursueTarget(ShipId _ship, ShipId _target);
 
   void SnapshotPreviousTick() noexcept;

@@ -440,7 +440,7 @@ inline constexpr std::uint32_t VANGUARD_TARGET_CAP = 4;
 
 // --- fleet focus -------------------------------------------------------------------------------
 // Tapping a fleet button flies the camera to that fleet: one gesture, because under the design's
-// first decision selecting a fleet IS attending to it (Design/Fleets.md 9.1).
+// first decision selecting a fleet IS attending to it (Design/Archive/Fleets.md 9.1).
 //
 // Camera::SetGoal and Camera::Follow have existed since the camera did and nothing had ever called
 // them; this is what they were for. The ease is the camera's own followHalfLife, so a fleet jump
@@ -533,7 +533,7 @@ inline constexpr float HUD_FLEET_BUTTON_W_PX = 48.0f;
 inline constexpr float HUD_FLEET_BUTTON_H_PX = 56.0f;
 inline constexpr float HUD_FLEET_GAP_PX = 6.0f;
 // The under-attack pulse, on the button and on the minimap digit together. A period rather than a
-// blink: the alert holds for ten seconds by Design/Fleets.md 7.3, so a flash would be a metronome
+// blink: the alert holds for ten seconds by Design/Archive/Fleets.md 7.3, so a flash would be a metronome
 // and a steady red would be indistinguishable from a livery. Real time, like the sky's twinkle --
 // a paused game whose alert stops pulsing reads as a hung one.
 inline constexpr float HUD_FLEET_ALERT_PERIOD_SEC = 0.9f;
@@ -548,7 +548,7 @@ inline constexpr float HUD_LONG_PRESS_MS = 450.0f; // holding a fleet button thi
 
 // --- the assembly screen -------------------------------------------------------------------------
 // A station's ledger, a draft drawn out of it, and the slot the draft becomes a fleet in
-// (Design/Fleets.md 9.4). Centred and fixed-size rather than anchored to a corner, because it is
+// (Design/Archive/Fleets.md 9.4). Centred and fixed-size rather than anchored to a corner, because it is
 // modal: it is the only thing the player is doing while it is up, and a modal panel that hugs an
 // edge reads as a widget rather than as a screen.
 inline constexpr float HUD_ASSEMBLY_WIDTH_PX = 520.0f;
@@ -570,7 +570,7 @@ inline constexpr Neuron::Rgba HUD_ASSEMBLY_SCRIM{0.0f, 0.0f, 0.0f, 0.55f};
 inline constexpr float HUD_ASSEMBLY_DISABLED_ALPHA = 0.35f;
 
 // --- the fleet sheet ------------------------------------------------------------------------------
-// One fleet's panel, held over the bottom bar by a long press on its button (Design/Fleets.md 9.3).
+// One fleet's panel, held over the bottom bar by a long press on its button (Design/Archive/Fleets.md 9.3).
 // Anchored to the bar rather than centred, because unlike the assembly screen it is not modal: the
 // fleet it describes is still flying behind it, and a panel in the middle of the screen would be
 // standing on the thing the player opened it to watch.

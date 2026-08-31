@@ -365,7 +365,7 @@ float WorldView::SimTimeSec() const noexcept
 void WorldView::SelectFleet(int _slot, bool _additive)
 {
   if (_slot < 0 || _slot >= FLEET_SLOTS || !IsFleetHeld(_slot))
-    return; // an empty slot selects nothing; the button says so instead (Design/Fleets.md 9.1)
+    return; // an empty slot selects nothing; the button says so instead (Design/Archive/Fleets.md 9.1)
 
   if (_additive)
   {
@@ -429,7 +429,7 @@ const char* WorldView::FleetActivity(int _slot) const noexcept
 
   const std::uint8_t bits = FleetStatusBits(_slot);
   // Engaged outranks the standing order in what is SAID, because it is the thing that changes what
-  // the fleet is doing right now; the order is still there underneath and resumes (Design/Fleets.md 7.4).
+  // the fleet is doing right now; the order is still there underneath and resumes (Design/Archive/Fleets.md 7.4).
   if ((bits & Game::FLEET_STATUS_ENGAGED) != 0)
     return "DEFENDING";
 
@@ -545,7 +545,7 @@ void WorldView::RefreshKnownHulls()
 // Against the roster of the update BEFORE this one: rosters ride the reliable lane and are applied
 // ahead of the records, so by the time a departure is read the entity is in none of them.
 //
-// The LAST departure wins rather than any docking ever seen, which is what Design/Fleets.md 9.6's
+// The LAST departure wins rather than any docking ever seen, which is what Design/Archive/Fleets.md 9.6's
 // "on the last capture" means: a fleet that lands one hull and then loses the rest was lost, and a
 // sticky flag would have called it docked (ADR 0040).
 void WorldView::NoteFleetDeparture(Game::EntityId _entity, bool _docked) noexcept
@@ -562,7 +562,7 @@ void WorldView::NoteFleetDeparture(Game::EntityId _entity, bool _docked) noexcep
 
 // The three lines only this half can draw. The alert's edge could have stayed in the HUD, where it
 // began; the other two could not, because the departure lists say whether a slot emptied by docking
-// or by dying and ExplodeTheLost clears them -- so all of Design/Fleets.md 9.6's fleet lines are
+// or by dying and ExplodeTheLost clears them -- so all of Design/Archive/Fleets.md 9.6's fleet lines are
 // here rather than split across two files by which one happened to need what.
 void WorldView::ReportFleetEvents()
 {
@@ -577,7 +577,7 @@ void WorldView::ReportFleetEvents()
       const std::uint8_t bits = FleetStatusBits(slot);
       const bool alert = (bits & Game::FLEET_STATUS_UNDER_ATTACK) != 0;
       // The rising edge only. The bit holds for ten seconds and a fight keeps refilling it, so a
-      // line per update would bury everything else the log has to say (Design/Fleets.md 7.3).
+      // line per update would bury everything else the log has to say (Design/Archive/Fleets.md 7.3).
       if (alert && !m_wasUnderAttack[slot] && m_log)
         m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "FLEET %d UNDER ATTACK", slot + 1);
       m_wasUnderAttack[slot] = alert;
@@ -1048,7 +1048,7 @@ void WorldView::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float _f
   // point on its own. With one fleet selected -- which is the ordinary case -- the two are the same
   // arithmetic; with several the marker shows one heading for orders that will settle into several,
   // which is a thing one marker cannot say and the design accepted when it made five buttons
-  // orderable at once (Design/Fleets.md 9.2).
+  // orderable at once (Design/Archive/Fleets.md 9.2).
   const float heading = _hasFacing ? _facingRad : Game::FormationHeading(m_orderPositions, order.point, firstHeading);
 
   OrderMarker marker;
@@ -1104,7 +1104,7 @@ void WorldView::IssueDockOrder(std::size_t _station)
 
 // The third tap meaning, and the one this slice adds. There is no affordance to check first, unlike
 // the dock: the picker only ever offers a record the mask already says is hostile, so a tap that
-// reaches here has passed the only question there is to ask (Design/Fleets.md 9.3).
+// reaches here has passed the only question there is to ask (Design/Archive/Fleets.md 9.3).
 void WorldView::IssueAttackOrder(std::size_t _target)
 {
   const std::span<const Game::ShipSnapshot> state = Ships();
@@ -1173,7 +1173,7 @@ void WorldView::OnBoxSelect(float _x0Px, float _y0Px, float _x1Px, float _y1Px, 
 
   // A band takes every fleet it touches, WHOLE. Sub-fleet selection does not exist, so a box over
   // half a wedge selects the wedge -- which is the decision the design took once and this is the
-  // only place a player could otherwise have contradicted it (Design/Fleets.md 15, decision 1).
+  // only place a player could otherwise have contradicted it (Design/Archive/Fleets.md 15, decision 1).
   const std::span<const Game::ShipSnapshot> state = Ships();
   for (size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
   {
@@ -1215,7 +1215,7 @@ void WorldView::OnTap(float _xPx, float _yPx, bool _shiftHeld, bool _doubleTap)
   CancelFocus(); // the player is working the world again, so the camera stops flying
 
   // An armed command takes the tap before anything else means anything, and clears whether or not
-  // the tap landed on something it can use: one prompt, one tap (Design/Fleets.md 9.3).
+  // the tap landed on something it can use: one prompt, one tap (Design/Archive/Fleets.md 9.3).
   if (m_armed != ArmedOrder::None)
   {
     const ArmedOrder armed = m_armed;
@@ -1275,7 +1275,7 @@ void WorldView::OnTap(float _xPx, float _yPx, bool _shiftHeld, bool _doubleTap)
   // With a selection, a tap on something is an order to every selected fleet, in this order: a
   // station docks, a hostile record attacks, the ground moves. With nothing selected it is nothing
   // at all -- selection-for-inspection is the station screen's, which is slice 7
-  // (Design/Archive/Stations.md 9.1, Design/Fleets.md 9.3).
+  // (Design/Archive/Stations.md 9.1, Design/Archive/Fleets.md 9.3).
   if (SelectedFleetCount() > 0)
   {
     const int station = PickStation(_xPx, _yPx);
@@ -1398,7 +1398,7 @@ void WorldView::SendComposeOrder(Game::EntityId _station, std::uint8_t _slot, st
     order.hullCounts[hull] = _hullCounts[hull];
 
   // Fire and forget, like every order on this lane. A refusal -- a raced slot, a ledger that moved
-  // -- simply leaves the button empty, and the screen's next opening asks again (Design/Fleets.md 9.4).
+  // -- simply leaves the button empty, and the screen's next opening asks again (Design/Archive/Fleets.md 9.4).
   if (!Game::WriteComposeOrder(order, *m_transport))
     return;
 

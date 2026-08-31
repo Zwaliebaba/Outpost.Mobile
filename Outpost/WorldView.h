@@ -281,7 +281,7 @@ public:
   // number the server states the membership of on every change. Nothing here can hold a stale ship.
   //
   // Sub-fleet selection does not exist, on purpose: the day a ship must leave a fleet, the fleet
-  // docks and the station screen is where it happens (Design/Fleets.md 15, decision 1).
+  // docks and the station screen is where it happens (Design/Archive/Fleets.md 15, decision 1).
   static constexpr int FLEET_SLOTS = static_cast<int>(Game::FLEET_SLOTS);
 
   // Selects one slot, or toggles it in or out when _additive. A slot the server does not hold is
@@ -295,7 +295,7 @@ public:
 
   // Whether the server says this slot is held, which is the status block's mask and NOT an empty
   // roster: a composed fleet has a live slot and nobody in space, and the mask rides every update
-  // where a roster is stated once (Design/Fleets.md 8.1's amendment).
+  // where a roster is stated once (Design/Archive/Fleets.md 8.1's amendment).
   [[nodiscard]] bool IsFleetHeld(int _slot) const noexcept
   {
     return _slot >= 0 && _slot < FLEET_SLOTS && (m_receiver.FleetMask() & (1u << _slot)) != 0;
@@ -309,7 +309,7 @@ public:
     return IsFleetHeld(_slot) ? static_cast<int>(m_receiver.FleetStatusOf(static_cast<std::uint8_t>(_slot)).count) : 0;
   }
 
-  // Bits 0-2 the kind shown, bit 6 engaged, bit 7 under attack (Design/Fleets.md 8.2).
+  // Bits 0-2 the kind shown, bit 6 engaged, bit 7 under attack (Design/Archive/Fleets.md 8.2).
   [[nodiscard]] std::uint8_t FleetStatusBits(int _slot) const noexcept
   {
     return IsFleetHeld(_slot) ? m_receiver.FleetStatusOf(static_cast<std::uint8_t>(_slot)).status : std::uint8_t{0};
@@ -322,7 +322,7 @@ public:
 
   // Where the server says the fleet is: the centroid of its live members, or its launch station
   // while none is out. A readout, derived at publish time and simulated by nobody (ADR 0051's
-  // neighbour argument, Design/Fleets.md 8.2).
+  // neighbour argument, Design/Archive/Fleets.md 8.2).
   [[nodiscard]] Game::WorldPos FleetPosition(int _slot) const noexcept
   {
     return IsFleetHeld(_slot) ? m_receiver.FleetStatusOf(static_cast<std::uint8_t>(_slot)).position : m_viewOrigin;
@@ -344,7 +344,7 @@ public:
   // to, because a station being long-pressed is on screen and so is in the interest set.
   [[nodiscard]] Game::FactionId FactionOfEntity(Game::EntityId _entity) const noexcept;
 
-  // The draft, sent. Every gate is the simulation's (Design/Fleets.md 5.2); nothing comes back to
+  // The draft, sent. Every gate is the simulation's (Design/Archive/Fleets.md 5.2); nothing comes back to
   // say it landed, and the roster and the button's mask are the confirmation.
   void SendComposeOrder(Game::EntityId _station, std::uint8_t _slot, std::span<const std::uint32_t> _hullCounts);
 
@@ -353,7 +353,7 @@ public:
 
   // Flies the camera to a slot's stated position, and keeps re-reading it while it flies: a fleet
   // is moving, and a goal fixed at the tap lands where it used to be. Ends on arrival, or the
-  // moment the player takes the camera back (Design/Fleets.md 9.1).
+  // moment the player takes the camera back (Design/Archive/Fleets.md 9.1).
   void FocusFleet(int _slot);
   void UpdateFocus(float _dtSec);
 
@@ -372,7 +372,7 @@ public:
   // selecting a fleet is attending to it. A hold opens the sheet, which is slice 8; until then it
   // logs the line the sheet's header will carry, so the gesture is discoverable and says something
   // true. An empty slot is inert to a tap and answers a hold with the one thing there is to say
-  // (Design/Fleets.md 9.1).
+  // (Design/Archive/Fleets.md 9.1).
   // What a press meant, so the panel stays the caller's to open. The view keeps knowing what a
   // fleet slot is and the UI keeps knowing what a panel is -- slice 6's division, and this is the
   // first press that needs a third answer.
@@ -386,7 +386,7 @@ public:
   ButtonPress PressFleetButton(int _slot, bool _longPress);
 
   // What a fleet is doing, as the one word the sheet's header shows. Decoded from the status
-  // byte's low three bits (Design/Fleets.md 8.2, 9.3).
+  // byte's low three bits (Design/Archive/Fleets.md 8.2, 9.3).
   [[nodiscard]] const char* FleetActivity(int _slot) const noexcept;
 
   // Who is in a slot, as the server last stated it. Entities, because that is what a roster carries
@@ -402,12 +402,12 @@ public:
   // Remembered rather than read, because a roster names entities and a fleet the camera is not at
   // has no records to read a hull id off. Bounded to the current rosters -- forty entries at the
   // very most -- rather than growing for the length of a match, which is the whole reason this is
-  // one narrow answer and not a general memory of departed ships (Design/Fleets-slice-8.md 2.2).
+  // one narrow answer and not a general memory of departed ships (Design/Archive/Fleets-slice-8.md 2.2).
   [[nodiscard]] std::uint32_t HullOfMember(Game::EntityId _entity) const noexcept;
 
   // The order a sheet button armed, waiting for the world tap that supplies its target. None until
   // one is pressed, and cleared by the next tap whether or not it landed on something the order can
-  // use (Design/Fleets.md 9.3).
+  // use (Design/Archive/Fleets.md 9.3).
   enum class ArmedOrder : std::uint8_t
   {
     None,
@@ -625,7 +625,7 @@ private:
 
   // Sends record _target's entity as an Attack to every selected fleet. The third tap meaning, and
   // the one slice 6 adds: ground moves, a station docks, a hostile record attacks
-  // (Design/Fleets.md 9.3).
+  // (Design/Archive/Fleets.md 9.3).
   void IssueAttackOrder(std::size_t _target);
 
   // One FleetOrder per selected slot, with everything but the kind's own fields already filled.

@@ -220,7 +220,7 @@ void World::RecordHostileAct(ShipHandle _attacker, ShipHandle _victim)
     return; // nobody's to answer for: a loose ship has no response of its own
 
   // The latest act wins, anchor and all. A fleet attacked at both ends holds one threat because the
-  // posture is one judgment and the wire is one bit (Design/Fleets.md 13).
+  // posture is one judgment and the wire is one bit (Design/Archive/Fleets.md 13).
   Fleet& row = m_fleets[fleet];
   row.threat = _attacker;
   row.threatAnchorPos = m_ships[victim].posWorld;
@@ -419,7 +419,7 @@ World::ComposeResult World::ComposeFleet(StationId _station, std::uint8_t _slot,
 
   // The issuer's own rows, and only those -- through the function a ledger request over the wire
   // also answers with, so what a screen was shown and what this gate reads cannot drift apart
-  // (Design/Fleets.md 8.3).
+  // (Design/Archive/Fleets.md 8.3).
   std::uint32_t available[HULL_COUNT] = {};
   LedgerFor(_station, _issuerFaction, available);
   for (std::uint32_t hull = 0; hull < HULL_COUNT; ++hull)
@@ -444,7 +444,7 @@ World::ComposeResult World::ComposeFleet(StationId _station, std::uint8_t _slot,
 
   // The rows leave the ledger now rather than one per launch, so that two things cannot happen: a
   // second compose claiming the same rows, and a ledger a screen has shown disagreeing with what the
-  // launch finds (Design/Fleets.md 5.2). Compacted in place, in array order, so which rows are drawn
+  // launch finds (Design/Archive/Fleets.md 5.2). Compacted in place, in array order, so which rows are drawn
   // is a function of the ledger and not of anything else.
   std::uint32_t drawn[HULL_COUNT] = {};
   std::size_t live = 0;
@@ -492,7 +492,7 @@ void World::LowerFleetOrder(Fleet& _fleet)
     return;
 
   // Every branch ends in a call a player's click has always gone through. What a fleet order adds is
-  // the referent and the gate, never a second way to fly (Design/Fleets.md 6.2).
+  // the referent and the gate, never a second way to fly (Design/Archive/Fleets.md 6.2).
   if (_fleet.orderKind == FleetOrderKind::Move)
   {
     (void)IssueMoveOrder(m_fleetShipScratch, _fleet.orderPoint, _fleet.orderHasFacing, _fleet.orderFacingRad, _fleet.ownerFaction);
@@ -507,7 +507,7 @@ void World::LowerFleetOrder(Fleet& _fleet)
   {
     // The combatants take the target and the rest hold where the order found them -- Stop's
     // treatment, for them alone. The pass keeps the chase aimed from here on; this is where it
-    // starts (Design/Fleets.md 6.2).
+    // starts (Design/Archive/Fleets.md 6.2).
     const ShipId target = Resolve(_fleet.orderTarget);
     for (const ShipId member : m_fleetShipScratch)
     {
@@ -591,7 +591,7 @@ World::FleetOrderResult World::IssueFleetOrder(FactionId _issuerFaction, std::ui
   // carries for patrols: the threat is dropped and everybody is re-tasked. The alert is left
   // burning -- the button should not stop glowing because the player gave an order -- and if the
   // attacker persists, the next stated act rouses the defense again with a fresh anchor
-  // (Design/Fleets.md 7.4).
+  // (Design/Archive/Fleets.md 7.4).
   fleet.threat = ShipHandle{};
   LowerFleetOrder(fleet);
   return FleetOrderResult::Ordered;
@@ -984,7 +984,7 @@ void World::StepProtectors()
     }
 
     // Pursue. The law does not cruise, and it does not give up: PursueTarget is the same chassis a
-    // fleet's defense turns on whoever shot at it (Design/Fleets.md 3).
+    // fleet's defense turns on whoever shot at it (Design/Archive/Fleets.md 3).
     PursueTarget(id, target);
   }
 
@@ -1087,7 +1087,7 @@ void World::StepFleets()
   }
 
   // Launch. One hull off the manifest per FLEET_LAUNCH_EVERY_TICKS, at the station's skin, fanned
-  // across the station's outward bearing (Design/Fleets.md 5.3).
+  // across the station's outward bearing (Design/Archive/Fleets.md 5.3).
   //
   // This pass spawns during its own walk where StepProtectors collects and applies after one, and
   // the difference is deliberate rather than an oversight: that pass walks the very tables a spawn
@@ -1141,7 +1141,7 @@ void World::StepFleets()
     // which is why the test that caught it is the one that reloads a world -- a world out of a file
     // has exactly as much capacity as it has ships.
     const WorldPos stationPos = m_ships[structure].posWorld;
-    // The station's own heading is which way is out. Design/Fleets.md 5.3 says the outward bearing
+    // The station's own heading is which way is out. Design/Archive/Fleets.md 5.3 says the outward bearing
     // from the system's star, and World has no star and must not learn about one -- the layout is
     // content the composition root reads (ADR 0037). A station's facing is already simulation state
     // and already authored by whoever spawned it, which makes it the honest place for a door.
@@ -1197,7 +1197,7 @@ void World::StepFleets()
     // and wrong at the rally below, which looks inconsistent and is not: at the rally the fleet is
     // packed against the station's door and a reshuffle makes ships cross at close quarters, while
     // under a standing order it is spread out and IssueMoveOrder's slot assignment -- by where the
-    // ships already lie across the formation -- is exactly the property wanted (Design/Fleets.md 5.3).
+    // ships already lie across the formation -- is exactly the property wanted (Design/Archive/Fleets.md 5.3).
     if (fleet.orderKind != FleetOrderKind::Idle)
     {
       LowerFleetOrder(fleet);
@@ -1238,7 +1238,7 @@ void World::StepFleets()
   {
     // The alert burns down whatever else happens, and takes the threat with it when it goes out: a
     // stale handle left in the row is one more thing for the codec to carry and for a later reader
-    // to wonder about (Design/Fleets.md 7.3).
+    // to wonder about (Design/Archive/Fleets.md 7.3).
     if (fleet.alertTicks > 0)
       --fleet.alertTicks;
 
@@ -1246,7 +1246,7 @@ void World::StepFleets()
     // one of them is what bounds a defense in time: without it, one shot from an attacker that then
     // parks inside the leash and does nothing would hold a fleet's combatants out of their orders
     // for ever. It is also what makes the wire's two bits differ -- a fleet can be under attack and
-    // no longer engaged, which is the alert outliving the fight (Design/Fleets.md 7.2, 7.3, 8.2).
+    // no longer engaged, which is the alert outliving the fight (Design/Archive/Fleets.md 7.2, 7.3, 8.2).
     bool engaged = false;
     if (fleet.threat.generation != 0)
     {
@@ -1264,7 +1264,7 @@ void World::StepFleets()
         // Back to the standing order, and NOT by leaving it to patience: pursuit overwrote each
         // combatant's route destination with the target's position, so patience would send it back
         // to where its quarry used to be. Re-lowering is what "return to the standing order" has to
-        // mean once the order has been suspended (Design/Fleets.md 7.2).
+        // mean once the order has been suspended (Design/Archive/Fleets.md 7.2).
         if (fleet.orderKind != FleetOrderKind::Idle)
         {
           LowerFleetOrder(fleet);
@@ -1298,7 +1298,7 @@ void World::StepFleets()
       if (chase == INVALID_SHIP_ID)
       {
         // The target died or docked, which completes the order: the fleet reverts to Idle where it
-        // stands rather than flying on to where its quarry was (Design/Fleets.md 6.5).
+        // stands rather than flying on to where its quarry was (Design/Archive/Fleets.md 6.5).
         fleet.orderKind = FleetOrderKind::Idle;
         fleet.orderTarget = ShipHandle{};
         for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
@@ -1317,7 +1317,7 @@ void World::StepFleets()
     {
       // The combatants turn; everybody else carries on with whatever it was told, unmoved. They do
       // not flee: fleeing is a judgment about where safety is, which is a sense, and this design has
-      // none (Design/Fleets.md 7.2, ADR 0041).
+      // none (Design/Archive/Fleets.md 7.2, ADR 0041).
       for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
       {
         const ShipId member = Resolve(fleet.members[at]);
@@ -1330,7 +1330,7 @@ void World::StepFleets()
       continue;
 
     // The fleet travels at its slowest member's speed, so it arrives -- and fights -- as one body
-    // rather than strung out over kilometers (Design/Fleets.md 6.3, owner decision 3).
+    // rather than strung out over kilometers (Design/Archive/Fleets.md 6.3, owner decision 3).
     //
     // Re-applied every tick rather than written once when the order was given, and that is a
     // correction the tree forces rather than a preference: StepDockings re-issues a docking ship's
@@ -1358,7 +1358,7 @@ void World::StepFleets()
       // blocked or re-planned, and its leg is re-issued to the point it already had -- never to a
       // re-solved formation, which would reshuffle the whole fleet every time one ship was jostled.
       // The dock pass does this for its own approach, which is why a docking fleet needs nothing
-      // here beyond the cap above (Design/Fleets.md 4.4).
+      // here beyond the cap above (Design/Archive/Fleets.md 4.4).
       if (fleet.orderKind != FleetOrderKind::Move || ship.order != OrderState::Idle)
         continue;
 

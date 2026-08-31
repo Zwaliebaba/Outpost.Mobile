@@ -340,7 +340,7 @@ inline constexpr float PURSUIT_REPLAN_METRES = 64.0f;
 // The cadence is not what keeps a launch from jamming -- 0.75 s buys a Corvette about 5.6 m from a
 // standing start, well inside its own hull, and the geometry is what actually holds the ships apart
 // (World::StepFleets). What it buys is that a launch reads as a launch: eight hulls are out in
-// 5.25 s, one at a time, instead of appearing at once (Design/Fleets.md 5.3).
+// 5.25 s, one at a time, instead of appearing at once (Design/Archive/Fleets.md 5.3).
 inline constexpr std::uint32_t FLEET_LAUNCH_EVERY_TICKS = 45;
 static_assert(FLEET_LAUNCH_EVERY_TICKS > 0, "a launch cadence of zero would spawn a whole fleet on one tick");
 
@@ -348,7 +348,7 @@ static_assert(FLEET_LAUNCH_EVERY_TICKS > 0, "a launch cadence of zero would spaw
 // how long one act keeps a fleet roused. Both in the contract: the first decides when a defense
 // stands down, the second how long it lasts at all.
 //
-// A kilometre is argued rather than liked (Design/Fleets.md 7.2). It is half the interest radius, so
+// A kilometre is argued rather than liked (Design/Archive/Fleets.md 7.2). It is half the interest radius, so
 // a defense never drags a watched fleet's escorts off the player's screen; it is about the span of
 // the widest formation eight hulls can make, so "inside the leash" and "among the fleet" are the same
 // neighborhood; and it is past every dock range in the hull table, so a fleet attacked at a station's

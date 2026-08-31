@@ -23,7 +23,7 @@ constexpr std::uint8_t KIND_SNAPSHOT = 1;
 // 2 and 4 were the ship-list move and dock orders. They are RETIRED rather than reused: a client
 // built against an older tree would have its move orders read as whatever took the number, and a
 // kind that once meant something is the one value a format must not recycle
-// (Design/Fleets-slice-6.md 2.10).
+// (Design/Archive/Fleets-slice-6.md 2.10).
 
 // Leaves and deaths, on the reliable lane and no longer in the snapshot header.
 //
@@ -41,7 +41,7 @@ constexpr std::uint8_t KIND_FLEET_ORDER = 5;
 
 // Who is in a fleet, downward and reliably. It is not in the ship record and never will be:
 // a record is per-update and membership changes at human speed, so the roster is the delta and the
-// record stays 47 bytes (Design/Fleets.md 8.1).
+// record stays 47 bytes (Design/Archive/Fleets.md 8.1).
 constexpr std::uint8_t KIND_FLEET_ROSTER = 6;
 
 // The one request/reply pair on this seam. A station's ledger is large, private, slow-changing and
@@ -70,7 +70,7 @@ constexpr std::uint32_t SNAPSHOT_HEADER_BYTES = 1 + 1 + 4 + 4 + 4 + 8 + 4 + 1;
 // than any scheme for repairing it. Which means ShipsPerSnapshotFragment must be sized against the
 // WORST case rather than against what an update happens to carry -- one number that every caller
 // and every test agree on, rather than the truer number nobody can state. It costs one record a
-// fragment: 22 rather than 23 (Design/Fleets-slice-5.md 2.2).
+// fragment: 22 rather than 23 (Design/Archive/Fleets-slice-5.md 2.2).
 constexpr std::uint32_t FLEET_STATUS_BYTES = 4 + 4 + 2 + 2 + 1 + 1;
 constexpr std::uint32_t FLEET_BLOCK_MAX_BYTES = 1 + FLEET_SLOTS * FLEET_STATUS_BYTES;
 
@@ -476,7 +476,7 @@ void WriteShipRecord(ByteWriter& _out, const World& _world, ShipId _id)
 //
 // Everything here is DERIVED and nothing is held. The centroid is a readout -- the publisher
 // already derives per subscriber in SplitTheLost, sits outside the replay contract, and a number
-// nobody simulates against cannot desynchronize anything (Design/Fleets.md 8.2). The check on that
+// nobody simulates against cannot desynchronize anything (Design/Archive/Fleets.md 8.2). The check on that
 // claim is the save format: if a field of this block ever had to live on Fleet, WORLD_STATE_FORMAT
 // would have to move, and it does not.
 //
@@ -541,7 +541,7 @@ void WriteFleetBlock(ByteWriter& _out, const World& _world, FactionId _viewer)
     // Engaged is the threat surviving this tick's stand-down check, which World has already run --
     // so the row holds a threat only while the alert, the leash and the target all still hold. The
     // two bits therefore differ exactly when the alert outlives the fight, which is what buying two
-    // of them was for (Design/Fleets.md 7.2, 7.3).
+    // of them was for (Design/Archive/Fleets.md 7.2, 7.3).
     if (fleet.threat.generation != 0)
       status |= FLEET_STATUS_ENGAGED;
     if (fleet.alertTicks > 0)
@@ -903,7 +903,7 @@ bool SnapshotReceiver::AcceptRoster(std::span<const std::uint8_t> _message)
 
   // Replaces that slot's list whole. A roster is a statement of membership rather than a delta,
   // which is what lets a lost one be repaired by the next instead of compounding into a list that
-  // is wrong in a way nothing can correct (Design/Fleets.md 8.1).
+  // is wrong in a way nothing can correct (Design/Archive/Fleets.md 8.1).
   m_rosters[roster.slot] = std::move(roster.members);
   return true;
 }

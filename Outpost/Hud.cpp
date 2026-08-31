@@ -292,7 +292,7 @@ void Hud::DrawDebug(TextRenderer& _text, const Layout& _layout, const Frame& _fr
 
 float Hud::AlertPulse() const noexcept
 {
-  // A cosine rather than a square wave: the alert holds for ten seconds (Design/Fleets.md 7.3), so
+  // A cosine rather than a square wave: the alert holds for ten seconds (Design/Archive/Fleets.md 7.3), so
   // a blink would be a metronome for the whole of a fight. It never reaches zero -- a button that
   // vanishes half the time is a button the eye stops finding.
   const float turns = m_alertPhaseSec / HUD_FLEET_ALERT_PERIOD_SEC;
@@ -434,7 +434,7 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
   // The marks' treatment exactly -- inside the map at the position, past it clamped to the edge and
   // dimmed, direction honest and distance saturated -- because a fleet's whole point is that it can
   // be somewhere else, and a digit clipped at the edge would say nothing about which way that is.
-  // This is where "spread over the universe" becomes a thing the player can see (Design/Fleets.md 9.5).
+  // This is where "spread over the universe" becomes a thing the player can see (Design/Archive/Fleets.md 9.5).
   {
     const float half = HUD_MINIMAP_MARK_PX * 0.5f * s;
     const float digitPx = _text.AdvancePx(FontId::Ui, HUD_LABEL_SCALE * s);
@@ -564,7 +564,7 @@ void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, std::span<co
   // --- the five fleet slots ---------------------------------------------------------------------
   // Occupancy is the status block's mask and never an empty roster: a composed fleet holds its slot
   // with nobody in space yet, and the mask rides every update where a roster is stated once
-  // (Design/Fleets.md 8.1's amendment).
+  // (Design/Archive/Fleets.md 8.1's amendment).
   for (int i = 0; i < WorldView::FLEET_SLOTS; ++i)
   {
     const Rect& button = _layout.fleets[i];
@@ -588,7 +588,7 @@ void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, std::span<co
 
     // The composed size, so the button says eight from the moment the fleet exists rather than
     // climbing as the hulls launch. How many are actually out is the roster's, and the sheet is
-    // where the difference is spelled (Design/Fleets.md 8.2).
+    // where the difference is spelled (Design/Archive/Fleets.md 8.2).
     char count[16] = {};
     const int size = _view.FleetCount(i);
     if (held)

@@ -560,7 +560,7 @@ void OutpostApp::SpawnStartingFleet()
   // Into slot 1, and this is not a convenience. Selection is fleet-grain since the bar was rebound
   // (ADR 0049), so a starting hull in no fleet is a hull the player cannot take hold of -- the
   // fleet-only model reaching the composition root, which is where a world is authored
-  // (Design/Fleets.md 15, decision 1).
+  // (Design/Archive/Fleets.md 15, decision 1).
   //
   // FormFleet rather than ComposeFleet: these ships are already in space. Composing is what draws
   // hulls out of a station's ledger, and there is no ledger at boot.
