@@ -219,6 +219,8 @@
     <ClInclude Include="ViewTuning.h" />
     <ClInclude Include="BodyCatalogue.h" />
     <ClInclude Include="Hud.h" />
+    <ClInclude Include="AssemblyScreen.h" />
+    <ClInclude Include="FleetSheet.h" />
     <ClInclude Include="EventLog.h" />
   </ItemGroup>
   <ItemGroup>
@@ -232,6 +234,8 @@
     <ClCompile Include="WorldView.cpp" />
     <ClCompile Include="BodyCatalogue.cpp" />
     <ClCompile Include="Hud.cpp" />
+    <ClCompile Include="AssemblyScreen.cpp" />
+    <ClCompile Include="FleetSheet.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="Assets\LockScreenLogo.scale-200.png" />

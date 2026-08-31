@@ -438,6 +438,20 @@ inline constexpr std::uint32_t VANGUARD_PROTECTOR_COMPLEMENT = 3;
 inline constexpr std::uint32_t VANGUARD_LAUNCH_EVERY_TICKS = 90;
 inline constexpr std::uint32_t VANGUARD_TARGET_CAP = 4;
 
+// --- fleet focus -------------------------------------------------------------------------------
+// Tapping a fleet button flies the camera to that fleet: one gesture, because under the design's
+// first decision selecting a fleet IS attending to it (Design/Fleets.md 9.1).
+//
+// Camera::SetGoal and Camera::Follow have existed since the camera did and nothing had ever called
+// them; this is what they were for. The ease is the camera's own followHalfLife, so a fleet jump
+// and any later camera-follow feel like the same instrument.
+//
+// The arrival radius is generous on purpose. It is compared against the camera's TARGET, which the
+// half-life eases asymptotically towards the goal -- so a tight radius would hold the camera
+// captive for whole seconds after the flight has visibly finished, and the player's next pan would
+// be fighting it. 25 m is inside a hull length at the closest zoom.
+inline constexpr float FLEET_FOCUS_ARRIVE_METRES = 25.0f;
+
 // --- HUD ---------------------------------------------------------------------------------------
 // Flat and square-cornered: no blur, no glow, no gradients. Sizes are in px at 96 DPI and scale
 // with the window DPI; the layout is anchored to corners and edges, so no width is assumed.
@@ -466,7 +480,7 @@ inline constexpr Neuron::Rgba HUD_INFO_GREY{0.45f, 0.50f, 0.56f, 1.0f};
 inline constexpr Neuron::Rgba HUD_BAR_TRACK{1.0f, 1.0f, 1.0f, 0.07f};
 inline constexpr float HUD_ACTIVE_OUTLINE_ALPHA = 0.7f; // a pressed or active button, in the accent
 inline constexpr float HUD_ACTIVE_FILL_ALPHA = 0.08f;
-inline constexpr float HUD_GROUP_ACTIVE_FILL_ALPHA = 0.12f;
+inline constexpr float HUD_FLEET_ACTIVE_FILL_ALPHA = 0.12f;
 inline constexpr bool HUD_SCANLINES = true; // CRT lines over the panels only
 inline constexpr float HUD_SCANLINE_STEP_PX = 3.0f;
 inline constexpr float HUD_SCANLINE_ALPHA = 0.16f;
@@ -515,14 +529,56 @@ inline constexpr float HUD_LOG_ROW_PX = 18.0f;
 inline constexpr float HUD_LOG_RULE_PX = 2.0f;
 
 inline constexpr float HUD_BAR_HEIGHT_PX = 96.0f;
-inline constexpr float HUD_GROUP_BUTTON_W_PX = 48.0f;
-inline constexpr float HUD_GROUP_BUTTON_H_PX = 56.0f;
-inline constexpr float HUD_GROUP_GAP_PX = 6.0f;
+inline constexpr float HUD_FLEET_BUTTON_W_PX = 48.0f;
+inline constexpr float HUD_FLEET_BUTTON_H_PX = 56.0f;
+inline constexpr float HUD_FLEET_GAP_PX = 6.0f;
+// The under-attack pulse, on the button and on the minimap digit together. A period rather than a
+// blink: the alert holds for ten seconds by Design/Fleets.md 7.3, so a flash would be a metronome
+// and a steady red would be indistinguishable from a livery. Real time, like the sky's twinkle --
+// a paused game whose alert stops pulsing reads as a hung one.
+inline constexpr float HUD_FLEET_ALERT_PERIOD_SEC = 0.9f;
+inline constexpr float HUD_FLEET_ALERT_MIN_ALPHA = 0.35f;
 inline constexpr float HUD_SUMMARY_WIDTH_PX = 430.0f;
 inline constexpr float HUD_STAT_BAR_WIDTH_PX = 90.0f;
 inline constexpr float HUD_STAT_BAR_PX = 6.0f;
 inline constexpr float HUD_STAT_COLUMN_PX = 250.0f;
 inline constexpr float HUD_STATS_WIDTH_PX = 410.0f; // both columns, from HULL to the end of the order state
 
-inline constexpr float HUD_LONG_PRESS_MS = 450.0f; // holding a group tab this long assigns it
+inline constexpr float HUD_LONG_PRESS_MS = 450.0f; // holding a fleet button this long opens its sheet
+
+// --- the assembly screen -------------------------------------------------------------------------
+// A station's ledger, a draft drawn out of it, and the slot the draft becomes a fleet in
+// (Design/Fleets.md 9.4). Centred and fixed-size rather than anchored to a corner, because it is
+// modal: it is the only thing the player is doing while it is up, and a modal panel that hugs an
+// edge reads as a widget rather than as a screen.
+inline constexpr float HUD_ASSEMBLY_WIDTH_PX = 520.0f;
+inline constexpr float HUD_ASSEMBLY_ROW_PX = 30.0f;
+inline constexpr float HUD_ASSEMBLY_HEADER_PX = 46.0f;
+inline constexpr float HUD_ASSEMBLY_FOOTER_PX = 26.0f;
+inline constexpr float HUD_ASSEMBLY_PAD_PX = 18.0f;
+// The +/- pair, and the slot buttons. Both at or above 44 px scaled, which is the hit-target floor
+// the rail already keeps -- a screen that is worked with a thumb is worked one press at a time.
+inline constexpr float HUD_ASSEMBLY_STEP_BUTTON_PX = 26.0f;
+inline constexpr float HUD_ASSEMBLY_SLOT_BUTTON_PX = 30.0f;
+inline constexpr float HUD_ASSEMBLY_LAUNCH_H_PX = 34.0f;
+// The right-hand column: draft, slots, LAUNCH. A fraction of the panel rather than a width, so the
+// two columns keep their proportion at any DPI.
+inline constexpr float HUD_ASSEMBLY_LEFT_FRACTION = 0.52f;
+// The scrim over the world behind it. Dark enough that the screen is unambiguously in front, light
+// enough that the station it belongs to is still visible behind it.
+inline constexpr Neuron::Rgba HUD_ASSEMBLY_SCRIM{0.0f, 0.0f, 0.0f, 0.55f};
+inline constexpr float HUD_ASSEMBLY_DISABLED_ALPHA = 0.35f;
+
+// --- the fleet sheet ------------------------------------------------------------------------------
+// One fleet's panel, held over the bottom bar by a long press on its button (Design/Fleets.md 9.3).
+// Anchored to the bar rather than centred, because unlike the assembly screen it is not modal: the
+// fleet it describes is still flying behind it, and a panel in the middle of the screen would be
+// standing on the thing the player opened it to watch.
+inline constexpr float HUD_SHEET_WIDTH_PX = 380.0f;
+inline constexpr float HUD_SHEET_HEIGHT_PX = 132.0f;
+inline constexpr float HUD_SHEET_PAD_PX = 14.0f;
+inline constexpr float HUD_SHEET_COMMAND_H_PX = 30.0f;
+inline constexpr float HUD_SHEET_COMMAND_GAP_PX = 6.0f;
+// The armed prompt that replaces the panel between a command and the tap that supplies its target.
+inline constexpr float HUD_SHEET_PROMPT_H_PX = 30.0f;
 } // namespace Outpost

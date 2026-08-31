@@ -153,6 +153,81 @@ public:
     bool active = false;
   };
 
+  // An index into the fleet table. A bare index with no generation, exactly as StationId is: rows
+  // do retire here, but nothing holds one across a tick -- an owner and a slot is the name that
+  // survives a retirement, and it is the name the player reads off a button.
+  using FleetId = std::uint32_t;
+  static constexpr FleetId INVALID_FLEET_ID = 0xFFFFFFFFu;
+
+  // A fleet: who owns it, which of that owner's five slots it holds, and who is in it.
+  //
+  // Simulation state, and not a remembered selection. A control group changes what a tap does and
+  // nothing else, which is why one lives in the view; a fleet's caps are rules an adapter must not
+  // be able to talk its way past, its defense runs beyond every interest radius, and orders name
+  // it -- so it is here, in the replay contract and in the save format with everything else Step
+  // reads (ADR 0048, Design/Fleets.md 4.1).
+  //
+  // Members are handles rather than a table parallel to m_ships, and that is what stops the despawn
+  // repair gaining a fifth table: a member that docked or died simply stops resolving, and the
+  // fleet pass prunes it in place. Entries past memberCount are null handles and the pass keeps
+  // them that way -- a route deliberately leaves its dead waypoints as they were, because nothing
+  // reads or writes them, while a fleet row is small enough to be compared whole and a defined tail
+  // is what makes a reloaded row equal the row that was saved.
+  //
+  // Design/Fleets.md 4.1 spells the finished row: a launch manifest, a standing order, a threat and
+  // an alert. Each arrives with the slice that reads it, so that no field reaches the save format
+  // before there is a test that can reach it.
+  struct Fleet
+  {
+    FactionId ownerFaction = FACTION_PLAYER;
+
+    // Which of the owner's FLEET_SLOTS this one holds: unique among that owner's live fleets.
+    std::uint8_t slot = 0;
+
+    ShipHandle members[MAX_FLEET_SHIPS];
+    std::uint32_t memberCount = 0;
+
+    // The launch manifest: hulls composed into this fleet and still inside the station. The rows
+    // left the ledger when the fleet was composed, so nothing else can claim them, and the
+    // metronome in StepFleets is what turns them into ships (Design/Fleets.md 5.2, 5.3).
+    //
+    // memberCount + manifestCount <= MAX_FLEET_SHIPS is the invariant compose establishes and every
+    // launch preserves: a launch moves one hull from the second count to the first, and a loss only
+    // lowers the first. The codec checks it, because a file that broke it would launch a ship into a
+    // row with nowhere to put it.
+    ShipHandle launchStructure; // the station the manifest is inside; its death strands the manifest
+    std::uint32_t manifest[MAX_FLEET_SHIPS]{};
+    std::uint32_t manifestCount = 0;
+    std::uint32_t launchCooldownTicks = 0;
+
+    // The standing order, at fleet grain. Members derive their own intent from it and keep deriving
+    // it for as long as it stands, which is what makes a fleet arrive whole through traffic and
+    // what makes a hull launched after the order join it rather than the rally (Design/Fleets.md 6).
+    //
+    // The station is a handle rather than an id, for ADR 0005's reason and the docking table's: an
+    // order that outlives the station it names must stop resolving rather than name whatever ship
+    // took that index.
+    FleetOrderKind orderKind = FleetOrderKind::Idle;
+    WorldPos orderPoint;         // Move
+    float orderFacingRad = 0.0f; // Move
+    bool orderHasFacing = false; // Move
+    ShipHandle orderStation;     // Dock
+    ShipHandle orderTarget;      // Attack
+
+    // The defense (Design/Fleets.md 7). Who was last stated to have attacked a member, where that
+    // act was stated, and how long the fleet stays roused by it.
+    //
+    // The anchor is the ground that was struck and not the fleet or the fight, which is what makes
+    // the leash release at all: measured from the pursuers it never would, because chasing keeps the
+    // distance small. There is no aim point beside it -- what a pursuer last aimed at is its own
+    // route's destination, which is where the protector keeps it and where PURSUIT_REPLAN_METRES is
+    // measured from, and a second copy here would be one more thing for the codec to carry and for
+    // the two to disagree about.
+    ShipHandle threat;
+    WorldPos threatAnchorPos;
+    std::uint32_t alertTicks = 0;
+  };
+
   // Adds a ship at rest. Returns its id, which is its index for as long as nothing is despawned.
   // Take HandleOf if the reference has to outlive a tick.
   //
@@ -292,6 +367,23 @@ public:
   // scrambles its garrison.
   void RecordAggression(ShipHandle _attacker, StationId _station);
 
+  // The server's judgment on a hostile act against a ship: the victim's fleet is roused against the
+  // attacker. RecordAggression's sentence one level down, and every word of it applies here --
+  // there is no client message for this and there never will be, because a client that could
+  // declare one could make anybody a target (Design/Archive/Stations.md 8.1, ADR 0041, ADR 0050).
+  //
+  // The fleet takes the attacker as its threat, the victim's position now as the leash's anchor, and
+  // a full FLEET_ALERT_TICKS. A victim that is not a live ship, or that is in no fleet, is recorded
+  // and ignored: a loose ship has no response of its own until some design gives it one.
+  //
+  // The attacker's liveness is deliberately not checked. Being shot by something that then died is
+  // still being shot, so the alert lights either way and the posture finds nothing to pursue and
+  // stands down on its own.
+  //
+  // It arrives from outside the tick -- an adapter, the composition root, a test -- like any order.
+  // Nothing inside Step states an act.
+  void RecordHostileAct(ShipHandle _attacker, ShipHandle _victim);
+
   // --- stations ----------------------------------------------------------------------------------
 
   // Makes an existing structure ship a station. Returns its id, which is an index into the station
@@ -364,6 +456,146 @@ public:
     return static_cast<std::uint32_t>(m_stations.size());
   }
 
+  // --- fleets ------------------------------------------------------------------------------------
+
+  // Makes a fleet in _slot for _ownerFaction out of ships that are already flying. Returns its id,
+  // which is an index into the fleet table.
+  //
+  // Every gate refuses the whole call and changes nothing -- IssueDockOrder's rule rather than
+  // IssueMoveOrder's, because a fleet formed from some of the ships asked for is a fleet nobody
+  // asked for, and its size is one of the rules being enforced:
+  //
+  //   1. a slot at or past FLEET_SLOTS, or a faction at or past FACTION_LIMIT;
+  //   2. a slot this owner already holds;
+  //   3. no ships at all, or more than MAX_FLEET_SHIPS of them;
+  //   4. a ship that is not live, or that is not _ownerFaction's;
+  //   5. a ship named twice, or one that is already in a fleet.
+  //
+  // The last is the fleet-only model held where it is cheapest to hold: one ship is in one fleet,
+  // checked at the only place that makes a membership (Design/Fleets.md 15, decision 1).
+  //
+  // This is not ComposeFleet. Composing takes hulls out of a station's ledger and leaves a manifest
+  // for the launch metronome; forming takes ships that are already in space, which is what the
+  // starting fleet needs. A composed fleet begins with no members at all, so it cannot go through
+  // this function -- what the two share is the slot gate, and they share it by both asking
+  // CanTakeSlot rather than by one calling the other.
+  FleetId FormFleet(FactionId _ownerFaction, std::uint8_t _slot, std::span<const ShipId> _ships);
+
+  // The fleet in one of an owner's slots, or INVALID_FLEET_ID. This pair is the only reference to a
+  // fleet that survives a tick, because a FleetId is an index and rows retire.
+  [[nodiscard]] FleetId FleetInSlot(FactionId _ownerFaction, std::uint8_t _slot) const noexcept;
+
+  // The fleet a ship is in, or INVALID_FLEET_ID. StationAt's shape and StationAt's reason: through
+  // Resolve rather than by comparing stored ids, because swap-and-pop moves ids and a row holding a
+  // raw one would name whichever ship arrived in that index (ADR 0005).
+  [[nodiscard]] FleetId FleetAt(ShipId _id) const noexcept;
+
+  // A fleet's row. An id past the end reads back an empty fleet rather than past the end of the
+  // table -- PatrolOf's guard rather than StationOf's bare index, because a retirement makes a
+  // stale FleetId reachable in a way that nothing yet makes a stale StationId.
+  [[nodiscard]] const Fleet& FleetOf(FleetId _id) const noexcept;
+
+  [[nodiscard]] std::uint32_t FleetCount() const noexcept
+  {
+    return static_cast<std::uint32_t>(m_fleets.size());
+  }
+
+  // How many of each hull _asker itself has docked at _station. _outCounts is indexed by hull id and
+  // must be at least HULL_COUNT long; anything past that is left alone.
+  //
+  // Two rules, and they are ComposeFleet's rules rather than this function's: only the asker's OWN
+  // rows are counted, because whose is docked in a station is nobody else's business
+  // (Design/Archive/Stations.md 6.2), and a station whose owner holds the asker hostile reads all
+  // zeros, because you do not take inventory in a port that would not let you assemble in it. They
+  // live here, in one function both callers use, precisely so a screen cannot offer what a compose
+  // will refuse -- which is the disagreement ComposeFleet's own ledger comment exists to prevent
+  // (Design/Fleets.md 5.2, 8.3).
+  //
+  // A station id past the table, or one whose structure is gone, reads zeros too. That is what a
+  // ledger request over the wire is answered with, and it is the honest reading: an absent station
+  // holds nothing.
+  void LedgerFor(StationId _station, FactionId _asker, std::span<std::uint32_t> _outCounts) const noexcept;
+
+  // What happened to a compose. Returned for the local host's log and for tests; nothing returns
+  // over the wire, because an order is fire-and-forget and the client's affordance already knew --
+  // IssueDockOrder's sentence, and for its reason (Design/Fleets.md 5.2).
+  enum class ComposeResult : std::uint8_t
+  {
+    Composed,
+    NotAStation,
+    RefusedStanding,
+    SlotTaken,
+    TooMany,
+    NotDocked
+  };
+
+  // Makes a fleet in _slot for _issuerFaction out of hulls docked at _station, and leaves them in
+  // its manifest for the launch metronome to spawn.
+  //
+  // _hullCounts is indexed by hull id. Five gates, in this order, each refusing the whole call and
+  // changing nothing -- the dock gate's rule rather than the move gate's, because a fleet built from
+  // some of what was asked for is a fleet nobody asked for:
+  //
+  //   NotAStation      _station is not a live station row;
+  //   RefusedStanding  the station's owner holds the issuer hostile -- you do not assemble a battle
+  //                    group in a hostile port, which is the dock gate's mirror;
+  //   SlotTaken        a slot past FLEET_SLOTS, or one this faction already holds. One gate and one
+  //                    result: a slot that does not exist is not available either;
+  //   TooMany          nothing asked for, or more than MAX_FLEET_SHIPS. One result for one gate, so
+  //                    an empty compose reads as TooMany too;
+  //   NotDocked        the issuer's OWN rows in this ledger do not cover it -- including any count
+  //                    against a hull id past HULL_COUNT, which no ledger can hold.
+  //
+  // Only the issuer's own rows are counted and drawn: who else is docked in a station is nobody's
+  // business, which is the line Design/Archive/Stations.md 6.2 drew around the ledger. The rows leave
+  // the ledger now rather than one per launch, so a second compose cannot claim them and a screen
+  // that offered them cannot disagree with what the launch finds.
+  ComposeResult ComposeFleet(StationId _station, std::uint8_t _slot, std::span<const std::uint32_t> _hullCounts, FactionId _issuerFaction);
+
+  // What happened to a fleet order. Returned for the local host's log and for tests, like every
+  // other order result here; nothing returns over the wire.
+  enum class FleetOrderResult : std::uint8_t
+  {
+    Ordered,
+    NoSuchFleet,
+    NotAStation,
+    RefusedStanding,
+    NoSuchTarget,
+    Unsupported
+  };
+
+  // Everything one fleet order asks for, with the ids already resolved. The wire names entities and
+  // this names ships, and the publisher is where the two meet (ADR 0047).
+  struct FleetCommand
+  {
+    FleetOrderKind kind = FleetOrderKind::Idle;
+    WorldPos point;                   // Move
+    float facingRad = 0.0f;           // Move
+    bool hasFacing = false;           // Move
+    ShipId station = INVALID_SHIP_ID; // Dock: the station's structure
+    ShipId target = INVALID_SHIP_ID;  // Attack
+  };
+
+  // Orders the fleet in _slot. This is the design's title sentence as a signature: an order names a
+  // FLEET, so the authority gate is one comparison -- does the issuer's faction own a live fleet in
+  // that slot -- where a ship-list order needs a filter over every id in it, and an order stops
+  // scaling with the number of ships in the group (ADR 0049).
+  //
+  // The gate is here and not in the adapter for ADR 0014's reason, and every refusal changes
+  // nothing:
+  //
+  //   NoSuchFleet      no live fleet of _issuerFaction in that slot, a slot past the fifth included;
+  //   NotAStation      Dock: the named record is not a live station row;
+  //   RefusedStanding  Dock: that station's owner holds the issuer hostile -- IssueDockOrder's own
+  //                    gate, surfaced rather than restated;
+  //   NoSuchTarget     Attack: the named record is not a live ship;
+  //   Unsupported      Mine, which waits for a design that gives it meaning and something to mine.
+  //
+  // An accepted order replaces whatever standing order was there. Stop is the one kind that leaves
+  // the row Idle rather than holding one: it is a brake, and "order the fleet to where it already
+  // is" is a formation shuffle rather than a stop.
+  FleetOrderResult IssueFleetOrder(FactionId _issuerFaction, std::uint8_t _slot, const FleetCommand& _command);
+
   // One fixed tick. The only thing in the game that advances simulation state.
   //
   // Standing NPC intent is issued first, before pass 0 -- the position an adapter's incoming orders
@@ -409,6 +641,19 @@ public:
   [[nodiscard]] std::uint64_t QueriedCandidateCount() const noexcept
   {
     return m_queriedCandidates;
+  }
+
+  // How many routes have been planned since this world began. A readout, never read by the
+  // simulation, and here for the reason the two counters above are: a planner quietly running every
+  // tick and one running only when something changed look exactly alike from the outside -- the
+  // ships are in the right places either way -- until somebody counts.
+  //
+  // A route is a pure function of the static set and the two endpoints, so re-planning without one
+  // of those changing costs an A* and buys nothing (PlanRoute). The number is what lets a test say
+  // that rather than a comment claiming it.
+  [[nodiscard]] std::uint64_t RoutePlanCount() const noexcept
+  {
+    return m_routePlans;
   }
 
   // What the last gather asked the index for, so a test can see the radius narrow rather than infer
@@ -489,13 +734,48 @@ private:
 
   void StepPatrols();
 
-  // The protector response, last in the standing-intent slot.
+  // The protector response, third in the standing-intent slot.
   //
   // Three steps in order: the duty pass re-targets and pursues, the launch pass tops up each
   // station's garrison on its metronome, and the launches are applied after both -- because a spawn
   // appends to the very tables the pass is walking, which is the dock pass's argument for its
   // captures from the other direction (Design/Archive/Stations.md 10).
   void StepProtectors();
+
+  // The fleet pass, last in the standing-intent slot.
+  //
+  // Last, and that is behavior rather than tidiness: the dock pass despawns and the protector pass
+  // spawns, both before this one, so a member that docked or died anywhere in this tick has left
+  // its fleet by the end of the tick it left on rather than a tick later.
+  //
+  // Two halves. Prune compacts each row's members in place, dropping handles that no longer
+  // resolve -- StepProtectors' idiom on a station's target list, so the survivors keep the order
+  // the fleet was formed in. Retire removes a fleet with nothing left in it, by swap-and-pop and
+  // walking backwards, so the row brought in from the end is one this walk has already looked at.
+  void StepFleets();
+
+  // Whether _ownerFaction could take _slot right now. The one gate FormFleet and ComposeFleet share:
+  // both refuse a slot past the fifth and a slot already held, and neither may invent its own answer
+  // to that question.
+  [[nodiscard]] bool CanTakeSlot(FactionId _ownerFaction, std::uint8_t _slot) const noexcept;
+
+  // Puts a fleet's standing order onto the ships that are out, through the same calls a player's
+  // click has always gone through. Called when the order is given and again whenever a launch adds
+  // a member, so a hull born after the order joins the formation solved for it rather than the
+  // rally it would otherwise have flown to.
+  void LowerFleetOrder(Fleet& _fleet);
+
+  // The slowest member's top speed, or 0 when the fleet has nothing out: what every member's order
+  // speed cap is set to while the fleet is going somewhere together (Design/Fleets.md 6.3).
+  [[nodiscard]] float FleetCruiseSpeedMetresPerSec(const Fleet& _fleet) const noexcept;
+
+  // Aims one ship at another and keeps it aimed: re-planned when the ship has nothing to do, or when
+  // the target has walked PURSUIT_REPLAN_METRES from the point last aimed at, and never every tick.
+  //
+  // One function with two masters, which is what the design means by the fleet defense being the
+  // protector's chassis: the protector duty and the fleet posture both call it, so neither can drift
+  // from the other the first time one of them is retuned (Design/Fleets.md 3).
+  void PursueTarget(ShipId _ship, ShipId _target);
 
   void SnapshotPreviousTick() noexcept;
   void RebuildStaticIfDirty();
@@ -642,6 +922,15 @@ private:
   // from it this phase, so an index stays an index.
   std::vector<Station> m_stations;
 
+  // The fleets, of every faction. Dense and walked in array order like everything else here, and
+  // deliberately NOT parallel to m_ships: a fleet is a thing ships belong to, where a patrol is
+  // something a ship has. Rows retire, so an index is not a name -- FleetInSlot is.
+  std::vector<Fleet> m_fleets;
+
+  // A fleet's live members as ship ids, gathered for the rally order so that a launch allocates
+  // nothing. Reused, like every other scratch here.
+  std::vector<ShipId> m_fleetShipScratch;
+
   // Who holds whom hostile. Mutated only by RecordAggression, which arrives from outside the tick;
   // read pointwise and never iterated, so no pass of Step depends on its contents in array order.
   StandingTable m_standings = DEFAULT_STANDINGS;
@@ -660,6 +949,7 @@ private:
   NeighbourhoodExtent m_extent;
 
   // Counted per tick and reset by each gather: a readout, never read by the simulation.
+  std::uint64_t m_routePlans = 0;
   std::uint64_t m_gatheredCandidates = 0;
   std::uint64_t m_queriedCandidates = 0;
   std::vector<ShipId> m_queryScratch;

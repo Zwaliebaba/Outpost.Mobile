@@ -174,12 +174,16 @@ public:
   TEST_METHOD(TheFragmentSizeIsDerivedFromTheDatagram)
   {
     // Derived rather than chosen, so the day the record grows these follow it. The numbers are
-    // recorded because they are the argument for interest management: 23 ships per datagram -- 13
-    // before the record was quantized -- means a 5,000-ship snapshot is 218 fragments, which is what
+    // recorded because they are the argument for interest management: 22 ships per datagram -- 13
+    // before the record was quantized -- means a 5,000-ship snapshot is 228 fragments, which is what
     // slice 6 exists to stop sending.
-    Assert::AreEqual(23u, Game::ShipsPerSnapshotFragment(), L"the quantized record no longer fits 23 ships in a datagram");
+    //
+    // 22 and not the 23 that stood here through the quantized wire: the fleet status block joined
+    // the header, and it is sized against its WORST case -- five fleets, 71 bytes -- rather than
+    // against what an update happens to carry, so that this stays one number every caller and every
+    // test agree on (Design/Fleets-slice-5.md 2.2).
+    Assert::AreEqual(22u, Game::ShipsPerSnapshotFragment(), L"the record plus the fleet block no longer fits 22 ships in a datagram");
     Assert::IsTrue(Game::ShipsPerSnapshotFragment() < 64, L"the record got suspiciously small");
-    Assert::IsTrue(Game::MaxShipsPerOrder() > Game::ShipsPerSnapshotFragment(), L"an order holds fewer ships than a snapshot fragment");
   }
 
   TEST_METHOD(OneShipRoundTripsFieldForField)
@@ -647,44 +651,265 @@ public:
     Assert::IsTrue(receiver.Docked().empty(), L"clearing the dockings did not clear them");
   }
 
-  TEST_METHOD(ADockOrderRoundTrips)
+  TEST_METHOD(AFleetOrderRoundTrips)
   {
     Game::World world;
     const Game::ShipId post = SpawnAt(world, 900.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
-    const Game::ShipId first = SpawnAt(world, 0.0f, 0.0f);
-    const Game::ShipId second = SpawnAt(world, 40.0f, 0.0f);
 
-    Game::DockOrder sent;
+    // One fixed-size message whatever the fleet's size: there is no ship list in it at all, which is
+    // what makes an order stop scaling with the group it moves (ADR 0049).
+    Game::FleetOrder sent;
+    sent.slot = 3;
+    sent.kind = Game::FleetOrderKind::Move;
+    sent.point = Game::LocalPos(1200.0f, -640.0f);
+    sent.facingRad = 0.75f;
+    sent.hasFacing = true;
     sent.station = world.EntityIdOf(post);
-    sent.ships = {world.EntityIdOf(first), world.EntityIdOf(second)};
+    sent.target = world.EntityIdOf(SpawnAt(world, -400.0f, 0.0f, Game::HullId::Interceptor, Game::FACTION_VANDAL));
 
     CaptureTransport link;
-    Assert::IsTrue(Game::WriteDockOrder(sent, link), L"the dock order did not send");
-    Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"a dock order did not take the reliable lane");
+    Assert::IsTrue(Game::WriteFleetOrder(sent, link), L"the fleet order did not send");
+    Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"a fleet order did not take the reliable lane");
 
-    Game::DockOrder read;
-    Assert::IsTrue(Game::ReadDockOrder(link.sentReliable[0], read), L"the dock order did not decode");
+    Game::FleetOrder read;
+    Assert::IsTrue(Game::ReadFleetOrder(link.sentReliable[0], read), L"the fleet order did not decode");
+    Assert::AreEqual(static_cast<std::uint32_t>(sent.slot), static_cast<std::uint32_t>(read.slot), L"the slot did not survive the wire");
+    Assert::IsTrue(read.kind == sent.kind, L"the kind did not survive the wire");
+    Assert::IsTrue(IsSamePosition(read.point, sent.point), L"the point did not survive the wire");
+    Assert::AreEqual(sent.facingRad, read.facingRad, 0.0f, L"the facing did not survive the wire");
+    Assert::IsTrue(read.hasFacing == sent.hasFacing, L"the facing flag did not survive the wire");
     Assert::IsTrue(read.station == sent.station, L"the station did not survive the wire");
-    Assert::AreEqual(sent.ships.size(), read.ships.size(), L"the ship list changed size");
-    for (std::size_t at = 0; at < sent.ships.size(); ++at)
-      Assert::IsTrue(read.ships[at] == sent.ships[at], L"a handle did not survive the wire");
+    Assert::IsTrue(read.target == sent.target, L"the attack target did not survive the wire");
 
-    // A move order reader must decline a dock order and the other way round, or the adapter's
-    // "try one, then the other" would apply the wrong one.
-    Game::MoveOrder asMove;
-    Assert::IsFalse(Game::ReadMoveOrder(link.sentReliable[0], asMove), L"a dock order decoded as a move order");
+    // Every kind, including the two that are reserved: the byte travels whether or not the
+    // simulation will act on it, which is the point of having spent it.
+    for (std::uint8_t kind = 0; kind <= static_cast<std::uint8_t>(Game::FleetOrderKind::Mine); ++kind)
+    {
+      Game::FleetOrder each = sent;
+      each.kind = static_cast<Game::FleetOrderKind>(kind);
+      CaptureTransport each_link;
+      Assert::IsTrue(Game::WriteFleetOrder(each, each_link), L"a kind was refused by the writer");
+      Game::FleetOrder back;
+      Assert::IsTrue(Game::ReadFleetOrder(each_link.sentReliable[0], back), L"a kind did not decode");
+      Assert::IsTrue(back.kind == each.kind, L"a kind changed on the wire");
+    }
 
-    // One cap for both kinds, deliberately: this order's own header would admit two more.
-    Game::DockOrder oversized;
-    oversized.station = sent.station;
-    oversized.ships.assign(Game::MaxShipsPerOrder() + 1, world.EntityIdOf(first));
+    // The readers of the other kinds on this lane must decline it, or the adapter's
+    // try-one-then-the-other would apply the wrong message.
+    Game::ComposeOrder asCompose;
+    Game::LedgerRequest asRequest;
+    Assert::IsFalse(Game::ReadComposeOrder(link.sentReliable[0], asCompose), L"a fleet order decoded as a compose order");
+    Assert::IsFalse(Game::ReadLedgerRequest(link.sentReliable[0], asRequest), L"a fleet order decoded as a ledger request");
+
+    // A slot that does not exist and a kind this build has never heard of are content, and content
+    // fails closed rather than being passed to a gate that would have to guess.
     CaptureTransport refused;
-    Assert::IsFalse(Game::WriteDockOrder(oversized, refused), L"an oversized dock order was sent");
-    Assert::IsTrue(refused.sentReliable.empty(), L"an oversized dock order put bytes on the wire");
+    Game::FleetOrder badSlot = sent;
+    badSlot.slot = static_cast<std::uint8_t>(Game::FLEET_SLOTS);
+    Assert::IsFalse(Game::WriteFleetOrder(badSlot, refused), L"a slot past the fifth was sent");
+    Assert::IsTrue(refused.sentReliable.empty(), L"a refused fleet order put bytes on the wire");
 
-    Game::DockOrder empty;
-    empty.station = sent.station;
-    Assert::IsFalse(Game::WriteDockOrder(empty, refused), L"an empty dock order was sent");
+    std::vector<std::uint8_t> corrupt = link.sentReliable[0];
+    corrupt[6] = static_cast<std::uint8_t>(Game::FleetOrderKind::Mine) + 1;
+    Game::FleetOrder never;
+    Assert::IsFalse(Game::ReadFleetOrder(corrupt, never), L"a kind past the last one decoded");
+  }
+
+  TEST_METHOD(AFleetRosterRoundTrips)
+  {
+    Game::World world;
+    Game::FleetRoster sent;
+    sent.slot = 4;
+    for (int at = 0; at < static_cast<int>(Game::MAX_FLEET_SHIPS); ++at)
+      sent.members.push_back(world.EntityIdOf(SpawnAt(world, static_cast<float>(at) * 40.0f, 0.0f)));
+
+    CaptureTransport link;
+    Assert::IsTrue(Game::WriteFleetRoster(sent, link), L"the roster did not send");
+    Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"a roster did not take the reliable lane");
+
+    Game::FleetRoster read;
+    Assert::IsTrue(Game::ReadFleetRoster(link.sentReliable[0], read), L"the roster did not decode");
+    Assert::AreEqual(static_cast<std::uint32_t>(sent.slot), static_cast<std::uint32_t>(read.slot), L"the slot did not survive the wire");
+    Assert::AreEqual(sent.members.size(), read.members.size(), L"the member count did not survive the wire");
+    for (std::size_t at = 0; at < sent.members.size(); ++at)
+      Assert::IsTrue(read.members[at] == sent.members[at], L"a member id did not survive the wire, or the order changed");
+
+    // An empty roster is a message and not an omission: it is what a fleet with nobody in space
+    // states, which is both a composed one and one that has just lost its last ship. What it does
+    // NOT mean is that the slot is free -- that is the status block's mask (Design/Fleets.md 8.1).
+    Game::FleetRoster none;
+    none.slot = 0;
+    CaptureTransport emptyLink;
+    Assert::IsTrue(Game::WriteFleetRoster(none, emptyLink), L"an empty roster was refused");
+    Game::FleetRoster back = sent; // seeded non-empty, so an empty decode has something to clear
+    Assert::IsTrue(Game::ReadFleetRoster(emptyLink.sentReliable[0], back), L"an empty roster did not decode");
+    Assert::IsTrue(back.members.empty(), L"an empty roster left the previous membership standing");
+
+    // Content that cannot mean anything fails closed, at the writer where it can and at the reader
+    // where it must (AGENTS.md 5).
+    CaptureTransport refused;
+    Game::FleetRoster badSlot = sent;
+    badSlot.slot = static_cast<std::uint8_t>(Game::FLEET_SLOTS);
+    Assert::IsFalse(Game::WriteFleetRoster(badSlot, refused), L"a slot past the fifth was sent");
+    Game::FleetRoster tooMany = sent;
+    tooMany.members.push_back(0u);
+    Assert::IsFalse(Game::WriteFleetRoster(tooMany, refused), L"a roster past MAX_FLEET_SHIPS was sent");
+    Assert::IsTrue(refused.sentReliable.empty(), L"a refused roster put bytes on the wire");
+
+    // A count past the cap AND the bytes to back it, so the refusal is the gate rather than the
+    // buffer running out. Truncating alone would pass whether or not the cap were checked at all.
+    std::vector<std::uint8_t> overCount = link.sentReliable[0];
+    overCount[2] = static_cast<std::uint8_t>(Game::MAX_FLEET_SHIPS + 1);
+    overCount.resize(overCount.size() + 8, 0u);
+    Game::FleetRoster never;
+    Assert::IsFalse(Game::ReadFleetRoster(overCount, never), L"a count past MAX_FLEET_SHIPS decoded");
+
+    std::vector<std::uint8_t> truncated = link.sentReliable[0];
+    truncated.resize(truncated.size() - 3);
+    Assert::IsFalse(Game::ReadFleetRoster(truncated, never), L"a truncated roster decoded");
+
+    // And the readers of the kinds that share this lane must decline it.
+    Game::FleetOrder asFleetOrder;
+    Game::LedgerReply asReply;
+    Assert::IsFalse(Game::ReadFleetOrder(link.sentReliable[0], asFleetOrder), L"a roster decoded as a fleet order");
+    Assert::IsFalse(Game::ReadLedgerReply(link.sentReliable[0], asReply), L"a roster decoded as a ledger reply");
+  }
+
+  TEST_METHOD(ALedgerExchangeRoundTrips)
+  {
+    Game::World world;
+    const Game::ShipId post = SpawnAt(world, 900.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+
+    Game::LedgerRequest asked;
+    asked.station = world.EntityIdOf(post);
+
+    CaptureTransport up;
+    Assert::IsTrue(Game::WriteLedgerRequest(asked, up), L"the request did not send");
+    Assert::AreEqual(static_cast<std::size_t>(1), up.sentReliable.size(), L"a ledger request did not take the reliable lane");
+
+    Game::LedgerRequest readRequest;
+    Assert::IsTrue(Game::ReadLedgerRequest(up.sentReliable[0], readRequest), L"the request did not decode");
+    Assert::IsTrue(readRequest.station == asked.station, L"the station did not survive the wire");
+
+    // Every row distinct, so a reply whose counts were shifted by one index fails rather than
+    // passing on a coincidence of equal numbers.
+    Game::LedgerReply answered;
+    answered.station = asked.station;
+    for (std::uint32_t hull = 0; hull < Game::HULL_COUNT; ++hull)
+      answered.hullCounts[hull] = hull * 3u + 1u;
+
+    CaptureTransport down;
+    Assert::IsTrue(Game::WriteLedgerReply(answered, down), L"the reply did not send");
+    Game::LedgerReply readReply;
+    Assert::IsTrue(Game::ReadLedgerReply(down.sentReliable[0], readReply), L"the reply did not decode");
+    Assert::IsTrue(readReply.station == answered.station, L"the reply named the wrong station");
+    for (std::uint32_t hull = 0; hull < Game::HULL_COUNT; ++hull)
+      Assert::AreEqual(answered.hullCounts[hull], readReply.hullCounts[hull], L"a hull's count did not survive the wire");
+
+    // A build whose hull table is a different size reads a ledger of the wrong hulls -- and would
+    // then let a player compose from it. The count on the wire is what turns that into a refusal.
+    std::vector<std::uint8_t> wrongTable = down.sentReliable[0];
+    wrongTable[9] = static_cast<std::uint8_t>(Game::HULL_COUNT - 1);
+    Game::LedgerReply never;
+    Assert::IsFalse(Game::ReadLedgerReply(wrongTable, never), L"a reply from another hull table decoded");
+
+    std::vector<std::uint8_t> truncated = down.sentReliable[0];
+    truncated.resize(truncated.size() - 1);
+    Assert::IsFalse(Game::ReadLedgerReply(truncated, never), L"a truncated reply decoded");
+
+    Game::LedgerRequest asRequest;
+    Assert::IsFalse(Game::ReadLedgerRequest(down.sentReliable[0], asRequest), L"a reply decoded as a request");
+    Assert::IsFalse(Game::ReadLedgerReply(up.sentReliable[0], never), L"a request decoded as a reply");
+  }
+
+  TEST_METHOD(AComposeOrderRoundTrips)
+  {
+    Game::World world;
+    const Game::ShipId post = SpawnAt(world, 900.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+
+    Game::ComposeOrder sent;
+    sent.station = world.EntityIdOf(post);
+    sent.slot = 1;
+    sent.hullCounts[static_cast<std::size_t>(Game::HullId::Corvette)] = 3;
+    sent.hullCounts[static_cast<std::size_t>(Game::HullId::Miner)] = 2;
+
+    CaptureTransport link;
+    Assert::IsTrue(Game::WriteComposeOrder(sent, link), L"the compose order did not send");
+    Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"a compose order did not take the reliable lane");
+
+    Game::ComposeOrder read;
+    Assert::IsTrue(Game::ReadComposeOrder(link.sentReliable[0], read), L"the compose order did not decode");
+    Assert::IsTrue(read.station == sent.station, L"the station did not survive the wire");
+    Assert::AreEqual(static_cast<std::uint32_t>(sent.slot), static_cast<std::uint32_t>(read.slot), L"the slot did not survive the wire");
+    for (std::uint32_t hull = 0; hull < Game::HULL_COUNT; ++hull)
+      Assert::AreEqual(sent.hullCounts[hull], read.hullCounts[hull], L"a hull's count did not survive the wire");
+
+    CaptureTransport refused;
+    Game::ComposeOrder badSlot = sent;
+    badSlot.slot = static_cast<std::uint8_t>(Game::FLEET_SLOTS);
+    Assert::IsFalse(Game::WriteComposeOrder(badSlot, refused), L"a slot past the fifth was sent");
+    Assert::IsTrue(refused.sentReliable.empty(), L"a refused compose order put bytes on the wire");
+
+    std::vector<std::uint8_t> wrongTable = link.sentReliable[0];
+    wrongTable[14] = static_cast<std::uint8_t>(Game::HULL_COUNT + 1);
+    Game::ComposeOrder never;
+    Assert::IsFalse(Game::ReadComposeOrder(wrongTable, never), L"an order from another hull table decoded");
+
+    // A draft of a hundred Battleships decodes: how many ships a fleet may hold is ComposeFleet's
+    // rule, and a codec enforcing it too would be a second copy of it to keep in step (ADR 0014).
+    Game::ComposeOrder greedy = sent;
+    greedy.hullCounts[static_cast<std::size_t>(Game::HullId::Battleship)] = 100;
+    CaptureTransport greedyLink;
+    Assert::IsTrue(Game::WriteComposeOrder(greedy, greedyLink), L"an over-large draft was refused by the codec");
+    Assert::IsTrue(Game::ReadComposeOrder(greedyLink.sentReliable[0], never), L"an over-large draft did not decode");
+
+    Game::FleetOrder asFleetOrder;
+    Assert::IsFalse(Game::ReadFleetOrder(link.sentReliable[0], asFleetOrder), L"a compose order decoded as a fleet order");
+    Assert::IsFalse(Game::ReadComposeOrder(link.sent.empty() ? std::vector<std::uint8_t>{9u} : link.sent[0], never),
+                    L"a one-byte message decoded as a compose order");
+  }
+
+  TEST_METHOD(ASnapshotCarriesTheFleetHeader)
+  {
+    // The format's own regression test: records decode with a block in front of them, at both ends
+    // of what the block can be. A header that grew without the reader agreeing would put the cursor
+    // inside the first record, and every field after it would be garbage that still parsed.
+    Game::World empty;
+    for (int at = 0; at < 4; ++at)
+      (void)SpawnAt(empty, static_cast<float>(at) * 60.0f, 0.0f);
+
+    CaptureTransport noFleets;
+    Game::SnapshotWriter writer;
+    Assert::AreEqual(1u, writer.Write(empty, noFleets), L"the snapshot did not send");
+    Game::SnapshotReceiver receiver;
+    FeedBothLanes(receiver, noFleets);
+    Assert::AreEqual(static_cast<std::size_t>(4), receiver.Latest().ships.size(), L"the records did not decode with no fleets");
+    Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetMask()), L"a world with no fleets stated one");
+
+    // Five fleets: the widest the block ever is, and the case ShipsPerSnapshotFragment is sized for.
+    Game::World full;
+    std::vector<Game::ShipId> members;
+    for (std::uint8_t slot = 0; slot < Game::FLEET_SLOTS; ++slot)
+    {
+      const Game::ShipId ship = SpawnAt(full, static_cast<float>(slot) * 200.0f, 0.0f);
+      members.push_back(ship);
+      const Game::ShipId one[] = {ship};
+      Assert::AreNotEqual(Game::World::INVALID_FLEET_ID, full.FormFleet(Game::FACTION_PLAYER, slot, one), L"a fleet was refused");
+    }
+
+    CaptureTransport fiveFleets;
+    Game::SnapshotWriter fullWriter;
+    Assert::AreEqual(1u, fullWriter.Write(full, fiveFleets), L"the snapshot did not send");
+    Game::SnapshotReceiver fullReceiver;
+    FeedBothLanes(fullReceiver, fiveFleets);
+    Assert::AreEqual(static_cast<std::size_t>(Game::FLEET_SLOTS), fullReceiver.Latest().ships.size(),
+                     L"the records did not decode behind a full fleet block");
+    Assert::AreEqual(0x1Fu, static_cast<std::uint32_t>(fullReceiver.FleetMask()), L"five fleets did not all reach the mask");
+    for (std::uint8_t slot = 0; slot < Game::FLEET_SLOTS; ++slot)
+    {
+      Assert::IsTrue(Distance(fullReceiver.FleetStatusOf(slot).position, full.Ship(members[slot]).posWorld) < 0.1f,
+                     L"a fleet's stated position is not where its one member is");
+    }
   }
 
   TEST_METHOD(ADeathAndADepartureDifferOnTheWire)
@@ -877,63 +1102,41 @@ public:
     Assert::IsTrue(receiver.Latest().ships.empty(), L"an empty world produced ships");
   }
 
-  TEST_METHOD(AMoveOrderRoundTrips)
-  {
-    Game::World world;
-    const Game::ShipId first = SpawnAt(world, 0.0f, 0.0f);
-    const Game::ShipId second = SpawnAt(world, 100.0f, 0.0f);
-
-    Game::MoveOrder sent;
-    sent.ships = {world.EntityIdOf(first), world.EntityIdOf(second)};
-    sent.destination = Game::LocalPos(-450.5f, 1200.25f);
-    sent.facingRad = 1.25f;
-    sent.hasFacing = true;
-
-    CaptureTransport transport;
-    Assert::IsTrue(Game::WriteMoveOrder(sent, transport), L"the order did not send");
-
-    Game::MoveOrder got;
-    Assert::AreEqual(static_cast<std::size_t>(1), transport.sentReliable.size(), L"the order did not take the reliable lane");
-    Assert::IsTrue(transport.sent.empty(), L"the order also went out as a datagram");
-    Assert::IsTrue(Game::ReadMoveOrder(transport.sentReliable[0], got), L"the order did not decode");
-    Assert::AreEqual(sent.ships.size(), got.ships.size(), L"the order lost ships");
-    for (std::size_t at = 0; at < sent.ships.size(); ++at)
-      Assert::IsTrue(sent.ships[at] == got.ships[at], L"an ordered ship changed identity");
-    Assert::IsTrue(IsSamePosition(sent.destination, got.destination), L"the destination did not survive");
-    Assert::AreEqual(sent.facingRad, got.facingRad, 0.0f, L"the facing did not survive");
-    Assert::IsTrue(got.hasFacing, L"the has-facing flag did not survive");
-  }
-
   TEST_METHOD(AnOrderForADespawnedShipResolvesToNothing)
   {
     // The reason an order carries neither a ShipId nor an index. Between the click and the order
     // arriving, a ship can die and swap-and-pop can move a stranger into its array index (ADR 0005).
-    // What the order carries now is an entity id, which is stronger again: a handle is a reference
-    // into one World and an id names the ship itself (ADR 0047).
+    // What an order carries is an entity id, which is stronger again: a handle is a reference into
+    // one World and an id names the ship itself (ADR 0047).
+    //
+    // An order names a fleet now, so the ids that can go stale between the click and the tick are
+    // the ones a kind carries -- a Dock's station and an Attack's target. The property is the same
+    // and the surface is smaller, which is what ADR 0049 bought.
     Game::World world;
-    const Game::ShipId doomed = SpawnAt(world, 0.0f, 0.0f);
-    const Game::ShipId other = SpawnAt(world, 100.0f, 0.0f);
+    const Game::ShipId doomed = SpawnAt(world, 0.0f, 0.0f, Game::HullId::Interceptor, Game::FACTION_VANDAL);
+    const Game::ShipId other = SpawnAt(world, 100.0f, 0.0f, Game::HullId::Interceptor, Game::FACTION_VANDAL);
     const Game::EntityId doomedEntity = world.EntityIdOf(doomed);
     const Game::EntityId otherEntity = world.EntityIdOf(other);
 
-    Game::MoveOrder sent;
-    sent.ships = {doomedEntity, otherEntity};
-    sent.destination = Game::LocalPos(0.0f, 500.0f);
+    Game::FleetOrder sent;
+    sent.slot = 1;
+    sent.kind = Game::FleetOrderKind::Attack;
+    sent.target = doomedEntity;
 
     CaptureTransport transport;
-    Assert::IsTrue(Game::WriteMoveOrder(sent, transport), L"the order did not send");
+    Assert::IsTrue(Game::WriteFleetOrder(sent, transport), L"the order did not send");
     Assert::IsTrue(world.DespawnShip(world.HandleOf(doomed)), L"the despawn failed");
 
-    Game::MoveOrder got;
+    Game::FleetOrder got;
     Assert::AreEqual(static_cast<std::size_t>(1), transport.sentReliable.size(), L"the order did not take the reliable lane");
     Assert::IsTrue(transport.sent.empty(), L"the order also went out as a datagram");
-    Assert::IsTrue(Game::ReadMoveOrder(transport.sentReliable[0], got), L"the order did not decode");
-    Assert::AreEqual(Game::INVALID_SHIP_ID, world.ResolveEntity(got.ships[0]), L"a dead ship's id resolved to something");
+    Assert::IsTrue(Game::ReadFleetOrder(transport.sentReliable[0], got), L"the order did not decode");
+    Assert::AreEqual(Game::INVALID_SHIP_ID, world.ResolveEntity(got.target), L"a dead ship's id resolved to something");
 
     // The survivor is still there, but swap-and-pop moved it into the freed slot, so its ShipId is
     // not the one it had when the order was written -- and its id is. That is ADR 0005 and ADR 0047
     // in one assertion: the identity follows the ship, the array index does not.
-    const Game::ShipId resolved = world.ResolveEntity(got.ships[1]);
+    const Game::ShipId resolved = world.ResolveEntity(otherEntity);
     Assert::AreNotEqual(Game::INVALID_SHIP_ID, resolved, L"the surviving ship's id stopped resolving");
     Assert::AreNotEqual(other, resolved, L"the survivor's index did not move, so this test proves nothing");
     Assert::IsTrue(world.EntityIdOf(resolved) == otherEntity, L"the id resolved to a stranger");
@@ -996,12 +1199,13 @@ public:
     client.AdvanceTo(0);
     server.AdvanceTo(0);
 
-    Game::MoveOrder order;
-    order.ships.push_back(Game::MakeEntityId(0, 3));
-    order.destination = Game::LocalPos(120.0f, -40.0f);
+    Game::FleetOrder order;
+    order.slot = 3;
+    order.kind = Game::FleetOrderKind::Move;
+    order.point = Game::LocalPos(120.0f, -40.0f);
     order.hasFacing = true;
     order.facingRad = 0.5f;
-    Assert::IsTrue(Game::WriteMoveOrder(order, client), L"the order was refused");
+    Assert::IsTrue(Game::WriteFleetOrder(order, client), L"the order was refused");
 
     client.Poll();
     server.Poll();
@@ -1010,9 +1214,9 @@ public:
     const std::uint32_t size = server.ReceiveReliable(message.data(), Neuron::MAX_RELIABLE_BYTES);
     Assert::IsTrue(size > 0, L"the order did not survive the datagram lane being dead");
 
-    Game::MoveOrder received;
-    Assert::IsTrue(Game::ReadMoveOrder(std::span<const std::uint8_t>(message.data(), size), received), L"the order did not parse");
-    Assert::AreEqual(static_cast<std::size_t>(1), received.ships.size(), L"the order lost its ship");
+    Game::FleetOrder received;
+    Assert::IsTrue(Game::ReadFleetOrder(std::span<const std::uint8_t>(message.data(), size), received), L"the order did not parse");
+    Assert::AreEqual(3u, static_cast<std::uint32_t>(received.slot), L"the order lost its slot");
     Assert::IsTrue(received.hasFacing, L"the order lost its facing");
   }
 
@@ -1076,21 +1280,6 @@ public:
     (void)writer.WriteInterest(world, {}, left, {}, {}, link);
     Assert::AreEqual(1u, writer.RefusedLeaveCount(), L"a refused departure was not counted");
     Assert::IsTrue(link.sentReliable.empty(), L"a refused lane still captured a message");
-  }
-
-  TEST_METHOD(AnOversizedOrderIsRefused)
-  {
-    Game::MoveOrder tooMany;
-    tooMany.ships.assign(Game::MaxShipsPerOrder() + 1, Game::MakeEntityId(0, 1));
-    tooMany.destination = Game::LocalPos(0.0f, 0.0f);
-
-    CaptureTransport transport;
-    Assert::IsFalse(Game::WriteMoveOrder(tooMany, transport), L"an order larger than the cap was sent");
-    Assert::IsTrue(transport.sent.empty(), L"a refused order still put bytes on the datagram lane");
-    Assert::IsTrue(transport.sentReliable.empty(), L"a refused order still put bytes on the reliable lane");
-
-    Game::MoveOrder empty;
-    Assert::IsFalse(Game::WriteMoveOrder(empty, transport), L"an order with no ships was sent");
   }
 };
 } // namespace GameLogicTests

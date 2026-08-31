@@ -126,6 +126,21 @@ private:
     WorldPos centre;
     InterestSet interest;
     SnapshotWriter writer;
+
+    // What this subscriber was last told is in each of its faction's slots, so Publish can diff
+    // rather than be told when a roster changed.
+    //
+    // Here rather than in World, and that is the design of it: the diff is per subscriber, changes
+    // nothing that is simulated, is outside the replay contract and is not saved. It also makes
+    // join-time delivery free -- a new subscriber's lists are empty, so its first Publish finds
+    // every occupied slot changed and sends the lot, which is the despawn cursor's own joining rule
+    // arriving at fleets with no second mechanism (Design/Fleets.md 8.1, ADR 0027).
+    //
+    // Membership is the whole of what is diffed; occupancy is not tracked here because it does not
+    // have to be. A slot that empties always passes through a roster change on its way out -- the
+    // prune drops the last member before the retire drops the row -- and a slot that fills starts
+    // empty, which is what the client already holds. Occupancy is the status block's mask.
+    std::vector<EntityId> lastRoster[FLEET_SLOTS];
   };
 
   struct Slot
@@ -142,6 +157,13 @@ private:
   // One subscriber's update: the interest walk, the split of what left from what died, and the two
   // messages. Everything WorldSimulation used to do for its single subscriber, per entry.
   void PublishOne(const World& _world, Subscriber& _subscriber);
+
+  // States any of _subscriber's five slots whose membership has changed since it was last told.
+  //
+  // Every tick, not only on the ticks the subscriber is due: membership changes at human speed, so
+  // a diff over five slots of at most eight ids is nothing, and a roster held back for a phase
+  // would arrive after the status block that describes it.
+  void PublishRosters(const World& _world, Subscriber& _subscriber);
 
   // Splits _subscriber's Left() three ways: the deaths, the dockings, and the ships that merely flew
   // out of range. The world's despawn log intersected with what this subscriber was holding -- so a
@@ -167,5 +189,6 @@ private:
   std::vector<EntityId> m_dockedScratch;
   std::vector<ShipId> m_resolvedScratch;
   std::vector<std::uint8_t> m_messageScratch;
+  FleetRoster m_rosterScratch; // one roster at a time, its vector kept so a quiet tick allocates nothing
 };
 } // namespace Game

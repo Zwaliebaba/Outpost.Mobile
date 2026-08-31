@@ -20,9 +20,15 @@ therefore unverifiable. Keep it that way: if a change makes a sentence below fal
 changes in the same commit.
 
 **Built and tested.** Five projects and four test suites, Debug|x64, gating in CI (§6). The game
-is a fleet of three hulls in open space: select them, order them somewhere in formation, watch
-them route around architecture, give way to each other, and arrive without passing through
-anything — and F4 shatters a selected hull into tumbling debris, a fireball and smoke. Every hull
+is played at **fleet** grain: a fleet is the unit of command and nothing smaller can be held (ADR
+0049). Five slots, at most eight ships each, composed at a station out of what the player has docked
+there and poured out of the dock one hull per cadence; ordered as one thing by a message that names
+a slot and carries no ship list at all; cruising at the slowest member's speed so they arrive
+together; defending themselves against a stated hostile act, the armed hulls turning while the
+Miners carry on with their orders (ADR 0050); and dismantled back into the ledger by docking. The
+boot scene is Fleet 1, three hulls in open space: order it somewhere in formation and watch it route
+around architecture, give way to itself, and arrive without passing through anything — and F4
+shatters a selected hull into tumbling debris, a fireball and smoke. Every hull
 burns the exhaust colour and nozzle radius its author gave it and carries running lights that blink
 on periods authored per light, all of it read from the mesh file's markers rather than recovered or
 hard-coded. Not every
@@ -37,13 +43,18 @@ Command, azure in the scene and a hollow diamond on the minimap from the first f
 inside the 4 km half-range, a farther one clamped to the map's edge, because a mark is static
 content and not a record. A
 station is a Structure with a row in `World`'s station table (ADR 0038); the Vandal base is a row
-in the same table. Select ships and tap a station and they fly to it and dock — they leave the
-world and the log says so, and there is no undocking yet, which is the station management menu's
-(the next phase). A station whose owner holds the player hostile refuses the order before it is
-sent, the Vandal base from the first frame. F6 declares a selected ship an aggressor against the
-nearest Vanguard station: the law turns red across the map, the station launches its Corvette
-garrison one every 1.5 s, and they shadow the aggressor until it dies -- which nothing can make it
-do, since there is still no combat (ADR 0041). `CONTACTS` counts the records whose faction holds the player hostile by the
+in the same table. Tap a station with a fleet selected and it flies in and docks — the ships leave
+the world, the fleet is dismantled into the station's ledger, and the log says so. Hold a station
+and its ledger comes back as a *reply* to a request (ADR 0051) on the assembly screen, where a draft
+of up to eight hulls becomes a fleet in a free slot and launches. That is the only way out of a
+ledger: undocking as such still does not exist, and the rest of the station management menu — trade,
+repair, cargo — is still the next phase's. A station whose owner holds the player hostile refuses
+both the dock and the ledger before either is sent, the Vandal base from the first frame. F6 declares
+a selected ship an aggressor against the nearest Vanguard station: the law turns red across the map,
+the station launches its Corvette garrison one every 1.5 s, and they shadow the aggressor until it
+dies -- which nothing can make it do, since there is still no combat (ADR 0041). F7 is the same kind
+of hook pointed the other way: it declares the nearest hostile the attacker of the player's selected
+fleet, so the defense, the button's red pulse and the minimap's red digit can be watched. `CONTACTS` counts the records whose faction holds the player hostile by the
 update header's mask (ADR 0039), which at boot is the Vandal four and never a Vanguard station.
 There is still no combat. Three worlds and six asteroids share the sky with the fleet, and they are
 made two different ways (`Design/Decisions/0026`): a world is a smooth sphere wearing an authored
@@ -56,8 +67,11 @@ stand where the layout put a station. All of it is
 presentation only and a ship flies straight through a rock (`Design/Decisions/0016`). There is no
 ground: the scene pass draws no plane and has no grid
 (`Design/Decisions/0025`), and the flat y = 0 plane a move order lands on is arithmetic in `Camera`
-rather than geometry. D3D12 renderer, WM_POINTER input covering mouse and touch, a main-screen HUD
-drawn through one overlay pipeline (bitmap font atlases, coverage-mask icons, untextured quads),
+rather than geometry. D3D12 renderer, WM_POINTER input covering mouse and touch — including a long
+press, which the tracker learned when there was finally a menu to open — a main-screen HUD whose five
+buttons are the five fleet slots, a fleet sheet a hold opens over the bar and a modal assembly screen
+a station's hold opens, all drawn through one overlay pipeline (bitmap font atlases, coverage-mask
+icons, untextured quads),
 textured FX pipelines for the explosion's fragments and sprites, a two-pass body pipeline, an
 additive sky pass, NMO hulls, DXC-compiled shader model 6.7 shaders.
 `Transport` has a QUIC implementation over MsQuic, and the game boots on it and only on it:
@@ -81,10 +95,12 @@ the running game states one yet, and a protector has no weapon either (ADR 0041)
 stops well short of a network: one client, one process,
 `127.0.0.1` only, and a self-signed certificate the client does not validate. The wire has two lanes
 and the format chooses by asking whether a later message makes a lost one right (`ADR 0029`):
-positions are datagrams and heal themselves, while departures and move orders take the reliable
-lane and cannot be lost. The seam serves N subscribers now rather than one: `Game::Publisher` holds
-a table of them, each with its own interest set, writer, faction, phase, order budget and despawn
-cursor (ADR 0030). What remains missing is the far end — this executable adds exactly one entry,
+positions are datagrams and heal themselves, while departures, orders and fleet rosters take the
+reliable lane and cannot be lost. There is one order that moves ships and it names a **fleet** rather
+than a list of them (ADR 0049), so its size does not depend on how many ships it moves. A station's ledger takes neither shape: it is *asked for*, and the
+request/reply pair is the only one on this seam (ADR 0051). The seam serves N subscribers now rather
+than one: `Game::Publisher` holds a table of them, each with its own interest set, writer, faction,
+phase, order budget, despawn cursor and last-sent fleet rosters (ADR 0030). What remains missing is the far end — this executable adds exactly one entry,
 there is no second machine to be on the other side of it, and no decided way to tell a headless
 build what to be.
 The client sees the world through the seam, filtered to what one subscriber can see (§2).
@@ -297,7 +313,7 @@ does not have.
 | `GameLogic/` | The deterministic simulation, namespace `Game`. `World`, `ShipState`, `WorldPos`, `HullSpec`, `Movement`, `Collision`, `SpatialIndex`, `PathGrid`, `Formation`, `Patrol`, `SimTuning`, `InterestSet`, `PathIslands` (the architecture partitioned into islands, one `PathGrid` over each, ADR 0033), `UniverseLayout` (a solar system's star and planet sites from a seed — static content both halves read, ADR 0037, and the library's only randomness), `WorldSnapshot` (the wire format, ADR 0008) and `Publisher` (the fan-out to N subscribers, ADR 0030). Depends on NeuronCore only. |
 | `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, the explosion's `FxRenderer`/`MeshShatter`/`SpriteParticles` and the `GlowBillboards` the thruster plume is built with, `ViewCulling` (the camera's frustum and the sphere test everything drawn is gated on), the planet pipeline (`CubeSphere`, `Noise3`, `BodyDesc`/`BodyParams`/`BodyField`, `BodyMeshBuilder`, `BodyRenderer`, `ColourRamp` — see [`Design/Archive/PlanetRenderer.md`](Design/Archive/PlanetRenderer.md)), the star field (`SkyField`, `SkyRenderer`, `SkyVertex` — [`Design/Archive/Skybox.md`](Design/Archive/Skybox.md)), and the content readers `DdsImage`, `NmoFile`/`NmoReader`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
-| `Outpost/` | The executable: composition root, presentation state, the HUD and its event log, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |
+| `Outpost/` | The executable: composition root, presentation state, the HUD and its event log, the modal `AssemblyScreen` a station long-press opens, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
 | `NeuronClient/Shaders/` | HLSL (§3). DXC compiles it, as shader model 6.7 DXIL, into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
 | `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). |

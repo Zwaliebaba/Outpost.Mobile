@@ -2,6 +2,8 @@
 
 #include "BodyCatalogue.h"
 #include "EventLog.h"
+#include "AssemblyScreen.h"
+#include "FleetSheet.h"
 #include "Hud.h"
 #include "ServerConfig.h"
 #include "WorldSimulation.h"
@@ -152,6 +154,14 @@ private:
   WorldView m_view;
   EventLog m_log;
   Hud m_hud;
+
+  // The station's assembly view. Modal, so it sits ahead of the HUD in the pointer chain and is
+  // drawn after it (Design/Fleets.md 9.4).
+  AssemblyScreen m_assembly;
+
+  // One fleet's sheet, over the bar. Not modal, so it takes only what lands on itself and sits
+  // between the assembly screen and the HUD in the chain (Design/Fleets.md 9.3).
+  FleetSheet m_sheet;
   Neuron::FrameClock m_clock;
 
   // One ramp per class, indexed by BodyClass. A ramp that fails to load leaves its class drawing the
@@ -167,7 +177,9 @@ private:
   // Debug: 1, 2 and 3 slow, restore and speed up the simulation without touching the frame rate;
   // F1 shows the readout, F3 shakes the camera, F4 despawns the selection so the explosion has
   // something to consume, F6 declares the first selected ship an aggressor against the nearest
-  // Vanguard station so the response can be watched, and **F5 reseeds every body's look and the sky
+  // Vanguard station so the response can be watched, F7 declares the nearest hostile record the
+  // attacker of the first selected own ship so the fleet defense, the button's glow and the
+  // minimap's red digit can be watched, and **F5 reseeds every body's look and the sky
   // with them** -- never the sites, which are the layout's (m_layout). F5 does not release the buffers the last
   // scene's bodies are in -- BodyRenderer keeps every handle for the run -- so each press costs the
   // memory of the scene it replaced. That is acceptable for a tuning key and is not acceptable for

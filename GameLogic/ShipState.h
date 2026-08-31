@@ -35,6 +35,21 @@ inline constexpr FactionId FACTION_VANGUARD = 2;
 // becomes a small standings record and this limit moves with it -- widen both together.
 inline constexpr std::uint32_t FACTION_LIMIT = 8;
 
+// The player's whole command surface, and the size of one fleet in it.
+//
+// Both are in the replay contract: they decide which FormFleet calls are accepted, so a build that
+// disagreed about either would form a fleet this one refuses. They sit beside FACTION_LIMIT because
+// all three are per-faction ceilings, and because the fleet wire's slot mask will lean on
+// FLEET_SLOTS exactly as the hostileMask leans on FACTION_LIMIT (Design/Fleets.md 8.2).
+//
+// Eight is measured rather than liked (Design/Fleets.md 4.2). A Carrier-led wedge of eight spans
+// about 1 km, inside the 2,000 m interest radius, while twelve is outside it -- a fleet whose far
+// wing its own player cannot see. A compressed pack of eight unjams in 0.4 s against 2.5 s at
+// sixteen, which is SEPARATION_ITERATIONS' own measurement read as a fleet size. And five fleets of
+// eight is forty player ships, which is the envelope every number in this tree was measured in.
+inline constexpr std::uint32_t FLEET_SLOTS = 5;
+inline constexpr std::uint32_t MAX_FLEET_SHIPS = 8;
+
 // What one faction is to another.
 //
 // Simulation state by AGENTS.md 5's own test: it changes recorded outcomes -- who may dock, who
@@ -153,6 +168,27 @@ enum class OrderState : std::uint8_t
   Idle,
   Moving,  // steering towards steerTargetPos
   Aligning // arrived; turning onto the ordered facing
+};
+
+// What a fleet was told to do, as against what one ship is doing about it. OrderState is a ship's
+// business and this is a fleet's, and the two never mean the same thing: every member of a fleet
+// under Move is Moving, Aligning or Idle at its own slot at different moments of the same order.
+//
+// Declared whole so the byte never renumbers, and two of the six are refused for now, each for its
+// own reason. Attack waits for the slice that gives it the protector's pursuit chassis and a
+// combatant flag to aim it with; Mine waits for a mining design and for something in the world to
+// mine, since a rock is presentation and a ship flies through it (ADR 0016, Design/Fleets.md 6.6).
+//
+// Stop is a kind a message carries and never a standing order a row holds: stopping is asking for
+// Idle, and what the row stores is what it was left in.
+enum class FleetOrderKind : std::uint8_t
+{
+  Idle,
+  Move,
+  Dock,
+  Attack,
+  Stop,
+  Mine
 };
 
 // One ship, as the simulation sees it. Everything here is advanced only in World::Step, and there

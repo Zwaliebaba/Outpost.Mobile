@@ -329,22 +329,26 @@ public:
     const Game::ShipId second = SpawnAt(world, 80.0f, 0.0f);
     world.Step();
 
-    Game::MoveOrder sent;
-    sent.ships = {world.EntityIdOf(first), Game::MakeEntityId(3, 999999), world.EntityIdOf(second)};
-    sent.destination = Game::LocalPos(0.0f, 900.0f);
+    // Through the two ids a fleet order carries -- a Dock's station and an Attack's target -- since
+    // an order stopped carrying a ship list at all (ADR 0049). One live id, one nobody minted, and
+    // the third assertion is that a shard's own id resolves where a stranger's does not.
+    Game::FleetOrder sent;
+    sent.slot = 0;
+    sent.kind = Game::FleetOrderKind::Dock;
+    sent.station = world.EntityIdOf(first);
+    sent.target = Game::MakeEntityId(3, 999999);
 
     CaptureLink link;
-    Assert::IsTrue(Game::WriteMoveOrder(sent, link), L"the order did not send");
+    Assert::IsTrue(Game::WriteFleetOrder(sent, link), L"the order did not send");
 
-    Game::MoveOrder got;
-    Assert::IsTrue(Game::ReadMoveOrder(link.sentReliable[0], got), L"the order did not decode");
-    Assert::AreEqual(sent.ships.size(), got.ships.size(), L"the id list changed size on the wire");
-    for (std::size_t at = 0; at < sent.ships.size(); ++at)
-      Assert::IsTrue(got.ships[at] == sent.ships[at], L"an id did not survive the wire");
+    Game::FleetOrder got;
+    Assert::IsTrue(Game::ReadFleetOrder(link.sentReliable[0], got), L"the order did not decode");
+    Assert::IsTrue(got.station == sent.station, L"the station id did not survive the wire");
+    Assert::IsTrue(got.target == sent.target, L"the target id did not survive the wire");
 
-    Assert::IsTrue(world.ResolveEntity(got.ships[0]) == first, L"the first id named the wrong ship");
-    Assert::AreEqual(Game::INVALID_SHIP_ID, world.ResolveEntity(got.ships[1]), L"an id nobody minted resolved");
-    Assert::IsTrue(world.ResolveEntity(got.ships[2]) == second, L"the second id named the wrong ship");
+    Assert::IsTrue(world.ResolveEntity(got.station) == first, L"the station id named the wrong ship");
+    Assert::AreEqual(Game::INVALID_SHIP_ID, world.ResolveEntity(got.target), L"an id nobody minted resolved");
+    Assert::IsTrue(world.ResolveEntity(world.EntityIdOf(second)) == second, L"a live id stopped naming its ship");
   }
 };
 } // namespace GameLogicTests

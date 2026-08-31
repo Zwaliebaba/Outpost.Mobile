@@ -186,6 +186,47 @@ void World::RecordAggression(ShipHandle _attacker, StationId _station)
     station.targets.push_back(_attacker);
 }
 
+void World::PursueTarget(ShipId _ship, ShipId _target)
+{
+  // Re-aimed when the ship has nothing to do, or when the target has walked far enough from the
+  // point last aimed at to be worth a new plan -- never every tick, which would cost everything and
+  // change nothing. The point last aimed at is the route's own destination, which is why a pursuer
+  // is sent at the target itself rather than at a slot around it: eight ships aimed at one point all
+  // answer this test the same way on the same tick.
+  ShipState& ship = m_ships[_ship];
+  const WorldPos& targetPos = m_ships[_target].posWorld;
+  const bool drifted = Distance(m_routes[_ship].destination, targetPos) > PURSUIT_REPLAN_METRES;
+  if (ship.order != OrderState::Idle && !drifted)
+    return;
+
+  ship.order = OrderState::Moving;
+  ship.orderHasFacing = false;
+  ship.orderSpeedCapMetresPerSec = 0.0f; // a chase runs at the hull's own speed
+  m_patrols[_ship].active = false;
+  // A fleet member may have been halfway into a station when the shooting started. On the protector
+  // path this is already false by the time a duty pursues, so it costs that caller nothing.
+  m_dockings[_ship].active = false;
+  PlanRoute(_ship, targetPos, HullSpecOf(ship.hullId).BoundingRadiusMetres() + PATH_CLEARANCE_MARGIN_METRES);
+}
+
+void World::RecordHostileAct(ShipHandle _attacker, ShipHandle _victim)
+{
+  const ShipId victim = Resolve(_victim);
+  if (victim == INVALID_SHIP_ID)
+    return;
+
+  const FleetId fleet = FleetAt(victim);
+  if (fleet == INVALID_FLEET_ID)
+    return; // nobody's to answer for: a loose ship has no response of its own
+
+  // The latest act wins, anchor and all. A fleet attacked at both ends holds one threat because the
+  // posture is one judgment and the wire is one bit (Design/Fleets.md 13).
+  Fleet& row = m_fleets[fleet];
+  row.threat = _attacker;
+  row.threatAnchorPos = m_ships[victim].posWorld;
+  row.alertTicks = FLEET_ALERT_TICKS;
+}
+
 const World::ProtectorDuty& World::ProtectorOf(ShipId _id) const noexcept
 {
   return m_protectors[_id];
@@ -235,6 +276,325 @@ World::StationId World::StationAt(ShipId _id) const noexcept
 const World::Station& World::StationOf(StationId _id) const noexcept
 {
   return m_stations[_id];
+}
+
+bool World::CanTakeSlot(FactionId _ownerFaction, std::uint8_t _slot) const noexcept
+{
+  return _slot < FLEET_SLOTS && _ownerFaction < FACTION_LIMIT && FleetInSlot(_ownerFaction, _slot) == INVALID_FLEET_ID;
+}
+
+World::FleetId World::FormFleet(FactionId _ownerFaction, std::uint8_t _slot, std::span<const ShipId> _ships)
+{
+  // In the order the header lists them. Which one refuses is not observable -- every refusal is the
+  // same invalid id and the same untouched table -- so the order is for the reader.
+  if (!CanTakeSlot(_ownerFaction, _slot))
+    return INVALID_FLEET_ID;
+  if (_ships.empty() || _ships.size() > MAX_FLEET_SHIPS)
+    return INVALID_FLEET_ID;
+
+  // The whole list is checked before anything is written, because a refusal has to change nothing:
+  // a half-formed fleet is one nobody asked for, and its size is one of the rules.
+  for (std::size_t at = 0; at < _ships.size(); ++at)
+  {
+    const ShipId id = _ships[at];
+    if (id >= m_ships.size() || m_ships[id].factionId != _ownerFaction)
+      return INVALID_FLEET_ID;
+    if (FleetAt(id) != INVALID_FLEET_ID)
+      return INVALID_FLEET_ID;
+    // Named twice is the same defect as already in a fleet, arriving from inside one call rather
+    // than across two: it would spend two of the eight places on one ship.
+    for (std::size_t before = 0; before < at; ++before)
+    {
+      if (_ships[before] == id)
+        return INVALID_FLEET_ID;
+    }
+  }
+
+  Fleet fleet;
+  fleet.ownerFaction = _ownerFaction;
+  fleet.slot = _slot;
+  fleet.memberCount = static_cast<std::uint32_t>(_ships.size());
+  for (std::size_t at = 0; at < _ships.size(); ++at)
+    fleet.members[at] = HandleOf(_ships[at]);
+
+  const FleetId id = static_cast<FleetId>(m_fleets.size());
+  m_fleets.push_back(fleet);
+  return id;
+}
+
+World::FleetId World::FleetInSlot(FactionId _ownerFaction, std::uint8_t _slot) const noexcept
+{
+  for (std::size_t at = 0; at < m_fleets.size(); ++at)
+  {
+    if (m_fleets[at].ownerFaction == _ownerFaction && m_fleets[at].slot == _slot)
+      return static_cast<FleetId>(at);
+  }
+  return INVALID_FLEET_ID;
+}
+
+World::FleetId World::FleetAt(ShipId _id) const noexcept
+{
+  if (_id >= m_ships.size())
+    return INVALID_FLEET_ID;
+
+  for (std::size_t at = 0; at < m_fleets.size(); ++at)
+  {
+    const Fleet& fleet = m_fleets[at];
+    for (std::uint32_t member = 0; member < fleet.memberCount; ++member)
+    {
+      if (Resolve(fleet.members[member]) == _id)
+        return static_cast<FleetId>(at);
+    }
+  }
+  return INVALID_FLEET_ID;
+}
+
+const World::Fleet& World::FleetOf(FleetId _id) const noexcept
+{
+  static constexpr Fleet NONE;
+  return (_id < m_fleets.size()) ? m_fleets[_id] : NONE;
+}
+
+void World::LedgerFor(StationId _station, FactionId _asker, std::span<std::uint32_t> _outCounts) const noexcept
+{
+  const std::size_t stated = (_outCounts.size() < HULL_COUNT) ? _outCounts.size() : std::size_t{HULL_COUNT};
+  for (std::size_t hull = 0; hull < stated; ++hull)
+    _outCounts[hull] = 0;
+
+  if (_station >= m_stations.size())
+    return;
+
+  const Station& station = m_stations[_station];
+  if (Resolve(station.structure) == INVALID_SHIP_ID)
+    return;
+
+  // The same standing gate ComposeFleet applies, and zeros rather than a refusal because this
+  // function has no way to say no -- a caller that needs the distinction asks ComposeFleet, which
+  // still runs its own gate and still returns RefusedStanding.
+  if (StandingOf(station.ownerFaction, _asker) == Standing::Hostile)
+    return;
+
+  for (const DockedShip& docked : station.docked)
+  {
+    if (docked.factionId == _asker && docked.hullId < stated)
+      ++_outCounts[docked.hullId];
+  }
+}
+
+World::ComposeResult World::ComposeFleet(StationId _station, std::uint8_t _slot, std::span<const std::uint32_t> _hullCounts,
+                                         FactionId _issuerFaction)
+{
+  if (_station >= m_stations.size())
+    return ComposeResult::NotAStation;
+
+  Station& station = m_stations[_station];
+  if (Resolve(station.structure) == INVALID_SHIP_ID)
+    return ComposeResult::NotAStation;
+
+  if (StandingOf(station.ownerFaction, _issuerFaction) == Standing::Hostile)
+    return ComposeResult::RefusedStanding;
+
+  if (!CanTakeSlot(_issuerFaction, _slot))
+    return ComposeResult::SlotTaken;
+
+  // Each count is bounded before it is summed, so no arithmetic here can overflow whatever a caller
+  // passes -- the total is at most HULL_COUNT * MAX_FLEET_SHIPS before the gate below sees it.
+  std::uint32_t wanted[HULL_COUNT] = {};
+  std::uint32_t total = 0;
+  for (std::size_t hull = 0; hull < _hullCounts.size(); ++hull)
+  {
+    if (_hullCounts[hull] == 0)
+      continue;
+    // No ledger holds a hull the table does not have, so a count past the end of it is the honest
+    // NotDocked rather than a silent truncation of what was asked for.
+    if (hull >= HULL_COUNT)
+      return ComposeResult::NotDocked;
+    if (_hullCounts[hull] > MAX_FLEET_SHIPS)
+      return ComposeResult::TooMany;
+    wanted[hull] = _hullCounts[hull];
+    total += _hullCounts[hull];
+  }
+  if (total == 0 || total > MAX_FLEET_SHIPS)
+    return ComposeResult::TooMany;
+
+  // The issuer's own rows, and only those -- through the function a ledger request over the wire
+  // also answers with, so what a screen was shown and what this gate reads cannot drift apart
+  // (Design/Fleets.md 8.3).
+  std::uint32_t available[HULL_COUNT] = {};
+  LedgerFor(_station, _issuerFaction, available);
+  for (std::uint32_t hull = 0; hull < HULL_COUNT; ++hull)
+  {
+    if (wanted[hull] > available[hull])
+      return ComposeResult::NotDocked;
+  }
+
+  // Past every gate: from here nothing can fail, and the ledger may be written.
+  Fleet fleet;
+  fleet.ownerFaction = _issuerFaction;
+  fleet.slot = _slot;
+  fleet.launchStructure = station.structure;
+
+  // Ascending hull id, and stated rather than incidental: it is the launch order, the launch order
+  // is the order members join the fleet in, and that is the order a formation solve reads.
+  for (std::uint32_t hull = 0; hull < HULL_COUNT; ++hull)
+  {
+    for (std::uint32_t at = 0; at < wanted[hull]; ++at)
+      fleet.manifest[fleet.manifestCount++] = hull;
+  }
+
+  // The rows leave the ledger now rather than one per launch, so that two things cannot happen: a
+  // second compose claiming the same rows, and a ledger a screen has shown disagreeing with what the
+  // launch finds (Design/Fleets.md 5.2). Compacted in place, in array order, so which rows are drawn
+  // is a function of the ledger and not of anything else.
+  std::uint32_t drawn[HULL_COUNT] = {};
+  std::size_t live = 0;
+  for (std::size_t at = 0; at < station.docked.size(); ++at)
+  {
+    const DockedShip& docked = station.docked[at];
+    if (docked.factionId == _issuerFaction && docked.hullId < HULL_COUNT && drawn[docked.hullId] < wanted[docked.hullId])
+    {
+      ++drawn[docked.hullId];
+      continue;
+    }
+    station.docked[live++] = station.docked[at];
+  }
+  station.docked.resize(live);
+
+  m_fleets.push_back(fleet);
+  return ComposeResult::Composed;
+}
+
+float World::FleetCruiseSpeedMetresPerSec(const Fleet& _fleet) const noexcept
+{
+  float slowest = 0.0f;
+  for (std::uint32_t at = 0; at < _fleet.memberCount; ++at)
+  {
+    const ShipId member = Resolve(_fleet.members[at]);
+    if (member == INVALID_SHIP_ID)
+      continue;
+    const float top = HullSpecOf(m_ships[member].hullId).maxSpeedMetresPerSec;
+    if (slowest == 0.0f || top < slowest)
+      slowest = top;
+  }
+  return slowest;
+}
+
+void World::LowerFleetOrder(Fleet& _fleet)
+{
+  m_fleetShipScratch.clear();
+  for (std::uint32_t at = 0; at < _fleet.memberCount; ++at)
+  {
+    const ShipId member = Resolve(_fleet.members[at]);
+    if (member != INVALID_SHIP_ID)
+      m_fleetShipScratch.push_back(member);
+  }
+  if (m_fleetShipScratch.empty())
+    return;
+
+  // Every branch ends in a call a player's click has always gone through. What a fleet order adds is
+  // the referent and the gate, never a second way to fly (Design/Fleets.md 6.2).
+  if (_fleet.orderKind == FleetOrderKind::Move)
+  {
+    (void)IssueMoveOrder(m_fleetShipScratch, _fleet.orderPoint, _fleet.orderHasFacing, _fleet.orderFacingRad, _fleet.ownerFaction);
+  }
+  else if (_fleet.orderKind == FleetOrderKind::Dock)
+  {
+    const ShipId station = Resolve(_fleet.orderStation);
+    if (station != INVALID_SHIP_ID)
+      (void)IssueDockOrder(m_fleetShipScratch, station, _fleet.ownerFaction);
+  }
+  else if (_fleet.orderKind == FleetOrderKind::Attack)
+  {
+    // The combatants take the target and the rest hold where the order found them -- Stop's
+    // treatment, for them alone. The pass keeps the chase aimed from here on; this is where it
+    // starts (Design/Fleets.md 6.2).
+    const ShipId target = Resolve(_fleet.orderTarget);
+    for (const ShipId member : m_fleetShipScratch)
+    {
+      if (target != INVALID_SHIP_ID && HullSpecOf(m_ships[member].hullId).combatant)
+      {
+        PursueTarget(member, target);
+        continue;
+      }
+      m_ships[member].order = OrderState::Idle;
+      m_ships[member].orderSpeedCapMetresPerSec = 0.0f;
+      m_dockings[member].active = false;
+    }
+  }
+}
+
+World::FleetOrderResult World::IssueFleetOrder(FactionId _issuerFaction, std::uint8_t _slot, const FleetCommand& _command)
+{
+  // The whole authority gate, and the whole of what naming a fleet buys here: one comparison where
+  // a ship-list order needs a filter over every id it carries (ADR 0049, ADR 0014).
+  const FleetId id = FleetInSlot(_issuerFaction, _slot);
+  if (id == INVALID_FLEET_ID)
+    return FleetOrderResult::NoSuchFleet;
+
+  // Checked before anything is written, so that a refusal leaves the standing order exactly as it
+  // was rather than half replaced.
+  ShipHandle station;
+  if (_command.kind == FleetOrderKind::Dock)
+  {
+    const StationId row = StationAt(_command.station);
+    if (row == INVALID_STATION_ID)
+      return FleetOrderResult::NotAStation;
+    // IssueDockOrder's own gate, asked here so the refusal has a name rather than arriving as an
+    // order that silently did nothing (Design/Archive/Stations.md 7.1).
+    if (StandingOf(m_stations[row].ownerFaction, _issuerFaction) == Standing::Hostile)
+      return FleetOrderResult::RefusedStanding;
+    station = m_stations[row].structure;
+  }
+  ShipHandle target;
+  if (_command.kind == FleetOrderKind::Attack)
+  {
+    if (_command.target >= m_ships.size())
+      return FleetOrderResult::NoSuchTarget;
+    target = HandleOf(_command.target);
+  }
+  else if (_command.kind == FleetOrderKind::Mine)
+  {
+    // Known to the wire, and refused until there is a mining design and something in the world to
+    // mine. The byte is spent either way, which is the point of reserving it (ShipState.h).
+    return FleetOrderResult::Unsupported;
+  }
+
+  Fleet& fleet = m_fleets[id];
+  if (_command.kind == FleetOrderKind::Stop || _command.kind == FleetOrderKind::Idle)
+  {
+    // A brake. Every member is left where it stands with nothing to do, and the row holds no order
+    // at all -- stopping is asking for Idle, not for a destination.
+    fleet.orderKind = FleetOrderKind::Idle;
+    fleet.orderStation = ShipHandle{};
+    fleet.orderTarget = ShipHandle{};
+    fleet.threat = ShipHandle{};
+    for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+    {
+      const ShipId member = Resolve(fleet.members[at]);
+      if (member == INVALID_SHIP_ID)
+        continue;
+      m_ships[member].order = OrderState::Idle;
+      m_ships[member].orderSpeedCapMetresPerSec = 0.0f;
+      m_dockings[member].active = false;
+    }
+    return FleetOrderResult::Ordered;
+  }
+
+  fleet.orderKind = _command.kind;
+  fleet.orderPoint = _command.point;
+  fleet.orderFacingRad = _command.facingRad;
+  fleet.orderHasFacing = _command.hasFacing;
+  fleet.orderStation = station;
+  fleet.orderTarget = target;
+
+  // An explicit order outranks the standing behavior, which is the line IssueDockOrder already
+  // carries for patrols: the threat is dropped and everybody is re-tasked. The alert is left
+  // burning -- the button should not stop glowing because the player gave an order -- and if the
+  // attacker persists, the next stated act rouses the defense again with a fresh anchor
+  // (Design/Fleets.md 7.4).
+  fleet.threat = ShipHandle{};
+  LowerFleetOrder(fleet);
+  return FleetOrderResult::Ordered;
 }
 
 std::span<const DespawnRecord> World::DespawnsSince(std::uint64_t _cursor) const noexcept
@@ -623,20 +983,9 @@ void World::StepProtectors()
       m_ships[id].order = OrderState::Idle; // re-aim below rather than finish the leg home
     }
 
-    // Pursue. Re-aim when the ship has nothing to do, or when the target has walked far enough from
-    // the point last aimed at to be worth a new plan -- never every tick, which would cost
-    // everything and change nothing.
-    ShipState& ship = m_ships[id];
-    const WorldPos& targetPos = m_ships[target].posWorld;
-    const bool drifted = Distance(m_routes[id].destination, targetPos) > PURSUIT_REPLAN_METRES;
-    if (ship.order != OrderState::Idle && !drifted)
-      continue;
-
-    ship.order = OrderState::Moving;
-    ship.orderHasFacing = false;
-    ship.orderSpeedCapMetresPerSec = 0.0f; // the law does not cruise
-    m_patrols[id].active = false;
-    PlanRoute(id, targetPos, HullSpecOf(ship.hullId).BoundingRadiusMetres() + PATH_CLEARANCE_MARGIN_METRES);
+    // Pursue. The law does not cruise, and it does not give up: PursueTarget is the same chassis a
+    // fleet's defense turns on whoever shot at it (Design/Fleets.md 3).
+    PursueTarget(id, target);
   }
 
   // 2. The launch pass. Per station in index order, which is the only order there is.
@@ -704,11 +1053,339 @@ void World::StepProtectors()
   m_launchScratch.clear();
 }
 
+void World::StepFleets()
+{
+  // Prune. In array order, compacting in place, which is the idiom StepProtectors uses on a
+  // station's target list: the survivors keep their relative order, and that order is the one the
+  // fleet was formed in -- which is what a formation solve will read as slot order.
+  for (Fleet& fleet : m_fleets)
+  {
+    std::uint32_t live = 0;
+    for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+    {
+      if (Resolve(fleet.members[at]) != INVALID_SHIP_ID)
+        fleet.members[live++] = fleet.members[at];
+    }
+    // Cleared rather than left as it was, so that a row written out live-members-only reads back
+    // equal to the row that was saved. A Route deliberately leaves its dead waypoints alone; the
+    // difference is that nothing ever compares two routes whole and this row is compared whole.
+    for (std::uint32_t at = live; at < fleet.memberCount; ++at)
+      fleet.members[at] = ShipHandle{};
+    fleet.memberCount = live;
+  }
+
+  // Retire. Backwards, so the row swap-and-pop brings in from the end is one this walk has already
+  // looked at and needs no second visit. Nothing stores a fleet index across a tick -- an owner and
+  // a slot is the name that survives -- so there is nothing for the swap to break.
+  for (std::size_t at = m_fleets.size(); at-- > 0;)
+  {
+    if (m_fleets[at].memberCount != 0 || m_fleets[at].manifestCount != 0)
+      continue;
+    if (at + 1 < m_fleets.size())
+      m_fleets[at] = m_fleets.back();
+    m_fleets.pop_back();
+  }
+
+  // Launch. One hull off the manifest per FLEET_LAUNCH_EVERY_TICKS, at the station's skin, fanned
+  // across the station's outward bearing (Design/Fleets.md 5.3).
+  //
+  // This pass spawns during its own walk where StepProtectors collects and applies after one, and
+  // the difference is deliberate rather than an oversight: that pass walks the very tables a spawn
+  // appends to, and this one walks m_fleets, which a spawn does not touch.
+  for (Fleet& fleet : m_fleets)
+  {
+    if (fleet.manifestCount == 0)
+      continue;
+
+    const ShipId structure = Resolve(fleet.launchStructure);
+    if (structure == INVALID_SHIP_ID || StationAt(structure) == INVALID_STATION_ID)
+    {
+      // The door is gone, and launching is the only way out of a ledger, so the manifest can never
+      // become ships. Dropping it is what stops a fleet nothing can ever fill from holding one of
+      // five slots for ever; the retire above frees it on the next tick.
+      fleet.manifestCount = 0;
+      continue;
+    }
+
+    if (fleet.launchCooldownTicks > 0)
+    {
+      --fleet.launchCooldownTicks;
+      continue;
+    }
+
+    // Every distance below is the widest hull of the WHOLE composed set -- what is still inside and
+    // what is already out -- so the geometry does not move as the manifest empties.
+    std::uint32_t largestHullId = fleet.manifest[0];
+    float largestRadius = 0.0f;
+    for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+    {
+      const ShipId member = Resolve(fleet.members[at]);
+      if (member != INVALID_SHIP_ID && HullSpecOf(m_ships[member].hullId).BoundingRadiusMetres() > largestRadius)
+      {
+        largestHullId = m_ships[member].hullId;
+        largestRadius = HullSpecOf(largestHullId).BoundingRadiusMetres();
+      }
+    }
+    for (std::uint32_t at = 0; at < fleet.manifestCount; ++at)
+    {
+      if (HullSpecOf(fleet.manifest[at]).BoundingRadiusMetres() > largestRadius)
+      {
+        largestHullId = fleet.manifest[at];
+        largestRadius = HullSpecOf(largestHullId).BoundingRadiusMetres();
+      }
+    }
+
+    // Taken by value, and that is not a style choice: SpawnShip below appends to m_ships, which may
+    // reallocate it, and a reference into that vector would be dangling by the time the rally point
+    // is worked out. It reads correct for as long as the vector happens to have spare capacity,
+    // which is why the test that caught it is the one that reloads a world -- a world out of a file
+    // has exactly as much capacity as it has ships.
+    const WorldPos stationPos = m_ships[structure].posWorld;
+    // The station's own heading is which way is out. Design/Fleets.md 5.3 says the outward bearing
+    // from the system's star, and World has no star and must not learn about one -- the layout is
+    // content the composition root reads (ADR 0037). A station's facing is already simulation state
+    // and already authored by whoever spawned it, which makes it the honest place for a door.
+    const float outwardRad = m_ships[structure].headingRad;
+    // Safe to hold: a HullSpec is a row of a constexpr table, not of m_ships.
+    const HullSpec& stationHull = HullSpecOf(m_ships[structure].hullId);
+
+    const float spacing = SlotSpacingMetres(largestRadius);
+    const float standoff = stationHull.BoundingRadiusMetres() + largestRadius + AVOID_MARGIN_METRES;
+
+    // Which of the composed formation's slots this hull is launching into, and the whole of what
+    // decides where it appears and where it goes. It counts down with the manifest, so it is unique
+    // per launch whatever else happens to the fleet.
+    const int composedCount = static_cast<int>(fleet.memberCount + fleet.manifestCount);
+    const int slot = static_cast<int>(fleet.manifestCount) - 1;
+
+    // Two launches of one fleet can never be born touching, and that is construction rather than
+    // hope: consecutive spawn points sit one slot spacing apart on the circle they appear on, and
+    // the slot they are indexed by strictly decreases -- so no two launches of one fleet ever share
+    // a bearing, not even across a loss. The cadence is not what makes this safe; 0.75 s buys a
+    // Corvette about 5.6 m from a standing start, well inside its own hull.
+    //
+    // The fan runs to one side of the door rather than either side of it, and that is what keeps it
+    // independent of how many ships are left: a fan centred on the outward bearing would shift by
+    // half a step every time the composed count changed, and two launches could then land on one
+    // bearing after a loss.
+    const float laneStepRad = spacing / standoff;
+    const float bearingRad = outwardRad + static_cast<float>(slot) * laneStepRad;
+
+    WorldPos spawnPos = stationPos;
+    Translate(spawnPos, std::sin(bearingRad) * standoff, std::cos(bearingRad) * standoff);
+
+    // Off the front of the manifest, so the launch order is the ascending hull id ComposeFleet
+    // filled it in. The vacated entry is cleared for the reason a pruned member's is.
+    const std::uint32_t hullId = fleet.manifest[0];
+    for (std::uint32_t at = 1; at < fleet.manifestCount; ++at)
+      fleet.manifest[at - 1] = fleet.manifest[at];
+    --fleet.manifestCount;
+    fleet.manifest[fleet.manifestCount] = 0;
+
+    const ShipId launched = SpawnShip(spawnPos, bearingRad, hullId, fleet.ownerFaction);
+    fleet.members[fleet.memberCount++] = HandleOf(launched);
+
+    // Where the fleet forms up: outward, one slot spacing clear of the dock approach lane, so a
+    // fleet assembling is not standing in the doorway. Through DockApproachRangeMetres rather than
+    // its sum restated, so the launch and the dock cannot disagree about where a station's door is.
+    WorldPos rallyPos = stationPos;
+    const float rallyRange = DockApproachRangeMetres(stationHull, HullSpecOf(largestHullId)) + spacing;
+    Translate(rallyPos, std::sin(outwardRad) * rallyRange, std::cos(outwardRad) * rallyRange);
+
+    // A fleet that already has somewhere to be does not rally: the hull just born joins the order,
+    // and the whole formation is re-solved for the ships that are now out. Re-solving is right here
+    // and wrong at the rally below, which looks inconsistent and is not: at the rally the fleet is
+    // packed against the station's door and a reshuffle makes ships cross at close quarters, while
+    // under a standing order it is spread out and IssueMoveOrder's slot assignment -- by where the
+    // ships already lie across the formation -- is exactly the property wanted (Design/Fleets.md 5.3).
+    if (fleet.orderKind != FleetOrderKind::Idle)
+    {
+      LowerFleetOrder(fleet);
+      fleet.launchCooldownTicks = FLEET_LAUNCH_EVERY_TICKS - 1;
+      continue;
+    }
+
+    // Each ship gets its OWN slot of the formation the whole composed set will hold, decided once
+    // when it launches and never reassigned, and it is the same slot index its spawn bearing was
+    // taken from -- so the fan and the formation run the same way round and no two ships have to
+    // cross to reach their places.
+    //
+    // The alternative is to re-issue one order over every member after each launch and let
+    // IssueMoveOrder hand out slots by where the ships lie. That re-plans the whole fleet eight
+    // times and reshuffles who is where, so ships already on station cross each other on every
+    // launch -- which is how a formation that is merely forming up starts brushing. Measured, with
+    // the reassignment: 1.0 cm of capsule overlap during a Corvette launch.
+    const FormationShape shape = static_cast<FormationShape>(std::clamp(FORMATION_SHAPE, 0, 3));
+    const XMFLOAT2 local = FormationOffset(slot, composedCount, shape, spacing);
+    const float cosOut = std::cos(outwardRad);
+    const float sinOut = std::sin(outwardRad);
+    Translate(rallyPos, local.x * cosOut + local.y * sinOut, -local.x * sinOut + local.y * cosOut);
+
+    // One ship, to one point, facing the way the fleet faces. A one-ship formation puts it exactly
+    // there (FormationOffset's slot 0 of 1 is the origin), so the wedge is assembled a slot at a
+    // time rather than solved again on every launch.
+    m_fleetShipScratch.assign(1, launched);
+    (void)IssueMoveOrder(m_fleetShipScratch, rallyPos, true, outwardRad, fleet.ownerFaction);
+
+    // Minus one because the launch tick is one of the N: waiting the full count would put
+    // consecutive launches N + 1 ticks apart, and the constant's name would be off by a tick.
+    fleet.launchCooldownTicks = FLEET_LAUNCH_EVERY_TICKS - 1;
+  }
+
+  // The defense, then cruise and patience. All three are about a standing state rather than about
+  // the tick it was set on, which is why they are a pass and not a line inside IssueFleetOrder.
+  for (Fleet& fleet : m_fleets)
+  {
+    // The alert burns down whatever else happens, and takes the threat with it when it goes out: a
+    // stale handle left in the row is one more thing for the codec to carry and for a later reader
+    // to wonder about (Design/Fleets.md 7.3).
+    if (fleet.alertTicks > 0)
+      --fleet.alertTicks;
+
+    // Engaged is three things at once, and losing any of them stands the fleet down. The alert being
+    // one of them is what bounds a defense in time: without it, one shot from an attacker that then
+    // parks inside the leash and does nothing would hold a fleet's combatants out of their orders
+    // for ever. It is also what makes the wire's two bits differ -- a fleet can be under attack and
+    // no longer engaged, which is the alert outliving the fight (Design/Fleets.md 7.2, 7.3, 8.2).
+    bool engaged = false;
+    if (fleet.threat.generation != 0)
+    {
+      const ShipId threat = Resolve(fleet.threat);
+      engaged = fleet.alertTicks > 0 && threat != INVALID_SHIP_ID &&
+                Distance(m_ships[threat].posWorld, fleet.threatAnchorPos) <= FLEET_ENGAGE_RANGE_METRES;
+      if (!engaged)
+      {
+        // Stood down, once: the threat is dead, docked, past the leash, or the alert has burned out.
+        // The anchor goes with it -- what is stale is not left lying in the row for the codec to
+        // carry and a later reader to wonder about.
+        fleet.threat = ShipHandle{};
+        fleet.threatAnchorPos = WorldPos{};
+
+        // Back to the standing order, and NOT by leaving it to patience: pursuit overwrote each
+        // combatant's route destination with the target's position, so patience would send it back
+        // to where its quarry used to be. Re-lowering is what "return to the standing order" has to
+        // mean once the order has been suspended (Design/Fleets.md 7.2).
+        if (fleet.orderKind != FleetOrderKind::Idle)
+        {
+          LowerFleetOrder(fleet);
+        }
+        else
+        {
+          // Nothing else to do. Stopping is the honest answer to a fight ending with no orders.
+          for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+          {
+            const ShipId member = Resolve(fleet.members[at]);
+            if (member != INVALID_SHIP_ID && HullSpecOf(m_ships[member].hullId).combatant)
+            {
+              m_ships[member].order = OrderState::Idle;
+              m_ships[member].orderSpeedCapMetresPerSec = 0.0f;
+            }
+          }
+        }
+      }
+    }
+
+    // What the combatants are chasing, if anything. The defense outranks the standing order for as
+    // long as it lasts; an ordered attack is what they chase when nothing is chasing them.
+    ShipId chase = INVALID_SHIP_ID;
+    if (engaged)
+    {
+      chase = Resolve(fleet.threat);
+    }
+    else if (fleet.orderKind == FleetOrderKind::Attack)
+    {
+      chase = Resolve(fleet.orderTarget);
+      if (chase == INVALID_SHIP_ID)
+      {
+        // The target died or docked, which completes the order: the fleet reverts to Idle where it
+        // stands rather than flying on to where its quarry was (Design/Fleets.md 6.5).
+        fleet.orderKind = FleetOrderKind::Idle;
+        fleet.orderTarget = ShipHandle{};
+        for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+        {
+          const ShipId member = Resolve(fleet.members[at]);
+          if (member != INVALID_SHIP_ID)
+          {
+            m_ships[member].order = OrderState::Idle;
+            m_ships[member].orderSpeedCapMetresPerSec = 0.0f;
+          }
+        }
+      }
+    }
+
+    if (chase != INVALID_SHIP_ID)
+    {
+      // The combatants turn; everybody else carries on with whatever it was told, unmoved. They do
+      // not flee: fleeing is a judgment about where safety is, which is a sense, and this design has
+      // none (Design/Fleets.md 7.2, ADR 0041).
+      for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+      {
+        const ShipId member = Resolve(fleet.members[at]);
+        if (member != INVALID_SHIP_ID && HullSpecOf(m_ships[member].hullId).combatant)
+          PursueTarget(member, chase);
+      }
+    }
+
+    if (fleet.orderKind != FleetOrderKind::Move && fleet.orderKind != FleetOrderKind::Dock)
+      continue;
+
+    // The fleet travels at its slowest member's speed, so it arrives -- and fights -- as one body
+    // rather than strung out over kilometers (Design/Fleets.md 6.3, owner decision 3).
+    //
+    // Re-applied every tick rather than written once when the order was given, and that is a
+    // correction the tree forces rather than a preference: StepDockings re-issues a docking ship's
+    // approach whenever it goes Idle and zeroes orderSpeedCapMetresPerSec when it does, so a cap
+    // written once would be dropped by the first re-issue. A rule the pass restates is a property; a
+    // rule written once is a race with whatever else writes that field. It covers a member that
+    // joined after the order for free.
+    const float cruise = FleetCruiseSpeedMetresPerSec(fleet);
+
+    for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+    {
+      const ShipId member = Resolve(fleet.members[at]);
+      if (member == INVALID_SHIP_ID)
+        continue;
+
+      // A combatant that is chasing has had its standing order suspended: neither the fleet's pace
+      // nor its patience applies to it until it stands down.
+      if (chase != INVALID_SHIP_ID && HullSpecOf(m_ships[member].hullId).combatant)
+        continue;
+
+      ShipState& ship = m_ships[member];
+      ship.orderSpeedCapMetresPerSec = cruise;
+
+      // Patience. A member with nothing to do that is not where its order left it was shoved off,
+      // blocked or re-planned, and its leg is re-issued to the point it already had -- never to a
+      // re-solved formation, which would reshuffle the whole fleet every time one ship was jostled.
+      // The dock pass does this for its own approach, which is why a docking fleet needs nothing
+      // here beyond the cap above (Design/Fleets.md 4.4).
+      if (fleet.orderKind != FleetOrderKind::Move || ship.order != OrderState::Idle)
+        continue;
+
+      // The member's own route destination, and never the fleet's order point. That is not a detail:
+      // a route whose point the wall forbids ends as close as the geometry allows and AdvanceRoute
+      // moves the destination to where the ship stands, so that it is never re-planned back at a
+      // point it cannot reach (ADR 0042). Reading route.destination inherits that; reading
+      // fleet.orderPoint would discard it and re-plan a fleet ordered into a wall on every tick for
+      // ever -- an A* a tick, invisible from outside the tick, because the ship would be set Moving
+      // at the top of Step and put back to Idle before the end of it.
+      const Route& route = m_routes[member];
+      const HullSpec& hull = HullSpecOf(ship.hullId);
+      if (Distance(ship.posWorld, route.destination) <= ArrivalRadiusMetres(hull))
+        continue; // arrived, or standing as close to its slot as it is ever going to get
+
+      ship.order = OrderState::Moving;
+      PlanRoute(member, route.destination, hull.BoundingRadiusMetres() + PATH_CLEARANCE_MARGIN_METRES);
+    }
+  }
+}
+
 void World::PlanRoute(ShipId _id, const WorldPos& _destination, float _requiredClearanceMetres)
 {
   ShipState& ship = m_ships[_id];
   Route& route = m_routes[_id];
 
+  ++m_routePlans;
   const bool complete = m_pathIslands.FindPath(ship.posWorld, _destination, _requiredClearanceMetres, m_routeScratch);
   route.destination = _destination;
   route.requiredClearanceMetres = _requiredClearanceMetres;
@@ -1093,6 +1770,7 @@ void World::Step()
   StepDockings();
   StepPatrols();
   StepProtectors();
+  StepFleets();
   SnapshotPreviousTick();
   RebuildIndex();
   GatherNeighbours();

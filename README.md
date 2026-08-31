@@ -22,19 +22,32 @@ describing an ambition as a feature.
 
 ### What you can do today
 
-You start with three hulls — a Bomber, a Corvette and a Frigate — under an RTS camera over open
-space. You can:
+You start with three hulls — a Bomber, a Corvette and a Frigate — as **Fleet 1**, under an RTS
+camera over open space. A fleet is the unit of command here: you never hold a ship, you hold one of
+five fleets, and everything below follows from that. You can:
 
-- **Select** by tapping a hull, shift-tapping to add one, or banding a box over several.
-- **Order** by tapping the ground with a selection, or by dragging from the destination to set the
-  facing the formation arrives on. The fleet solves slots, paths around architecture, separates from
-  its own members on the way, and stops without anything passing through anything.
-- **Keep control groups** — five of them, on the HUD buttons: tap to recall, hold to assign.
-- **Dock** by tapping a station with ships selected: they fly in, leave the world, and the log says
-  so. A station whose owner holds you hostile refuses before the order is even sent, and there is
-  no undocking yet — the station management screen is the next phase.
-- **Read the world** through the HUD: minimap with the sector pair, contact count, event log, and a
-  function rail whose screens are not built yet.
+- **Select a fleet** by tapping any of its hulls, by banding a box over it, or by tapping its button
+  on the bar — which also flies the camera to it, wherever in the universe it is. Shift-tap adds a
+  second fleet; there is no sub-fleet selection, on purpose.
+- **Order** by tapping the ground with a fleet selected, or by dragging from the destination to set
+  the facing the formation arrives on. The ships solve slots, path around architecture, separate
+  from each other on the way, and stop without anything passing through anything. The whole fleet
+  cruises at its slowest member's speed, so it arrives together.
+- **Attack** by tapping a hostile record, and **dock** by tapping a station. A station whose owner
+  holds you hostile refuses before the order is even sent.
+- **Read a fleet** by holding its button: a sheet over the bar names the fleet, what it is doing,
+  the hulls in it, and its four commands — `MOVE`, `ATTACK`, `DOCK`, `STOP`. The first three arm the
+  next world tap, which is how the verbs get names a tap alone could never teach.
+- **Compose a fleet** by holding a station you are docked at: the assembly screen lists what you
+  have inside, you draft up to eight hulls out of it into a free slot, and `LAUNCH` pours them out
+  of the dock one at a time and forms them up outside. Docking a fleet dismantles it back into the
+  ledger.
+- **Watch a fleet defend itself.** Anything that attacks one rouses its combatants — the armed hulls
+  turn on the attacker while the Miners and Haulers carry on with their orders — and its button and
+  minimap digit pulse red for as long as the alert holds. `F7` is the hook that fires it, since
+  nothing in the game can shoot yet.
+- **Read the world** through the HUD: minimap with the sector pair, your fleets' digits on it
+  wherever they are, contact count, event log, and a function rail whose screens are not built yet.
 
 A second faction lives 1.2 km northeast: a Vandal station with three Interceptors walking a ring
 around it. They are drawn red, they count as contacts, and they cannot be selected or ordered — the
@@ -57,12 +70,13 @@ at three levels of detail and drawn at the one its size on screen asks for. All 
 
 | Key | What it does |
 |---|---|
-| `Esc` | Drops the selection; quits once nothing is selected |
+| `Esc` | Closes the assembly screen, then the fleet sheet, then the selection; quits once nothing is left |
 | `F1` | Debug readout |
 | `F3` | Camera shake (tuning hook) |
 | `F4` | Shatters the selected hulls into tumbling debris, a fireball and smoke (tuning hook) |
 | `F5` | Reseeds every body's look and the sky — the worlds and their stations hold still |
 | `F6` | Declares the first selected ship an aggressor against the nearest Vanguard station |
+| `F7` | Declares the nearest hostile the attacker of your selected fleet, so the defense can be watched |
 | `1` `2` `3` | Time scale: quarter, normal, quadruple |
 
 Input is `WM_POINTER`, so mouse and touch are the same path: drag with the second or third button to
@@ -97,7 +111,7 @@ processes, nothing has to be rewritten to make it work.
 | `GameLogic/` | The deterministic simulation, namespace `Game`: world, movement, collision, formation, pathfinding islands, the wire format and the publisher |
 | `NeuronClient/` | Everything that names a graphics type: D3D12 device, scene and text renderers, the planet and star-field pipelines, the explosion FX, the content readers |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives |
-| `Outpost/` | The executable: composition root, presentation state, HUD, and `Outpost/Assets/` |
+| `Outpost/` | The executable: composition root, presentation state, HUD, the fleet sheet and the station assembly screen, and `Outpost/Assets/` |
 
 The simulation ticks at a fixed rate, is bit-identical across two runs of the same seed, and depends
 on nothing but `NeuronCore`. The client sees the world only as snapshots that arrived over the wire,
