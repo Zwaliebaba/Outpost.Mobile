@@ -1,12 +1,11 @@
 # Fleets — composition at a station, five slots, and command at fleet grain
 
-**Status: agreed with the owner on 2026-08-31. Slices 1 to 6 — the table, compose and launch,
-orders at fleet grain, the defense, the fleet wire and the fleet bar — are written and in review;
-their work orders are [`Fleets-slice-1.md`](Fleets-slice-1.md),
-[`Fleets-slice-2.md`](Fleets-slice-2.md), [`Fleets-slice-3.md`](Fleets-slice-3.md),
-[`Fleets-slice-4.md`](Fleets-slice-4.md), [`Fleets-slice-5.md`](Fleets-slice-5.md) and
-[`Fleets-slice-6.md`](Fleets-slice-6.md) — the whole `GameLogic` half, everything that crosses the
-seam, and the bar that commands it.** Four decisions were put to the owner
+**Status: agreed with the owner on 2026-08-31. Slices 1 to 7 are written and in review — the table,
+compose and launch, orders at fleet grain, the defense, the fleet wire, the fleet bar and assembly —
+with work orders [1](Fleets-slice-1.md), [2](Fleets-slice-2.md), [3](Fleets-slice-3.md),
+[4](Fleets-slice-4.md), [5](Fleets-slice-5.md), [6](Fleets-slice-6.md) and [7](Fleets-slice-7.md).
+That is the whole feature but the fleet sheet: a fleet can be composed at a station, launched,
+selected, ordered and watched defending itself.** Four decisions were put to the owner
 and taken (§15); each was the recommended option. §16 lists the slices and the dependencies between
 them.
 
@@ -792,6 +791,30 @@ long-press finally landing, on the schedule Stations §14 set for it: when there
 open. The rest of the management screen — trade, repair, cargo, undocking *without* a fleet,
 which does not exist (§5.4) — stays the next phase's.
 
+> **Amendment, 2026-08-31 (slice 7).** Four things this section did not settle.
+>
+> **The long press fires on release, not under the finger.** `PointerTracker` is driven by events
+> and sees nothing between a Down and the next Update, so a contact held perfectly still generates
+> nothing to notice a threshold crossing in; firing under the finger needs the tracker to be ticked
+> every frame, which it is not. There is also a **dead band** — a release taps at or under 320 ms
+> and long-presses at or over 450 ms, and does nothing between — so a slow, hesitant tap on a
+> station cannot open a screen over it.
+>
+> **The screen is modal, and modality has a cost this section did not price.** It consumes every
+> pointer event while it is up, which means a contact that went down before it opened never reaches
+> the tracker or the HUD to be released. Both are told to drop what they are holding when it opens;
+> without that, touch ids being per-contact rather than per-device, the tracker's four slots fill
+> with contacts that never lifted and the game stops answering fingers
+> ([slice 7](Fleets-slice-7.md) §2.3).
+>
+> **The mask is checked before the request, not just before the compose.** A hostile port answers a
+> ledger request with zeros by the same gate that refuses a compose there, so asking would spend a
+> message to be told nothing — and the player would read an empty station rather than a closed one.
+> The refusal is a log line and no message goes up.
+>
+> **The reply carries no station owner and does not need one.** A station being long-pressed is on
+> screen, so it is in the interest set and the client already knows its faction from the record.
+
 ### 9.5 The minimap learns where the fleets are
 
 Each occupied slot draws its digit at its stated position — inside the map's half-range at the
@@ -1009,7 +1032,7 @@ whichever slice makes them false.
 | 4 | **The defense**: `RecordHostileAct`, `HullSpec::combatant`, threat/anchor/alert + the posture, `FLEET_ENGAGE_RANGE_METRES`/`FLEET_ALERT_TICKS`, the ordered attack sharing the chassis, their tests — *in review*, [work order](Fleets-slice-4.md) | `GameLogic` | 3 | [a fleet defends itself against stated acts, at fleet grain](Decisions/0050-a-fleet-defends-itself-against-stated-acts.md) |
 | 5 | **The fleet wire**: `FleetRoster` + join-time delivery, the status block + publish-side centroid, `LedgerRequest`/`LedgerReply` and the `ComposeOrder` that has no use without them (§5.2 — unlisted here until slice 2 placed it), receiver surfaces, their tests — *in review*, [work order](Fleets-slice-5.md) | `GameLogic` | 2 (roster), 4 (status bits) | [the ledger is asked for, not broadcast](Decisions/0051-the-ledger-is-asked-for-not-broadcast.md) |
 | 6 | **The fleet bar**: buttons rebound (tap = select + fly-to, hold = sheet stub, glow, counts), selection at fleet grain, `FleetOrder` sending, group machinery and its log lines retired, the ship-list order messages retired with them, the boot scene as Fleet 1, F7, minimap fleet digits, screenshots at two sizes — *in review*, [work order](Fleets-slice-6.md) | `Outpost` | 3, 5 | — |
-| 7 | **Assembly**: the station long-press, `LedgerRequest` flow, the assembly screen, compose + launch end to end on screen, screenshots | `Outpost` | 5, 6 | — |
+| 7 | **Assembly**: the station long-press, `LedgerRequest` flow, the assembly screen, compose + launch end to end on screen, screenshots — *in review*, [work order](Fleets-slice-7.md) | `Outpost` | 5, 6 | — |
 | 8 | **The sheet**: status lines, member rows, the command row + target-tap arming, refusal and alert log lines complete, screenshots of the three states | `Outpost` | 6 (7 for a docked-adjacent demo) | — |
 
 The whole of `GameLogic` is now written: slices 1–5 are decided by their tests and by the suites

@@ -130,6 +130,16 @@ void PointerTracker::ApplyTwoFingerGesture(const PointerTrack& _first, const Poi
   m_gestureAngleRad = angle;
 }
 
+void PointerTracker::CancelContacts() noexcept
+{
+  for (PointerTrack& track : m_pointers)
+    track.active = false;
+  m_gestureActive = false;
+
+  // The tap history goes too: a contact that was taken away cannot be half of a double tap.
+  m_lastTapQpc = 0;
+}
+
 void PointerTracker::Apply(const PointerEvent& _event, Camera& _camera, PointerListener& _listener)
 {
   if (_event.kind == PointerEvent::Kind::Wheel)
@@ -216,7 +226,8 @@ void PointerTracker::Apply(const PointerEvent& _event, Camera& _camera, PointerL
     return;
   }
 
-  if (ElapsedMs(finished.downQpc, _event.timestampQpc) <= m_desc.tapMaxDurationMs)
+  const float heldMs = ElapsedMs(finished.downQpc, _event.timestampQpc);
+  if (heldMs <= m_desc.tapMaxDurationMs)
   {
     const bool doubleTap = m_lastTapQpc != 0 && ElapsedMs(m_lastTapQpc, _event.timestampQpc) <= m_desc.doubleTapWindowMs &&
                            Distance2D(m_lastTapXPx, m_lastTapYPx, _event.xPx, _event.yPx) <= m_desc.dragThresholdPx * 3.0f;
@@ -224,6 +235,18 @@ void PointerTracker::Apply(const PointerEvent& _event, Camera& _camera, PointerL
     m_lastTapXPx = _event.xPx;
     m_lastTapYPx = _event.yPx;
     _listener.OnTap(_event.xPx, _event.yPx, _event.shift, doubleTap);
+    return;
   }
+
+  // On the release rather than at the moment the threshold passes, and that is a limitation rather
+  // than a preference: this class is driven by events and sees nothing at all between a Down and
+  // the next Update, so a contact held perfectly still generates nothing to notice a crossing in.
+  // Firing under the finger would need the tracker to be ticked every frame, which is a different
+  // class than this one; the gesture works without it and the day there is a tick, this moves.
+  //
+  // The tap history is deliberately NOT touched: a long press is not a tap, so it can neither begin
+  // a double tap nor complete one.
+  if (heldMs >= m_desc.longPressMs)
+    _listener.OnLongPress(_event.xPx, _event.yPx);
 }
 } // namespace Neuron

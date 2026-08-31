@@ -545,4 +545,27 @@ inline constexpr float HUD_STAT_COLUMN_PX = 250.0f;
 inline constexpr float HUD_STATS_WIDTH_PX = 410.0f; // both columns, from HULL to the end of the order state
 
 inline constexpr float HUD_LONG_PRESS_MS = 450.0f; // holding a fleet button this long opens its sheet
+
+// --- the assembly screen -------------------------------------------------------------------------
+// A station's ledger, a draft drawn out of it, and the slot the draft becomes a fleet in
+// (Design/Fleets.md 9.4). Centred and fixed-size rather than anchored to a corner, because it is
+// modal: it is the only thing the player is doing while it is up, and a modal panel that hugs an
+// edge reads as a widget rather than as a screen.
+inline constexpr float HUD_ASSEMBLY_WIDTH_PX = 520.0f;
+inline constexpr float HUD_ASSEMBLY_ROW_PX = 30.0f;
+inline constexpr float HUD_ASSEMBLY_HEADER_PX = 46.0f;
+inline constexpr float HUD_ASSEMBLY_FOOTER_PX = 26.0f;
+inline constexpr float HUD_ASSEMBLY_PAD_PX = 18.0f;
+// The +/- pair, and the slot buttons. Both at or above 44 px scaled, which is the hit-target floor
+// the rail already keeps -- a screen that is worked with a thumb is worked one press at a time.
+inline constexpr float HUD_ASSEMBLY_STEP_BUTTON_PX = 26.0f;
+inline constexpr float HUD_ASSEMBLY_SLOT_BUTTON_PX = 30.0f;
+inline constexpr float HUD_ASSEMBLY_LAUNCH_H_PX = 34.0f;
+// The right-hand column: draft, slots, LAUNCH. A fraction of the panel rather than a width, so the
+// two columns keep their proportion at any DPI.
+inline constexpr float HUD_ASSEMBLY_LEFT_FRACTION = 0.52f;
+// The scrim over the world behind it. Dark enough that the screen is unambiguously in front, light
+// enough that the station it belongs to is still visible behind it.
+inline constexpr Neuron::Rgba HUD_ASSEMBLY_SCRIM{0.0f, 0.0f, 0.0f, 0.55f};
+inline constexpr float HUD_ASSEMBLY_DISABLED_ALPHA = 0.35f;
 } // namespace Outpost

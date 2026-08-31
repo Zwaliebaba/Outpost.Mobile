@@ -330,6 +330,24 @@ public:
 
   [[nodiscard]] int SelectedFleetCount() const noexcept;
 
+  // --- the station ledger -------------------------------------------------------------------------
+
+  // A ledger reply for the station this client asked about, if one has arrived since the ask.
+  //
+  // CONSUMING, not an accessor, and that is the shape rather than an economy: it answers true once
+  // per reply, so one ask opens one screen. An accessor would open a second the next frame, and a
+  // stale reply left lying around would open one for a question nobody asked.
+  [[nodiscard]] bool TakeLedgerReply(Game::LedgerReply& _outReply);
+
+  // Whose a record is, by entity, or FACTION_LIMIT if this client is not holding it. What the
+  // assembly screen names its station with -- the ledger reply carries no owner and does not need
+  // to, because a station being long-pressed is on screen and so is in the interest set.
+  [[nodiscard]] Game::FactionId FactionOfEntity(Game::EntityId _entity) const noexcept;
+
+  // The draft, sent. Every gate is the simulation's (Design/Fleets.md 5.2); nothing comes back to
+  // say it landed, and the roster and the button's mask are the confirmation.
+  void SendComposeOrder(Game::EntityId _station, std::uint8_t _slot, std::span<const std::uint32_t> _hullCounts);
+
   // The lowest selected slot, or -1. What the bottom bar names when exactly one fleet is selected.
   [[nodiscard]] int FirstSelectedFleet() const noexcept;
 
@@ -469,6 +487,7 @@ public:
   void OnBoxSelect(float _x0Px, float _y0Px, float _x1Px, float _y1Px, bool _additive) override;
   void OnOrderDrag(float _x0Px, float _y0Px, float _x1Px, float _y1Px) override;
   void OnTap(float _xPx, float _yPx, bool _shiftHeld, bool _doubleTap) override;
+  void OnLongPress(float _xPx, float _yPx) override;
 
   // The tracker needs telling when a tap hit a hull, so the next ground tap does not pair with it.
   void SetTracker(Neuron::PointerTracker& _tracker) noexcept
@@ -682,6 +701,13 @@ private:
   // The slot the camera is flying to, or -1. Its position is re-read every frame rather than
   // captured at the tap, because the fleet is moving.
   int m_focusSlot = -1;
+
+  // The station a LedgerRequest is outstanding for, and what the receiver's reply counter read when
+  // it went out. A reply is "mine" when the counter has moved AND the payload names this station:
+  // the counter alone cannot say, because two replies for one station are identical (ADR 0051), and
+  // the station alone cannot either, because the last reply is still there from the previous ask.
+  Game::EntityId m_ledgerAsked = Game::INVALID_ENTITY_ID;
+  std::uint32_t m_ledgerAskedAtCount = 0;
 
   EventLog* m_log = nullptr;
   std::span<const char* const> m_factionNames;

@@ -33,6 +33,10 @@ public:
   virtual void OnOrderDrag(float _x0Px, float _y0Px, float _x1Px, float _y1Px) = 0;
   virtual void OnTap(float _xPx, float _yPx, bool _shiftHeld, bool _doubleTap) = 0;
 
+  // A contact held in place and released, without ever dragging. What opens a menu over whatever is
+  // under it -- and the tracker still knows nothing about menus, only that the press was long.
+  virtual void OnLongPress(float _xPx, float _yPx) = 0;
+
 protected:
   PointerListener() = default;
 };
@@ -49,6 +53,12 @@ public:
     float dragThresholdPx = 6.0f;
     float tapMaxDurationMs = 320.0f;
     float doubleTapWindowMs = 300.0f;
+
+    // A press at or over this, with no drag, is a long press. Deliberately above tapMaxDurationMs
+    // rather than equal to it: what lies between the two is a slow, hesitant tap, and it does
+    // nothing -- exactly as anything over 320 ms did before the gesture existed. A dead band is
+    // what stops a hesitant tap on a station opening a screen over it.
+    float longPressMs = 450.0f;
   };
 
   static constexpr int MAX_POINTERS = 4;
@@ -62,6 +72,17 @@ public:
   // this when a tap landed on something -- a tap on a hull is not the start of a double tap on
   // empty ground.
   void ResetTapHistory() noexcept;
+
+  // Drops every contact this tracker is holding, as if each had been released with nothing to
+  // report. The game calls it when something else takes the pointer away mid-contact -- a modal
+  // screen opening over the world is the case that needs it.
+  //
+  // Without it a contact that went down before the takeover and lifted after it is never released
+  // here: its slot stays claimed, and since touch ids are per-contact rather than per-device the
+  // stale ones accumulate until all four are gone and the game stops answering fingers. A mouse
+  // heals itself on the next press, because its id is stable and ClaimTrack reuses the slot; touch
+  // does not, which is what makes this worth a method rather than a comment.
+  void CancelContacts() noexcept;
 
 private:
   struct PointerTrack

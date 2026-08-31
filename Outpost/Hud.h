@@ -114,6 +114,17 @@ public:
   [[nodiscard]] bool HandlePointer(const Neuron::PointerEvent& _event, WorldView& _view, float _dpiScale, std::uint32_t _widthPx,
                                    std::uint32_t _heightPx);
 
+  // Drops a capture this class is holding, for PointerTracker::CancelContacts's reason: a contact
+  // that went down on a panel and lifts after something modal has taken the pointer away never
+  // reaches the release below, so the capture would stand for ever -- and a stuck capture makes
+  // every later press on the bar fall through to the world as an order.
+  void CancelCapture() noexcept
+  {
+    m_captured = false;
+    m_pressedRail = -1;
+    m_pressedFleet = -1;
+  }
+
 private:
   struct Rect
   {

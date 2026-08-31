@@ -141,6 +141,7 @@ void OutpostApp::Init(HINSTANCE _instance)
   pointerDesc.dragThresholdPx = INPUT_DRAG_THRESHOLD_PX;
   pointerDesc.tapMaxDurationMs = INPUT_TAP_MAX_DURATION_MS;
   pointerDesc.doubleTapWindowMs = INPUT_DOUBLE_TAP_WINDOW_MS;
+  pointerDesc.longPressMs = HUD_LONG_PRESS_MS;
   m_pointers.Init(pointerDesc);
 
   ServerHost::Desc hostDesc;
@@ -643,10 +644,14 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
   switch (_virtualKey)
   {
   case VK_ESCAPE:
-    // Drops the selection first; only quits once nothing is selected. By fleets rather than by
+    // Three meanings, innermost first: close the modal screen, drop the selection, quit. A modal
+    // that Escape does not close is a modal a player gets stuck in.
+    if (m_assembly.IsOpen())
+      m_assembly.Close();
+    // Drops the selection next; only quits once nothing is selected. By fleets rather than by
     // records: a fleet can be selected with every one of its hulls outside the interest set, and
     // Escape must still drop it.
-    if (m_view.SelectedFleetCount() > 0)
+    else if (m_view.SelectedFleetCount() > 0)
       m_view.ClearSelection();
     else
       m_window.RequestClose();
@@ -797,7 +802,11 @@ void OutpostApp::Update()
 
   for (const PointerEvent& event : m_pendingEvents)
   {
-    // The HUD gets first refusal: a tap on the bottom bar must never reach the tracker as an order.
+    // The modal screen first, then the HUD, then the world. The assembly view consumes everything
+    // while it is up, and the HUD consumes what lands on a panel -- so a tap on the bottom bar can
+    // never reach the tracker as an order.
+    if (m_assembly.HandlePointer(event, m_view, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx()))
+      continue;
     if (m_hud.HandlePointer(event, m_view, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx()))
       continue;
     m_pointers.Apply(event, m_camera, m_view);
@@ -818,6 +827,22 @@ void OutpostApp::Update()
   // that would move it by a hair has not run yet this frame (it runs in Run, after this returns).
   if (m_camera.Target().x != wasLookingAt.x || m_camera.Target().z != wasLookingAt.z)
     m_view.CancelFocus();
+
+  // A ledger reply for the station the player long-pressed opens the assembly view over it. Taken
+  // rather than read: one ask gets one screen, and a reply nobody is waiting for opens nothing
+  // (WorldView::TakeLedgerReply, ADR 0051).
+  Game::LedgerReply ledger;
+  if (m_view.TakeLedgerReply(ledger))
+  {
+    m_assembly.Open(ledger, m_view);
+
+    // The screen is modal from this frame on, so any contact the tracker or the HUD is still
+    // holding will never be released to them -- the assembly view swallows the lift. Dropping both
+    // here is what stops a finger that went down in the frame before the reply arrived from
+    // leaving a claimed slot, or a stuck capture, behind for good.
+    m_pointers.CancelContacts();
+    m_hud.CancelCapture();
+  }
 
   // Where the player is looking becomes what the server sends. The composition root is the only
   // thing holding both halves, so it is the only thing that can say so; a dedicated server reads it
@@ -867,6 +892,9 @@ void OutpostApp::Render()
   for (const Game::ShipSnapshot& ship : m_view.Ships())
     frame.contacts += m_view.IsHostileToMe(ship.factionId) ? 1 : 0;
   m_hud.Draw(m_textRenderer, m_view.Ships(), m_view, m_camera, m_log, frame, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
+
+  // After the HUD, because it is modal: it draws its own scrim over everything, the bar included.
+  m_assembly.Draw(m_textRenderer, m_view, HULL_NAMES, FACTION_NAMES, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
 
   m_textRenderer.Flush(m_gpu); // the overlay goes on last, before the frame is presented
   m_gpu.EndFrame();

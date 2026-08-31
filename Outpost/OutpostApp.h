@@ -2,6 +2,7 @@
 
 #include "BodyCatalogue.h"
 #include "EventLog.h"
+#include "AssemblyScreen.h"
 #include "Hud.h"
 #include "ServerConfig.h"
 #include "WorldSimulation.h"
@@ -152,6 +153,10 @@ private:
   WorldView m_view;
   EventLog m_log;
   Hud m_hud;
+
+  // The station's assembly view. Modal, so it sits ahead of the HUD in the pointer chain and is
+  // drawn after it (Design/Fleets.md 9.4).
+  AssemblyScreen m_assembly;
   Neuron::FrameClock m_clock;
 
   // One ramp per class, indexed by BodyClass. A ramp that fails to load leaves its class drawing the

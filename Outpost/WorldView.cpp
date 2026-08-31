@@ -1129,6 +1129,105 @@ void WorldView::OnTap(float _xPx, float _yPx, bool _shiftHeld, bool _doubleTap)
     IssueMoveOrder(point, false, 0.0f);
 }
 
+// --- the station ledger ---------------------------------------------------------------------------
+// A long press over a station asks what this client has docked there, and the answer opens the
+// assembly screen. It is the one request/reply on this seam (ADR 0051), and the one gesture
+// Design/Archive/Stations.md 14 held PointerTracker back from until there was a menu to open.
+void WorldView::OnLongPress(float _xPx, float _yPx)
+{
+  CancelFocus();
+
+  const int station = PickStation(_xPx, _yPx);
+  if (station < 0 || m_transport == nullptr)
+    return;
+
+  const std::span<const Game::ShipSnapshot> state = Ships();
+  if (static_cast<std::size_t>(station) >= state.size())
+    return;
+
+  // The mask first, before the wire is touched. A port that holds this client hostile answers a
+  // ledger request with zeros by the same gate that refuses a compose there (World::LedgerFor), so
+  // asking would spend a message to be told nothing -- and the player would read an empty station
+  // rather than a closed one. The affordance tells the truth first and the gate stands behind it,
+  // which is IssueDockOrder's rule applied to a read (Design/Archive/Stations.md 9.2).
+  const Game::FactionId owner = state[static_cast<std::size_t>(station)].factionId;
+  if (IsHostileToMe(owner))
+  {
+    if (m_log)
+    {
+      const char* name = (owner < m_factionNames.size()) ? m_factionNames[owner] : "UNKNOWN";
+      m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "LEDGER REFUSED | %s HOSTILE", name);
+    }
+    return;
+  }
+
+  Game::LedgerRequest request;
+  request.station = state[static_cast<std::size_t>(station)].entity;
+  if (!Game::WriteLedgerRequest(request, *m_transport))
+    return; // the lane is full or not up: the press is dropped, and a second one is the retry
+
+  m_ledgerAsked = request.station;
+  m_ledgerAskedAtCount = m_receiver.LedgerReplyCount();
+}
+
+Game::FactionId WorldView::FactionOfEntity(Game::EntityId _entity) const noexcept
+{
+  const std::span<const Game::ShipSnapshot> state = Ships();
+  for (const Game::ShipSnapshot& ship : state)
+  {
+    if (ship.entity == _entity)
+      return ship.factionId;
+  }
+  return static_cast<Game::FactionId>(Game::FACTION_LIMIT);
+}
+
+bool WorldView::TakeLedgerReply(Game::LedgerReply& _outReply)
+{
+  if (m_ledgerAsked == Game::INVALID_ENTITY_ID || m_receiver.LedgerReplyCount() == m_ledgerAskedAtCount)
+    return false;
+
+  // The counter moved, so something was answered. Whether it answers THIS question is the station,
+  // and a reply for another one is dropped rather than shown: it is this client's own answer to an
+  // ask it has since replaced.
+  //
+  // The ask is forgotten either way. One long press is one question, and a question that got the
+  // wrong answer is not re-asked here -- a second press is the retry, and the player has it.
+  const Game::LedgerReply& reply = m_receiver.Ledger();
+  const Game::EntityId asked = m_ledgerAsked;
+  m_ledgerAsked = Game::INVALID_ENTITY_ID;
+  if (reply.station != asked)
+    return false;
+
+  _outReply = reply;
+  return true;
+}
+
+void WorldView::SendComposeOrder(Game::EntityId _station, std::uint8_t _slot, std::span<const std::uint32_t> _hullCounts)
+{
+  if (m_transport == nullptr)
+    return;
+
+  Game::ComposeOrder order;
+  order.station = _station;
+  order.slot = _slot;
+  for (std::size_t hull = 0; hull < _hullCounts.size() && hull < Game::HULL_COUNT; ++hull)
+    order.hullCounts[hull] = _hullCounts[hull];
+
+  // Fire and forget, like every order on this lane. A refusal -- a raced slot, a ledger that moved
+  // -- simply leaves the button empty, and the screen's next opening asks again (Design/Fleets.md 9.4).
+  if (!Game::WriteComposeOrder(order, *m_transport))
+    return;
+
+  if (m_log)
+  {
+    std::uint32_t total = 0;
+    for (std::size_t hull = 0; hull < _hullCounts.size() && hull < Game::HULL_COUNT; ++hull)
+      total += _hullCounts[hull];
+    m_log->PushFormat(EventLog::Severity::Friendly, SimTimeSec(), "FLEET %d | LAUNCHING %d SHIPS", static_cast<int>(_slot) + 1,
+                      static_cast<int>(total));
+  }
+}
+
 // ------------------------------------------------------------------------------------------------
 // Rendering. Every position and heading is read at the display time set by SetDisplayTime, between
 // the two samples that bracket it, so motion is smooth however far the swapchain runs ahead of the
