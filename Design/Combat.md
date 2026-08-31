@@ -1,8 +1,8 @@
 # Combat — mounts, gunnery, and the acts a shot states
 
-**Status: draft, put to the owner on 2026-08-31. Nothing here is agreed or landed.** §15 lists the
-decisions this draft puts to the owner, each with a recommendation; §16 lists the slices and the
-dependencies between them. Until §15 is answered this document argues, it does not instruct.
+**Status: agreed with the owner on 2026-08-31 — the six decisions in §15 were put and taken the
+same day, each the recommended option.** No slice has landed; §16 lists the five and the
+dependencies between them, and slice 1's work order is the next document owed.
 
 This is the design the rest of the tree has been writing IOUs against. ADR 0041 closed with "the
 combat design meets this at two named sockets and needs nothing else: it calls `RecordAggression`
@@ -437,21 +437,38 @@ argued comment the file demands.
 - **Carrier wings** — a Carrier fields point defense today and a hangar design later.
 - **Mining itself** — §12 is the whole of this design's obligation to it.
 
-## 15. Decisions put to the owner
+## 15. Decisions taken by the owner
 
-1. **Resolution model** — deterministic mechanical gunnery (recommended, §4); seeded dice; or
-   live projectiles. The recommendation buys legibility and keeps the contract generator-free;
-   it costs the fantasy of dodging individual rounds, which fleet-grain command cannot cash
-   anyway.
-2. **Opportunistic fire from the first slice** (recommended, §5.2–5.4) — mounts acquire
-   standing-hostiles on their own, making the Vandal ring dangerous and NPC fights emergent — or
-   stated-targets-only first, a quieter world where nothing fires until ordered or provoked.
-3. **The pacing band** (§13) — agree the five targets, or move them; every table serves them and
-   retunes with them.
-4. **Friendly fire: none, structurally** (recommended, §11) — revisited only by a future splash
-   weapon's own design.
-5. **Fleeing: no** (recommended, §11) — the defense posture ships as ADR 0050 wrote it; RoE later.
-6. **Retire F6/F7 in the last slice** (recommended, §6) — real acts replace the hooks; F4 stays.
+Six decisions were put to the owner on 2026-08-31 and taken the same day; each was the
+recommended option. What lost is recorded beside what won, so the next proposal of a loser
+starts from why it lost rather than from silence.
+
+1. **Gunnery resolves deterministically** (§4). Seeded dice lost for opacity, not for
+   determinism — they replay fine and explain nothing at forty ships on screen. Live projectiles
+   lost to their cost — every round an entity in the index, the interest sets and the wire, and a
+   fast shell reopening ADR 0045 — and to fleet-grain command's inability to cash what dodgeable
+   rounds buy. The slow, killable torpedo stays a named future design (§14), not a casualty.
+2. **Opportunistic fire ships in slice 1** (§5.2–5.4). Mounts acquire standing-hostiles from the
+   neighbour list on their own, so the Vandal ring is dangerous from the first lethal build. The
+   quieter stated-targets-only opening lost: it defers exactly the emergent first fight this
+   design exists to produce, and the acquisition rule costs the same few lines either way.
+3. **The pacing band stands as §13 states it** — fighter ~10 s under a peer and ~1.5 s under
+   focus, a Frigate ~40 s under two fighters, a Battleship ~1.5 min under a mixed eight. The
+   faster band lost for starving command of reading time; the slower one for making focus fire
+   feel like nothing. Every table in §13 serves these targets and retunes with them, never
+   against them.
+4. **Friendly fire: none, structurally** (§11). Own-faction attack orders (the scuttling case)
+   lost — nothing in the game rewards one and a touch screen invites the misclick. Positional
+   friendly fire lost to the swept tests the tick deliberately lacks (ADR 0045) and to punishing
+   a formation solver the player does not steer. A future splash weapon's design reopens this
+   answer; nothing else does.
+5. **Nobody flees** (§11). The posture ships exactly as ADR 0050 wrote it. Break-off-when-hurt
+   lost as a tuning surface bought before the first fight was ever measured; fleeing
+   non-combatants lost because "where safety is" is a judgment that record deliberately refused
+   to give the simulation. Both belong to the rules-of-engagement design (§14).
+6. **F6 and F7 retire in slice 4** (§6, §16). An attack order on a Vanguard asset *is* F6 now,
+   and any landed hit *is* F7; keeping hooks that state acts the simulation never observed lost
+   to exactly that sentence. F4 stays — a tuning hook for the explosion is still a tuning hook.
 
 ## 16. Slices
 
