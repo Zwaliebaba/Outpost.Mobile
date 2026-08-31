@@ -191,6 +191,12 @@ void WorldView::ApplySnapshot()
   }
 
   ExplodeTheLost(tick);
+
+  // Last, and after the carry rather than inside it: what is selected is a set of slots, and which
+  // records that lights up is a function of the rosters this update may just have changed. A hull
+  // launched into a selected fleet is ringed the moment its roster arrives, which is what deriving
+  // the flag buys over carrying it.
+  RefreshSelection();
 }
 
 // A ShipView that was not carried is a ship that has left the snapshot, and this is the only place
@@ -335,9 +341,9 @@ WorldView::DisplayPose WorldView::DisplayedPose(std::size_t _index) const noexce
 
 void WorldView::ClearSelection() noexcept
 {
-  for (ShipView& ship : m_ships)
-    ship.selected = false;
-  m_activeGroup = -1;
+  for (int slot = 0; slot < FLEET_SLOTS; ++slot)
+    m_fleetSelected[slot] = false;
+  RefreshSelection();
 }
 
 float WorldView::SimTimeSec() const noexcept
@@ -345,59 +351,163 @@ float WorldView::SimTimeSec() const noexcept
   return static_cast<float>(m_receiver.Latest().tick) / Game::TICK_HZ;
 }
 
-void WorldView::AssignGroup(int _group)
+void WorldView::SelectFleet(int _slot, bool _additive)
 {
-  if (_group < 0 || _group >= CONTROL_GROUPS)
-    return;
+  if (_slot < 0 || _slot >= FLEET_SLOTS || !IsFleetHeld(_slot))
+    return; // an empty slot selects nothing; the button says so instead (Design/Fleets.md 9.1)
 
-  std::vector<Game::EntityId>& group = m_groups[_group];
-  group.clear();
-  for (size_t i = 0; i < m_ships.size() && i < m_entities.size(); ++i)
+  if (_additive)
   {
-    if (m_ships[i].selected)
-      group.push_back(m_entities[i]);
+    m_fleetSelected[_slot] = !m_fleetSelected[_slot];
   }
-
-  if (m_log)
+  else
   {
-    if (group.empty())
-      m_log->PushFormat(EventLog::Severity::Info, SimTimeSec(), "GROUP %d CLEARED", _group + 1);
-    else
-      m_log->PushFormat(EventLog::Severity::Friendly, SimTimeSec(), "GROUP %d | %d SHIPS ASSIGNED", _group + 1,
-                        static_cast<int>(group.size()));
+    for (int at = 0; at < FLEET_SLOTS; ++at)
+      m_fleetSelected[at] = (at == _slot);
   }
-  m_activeGroup = group.empty() ? -1 : _group;
+  RefreshSelection();
 }
 
-void WorldView::SelectGroup(int _group)
+int WorldView::SelectedFleetCount() const noexcept
 {
-  if (_group < 0 || _group >= CONTROL_GROUPS)
-    return;
-
-  ClearSelection();
-  int selected = 0;
-  for (const Game::EntityId entity : m_groups[_group])
-  {
-    const int at = RecallableIndex(entity);
-    if (at < 0)
-      continue; // out of view or no longer this client's; kept in the group either way
-    m_ships[static_cast<std::size_t>(at)].selected = true;
-    ++selected;
-  }
-  // A group whose members are all gone leaves nothing active to be shown as the source of a
-  // selection that did not happen.
-  m_activeGroup = (selected > 0) ? _group : -1;
+  int count = 0;
+  for (int slot = 0; slot < FLEET_SLOTS; ++slot)
+    count += m_fleetSelected[slot] ? 1 : 0;
+  return count;
 }
 
-int WorldView::GroupSize(int _group) const noexcept
+int WorldView::FirstSelectedFleet() const noexcept
 {
-  if (_group < 0 || _group >= CONTROL_GROUPS)
-    return 0;
+  for (int slot = 0; slot < FLEET_SLOTS; ++slot)
+  {
+    if (m_fleetSelected[slot])
+      return slot;
+  }
+  return -1;
+}
 
-  int live = 0;
-  for (const Game::EntityId entity : m_groups[_group])
-    live += (RecallableIndex(entity) >= 0) ? 1 : 0;
-  return live;
+int WorldView::FleetSlotOf(Game::EntityId _entity) const noexcept
+{
+  if (_entity == Game::INVALID_ENTITY_ID)
+    return -1;
+  for (int slot = 0; slot < FLEET_SLOTS; ++slot)
+  {
+    for (const Game::EntityId member : m_receiver.RosterOf(static_cast<std::uint8_t>(slot)))
+    {
+      if (member == _entity)
+        return slot;
+    }
+  }
+  return -1;
+}
+
+void WorldView::RefreshSelection() noexcept
+{
+  for (std::size_t at = 0; at < m_ships.size(); ++at)
+  {
+    const Game::EntityId entity = (at < m_entities.size()) ? m_entities[at] : Game::INVALID_ENTITY_ID;
+    const int slot = FleetSlotOf(entity);
+    m_ships[at].selected = (slot >= 0) && m_fleetSelected[slot];
+  }
+}
+
+const char* WorldView::FleetActivity(int _slot) const noexcept
+{
+  if (!IsFleetHeld(_slot))
+    return "EMPTY";
+
+  const std::uint8_t bits = FleetStatusBits(_slot);
+  // Engaged outranks the standing order in what is SAID, because it is the thing that changes what
+  // the fleet is doing right now; the order is still there underneath and resumes (Design/Fleets.md 7.4).
+  if ((bits & Game::FLEET_STATUS_ENGAGED) != 0)
+    return "DEFENDING";
+
+  switch (bits & Game::FLEET_STATUS_KIND_MASK)
+  {
+  case Game::FLEET_STATUS_LAUNCHING:
+    return "LAUNCHING";
+  case static_cast<std::uint8_t>(Game::FleetOrderKind::Move):
+    return "MOVING";
+  case static_cast<std::uint8_t>(Game::FleetOrderKind::Dock):
+    return "DOCKING";
+  case static_cast<std::uint8_t>(Game::FleetOrderKind::Attack):
+    return "ATTACKING";
+  case static_cast<std::uint8_t>(Game::FleetOrderKind::Mine):
+    return "MINING";
+  default:
+    return "IDLE";
+  }
+}
+
+void WorldView::PressFleetButton(int _slot, bool _longPress)
+{
+  if (_slot < 0 || _slot >= FLEET_SLOTS)
+    return;
+
+  if (!IsFleetHeld(_slot))
+  {
+    // Inert to a tap, and a hold says the one thing there is to say about an empty slot. Saying it
+    // on the hold rather than on the tap is deliberate: a mis-tap on a dead button should be
+    // silent, and a deliberate hold is a question.
+    if (_longPress && m_log)
+      m_log->PushFormat(EventLog::Severity::Info, SimTimeSec(), "FLEET %d | COMPOSE AT A STATION", _slot + 1);
+    return;
+  }
+
+  if (_longPress)
+  {
+    // The sheet is slice 8. This is the line its header will carry, which is worth having now: it
+    // makes the gesture discoverable, and it is the only place a player can read what a fleet
+    // outside the interest set is doing (Design/Fleets.md 9.3).
+    if (m_log)
+      m_log->PushFormat(EventLog::Severity::Info, SimTimeSec(), "FLEET %d | %d SHIPS | %s", _slot + 1, FleetCount(_slot),
+                        FleetActivity(_slot));
+    return;
+  }
+
+  // Selecting and attending are one gesture. A shift-held tap on a button is not a thing the bar
+  // offers -- the modifier belongs to the world, where a hull is tapped -- so this selects whole.
+  SelectFleet(_slot, false);
+  FocusFleet(_slot);
+}
+
+void WorldView::FocusFleet(int _slot)
+{
+  // Held only. Focusing an empty slot would fly the camera to wherever a stale block last put it,
+  // which is a worse answer than doing nothing.
+  m_focusSlot = IsFleetHeld(_slot) ? _slot : -1;
+}
+
+void WorldView::UpdateFocus(float _dtSec)
+{
+  if (m_focusSlot < 0 || m_camera == nullptr)
+    return;
+
+  // A fleet that stopped being held mid-flight -- docked, or lost its last ship -- releases the
+  // camera where it stands rather than carrying it to a position nothing states any more.
+  if (!IsFleetHeld(m_focusSlot))
+  {
+    m_focusSlot = -1;
+    return;
+  }
+
+  // Re-read every frame: the fleet is flying, and a goal captured at the tap lands where it used to
+  // be. The status block is stamped on every update, so this costs nothing but a read.
+  const Game::WorldPos target = FleetPosition(m_focusSlot);
+  const float x = ViewX(target);
+  const float z = ViewZ(target);
+  m_camera->SetGoal(x, z);
+  m_camera->Follow(0.0f, 0.0f, _dtSec);
+
+  // Whoever moves the camera recomputes it, which is the convention PointerTracker's own gestures
+  // keep. Without this the matrices Render is about to read would be a frame behind the target, and
+  // a flight would judder against everything else on screen.
+  m_camera->Update();
+
+  const float dx = m_camera->Target().x - x;
+  const float dz = m_camera->Target().z - z;
+  if (dx * dx + dz * dz <= FLEET_FOCUS_ARRIVE_METRES * FLEET_FOCUS_ARRIVE_METRES)
+    m_focusSlot = -1; // arrived; the camera is the player's again
 }
 
 void WorldView::TriggerCameraShake() noexcept
@@ -615,21 +725,6 @@ bool WorldView::IsOwn(std::size_t _index) const noexcept
   return _index < state.size() && state[_index].factionId == m_ownFaction;
 }
 
-// The faction check here is not redundant, even though an id names one ship for the whole of its
-// life and only the client's own ships are ever assigned to a group. Ownership finer than faction
-// arrives with the second subscriber (ADR 0014), and then a ship that was the player's when the
-// group was assigned need not still be. Every path into the selection asks the same question at the
-// moment it selects, rather than trusting what was true when something was remembered.
-int WorldView::RecallableIndex(Game::EntityId _entity) const noexcept
-{
-  for (std::size_t at = 0; at < m_entities.size(); ++at)
-  {
-    if (m_entities[at] == _entity)
-      return IsOwn(at) ? static_cast<int>(at) : -1;
-  }
-  return -1;
-}
-
 // Ray against a hull's oriented bounding box. A sphere would be far too loose on a hull three
 // times longer than it is wide.
 float WorldView::RayHitDistance(std::size_t _index, const XMFLOAT3& _origin, const XMFLOAT3& _direction) const noexcept
@@ -726,51 +821,95 @@ int WorldView::PickStation(float _xPx, float _yPx) const
   return best;
 }
 
-void WorldView::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float _facingRad)
+int WorldView::PickHostile(float _xPx, float _yPx) const
+{
+  XMFLOAT3 origin;
+  XMFLOAT3 direction;
+  m_camera->ScreenRay(_xPx, _yPx, origin, direction);
+  const std::span<const Game::ShipSnapshot> state = Ships();
+
+  int best = -1;
+  float bestT = 1e30f;
+  for (std::size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
+  {
+    // By the update header's mask, never by the faction id: a client that decided who its enemies
+    // were from an identity would be inferring server state, which is the thing the mask exists to
+    // end (Design/Archive/Stations.md 4.3).
+    if (!IsHostileToMe(state[i].factionId))
+      continue;
+    const float t = RayHitDistance(i, origin, direction);
+    if (t >= 0.0f && t < bestT)
+    {
+      bestT = t;
+      best = static_cast<int>(i);
+    }
+  }
+  return best;
+}
+
+// One message per selected slot, and nothing in any of them names a ship. A selection of five
+// fleets of eight is five fixed-size messages against an order budget of eight, where the ship-list
+// order this replaced would have been forty handles and a cap to check against (ADR 0049).
+std::uint32_t WorldView::SendToSelectedFleets(const Game::FleetOrder& _order)
 {
   if (m_transport == nullptr)
+    return 0;
+
+  std::uint32_t sent = 0;
+  Game::FleetOrder order = _order;
+  for (int slot = 0; slot < FLEET_SLOTS; ++slot)
+  {
+    if (!m_fleetSelected[slot] || !IsFleetHeld(slot))
+      continue;
+    order.slot = static_cast<std::uint8_t>(slot);
+    // A refused send is the queue being full, which Transport.h calls normal: that fleet's order is
+    // dropped and the rest still go. Nothing is retried, exactly as a ship-list order was not.
+    if (Game::WriteFleetOrder(order, *m_transport))
+      ++sent;
+  }
+  return sent;
+}
+
+void WorldView::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float _facingRad)
+{
+  if (m_transport == nullptr || SelectedFleetCount() == 0)
     return;
 
-  // Identities, not indices. Between this click and the order reaching the other half a ship can
-  // die, and swap-and-pop would move a stranger into the index it left behind (ADR 0005, ADR 0047).
+  // Gathered for the marker's heading only. The order itself carries no ships at all -- which is
+  // why there is no MaxShipsPerOrder check here any more, and no ORDER TOO LARGE line: a fleet
+  // order cannot be too large, and that is the property the message was shaped for (ADR 0049).
   const std::span<const Game::ShipSnapshot> state = Ships();
-  Game::MoveOrder order;
-  order.ships.reserve(m_ships.size());
   m_orderPositions.clear();
   float firstHeading = 0.0f;
-  for (size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
+  for (std::size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
   {
     if (!m_ships[i].selected)
       continue;
-    if (order.ships.empty())
+    if (m_orderPositions.empty())
       firstHeading = state[i].headingRad;
-    order.ships.push_back(state[i].entity);
     m_orderPositions.push_back(state[i].posWorld);
   }
-  if (order.ships.empty())
-    return;
 
-  // One order is one datagram, so a selection larger than a datagram holds cannot be ordered as a
-  // unit. Say so rather than doing nothing: a click that vanishes reads as a broken game.
-  if (order.ships.size() > Game::MaxShipsPerOrder())
-  {
-    if (m_log)
-      m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "ORDER TOO LARGE | %d OF %d MAX", static_cast<int>(order.ships.size()),
-                        static_cast<int>(Game::MaxShipsPerOrder()));
-    return;
-  }
-
-  order.destination = WorldPosAt(_point.x, _point.z);
+  Game::FleetOrder order;
+  order.kind = Game::FleetOrderKind::Move;
+  order.point = WorldPosAt(_point.x, _point.z);
   order.facingRad = _facingRad;
   order.hasFacing = _hasFacing;
-  if (!Game::WriteMoveOrder(order, *m_transport))
-    return; // the send queue is full, which Transport.h calls normal: the click is dropped
+  const std::uint32_t sent = SendToSelectedFleets(order);
+  if (sent == 0)
+    return;
 
-  // Nothing comes back down the wire to say which way the formation settled, so the marker is
+  // Nothing comes back down the wire to say which way a formation settled, so the marker is
   // oriented here -- by the same function the other half uses, on the same positions, the same
-  // point and the same fallback. Not a prediction: the same arithmetic on the same inputs, so the
-  // marker and the ships cannot disagree about which way an order points (slice-2b 2.5).
-  const float heading = _hasFacing ? _facingRad : Game::FormationHeading(m_orderPositions, order.destination, firstHeading);
+  // point and the same fallback. Not a prediction: the same arithmetic on the same inputs
+  // (Design/Archive/Collision-slice-2b.md 2.5).
+  //
+  // Over every selected fleet's members together, where the server solves each fleet about the
+  // point on its own. With one fleet selected -- which is the ordinary case -- the two are the same
+  // arithmetic; with several the marker shows one heading for orders that will settle into several,
+  // which is a thing one marker cannot say and the design accepted when it made five buttons
+  // orderable at once (Design/Fleets.md 9.2).
+  const float heading = _hasFacing ? _facingRad : Game::FormationHeading(m_orderPositions, order.point, firstHeading);
 
   OrderMarker marker;
   marker.posWorld = XMFLOAT3(_point.x, 0.0f, _point.z);
@@ -780,13 +919,14 @@ void WorldView::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float _f
   m_markers.push_back(marker);
 
   if (m_log)
-    m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "MOVE ORDER | %d SHIPS", static_cast<int>(order.ships.size()));
+    m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "MOVE ORDER | %d %s", static_cast<int>(sent),
+                      (sent == 1) ? "FLEET" : "FLEETS");
 }
 
 void WorldView::IssueDockOrder(std::size_t _station)
 {
   const std::span<const Game::ShipSnapshot> state = Ships();
-  if (m_transport == nullptr || _station >= state.size())
+  if (m_transport == nullptr || _station >= state.size() || SelectedFleetCount() == 0)
     return;
   const Game::FactionId owner = state[_station].factionId;
 
@@ -803,25 +943,12 @@ void WorldView::IssueDockOrder(std::size_t _station)
     return;
   }
 
-  Game::DockOrder order;
-  order.ships.reserve(m_ships.size());
-  for (std::size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
-  {
-    if (m_ships[i].selected)
-      order.ships.push_back(state[i].entity);
-  }
-  if (order.ships.empty())
-    return;
-  if (order.ships.size() > Game::MaxShipsPerOrder())
-  {
-    if (m_log)
-      m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "ORDER TOO LARGE | %d OF %d MAX", static_cast<int>(order.ships.size()),
-                        static_cast<int>(Game::MaxShipsPerOrder()));
-    return;
-  }
+  Game::FleetOrder order;
+  order.kind = Game::FleetOrderKind::Dock;
   order.station = state[_station].entity;
-  if (!Game::WriteDockOrder(order, *m_transport))
-    return; // the send queue is full, which Transport.h calls normal: the tap is dropped
+  const std::uint32_t sent = SendToSelectedFleets(order);
+  if (sent == 0)
+    return;
 
   // The marker the tap earns, on the station and in its colour, so the tap visibly landed on the
   // thing and not the ground beside it. No facing: a dock order has none.
@@ -832,7 +959,37 @@ void WorldView::IssueDockOrder(std::size_t _station)
   m_markers.push_back(marker);
 
   if (m_log)
-    m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "DOCKING | %d SHIPS", static_cast<int>(order.ships.size()));
+    m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "DOCKING | %d %s", static_cast<int>(sent), (sent == 1) ? "FLEET" : "FLEETS");
+}
+
+// The third tap meaning, and the one this slice adds. There is no affordance to check first, unlike
+// the dock: the picker only ever offers a record the mask already says is hostile, so a tap that
+// reaches here has passed the only question there is to ask (Design/Fleets.md 9.3).
+void WorldView::IssueAttackOrder(std::size_t _target)
+{
+  const std::span<const Game::ShipSnapshot> state = Ships();
+  if (m_transport == nullptr || _target >= state.size() || SelectedFleetCount() == 0)
+    return;
+
+  Game::FleetOrder order;
+  order.kind = Game::FleetOrderKind::Attack;
+  order.target = state[_target].entity;
+  const std::uint32_t sent = SendToSelectedFleets(order);
+  if (sent == 0)
+    return;
+
+  // On the target and in ITS colour, exactly as the dock marker wears the station's. The scene is
+  // an identity language and the HUD is a relation one (ViewTuning.h says so at HUD_ALERT_RED), so
+  // a marker in the world says which ship was tapped rather than how the HUD feels about it.
+  const Game::FactionId owner = state[_target].factionId;
+  const DisplayPose pose = DisplayedPose(_target);
+  OrderMarker marker;
+  marker.posWorld = XMFLOAT3(ViewX(pose.pos), 0.0f, ViewZ(pose.pos));
+  marker.colour = LiveryOf(owner, owner == m_ownFaction, IsHostileToMe(owner));
+  m_markers.push_back(marker);
+
+  if (m_log)
+    m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "ATTACK | %d %s", static_cast<int>(sent), (sent == 1) ? "FLEET" : "FLEETS");
 }
 
 // --- pointer intent -----------------------------------------------------------------------------
@@ -840,7 +997,7 @@ void WorldView::IssueDockOrder(std::size_t _station)
 // final facing. Shift forces the box either way.
 bool WorldView::WantsBoxSelect(bool _shiftHeld)
 {
-  return _shiftHeld || SelectedCount() == 0;
+  return _shiftHeld || SelectedFleetCount() == 0;
 }
 
 void WorldView::OnHover(float _xPx, float _yPx)
@@ -850,6 +1007,7 @@ void WorldView::OnHover(float _xPx, float _yPx)
 
 void WorldView::OnDragUpdate(bool _boxSelect, float _x0Px, float _y0Px, float _x1Px, float _y1Px)
 {
+  CancelFocus(); // the player has taken the camera back
   m_boxActive = _boxSelect;
   m_orderDragActive = !_boxSelect;
   m_boxX0Px = m_orderX0Px = _x0Px;
@@ -873,6 +1031,9 @@ void WorldView::OnBoxSelect(float _x0Px, float _y0Px, float _x1Px, float _y1Px, 
   if (!_additive)
     ClearSelection();
 
+  // A band takes every fleet it touches, WHOLE. Sub-fleet selection does not exist, so a box over
+  // half a wedge selects the wedge -- which is the decision the design took once and this is the
+  // only place a player could otherwise have contradicted it (Design/Fleets.md 15, decision 1).
   const std::span<const Game::ShipSnapshot> state = Ships();
   for (size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
   {
@@ -883,10 +1044,13 @@ void WorldView::OnBoxSelect(float _x0Px, float _y0Px, float _x1Px, float _y1Px, 
     const XMFLOAT3 centre(ViewX(pose.pos), m_ships[i].halfExtents.y * SHIP_SCALE, ViewZ(pose.pos));
     float xPx = 0.0f;
     float yPx = 0.0f;
-    if (m_camera->WorldToScreen(centre, xPx, yPx) && xPx >= left && xPx <= right && yPx >= top && yPx <= bottom)
-      m_ships[i].selected = true;
+    if (!m_camera->WorldToScreen(centre, xPx, yPx) || xPx < left || xPx > right || yPx < top || yPx > bottom)
+      continue;
+    const int slot = FleetSlotOf((i < m_entities.size()) ? m_entities[i] : Game::INVALID_ENTITY_ID);
+    if (slot >= 0)
+      m_fleetSelected[slot] = true;
   }
-  m_activeGroup = -1;
+  RefreshSelection();
 }
 
 void WorldView::OnOrderDrag(float _x0Px, float _y0Px, float _x1Px, float _y1Px)
@@ -908,31 +1072,43 @@ void WorldView::OnOrderDrag(float _x0Px, float _y0Px, float _x1Px, float _y1Px)
 
 void WorldView::OnTap(float _xPx, float _yPx, bool _shiftHeld, bool _doubleTap)
 {
+  CancelFocus(); // the player is working the world again, so the camera stops flying
+
+  // A tapped hull selects its whole FLEET, not the hull. A hull whose roster has not arrived yet
+  // selects nothing and says nothing: that is a launch one update old, not an error.
   const int hit = PickShip(_xPx, _yPx);
   if (hit >= 0)
   {
-    if (_shiftHeld)
-      m_ships[static_cast<size_t>(hit)].selected = !m_ships[static_cast<size_t>(hit)].selected;
-    else
-    {
-      ClearSelection();
-      m_ships[static_cast<size_t>(hit)].selected = true;
-    }
-    m_activeGroup = -1;
+    const std::size_t at = static_cast<std::size_t>(hit);
+    const int slot = FleetSlotOf((at < m_entities.size()) ? m_entities[at] : Game::INVALID_ENTITY_ID);
+    if (slot >= 0)
+      SelectFleet(slot, _shiftHeld);
     if (m_tracker)
       m_tracker->ResetTapHistory(); // tapping a hull does not begin a double tap
     return;
   }
 
-  // A station under the tap, with something selected, is a dock order. With nothing selected it is
-  // nothing at all: selection-for-inspection is the management menu's, which is the next phase
-  // (Design/Archive/Stations.md 9.1).
-  if (SelectedCount() > 0)
+  // With a selection, a tap on something is an order to every selected fleet, in this order: a
+  // station docks, a hostile record attacks, the ground moves. With nothing selected it is nothing
+  // at all -- selection-for-inspection is the station screen's, which is slice 7
+  // (Design/Archive/Stations.md 9.1, Design/Fleets.md 9.3).
+  if (SelectedFleetCount() > 0)
   {
     const int station = PickStation(_xPx, _yPx);
     if (station >= 0)
     {
       IssueDockOrder(static_cast<std::size_t>(station));
+      if (m_tracker)
+        m_tracker->ResetTapHistory();
+      return;
+    }
+
+    // After the station and before the ground: a hostile structure is a place to attack rather than
+    // a place to dock, and the dock gate would have refused it anyway.
+    const int hostile = PickHostile(_xPx, _yPx);
+    if (hostile >= 0)
+    {
+      IssueAttackOrder(static_cast<std::size_t>(hostile));
       if (m_tracker)
         m_tracker->ResetTapHistory();
       return;
@@ -946,7 +1122,7 @@ void WorldView::OnTap(float _xPx, float _yPx, bool _shiftHeld, bool _doubleTap)
     ClearSelection();
     return;
   }
-  if (SelectedCount() == 0)
+  if (SelectedFleetCount() == 0)
     return;
   XMFLOAT3 point;
   if (m_camera->RayToGround(_xPx, _yPx, point))

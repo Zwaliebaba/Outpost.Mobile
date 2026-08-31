@@ -10,7 +10,6 @@
 #include "Transport.h"
 
 #include <cstdint>
-#include <span>
 
 namespace Outpost
 {
@@ -62,8 +61,32 @@ public:
   {
     m_publisher.ApplyOrders(m_world);
     m_world.Step();
-    m_publisher.SetCentre(m_subscriber, SubscriberCentre());
+    m_publisher.SetCentre(m_subscriber, m_viewCentre);
     m_publisher.Publish(m_world);
+  }
+
+  // Where this subscriber is looking, pushed in by the composition root each frame from the
+  // camera's ground target.
+  //
+  // It replaced the centroid of the subscriber's own ships, and the fleet bar is why. Tapping fleet
+  // 3 flies the camera fifty kilometres; under a centre that averaged every own ship, the interest
+  // set stayed where that average was and not one hull of fleet 3 was ever sent, so the button flew
+  // the camera to an empty sky. The design says the interest set follows the camera
+  // (Design/Fleets.md 9.1) and this class's own note anticipated it: the day a real player has a
+  // camera, the centre comes from there.
+  //
+  // It is not on the wire and does not need to be. The composition root holds both halves and may
+  // read the camera, which is the standing the debug keys already have; a dedicated server gets it
+  // from the session instead, and only this setter's caller changes.
+  //
+  // What the old centre bought is not lost. A player whose camera is over empty space is still told
+  // where all five fleets are -- that is the status block, stamped on every update, and it is why
+  // this change was not safe before slice 5. And a fleet that docks no longer drags the view: the
+  // camera does not move when a ship docks, so the station the player flew into stays on screen,
+  // which Design/Archive/Stations-slice-6.md 5 fixed by hand and this makes structural.
+  void SetViewCentre(const Game::WorldPos& _centre) noexcept
+  {
+    m_viewCentre = _centre;
   }
 
   [[nodiscard]] std::uint64_t Tick() const override
@@ -84,50 +107,6 @@ public:
   }
 
 private:
-  // Where the subscriber is looking: the centroid of its own fleet. The day a real player has a
-  // camera on the wire, it comes from there instead (Design/Archive/Collision-slice-6.md 3.6).
-  //
-  // Its own, not every ship's. That distinction was free while every ship was the subscriber's and
-  // stopped being the moment a hostile base existed: four hostiles 1.2 km out drag an unfiltered
-  // centroid some 690 m toward the enemy, which moves what the player is sent (Design/Archive/Hostiles.md 6).
-  //
-  // Accumulated as offsets from the first own ship rather than by averaging fields, so a fleet
-  // straddling a sector boundary has a center between its ships and not a sector away.
-  //
-  // With no own ship at all -- every hull docked, which Stations made an ordinary way for a fleet
-  // to leave the world -- the centre holds where it last was. It used to fall back to a default
-  // WorldPos, the universe origin, and the moment the last ship docked the interest set jumped
-  // 3.5 km away: the station the player had just flown into left the client's view and, on
-  // screen, vanished. A player looking at a station keeps looking at it; the day undocking exists
-  // the ship comes out under a centre that never moved (Design/Archive/Stations-slice-6.md 5).
-  [[nodiscard]] Game::WorldPos SubscriberCentre()
-  {
-    const std::span<const Game::ShipState> ships = m_world.Ships();
-    Game::WorldPos centre;
-    bool haveFirst = false;
-    float sumX = 0.0f;
-    float sumZ = 0.0f;
-    std::uint32_t count = 0;
-    for (const Game::ShipState& ship : ships)
-    {
-      if (ship.factionId != m_subscriberFaction)
-        continue;
-      if (!haveFirst)
-      {
-        centre = ship.posWorld;
-        haveFirst = true;
-      }
-      sumX += Game::OffsetX(centre, ship.posWorld);
-      sumZ += Game::OffsetZ(centre, ship.posWorld);
-      ++count;
-    }
-    if (count == 0)
-      return m_lastCentre;
-    Game::Translate(centre, sumX / static_cast<float>(count), sumZ / static_cast<float>(count));
-    m_lastCentre = centre;
-    return centre;
-  }
-
   Game::World& m_world;
   Game::Publisher m_publisher;
   Game::Publisher::Handle m_subscriber;
@@ -136,7 +115,8 @@ private:
   // login exists it arrives with the session and only Connect changes.
   Game::FactionId m_subscriberFaction = Game::FACTION_PLAYER;
 
-  // Where the subscriber last had a fleet to look from (SubscriberCentre).
-  Game::WorldPos m_lastCentre;
+  // Where the camera is looking, as of the last frame that said. The universe origin until one
+  // does, which is where the boot scene stands.
+  Game::WorldPos m_viewCentre;
 };
 } // namespace Outpost

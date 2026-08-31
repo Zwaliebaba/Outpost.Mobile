@@ -157,14 +157,14 @@ Hud::Layout Hud::ComputeLayout(float _dpiScale, std::uint32_t _widthPx, std::uin
   // Bottom bar, full width.
   layout.bar = {0.0f, h - HUD_BAR_HEIGHT_PX * s, w, h};
   {
-    const float bw = HUD_GROUP_BUTTON_W_PX * s;
-    const float bh = HUD_GROUP_BUTTON_H_PX * s;
+    const float bw = HUD_FLEET_BUTTON_W_PX * s;
+    const float bh = HUD_FLEET_BUTTON_H_PX * s;
     const float y0 = layout.bar.y0 + (layout.bar.Height() - bh) * 0.5f;
     float x = HUD_MARGIN_PX * s;
-    for (int i = 0; i < WorldView::CONTROL_GROUPS; ++i)
+    for (int i = 0; i < WorldView::FLEET_SLOTS; ++i)
     {
-      layout.groups[i] = {x, y0, x + bw, y0 + bh};
-      x += bw + HUD_GROUP_GAP_PX * s;
+      layout.fleets[i] = {x, y0, x + bw, y0 + bh};
+      x += bw + HUD_FLEET_GAP_PX * s;
     }
   }
 
@@ -290,6 +290,34 @@ void Hud::DrawDebug(TextRenderer& _text, const Layout& _layout, const Frame& _fr
                      HUD_LABEL_COLOUR, line);
 }
 
+float Hud::AlertPulse() const noexcept
+{
+  // A cosine rather than a square wave: the alert holds for ten seconds (Design/Fleets.md 7.3), so
+  // a blink would be a metronome for the whole of a fight. It never reaches zero -- a button that
+  // vanishes half the time is a button the eye stops finding.
+  const float turns = m_alertPhaseSec / HUD_FLEET_ALERT_PERIOD_SEC;
+  const float wave = 0.5f + 0.5f * std::cos(turns * DirectX::XM_2PI);
+  return HUD_FLEET_ALERT_MIN_ALPHA + (1.0f - HUD_FLEET_ALERT_MIN_ALPHA) * wave;
+}
+
+void Hud::UpdateAlerts(const WorldView& _view, EventLog& _log, float _dtSec, float _simTimeSec)
+{
+  // Real time and wrapped at the period, for the reason WorldView::m_navTimeSec is wrapped: a float
+  // second counter left running loses enough precision after a few hours that consecutive frames
+  // land on the same argument and the pulse freezes.
+  m_alertPhaseSec = std::fmod(m_alertPhaseSec + _dtSec, HUD_FLEET_ALERT_PERIOD_SEC);
+
+  for (int slot = 0; slot < WorldView::FLEET_SLOTS; ++slot)
+  {
+    const bool alert = _view.IsFleetUnderAttack(slot);
+    // The rising edge only. The bit holds for ten seconds and a fight refills it, so a line per
+    // frame -- or even per act -- would bury every other thing the log has to say.
+    if (alert && !m_wasUnderAttack[slot])
+      _log.PushFormat(EventLog::Severity::Alert, _simTimeSec, "FLEET %d UNDER ATTACK", slot + 1);
+    m_wasUnderAttack[slot] = alert;
+  }
+}
+
 void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view,
                       const Camera& _camera, const Frame& _frame, std::uint32_t _widthPx, std::uint32_t _heightPx) const
 {
@@ -410,6 +438,38 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
     }
   }
 
+  // The fleets, as their slot digits at the position the status block states. Between the marks and
+  // the dots on purpose: a fleet's digit sits over a station's diamond and under its own hulls.
+  //
+  // The marks' treatment exactly -- inside the map at the position, past it clamped to the edge and
+  // dimmed, direction honest and distance saturated -- because a fleet's whole point is that it can
+  // be somewhere else, and a digit clipped at the edge would say nothing about which way that is.
+  // This is where "spread over the universe" becomes a thing the player can see (Design/Fleets.md 9.5).
+  {
+    const float half = HUD_MINIMAP_MARK_PX * 0.5f * s;
+    const float digitPx = _text.AdvancePx(FontId::Ui, HUD_LABEL_SCALE * s);
+    for (int slot = 0; slot < WorldView::FLEET_SLOTS; ++slot)
+    {
+      if (!_view.IsFleetHeld(slot))
+        continue;
+      const Game::WorldPos at = _view.FleetPosition(slot);
+      const float rawX = toMapX(_view.ViewX(at));
+      const float rawY = toMapY(_view.ViewZ(at));
+      const float x = std::clamp(rawX, map.x0 + half, map.x1 - half);
+      const float y = std::clamp(rawY, map.y0 + half, map.y1 - half);
+      const bool clamped = x != rawX || y != rawY;
+
+      const bool alert = _view.IsFleetUnderAttack(slot);
+      Rgba colour = alert ? WithAlpha(HUD_ALERT_RED, AlertPulse()) : (_view.IsFleetSelected(slot) ? HUD_ACCENT_GREEN : HUD_COLOUR);
+      if (clamped)
+        colour = WithAlpha(colour, colour.a * HUD_MINIMAP_MARK_CLAMPED_ALPHA);
+
+      char digit[4] = {};
+      std::snprintf(digit, sizeof(digit), "%d", slot + 1);
+      _text.DrawTextLine(FontId::Ui, x - digitPx * 0.5f, y - digitPx * 0.5f, HUD_LABEL_SCALE * s, colour, digit);
+    }
+  }
+
   // Blips, colored by allegiance. The server states whose a ship is and this is where the client
   // turns that identity into a relation, through the update header's mask rather than by inference
   // (OverviewColourOf). A station draws at the larger dot so a base reads bigger than a fighter
@@ -511,33 +571,46 @@ void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, std::span<co
   const auto separator = [&](float _x)
   { _text.DrawScreenRect(_x, bar.y0 + HUD_MARGIN_PX * s, _x + line1, bar.y1 - HUD_MARGIN_PX * s, HUD_PANEL_OUTLINE); };
 
-  // --- control groups ---------------------------------------------------------------------------
-  for (int i = 0; i < WorldView::CONTROL_GROUPS; ++i)
+  // --- the five fleet slots ---------------------------------------------------------------------
+  // Occupancy is the status block's mask and never an empty roster: a composed fleet holds its slot
+  // with nobody in space yet, and the mask rides every update where a roster is stated once
+  // (Design/Fleets.md 8.1's amendment).
+  for (int i = 0; i < WorldView::FLEET_SLOTS; ++i)
   {
-    const Rect& button = _layout.groups[i];
-    const bool lit = (i == _view.ActiveGroup()) || (i == m_pressedGroup);
-    const Rgba outline = lit ? WithAlpha(HUD_ACCENT_GREEN, HUD_ACTIVE_OUTLINE_ALPHA) : HUD_PANEL_OUTLINE;
+    const Rect& button = _layout.fleets[i];
+    const bool held = _view.IsFleetHeld(i);
+    const bool lit = held && (_view.IsFleetSelected(i) || i == m_pressedFleet);
+    const bool alert = _view.IsFleetUnderAttack(i);
+
+    // The pulse rides on top of whatever the button would otherwise be, so a selected fleet under
+    // attack still reads as selected. It is the alert that changes colour, not the state.
+    const Rgba accent = alert ? WithAlpha(HUD_ALERT_RED, AlertPulse()) : HUD_ACCENT_GREEN;
+    const Rgba outline = (lit || alert) ? WithAlpha(accent, HUD_ACTIVE_OUTLINE_ALPHA * (alert ? AlertPulse() : 1.0f)) : HUD_PANEL_OUTLINE;
     DrawPanel(_text, button, HUD_PANEL_FILL, outline, s);
-    if (lit)
-      _text.DrawScreenRect(button.x0, button.y0, button.x1, button.y1, WithAlpha(HUD_ACCENT_GREEN, HUD_GROUP_ACTIVE_FILL_ALPHA));
+    if (lit || alert)
+      _text.DrawScreenRect(button.x0, button.y0, button.x1, button.y1, WithAlpha(accent, HUD_FLEET_ACTIVE_FILL_ALPHA));
 
     char number[4] = {};
     std::snprintf(number, sizeof(number), "%d", i + 1);
+    const Rgba digit = alert ? accent : (lit ? HUD_ACCENT_GREEN : (held ? HUD_COLOUR : HUD_LABEL_COLOUR));
     _text.DrawTextLine(FontId::Ui, button.x0 + HUD_PANEL_GAP_PX * 0.6f * s, button.y0 + HUD_PANEL_GAP_PX * 0.6f * s, HUD_LABEL_SCALE * s,
-                       lit ? HUD_ACCENT_GREEN : HUD_LABEL_COLOUR, number);
+                       digit, number);
 
+    // The composed size, so the button says eight from the moment the fleet exists rather than
+    // climbing as the hulls launch. How many are actually out is the roster's, and the sheet is
+    // where the difference is spelled (Design/Fleets.md 8.2).
     char count[16] = {};
-    const int size = _view.GroupSize(i);
-    if (size > 0)
+    const int size = _view.FleetCount(i);
+    if (held)
       std::snprintf(count, sizeof(count), "%s%d", TIMES, size);
     else
       std::snprintf(count, sizeof(count), "-");
     const float width = textPx * static_cast<float>(std::strlen(count));
     _text.DrawTextLine(FontId::Ui, (button.x0 + button.x1 - width) * 0.5f, button.y1 - HUD_PANEL_GAP_PX * 0.8f * s - textPx,
-                       HUD_TEXT_SCALE * s, size > 0 ? HUD_COLOUR : HUD_LABEL_COLOUR, count);
+                       HUD_TEXT_SCALE * s, held ? HUD_COLOUR : HUD_LABEL_COLOUR, count);
   }
 
-  float x = _layout.groups[WorldView::CONTROL_GROUPS - 1].x1 + HUD_PANEL_GAP_PX * s;
+  float x = _layout.fleets[WorldView::FLEET_SLOTS - 1].x1 + HUD_PANEL_GAP_PX * s;
   separator(x);
   x += HUD_PANEL_GAP_PX * s + line1;
 
@@ -545,25 +618,33 @@ void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, std::span<co
   {
     const std::span<const Game::ShipSnapshot>& ships = _ships;
     int hullCounts[MAX_HULL_KINDS] = {};
-    int selected = 0;
     for (size_t i = 0; i < ships.size(); ++i)
     {
-      if (!_view.IsSelected(i))
-        continue;
-      ++selected;
-      ++hullCounts[std::min<std::uint32_t>(ships[i].hullId, MAX_HULL_KINDS - 1)];
+      if (_view.IsSelected(i))
+        ++hullCounts[std::min<std::uint32_t>(ships[i].hullId, MAX_HULL_KINDS - 1)];
     }
 
     char title[32] = {};
-    if (_view.ActiveGroup() >= 0)
-      std::snprintf(title, sizeof(title), "GROUP %d", _view.ActiveGroup() + 1);
+    const int fleets = _view.SelectedFleetCount();
+    if (fleets == 1)
+      std::snprintf(title, sizeof(title), "FLEET %d", _view.FirstSelectedFleet() + 1);
+    else if (fleets > 1)
+      std::snprintf(title, sizeof(title), "%d FLEETS", fleets);
     else
-      std::snprintf(title, sizeof(title), "%s", selected > 0 ? "SELECTION" : "NO SELECTION");
+      std::snprintf(title, sizeof(title), "NO SELECTION");
     const float titleY = bar.y0 + HUD_MARGIN_PX * 1.25f * s;
-    _text.DrawTextLine(FontId::Ui, x, titleY, HUD_TEXT_SCALE * s, selected > 0 ? HUD_ACCENT_GREEN : HUD_LABEL_COLOUR, title);
+    _text.DrawTextLine(FontId::Ui, x, titleY, HUD_TEXT_SCALE * s, fleets > 0 ? HUD_ACCENT_GREEN : HUD_LABEL_COLOUR, title);
+
+    // How many ships are COMMANDED, from the status blocks, and then the hulls among them this
+    // client can currently see. The two are different numbers now and the bar has to say the first:
+    // a fleet ordered across the map is selected with none of its hulls in the interest set, and a
+    // count of visible records would read "0 SELECTED" under a title naming a live fleet.
+    int commanded = 0;
+    for (int slot = 0; slot < WorldView::FLEET_SLOTS; ++slot)
+      commanded += _view.IsFleetSelected(slot) ? _view.FleetCount(slot) : 0;
 
     char line[256] = {};
-    int written = std::snprintf(line, sizeof(line), "%d SELECTED", selected);
+    int written = std::snprintf(line, sizeof(line), "%d SHIPS", commanded);
     for (int hull = 0; hull < MAX_HULL_KINDS && written > 0 && written < static_cast<int>(sizeof(line)); ++hull)
     {
       if (hullCounts[hull] == 0)
@@ -690,16 +771,16 @@ bool Hud::HandlePointer(const PointerEvent& _event, WorldView& _view, float _dpi
     m_capturedPointer = _event.pointerId;
     m_downQpc = _event.timestampQpc;
     m_pressedRail = -1;
-    m_pressedGroup = -1;
+    m_pressedFleet = -1;
     for (int i = 0; i < RAIL_BUTTONS; ++i)
     {
       if (layout.rail[i].Contains(_event.xPx, _event.yPx))
         m_pressedRail = i;
     }
-    for (int i = 0; i < WorldView::CONTROL_GROUPS; ++i)
+    for (int i = 0; i < WorldView::FLEET_SLOTS; ++i)
     {
-      if (layout.groups[i].Contains(_event.xPx, _event.yPx))
-        m_pressedGroup = i;
+      if (layout.fleets[i].Contains(_event.xPx, _event.yPx))
+        m_pressedFleet = i;
     }
     return true;
   }
@@ -715,18 +796,14 @@ bool Hud::HandlePointer(const PointerEvent& _event, WorldView& _view, float _dpi
   if (m_pressedRail >= 0 && layout.rail[m_pressedRail].Contains(_event.xPx, _event.yPx))
     m_activeRail = (m_activeRail == m_pressedRail) ? -1 : m_pressedRail;
 
-  if (m_pressedGroup >= 0 && layout.groups[m_pressedGroup].Contains(_event.xPx, _event.yPx))
-  {
-    // Tap selects the group; holding assigns the selection to it.
-    if (m_clock.ElapsedMs(m_downQpc, _event.timestampQpc) >= HUD_LONG_PRESS_MS)
-      _view.AssignGroup(m_pressedGroup);
-    else
-      _view.SelectGroup(m_pressedGroup);
-  }
+  // What a press MEANS is the view's, not the HUD's: this class knows where a contact landed and
+  // WorldView knows what a fleet slot is. The same division the selection calls already keep.
+  if (m_pressedFleet >= 0 && layout.fleets[m_pressedFleet].Contains(_event.xPx, _event.yPx))
+    _view.PressFleetButton(m_pressedFleet, m_clock.ElapsedMs(m_downQpc, _event.timestampQpc) >= HUD_LONG_PRESS_MS);
 
   m_captured = false;
   m_pressedRail = -1;
-  m_pressedGroup = -1;
+  m_pressedFleet = -1;
   return true;
 }
 } // namespace Outpost

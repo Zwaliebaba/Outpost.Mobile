@@ -548,11 +548,22 @@ void OutpostApp::SpawnStartingFleet()
   m_world.ConfigureShard(0);
 
   constexpr int hullCount = static_cast<int>(std::size(STARTING_FLEET));
+  std::vector<Game::ShipId> ships;
+  ships.reserve(hullCount);
   for (int i = 0; i < hullCount; ++i)
   {
     const float x = (static_cast<float>(i) - static_cast<float>(hullCount - 1) * 0.5f) * START_SPACING;
-    m_world.SpawnShip(Game::LocalPos(x, 0.0f), 0.0f, static_cast<std::uint32_t>(STARTING_FLEET[i]), Game::FACTION_PLAYER);
+    ships.push_back(m_world.SpawnShip(Game::LocalPos(x, 0.0f), 0.0f, static_cast<std::uint32_t>(STARTING_FLEET[i]), Game::FACTION_PLAYER));
   }
+
+  // Into slot 1, and this is not a convenience. Selection is fleet-grain since the bar was rebound
+  // (ADR 0049), so a starting hull in no fleet is a hull the player cannot take hold of -- the
+  // fleet-only model reaching the composition root, which is where a world is authored
+  // (Design/Fleets.md 15, decision 1).
+  //
+  // FormFleet rather than ComposeFleet: these ships are already in space. Composing is what draws
+  // hulls out of a station's ledger, and there is no ledger at boot.
+  (void)m_world.FormFleet(Game::FACTION_PLAYER, 0, ships);
 }
 
 // The government's presence: a station at every planet of the starting system, in the Vanguard's
@@ -632,8 +643,10 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
   switch (_virtualKey)
   {
   case VK_ESCAPE:
-    // Drops the selection first; only quits once nothing is selected.
-    if (m_view.SelectedCount() > 0)
+    // Drops the selection first; only quits once nothing is selected. By fleets rather than by
+    // records: a fleet can be selected with every one of its hulls outside the interest set, and
+    // Escape must still drop it.
+    if (m_view.SelectedFleetCount() > 0)
       m_view.ClearSelection();
     else
       m_window.RequestClose();
@@ -716,6 +729,50 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
     m_log.Push(EventLog::Severity::Alert, static_cast<float>(m_host.Tick()) * Game::TICK_DT, "VANGUARD PROVOKED");
     break;
   }
+  case VK_F7:
+  {
+    // Debug hook, under F4's and F6's charter: a tuning aid may reach past the wire and a gameplay
+    // path never may. Nothing in the game can attack a ship -- the combat design owes the trigger --
+    // so the nearest hostile record is declared the attacker of the first selected own ship, and the
+    // defense, the button's glow and the minimap's red digit can all be watched.
+    //
+    // No client message exists for this or ever will: a client that can declare a hostile act can
+    // rouse anybody's fleet against anybody (ADR 0041, ADR 0050).
+    const std::span<const Game::ShipSnapshot> ships = m_view.Ships();
+    Game::EntityId victimEntity = Game::INVALID_ENTITY_ID;
+    for (std::size_t i = 0; i < ships.size() && victimEntity == Game::INVALID_ENTITY_ID; ++i)
+    {
+      if (m_view.IsSelected(i))
+        victimEntity = ships[i].entity;
+    }
+    const Game::ShipHandle victim = m_world.HandleOfEntity(victimEntity);
+    const Game::ShipId victimId = m_world.Resolve(victim);
+    if (victimId == Game::INVALID_SHIP_ID)
+      break;
+
+    // The nearest ship of a faction that holds the player hostile, by the same mask the client
+    // paints by -- so the ship the player would call an enemy is the one that hits them.
+    Game::ShipHandle attacker;
+    float nearestMetres = 0.0f;
+    const std::span<const Game::ShipState> world = m_world.Ships();
+    for (Game::ShipId at = 0; at < world.size(); ++at)
+    {
+      if (m_world.StandingOf(world[at].factionId, Game::FACTION_PLAYER) != Game::Standing::Hostile)
+        continue;
+      const float metres = Game::Distance(world[at].posWorld, world[victimId].posWorld);
+      if (attacker.generation == 0 || metres < nearestMetres)
+      {
+        attacker = m_world.HandleOf(at);
+        nearestMetres = metres;
+      }
+    }
+    if (attacker.generation == 0)
+      break;
+
+    m_world.RecordHostileAct(attacker, victim);
+    m_log.Push(EventLog::Severity::Alert, static_cast<float>(m_host.Tick()) * Game::TICK_DT, "FLEET STRUCK");
+    break;
+  }
   case '1':
     m_timeScale = 0.25f;
     break;
@@ -734,6 +791,10 @@ void OutpostApp::Update()
 {
   m_camera.SetViewport(m_gpu.WidthPx(), m_gpu.HeightPx());
   m_camera.Update(); // picking needs matrices that match what was on screen when the pointer moved
+
+  // Where the camera was looking before this frame's input, so a pan can be told from a flight.
+  const XMFLOAT3 wasLookingAt = m_camera.Target();
+
   for (const PointerEvent& event : m_pendingEvents)
   {
     // The HUD gets first refusal: a tap on the bottom bar must never reach the tracker as an order.
@@ -743,6 +804,25 @@ void OutpostApp::Update()
   }
   m_pendingEvents.clear();
   m_camera.Update(); // input may have moved it again
+
+  // A pan gives the camera back to the player, and this is the only place that can see one: pan,
+  // orbit and zoom reach Camera straight out of PointerTracker and never touch the listener, so
+  // WorldView cannot know a gesture happened. The composition root holds both and can compare.
+  //
+  // The TARGET, specifically, and not the whole camera: a pan is what moves it, and orbit and zoom
+  // do not. That asymmetry is the right rule rather than an accident of what is easy to detect --
+  // orbiting or zooming while the camera flies to a fleet is watching the flight, and cancelling it
+  // for that would take the gesture away from the player to protect a gesture they still want.
+  //
+  // Compared exactly, because the question is whether anything moved it at all and the focus ease
+  // that would move it by a hair has not run yet this frame (it runs in Run, after this returns).
+  if (m_camera.Target().x != wasLookingAt.x || m_camera.Target().z != wasLookingAt.z)
+    m_view.CancelFocus();
+
+  // Where the player is looking becomes what the server sends. The composition root is the only
+  // thing holding both halves, so it is the only thing that can say so; a dedicated server reads it
+  // off the session instead (WorldSimulation::SetViewCentre).
+  m_simulation.SetViewCentre(m_view.WorldPosAt(m_camera.Target().x, m_camera.Target().z));
 }
 
 void OutpostApp::Render()
@@ -826,8 +906,11 @@ void OutpostApp::Run()
     m_view.SetDisplayTime(static_cast<float>(m_host.Tick()) + m_host.InterpolationAlpha());
 
     // Feedback eases on real time rather than sim time, so it stays smooth however far the
-    // swapchain runs ahead of the tick rate.
+    // swapchain runs ahead of the tick rate. The fleet focus and the alert pulse are the same kind
+    // of thing and ride the same clock.
     m_view.UpdateFeedback(dtSec);
+    m_view.UpdateFocus(dtSec);
+    m_hud.UpdateAlerts(m_view, m_log, dtSec, static_cast<float>(m_host.Tick()) * Game::TICK_DT);
 
     Render();
   }

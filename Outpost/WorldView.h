@@ -273,29 +273,93 @@ public:
     return _index < m_ships.size() && m_ships[_index].selected;
   }
 
-  // Control groups: a remembered selection under a number. Assigning with nothing selected clears
-  // the group. The active group is the one the current selection was last taken from, and it stops
-  // being active the moment the selection is changed by any other means.
+  // Fleets: the unit of command, and the only thing that can be selected (ADR 0049).
   //
-  // A group remembers EntityIds, not positions in the snapshot. A position is only meaningful
-  // within the snapshot it came from -- SnapshotReceiver::Apply swap-and-pops on a leave and appends
-  // on an enter, so a record's index changes whenever anything enters or leaves this client's
-  // interest set -- and a group outlives any number of those. That is the same reference-across-a-
-  // boundary that ADR 0005 exists for, and the cost of getting it wrong is the one that record warns
-  // about: not a crash, but the player recalling group 2 and getting somebody else's ship.
+  // A selection is a set of SLOTS and nothing else -- five bools, not a list of ships. That is what
+  // replaced the control groups, and it is a smaller thing rather than a renamed one: a group was a
+  // remembered list this half had to keep in step with a world it could not see, and a slot is a
+  // number the server states the membership of on every change. Nothing here can hold a stale ship.
   //
-  // GroupSize reports what recalling would actually select, so a member out of view or destroyed
-  // stops being counted. A member is never *dropped* for being out of view: absent from the snapshot
-  // means outside the interest set, which is not the same as dead, and a ship that comes back into
-  // view rejoins its group. A group is pruned by being reassigned, never by being recalled.
-  static constexpr int CONTROL_GROUPS = 5;
-  void AssignGroup(int _group);
-  void SelectGroup(int _group);
-  [[nodiscard]] int GroupSize(int _group) const noexcept;
-  [[nodiscard]] int ActiveGroup() const noexcept
+  // Sub-fleet selection does not exist, on purpose: the day a ship must leave a fleet, the fleet
+  // docks and the station screen is where it happens (Design/Fleets.md 15, decision 1).
+  static constexpr int FLEET_SLOTS = static_cast<int>(Game::FLEET_SLOTS);
+
+  // Selects one slot, or toggles it in or out when _additive. A slot the server does not hold is
+  // ignored rather than selected empty.
+  void SelectFleet(int _slot, bool _additive);
+
+  [[nodiscard]] bool IsFleetSelected(int _slot) const noexcept
   {
-    return m_activeGroup;
+    return _slot >= 0 && _slot < FLEET_SLOTS && m_fleetSelected[_slot];
   }
+
+  // Whether the server says this slot is held, which is the status block's mask and NOT an empty
+  // roster: a composed fleet has a live slot and nobody in space, and the mask rides every update
+  // where a roster is stated once (Design/Fleets.md 8.1's amendment).
+  [[nodiscard]] bool IsFleetHeld(int _slot) const noexcept
+  {
+    return _slot >= 0 && _slot < FLEET_SLOTS && (m_receiver.FleetMask() & (1u << _slot)) != 0;
+  }
+
+  // Members in space plus manifest -- the fleet's composed size, so a button says eight from the
+  // moment the fleet exists rather than climbing as the hulls launch. How many are actually OUT is
+  // the roster's own size, which the sheet will need for "LAUNCHING 4 OF 8" and nothing needs yet.
+  [[nodiscard]] int FleetCount(int _slot) const noexcept
+  {
+    return IsFleetHeld(_slot) ? static_cast<int>(m_receiver.FleetStatusOf(static_cast<std::uint8_t>(_slot)).count) : 0;
+  }
+
+  // Bits 0-2 the kind shown, bit 6 engaged, bit 7 under attack (Design/Fleets.md 8.2).
+  [[nodiscard]] std::uint8_t FleetStatusBits(int _slot) const noexcept
+  {
+    return IsFleetHeld(_slot) ? m_receiver.FleetStatusOf(static_cast<std::uint8_t>(_slot)).status : std::uint8_t{0};
+  }
+
+  [[nodiscard]] bool IsFleetUnderAttack(int _slot) const noexcept
+  {
+    return (FleetStatusBits(_slot) & Game::FLEET_STATUS_UNDER_ATTACK) != 0;
+  }
+
+  // Where the server says the fleet is: the centroid of its live members, or its launch station
+  // while none is out. A readout, derived at publish time and simulated by nobody (ADR 0051's
+  // neighbour argument, Design/Fleets.md 8.2).
+  [[nodiscard]] Game::WorldPos FleetPosition(int _slot) const noexcept
+  {
+    return IsFleetHeld(_slot) ? m_receiver.FleetStatusOf(static_cast<std::uint8_t>(_slot)).position : m_viewOrigin;
+  }
+
+  [[nodiscard]] int SelectedFleetCount() const noexcept;
+
+  // The lowest selected slot, or -1. What the bottom bar names when exactly one fleet is selected.
+  [[nodiscard]] int FirstSelectedFleet() const noexcept;
+
+  // Flies the camera to a slot's stated position, and keeps re-reading it while it flies: a fleet
+  // is moving, and a goal fixed at the tap lands where it used to be. Ends on arrival, or the
+  // moment the player takes the camera back (Design/Fleets.md 9.1).
+  void FocusFleet(int _slot);
+  void UpdateFocus(float _dtSec);
+
+  // Gives the camera back. Called from the world's own gestures, and from the composition root when
+  // it sees the player pan -- a pan reaches Camera directly and never touches this half, so the
+  // root is the only thing that can notice one (OutpostApp::Update).
+  void CancelFocus() noexcept
+  {
+    m_focusSlot = -1;
+  }
+
+  // What pressing one of the five buttons means. The HUD knows where a contact landed; this knows
+  // what a fleet slot is, which is the division Hud.h's own comment already draws.
+  //
+  // A tap on a held slot selects it AND flies to it -- one gesture, because under decision 1
+  // selecting a fleet is attending to it. A hold opens the sheet, which is slice 8; until then it
+  // logs the line the sheet's header will carry, so the gesture is discoverable and says something
+  // true. An empty slot is inert to a tap and answers a hold with the one thing there is to say
+  // (Design/Fleets.md 9.1).
+  void PressFleetButton(int _slot, bool _longPress);
+
+  // What a fleet is doing, as the one word the sheet's header shows and the log stub prints.
+  // Decoded from the status byte's low three bits (Design/Fleets.md 8.2, 9.3).
+  [[nodiscard]] const char* FleetActivity(int _slot) const noexcept;
 
   // Where the view reports what the player did. Optional: with no log nothing is reported.
   void SetEventLog(EventLog& _log) noexcept
@@ -436,8 +500,9 @@ private:
   // tells the truth first, and the simulation's gate stands behind it (Design/Archive/Stations.md 9.2).
   void IssueDockOrder(std::size_t _station);
 
-  // Whether record _index is one this client may take hold of. Every selection path goes through it:
-  // PickShip for taps and hovers, OnBoxSelect for a band, and RecallableIndex for a control group.
+  // Whether record _index is one this client may take hold of. Both pick paths go through it:
+  // PickShip for taps and hovers, and OnBoxSelect for a band. What a pick then selects is the
+  // record's FLEET, which FleetSlotOf answers.
   [[nodiscard]] bool IsOwn(std::size_t _index) const noexcept;
 
   // Whose paint a hull wears. Hostile outranks faction, which is the precedence Design/Archive/Stations.md
@@ -446,16 +511,20 @@ private:
   // must see.
   [[nodiscard]] static Neuron::Rgba LiveryOf(Game::FactionId _faction, bool _own, bool _hostileToMe) noexcept;
 
-  // Where a group member sits in the current snapshot, or -1 if recalling the group would not take
-  // hold of it -- because this client is no longer holding that ship, or because it is no longer its
-  // own. One definition, used by SelectGroup and by GroupSize, so the number on a group button is
-  // exactly the number of ships pressing it would select.
+  // Which slot a record belongs to, by walking the five rosters, or -1.
   //
-  // Linear, like the carry scan in ApplySnapshot and for the same reason. It costs group size times
-  // records held, and the HUD asks for it five times a frame: free at the counts this game has, and
-  // if a fleet ever makes it matter the answer is a recount when the snapshot changes rather than a
-  // map to keep in step with two parallel arrays.
-  [[nodiscard]] int RecallableIndex(Game::EntityId _entity) const noexcept;
+  // A record with no slot is not an error and must not be coded as one: a roster is stated on the
+  // tick membership changed and a launched hull can reach this half one update before its roster
+  // does, so "no fleet yet" is what a launch looks like from here.
+  [[nodiscard]] int FleetSlotOf(Game::EntityId _entity) const noexcept;
+
+  // Sets every record's `selected` flag from whether its entity is in a selected slot's roster.
+  //
+  // Derived rather than carried, and that is the whole shape of fleet-grain selection: the flag
+  // stays exactly where the rings, the minimap, the bottom bar and the debug keys already read it,
+  // and none of them learns what a fleet is. Carrying it instead would leave a hull launched into a
+  // selected fleet unringed until something else touched the selection.
+  void RefreshSelection() noexcept;
   [[nodiscard]] static MotionSample SampleOf(const Game::ShipSnapshot& _ship, std::uint64_t _tick) noexcept;
 
   // A point authored on the hull, in mesh space, to where it is drawn. The plume's trail sampler
@@ -474,6 +543,23 @@ private:
   // cannot disagree about where the hull is.
   [[nodiscard]] DirectX::XMMATRIX HullMatrix(const ShipView& _view, const DisplayPose& _pose) const noexcept;
   void IssueMoveOrder(const DirectX::XMFLOAT3& _point, bool _hasFacing, float _facingRad);
+
+  // Sends record _target's entity as an Attack to every selected fleet. The third tap meaning, and
+  // the one slice 6 adds: ground moves, a station docks, a hostile record attacks
+  // (Design/Fleets.md 9.3).
+  void IssueAttackOrder(std::size_t _target);
+
+  // One FleetOrder per selected slot, with everything but the kind's own fields already filled.
+  // Five messages at the very most, each of fixed size, against an order budget of eight -- which
+  // is what an order that names a fleet instead of its ships buys (ADR 0049).
+  //
+  // Returns how many were sent, so a caller can leave the marker and the log line to a send that
+  // actually happened.
+  std::uint32_t SendToSelectedFleets(const Game::FleetOrder& _order);
+
+  // Records whose faction holds this client hostile. PickStation's shape and its reason: consulted
+  // from one place only, a tap with a non-empty selection.
+  [[nodiscard]] int PickHostile(float _xPx, float _yPx) const;
   [[nodiscard]] float SimTimeSec() const noexcept;
 
   // Carries per-ship presentation state onto a new snapshot by handle, so a ship that changed array
@@ -589,8 +675,14 @@ private:
 
   std::vector<StationMark> m_stationMarks;
 
-  std::vector<Game::EntityId> m_groups[CONTROL_GROUPS];
-  int m_activeGroup = -1;
+  // Which slots are selected. The whole of the selection: five bools against the five vectors of
+  // remembered ids the control groups needed, because the server states the membership now.
+  bool m_fleetSelected[FLEET_SLOTS] = {};
+
+  // The slot the camera is flying to, or -1. Its position is re-read every frame rather than
+  // captured at the tap, because the fleet is moving.
+  int m_focusSlot = -1;
+
   EventLog* m_log = nullptr;
   std::span<const char* const> m_factionNames;
 
