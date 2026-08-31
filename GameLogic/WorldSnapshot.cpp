@@ -69,7 +69,7 @@ constexpr std::uint32_t ORDER_HEADER_BYTES = 1 + 4 + 1 + 4 + 24 + 4;
 // rather than a misread. The format byte is what makes a disagreement between two builds a refusal
 // too -- there is nothing to migrate from yet, and a version nobody checks is a version nobody has.
 constexpr std::uint32_t WORLD_STATE_MAGIC = 0x54535750u; // 'PWST' little-endian: Persisted World STate
-constexpr std::uint8_t WORLD_STATE_FORMAT = 1;
+constexpr std::uint8_t WORLD_STATE_FORMAT = 2;           // 2: the fleet table joined the file
 
 // An EntityId is a u64, which is exactly what a {slot, generation} pair cost. So identity became
 // global for no bytes at all: the ship record stays 47, a fragment stays 23 ships, and the order cap
@@ -978,6 +978,20 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes)
       out.U8(docked.factionId);
     }
   }
+
+  // The fleets. Step prunes and retires them, so they are state it reads and the file carries them
+  // (AGENTS.md 8). Only the live members are written, for the reason the routes above give about
+  // their waypoints: entries past the count are never read, and writing them would make two worlds
+  // that behave identically compare unequal.
+  out.U32(static_cast<std::uint32_t>(_world.m_fleets.size()));
+  for (const World::Fleet& fleet : _world.m_fleets)
+  {
+    out.U8(fleet.ownerFaction);
+    out.U8(fleet.slot);
+    out.U32(fleet.memberCount);
+    for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+      out.Handle(fleet.members[at]);
+  }
 }
 
 bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
@@ -1132,6 +1146,35 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
     }
   }
 
+  // An exact bound rather than a heuristic one: every slot of every faction is the most fleets a
+  // world can legitimately hold, so a count past it is a corrupt file and not a big world.
+  const std::uint32_t fleetCount = in.U32();
+  if (!in.Ok() || fleetCount > FACTION_LIMIT * FLEET_SLOTS)
+    return false;
+
+  // Two live fleets claiming one slot would make FleetInSlot's answer depend on which row came
+  // first, which is an invariant corrupted rather than a value -- the same kind of defect as a slot
+  // naming a ship that is not there, and refused for the same reason.
+  std::vector<World::Fleet> fleets(fleetCount);
+  bool slotTaken[FACTION_LIMIT][FLEET_SLOTS] = {};
+  for (World::Fleet& fleet : fleets)
+  {
+    fleet.ownerFaction = in.U8();
+    fleet.slot = in.U8();
+    fleet.memberCount = in.U32();
+    if (!in.Ok() || fleet.ownerFaction >= FACTION_LIMIT || fleet.slot >= FLEET_SLOTS || fleet.memberCount > MAX_FLEET_SHIPS)
+      return false;
+    if (slotTaken[fleet.ownerFaction][fleet.slot])
+      return false;
+    slotTaken[fleet.ownerFaction][fleet.slot] = true;
+    // The handles themselves are not checked against the slot table, and deliberately: Resolve
+    // bounds-checks a slot and compares a generation, so a handle this file invented resolves to
+    // nothing and the fleet pass prunes it on the first tick. That is the fail-closed direction
+    // already, and a second check here would only turn a self-repairing world into a refused load.
+    for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+      fleet.members[at] = in.Handle();
+  }
+
   if (!in.Ok())
     return false;
 
@@ -1150,6 +1193,7 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
   _outWorld.m_freeSlots = std::move(freeSlots);
   _outWorld.m_despawnLog = std::move(despawnLog);
   _outWorld.m_stations = std::move(stations);
+  _outWorld.m_fleets = std::move(fleets);
 
   // The two inverses of the slot table, rebuilt rather than read. m_entityRows is sorted by id
   // because that is the invariant its binary search rests on, and building it by walking the slots

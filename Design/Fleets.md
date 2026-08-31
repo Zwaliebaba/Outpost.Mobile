@@ -1,8 +1,9 @@
 # Fleets — composition at a station, five slots, and command at fleet grain
 
-**Status: agreed with the owner on 2026-08-31; no slice started.** Four decisions were put to the
-owner and taken (§15); each was the recommended option. §16 lists the slices and the dependencies
-between them.
+**Status: agreed with the owner on 2026-08-31. Slice 1 — the table — is written and in review;
+its work order is [`Fleets-slice-1.md`](Fleets-slice-1.md).** Four decisions were put to the owner
+and taken (§15); each was the recommended option. §16 lists the slices and the dependencies between
+them.
 
 This document designs the game's unit of command: the **fleet**. A player holds at most **five
 active fleets** and each fleet holds at most **eight ships**, of any mix of hulls. A fleet is
@@ -838,7 +839,7 @@ whichever slice makes them false.
 
 | # | Slice | Layer | Depends on | Decision records due |
 |---|---|---|---|---|
-| 1 | **The table**: `Fleet`, `FLEET_SLOTS`/`MAX_FLEET_SHIPS`, the pass skeleton (prune/retire only), codec coverage, `AFleetlessWorldTicksAsToday`, the replay and save gates over the row | `GameLogic` | — | fleets are simulation state at fleet grain; the five slots are the player's whole command surface |
+| 1 | **The table**: `Fleet`, `FLEET_SLOTS`/`MAX_FLEET_SHIPS`, the pass skeleton (prune/retire only), codec coverage, `AFleetlessWorldTicksAsToday`, the replay and save gates over the row — *in review*, [work order](Fleets-slice-1.md) | `GameLogic` | — | [fleets are simulation state at fleet grain](Decisions/0048-fleets-are-simulation-state-at-fleet-grain.md) |
 | 2 | **Compose and launch**: `ComposeFleet` + gates, the manifest, the metronome + rally, `FLEET_LAUNCH_EVERY_TICKS`, dismantle-on-dock and retire-on-loss falling out of the prune, their tests | `GameLogic` | 1 | — |
 | 3 | **Fleet orders**: `FleetOrderKind`, the `FleetOrder` message + `IssueFleetOrder` + lowering, the cruise rule, `Stop`, `Mine` reserved-and-refused, patience, retirement of the ship-list order messages, their tests | `GameLogic` | 2 | orders name a fleet, not ships |
 | 4 | **The defense**: `RecordHostileAct`, `HullSpec::combatant`, threat/anchor/alert + the posture, `FLEET_ENGAGE_RANGE_METRES`/`FLEET_ALERT_TICKS`, the ordered attack sharing the chassis, their tests | `GameLogic` | 3 | a fleet reacts to stated acts, at fleet grain (extends ADR 0041) |

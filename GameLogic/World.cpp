@@ -237,6 +237,80 @@ const World::Station& World::StationOf(StationId _id) const noexcept
   return m_stations[_id];
 }
 
+World::FleetId World::FormFleet(FactionId _ownerFaction, std::uint8_t _slot, std::span<const ShipId> _ships)
+{
+  // In the order the header lists them. Which one refuses is not observable -- every refusal is the
+  // same invalid id and the same untouched table -- so the order is for the reader.
+  if (_slot >= FLEET_SLOTS || _ownerFaction >= FACTION_LIMIT)
+    return INVALID_FLEET_ID;
+  if (FleetInSlot(_ownerFaction, _slot) != INVALID_FLEET_ID)
+    return INVALID_FLEET_ID;
+  if (_ships.empty() || _ships.size() > MAX_FLEET_SHIPS)
+    return INVALID_FLEET_ID;
+
+  // The whole list is checked before anything is written, because a refusal has to change nothing:
+  // a half-formed fleet is one nobody asked for, and its size is one of the rules.
+  for (std::size_t at = 0; at < _ships.size(); ++at)
+  {
+    const ShipId id = _ships[at];
+    if (id >= m_ships.size() || m_ships[id].factionId != _ownerFaction)
+      return INVALID_FLEET_ID;
+    if (FleetAt(id) != INVALID_FLEET_ID)
+      return INVALID_FLEET_ID;
+    // Named twice is the same defect as already in a fleet, arriving from inside one call rather
+    // than across two: it would spend two of the eight places on one ship.
+    for (std::size_t before = 0; before < at; ++before)
+    {
+      if (_ships[before] == id)
+        return INVALID_FLEET_ID;
+    }
+  }
+
+  Fleet fleet;
+  fleet.ownerFaction = _ownerFaction;
+  fleet.slot = _slot;
+  fleet.memberCount = static_cast<std::uint32_t>(_ships.size());
+  for (std::size_t at = 0; at < _ships.size(); ++at)
+    fleet.members[at] = HandleOf(_ships[at]);
+
+  const FleetId id = static_cast<FleetId>(m_fleets.size());
+  m_fleets.push_back(fleet);
+  return id;
+}
+
+World::FleetId World::FleetInSlot(FactionId _ownerFaction, std::uint8_t _slot) const noexcept
+{
+  for (std::size_t at = 0; at < m_fleets.size(); ++at)
+  {
+    if (m_fleets[at].ownerFaction == _ownerFaction && m_fleets[at].slot == _slot)
+      return static_cast<FleetId>(at);
+  }
+  return INVALID_FLEET_ID;
+}
+
+World::FleetId World::FleetAt(ShipId _id) const noexcept
+{
+  if (_id >= m_ships.size())
+    return INVALID_FLEET_ID;
+
+  for (std::size_t at = 0; at < m_fleets.size(); ++at)
+  {
+    const Fleet& fleet = m_fleets[at];
+    for (std::uint32_t member = 0; member < fleet.memberCount; ++member)
+    {
+      if (Resolve(fleet.members[member]) == _id)
+        return static_cast<FleetId>(at);
+    }
+  }
+  return INVALID_FLEET_ID;
+}
+
+const World::Fleet& World::FleetOf(FleetId _id) const noexcept
+{
+  static constexpr Fleet NONE;
+  return (_id < m_fleets.size()) ? m_fleets[_id] : NONE;
+}
+
 std::span<const DespawnRecord> World::DespawnsSince(std::uint64_t _cursor) const noexcept
 {
   if (_cursor <= m_despawnBase)
@@ -704,6 +778,40 @@ void World::StepProtectors()
   m_launchScratch.clear();
 }
 
+void World::StepFleets()
+{
+  // Prune. In array order, compacting in place, which is the idiom StepProtectors uses on a
+  // station's target list: the survivors keep their relative order, and that order is the one the
+  // fleet was formed in -- which is what a formation solve will read as slot order.
+  for (Fleet& fleet : m_fleets)
+  {
+    std::uint32_t live = 0;
+    for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+    {
+      if (Resolve(fleet.members[at]) != INVALID_SHIP_ID)
+        fleet.members[live++] = fleet.members[at];
+    }
+    // Cleared rather than left as it was, so that a row written out live-members-only reads back
+    // equal to the row that was saved. A Route deliberately leaves its dead waypoints alone; the
+    // difference is that nothing ever compares two routes whole and this row is compared whole.
+    for (std::uint32_t at = live; at < fleet.memberCount; ++at)
+      fleet.members[at] = ShipHandle{};
+    fleet.memberCount = live;
+  }
+
+  // Retire. Backwards, so the row swap-and-pop brings in from the end is one this walk has already
+  // looked at and needs no second visit. Nothing stores a fleet index across a tick -- an owner and
+  // a slot is the name that survives -- so there is nothing for the swap to break.
+  for (std::size_t at = m_fleets.size(); at-- > 0;)
+  {
+    if (m_fleets[at].memberCount != 0)
+      continue;
+    if (at + 1 < m_fleets.size())
+      m_fleets[at] = m_fleets.back();
+    m_fleets.pop_back();
+  }
+}
+
 void World::PlanRoute(ShipId _id, const WorldPos& _destination, float _requiredClearanceMetres)
 {
   ShipState& ship = m_ships[_id];
@@ -1093,6 +1201,7 @@ void World::Step()
   StepDockings();
   StepPatrols();
   StepProtectors();
+  StepFleets();
   SnapshotPreviousTick();
   RebuildIndex();
   GatherNeighbours();

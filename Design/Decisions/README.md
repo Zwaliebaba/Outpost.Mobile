@@ -82,3 +82,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0045](0045-the-tick-rate-is-fixed-at-60-hz.md) | The tick rate is fixed at 60 Hz, and capacity is bought elsewhere | accepted |
 | [0046](0046-the-wires-sector-index-is-32-bits.md) | The wire's sector index is 32 bits, and a position rides a 0.125 m lattice | accepted |
 | [0047](0047-identity-is-a-shard-scoped-serial.md) | Identity is a shard-scoped serial, carried for life; the handle stays in-process | accepted |
+| [0048](0048-fleets-are-simulation-state-at-fleet-grain.md) | Fleets are simulation state at fleet grain, named by an owner and a slot | accepted |

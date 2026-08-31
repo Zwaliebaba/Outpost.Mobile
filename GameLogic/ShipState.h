@@ -35,6 +35,21 @@ inline constexpr FactionId FACTION_VANGUARD = 2;
 // becomes a small standings record and this limit moves with it -- widen both together.
 inline constexpr std::uint32_t FACTION_LIMIT = 8;
 
+// The player's whole command surface, and the size of one fleet in it.
+//
+// Both are in the replay contract: they decide which FormFleet calls are accepted, so a build that
+// disagreed about either would form a fleet this one refuses. They sit beside FACTION_LIMIT because
+// all three are per-faction ceilings, and because the fleet wire's slot mask will lean on
+// FLEET_SLOTS exactly as the hostileMask leans on FACTION_LIMIT (Design/Fleets.md 8.2).
+//
+// Eight is measured rather than liked (Design/Fleets.md 4.2). A Carrier-led wedge of eight spans
+// about 1 km, inside the 2,000 m interest radius, while twelve is outside it -- a fleet whose far
+// wing its own player cannot see. A compressed pack of eight unjams in 0.4 s against 2.5 s at
+// sixteen, which is SEPARATION_ITERATIONS' own measurement read as a fleet size. And five fleets of
+// eight is forty player ships, which is the envelope every number in this tree was measured in.
+inline constexpr std::uint32_t FLEET_SLOTS = 5;
+inline constexpr std::uint32_t MAX_FLEET_SHIPS = 8;
+
 // What one faction is to another.
 //
 // Simulation state by AGENTS.md 5's own test: it changes recorded outcomes -- who may dock, who

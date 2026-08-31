@@ -47,6 +47,9 @@
     <ClCompile Include="StationTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="FleetTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="DockingTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

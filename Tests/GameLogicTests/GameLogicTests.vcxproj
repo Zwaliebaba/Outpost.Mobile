@@ -194,6 +194,7 @@
     <ClCompile Include="PathfindingTests.cpp" />
     <ClCompile Include="PatrolTests.cpp" />
     <ClCompile Include="StationTests.cpp" />
+    <ClCompile Include="FleetTests.cpp" />
     <ClCompile Include="DockingTests.cpp" />
     <ClCompile Include="ProtectorTests.cpp" />
     <ClCompile Include="BackOffTests.cpp" />
