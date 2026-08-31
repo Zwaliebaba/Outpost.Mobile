@@ -787,11 +787,12 @@ public:
     const Game::Publisher::Handle subscriber = publisher.Add(desc);
 
     link.Pump(0);
-    Game::MoveOrder order;
-    order.ships.push_back(world.EntityIdOf(ship));
-    order.destination = Game::LocalPos(500.0f, 0.0f);
+    Game::FleetOrder order;
+    order.slot = 0;
+    order.kind = Game::FleetOrderKind::Move;
+    order.point = Game::LocalPos(500.0f, 0.0f);
     for (int at = 0; at < 5; ++at)
-      Assert::IsTrue(Game::WriteMoveOrder(order, link.client), L"the order was refused by the lane");
+      Assert::IsTrue(Game::WriteFleetOrder(order, link.client), L"the order was refused by the lane");
     link.Pump(0);
 
     publisher.ApplyOrders(world);

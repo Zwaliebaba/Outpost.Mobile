@@ -1,11 +1,12 @@
 # Fleets — composition at a station, five slots, and command at fleet grain
 
-**Status: agreed with the owner on 2026-08-31. Slices 1 to 5 — the table, compose and launch,
-orders at fleet grain, the defense and the fleet wire — are written and in review; their work orders
-are [`Fleets-slice-1.md`](Fleets-slice-1.md), [`Fleets-slice-2.md`](Fleets-slice-2.md),
-[`Fleets-slice-3.md`](Fleets-slice-3.md), [`Fleets-slice-4.md`](Fleets-slice-4.md) and
-[`Fleets-slice-5.md`](Fleets-slice-5.md) — the whole `GameLogic` half, and everything that crosses
-the seam.** Four decisions were put to the owner
+**Status: agreed with the owner on 2026-08-31. Slices 1 to 6 — the table, compose and launch,
+orders at fleet grain, the defense, the fleet wire and the fleet bar — are written and in review;
+their work orders are [`Fleets-slice-1.md`](Fleets-slice-1.md),
+[`Fleets-slice-2.md`](Fleets-slice-2.md), [`Fleets-slice-3.md`](Fleets-slice-3.md),
+[`Fleets-slice-4.md`](Fleets-slice-4.md), [`Fleets-slice-5.md`](Fleets-slice-5.md) and
+[`Fleets-slice-6.md`](Fleets-slice-6.md) — the whole `GameLogic` half, everything that crosses the
+seam, and the bar that commands it.** Four decisions were put to the owner
 and taken (§15); each was the recommended option. §16 lists the slices and the dependencies between
 them.
 
@@ -708,6 +709,27 @@ orders, and `GROUP %d` log lines go with it. Per button, from roster + status bl
   (`FLEET_FOCUS_*`), and the interest set follows the camera through the `SetCentre` wiring that
   already exists, so the records stream in as the camera arrives and the coarse centroid hands
   over to real hulls.
+
+> **Amendment, 2026-08-31 (slice 6).** "`SetCentre` already exists" is true and "the interest set
+> follows the camera" was not: `SetCentre` was being fed the centroid of the subscriber's own ships,
+> so tapping a distant fleet flew the camera to a sky the server never sent a hull to. Slice 6 makes
+> the sentence true, and the composition root is where it happens — `WorldSimulation` is handed the
+> camera's ground target each frame, which the class's own note already anticipated.
+>
+> **It was not safe to do before slice 5.** The centroid was there so a player never lost sight of
+> their own ships; what replaces that guarantee is the status block, stamped on every update, which
+> tells them where all five fleets are whether or not any is in view. A fleet docking no longer drags
+> the view either, which `Stations-slice-6.md` §5 had fixed by hand.
+>
+> The **fly-over ends on arrival or the moment the player pans** — and a pan only, not an orbit or a
+> zoom. Pan, orbit and zoom reach `Camera` straight out of `PointerTracker` and never touch the
+> view, so the root notices one by watching the camera's *target*, which a pan moves and the other
+> two do not. That falls out as the right rule rather than a convenient one: orbiting or zooming
+> while the camera flies is watching the flight.
+>
+> **Hold is the sheet, and the sheet is slice 8.** Until then a hold logs the line the sheet's header
+> will carry — `FLEET %d | %d SHIPS | MOVING` — so the gesture is discoverable and says something
+> true ([slice 6](Fleets-slice-6.md) §2.6).
 - **Hold** (`HUD_LONG_PRESS_MS`, the constant that already tells the two apart): the fleet sheet,
   §9.3.
 - **Under attack** (status bit 7): the button pulses `HUD_ALERT_RED`, and the log states
@@ -857,6 +879,17 @@ bar with counts and one glowing button; the sheet open over a fleet in three sta
 screen with a draft; the minimap with a clamped fleet digit; a launch sequence; and no `GameLogic`
 file touched by an `Outpost` slice.
 
+> **Amendment, 2026-08-31 (slice 6).** The last of those and §16's slice 6 row are in conflict, and
+> the row wins. Slice 6 is where nothing writes a `MoveOrder` or a `DockOrder` any more, and the row
+> lists their retirement — which is a `GameLogic` change. A wire message nothing writes is a second
+> way to command lying around waiting to be found, which is worse than the rule the deletion breaks.
+>
+> The rule is kept where it is worth keeping: the client work is **one commit that touches no
+> `GameLogic` file**, and the deletion is a second commit reviewable on its own. What the rule is
+> really guarding against is a client slice quietly changing simulation behavior, and this changes
+> none — `World::IssueMoveOrder` and `World::IssueDockOrder` are untouched, because a fleet order
+> lowers onto them. What retires is the wire, not the machinery.
+
 ---
 
 ## 12. The MMO ledger
@@ -975,7 +1008,7 @@ whichever slice makes them false.
 | 3 | **Fleet orders**: `FleetOrderKind`, the `FleetOrder` message + `IssueFleetOrder` + lowering, the cruise rule, `Stop`, `Attack` and `Mine` reserved-and-refused, patience, their tests — *in review*, [work order](Fleets-slice-3.md). The ship-list messages' retirement moved to slice 6, which is where the client stops sending them | `GameLogic` | 2 | [orders name a fleet, not ships](Decisions/0049-orders-name-a-fleet-not-ships.md) |
 | 4 | **The defense**: `RecordHostileAct`, `HullSpec::combatant`, threat/anchor/alert + the posture, `FLEET_ENGAGE_RANGE_METRES`/`FLEET_ALERT_TICKS`, the ordered attack sharing the chassis, their tests — *in review*, [work order](Fleets-slice-4.md) | `GameLogic` | 3 | [a fleet defends itself against stated acts, at fleet grain](Decisions/0050-a-fleet-defends-itself-against-stated-acts.md) |
 | 5 | **The fleet wire**: `FleetRoster` + join-time delivery, the status block + publish-side centroid, `LedgerRequest`/`LedgerReply` and the `ComposeOrder` that has no use without them (§5.2 — unlisted here until slice 2 placed it), receiver surfaces, their tests — *in review*, [work order](Fleets-slice-5.md) | `GameLogic` | 2 (roster), 4 (status bits) | [the ledger is asked for, not broadcast](Decisions/0051-the-ledger-is-asked-for-not-broadcast.md) |
-| 6 | **The fleet bar**: buttons rebound (tap = select + fly-to, hold = sheet stub, glow, counts), selection at fleet grain, `FleetOrder` sending, group machinery and its log lines retired, the ship-list order messages retired with them, the boot scene as Fleet 1, F7, minimap fleet digits, screenshots at two sizes | `Outpost` | 3, 5 | — |
+| 6 | **The fleet bar**: buttons rebound (tap = select + fly-to, hold = sheet stub, glow, counts), selection at fleet grain, `FleetOrder` sending, group machinery and its log lines retired, the ship-list order messages retired with them, the boot scene as Fleet 1, F7, minimap fleet digits, screenshots at two sizes — *in review*, [work order](Fleets-slice-6.md) | `Outpost` | 3, 5 | — |
 | 7 | **Assembly**: the station long-press, `LedgerRequest` flow, the assembly screen, compose + launch end to end on screen, screenshots | `Outpost` | 5, 6 | — |
 | 8 | **The sheet**: status lines, member rows, the command row + target-tap arming, refusal and alert log lines complete, screenshots of the three states | `Outpost` | 6 (7 for a docked-adjacent demo) | — |
 

@@ -163,12 +163,12 @@ void Publisher::ApplyOrders(World& _world)
 
         const std::span<const std::uint8_t> message(m_messageScratch.data(), size);
 
-        // Ids resolve here and nowhere else, for either kind. A ship that died between the click and
-        // this tick resolves to nothing and is left out, rather than steering whichever ship
-        // swap-and-pop moved into its index (ADR 0005) -- and an id minted by another shard resolves
-        // to nothing too, which is what stops a client ordering a ship this world does not own.
-        MoveOrder order;
-        DockOrder dockOrder;
+        // Ids resolve here and nowhere else, for every kind. A ship that died between the click and
+        // this tick resolves to nothing and the order does nothing with it, rather than acting on
+        // whichever ship swap-and-pop moved into its index (ADR 0005) -- and an id minted by another
+        // shard resolves to nothing too, which is what stops a client naming what this world does
+        // not own. There is far less of it to do than there was: an order names a fleet now and
+        // carries at most two ids, where a ship-list order carried up to 139 (ADR 0049).
         FleetOrder fleetOrder;
         LedgerRequest ledgerRequest;
         ComposeOrder composeOrder;
@@ -210,36 +210,6 @@ void Publisher::ApplyOrders(World& _world)
           // cannot compose out of somebody else's ledger by saying it is somebody else.
           const ShipId structure = _world.ResolveEntity(composeOrder.station);
           (void)_world.ComposeFleet(_world.StationAt(structure), composeOrder.slot, composeOrder.hullCounts, subscriber.faction);
-        }
-        else if (ReadMoveOrder(message, order))
-        {
-          m_resolvedScratch.clear();
-          for (const EntityId entity : order.ships)
-          {
-            const ShipId id = _world.ResolveEntity(entity);
-            if (id != INVALID_SHIP_ID)
-              m_resolvedScratch.push_back(id);
-          }
-          if (!m_resolvedScratch.empty())
-            (void)_world.IssueMoveOrder(m_resolvedScratch, order.destination, order.hasFacing, order.facingRad, subscriber.faction);
-        }
-        else if (ReadDockOrder(message, dockOrder))
-        {
-          // The station resolves too, and a dead one makes the whole order a no-op rather than a
-          // dock at whatever now occupies that index.
-          const ShipId station = _world.ResolveEntity(dockOrder.station);
-          if (station == INVALID_SHIP_ID)
-            continue;
-
-          m_resolvedScratch.clear();
-          for (const EntityId entity : dockOrder.ships)
-          {
-            const ShipId id = _world.ResolveEntity(entity);
-            if (id != INVALID_SHIP_ID)
-              m_resolvedScratch.push_back(id);
-          }
-          if (!m_resolvedScratch.empty())
-            (void)_world.IssueDockOrder(m_resolvedScratch, station, subscriber.faction);
         }
         // A message this half does not understand is dropped, not fatal.
       }

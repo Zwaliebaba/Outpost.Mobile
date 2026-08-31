@@ -96,29 +96,13 @@ struct WorldSnapshot
   std::vector<ShipSnapshot> ships;
 };
 
-// What one move order carries up the wire. Ids, not handles: the client has never been given a
-// handle and could not interpret one (ADR 0047).
-struct MoveOrder
-{
-  std::vector<EntityId> ships;
-  WorldPos destination;
-  float facingRad = 0.0f;
-  bool hasFacing = false;
-};
-
-// What one dock order carries up the wire. A second instance of the move order's shape: a datagram
-// kind, a write/read pair, handles resolved in the adapter and a faction gate in World (ADR 0014).
-struct DockOrder
-{
-  std::vector<EntityId> ships;
-  EntityId station = INVALID_ENTITY_ID; // the station's structure
-};
-
 // What one fleet order carries up the wire.
 //
 // It carries no ship list at all, and that is the whole point rather than an economy: one small
-// fixed-size message whatever the fleet's size, so MaxShipsPerOrder does not apply to it and never
-// will, and a fleet of eight costs a client exactly what a fleet of one does (ADR 0049).
+// fixed-size message whatever the fleet's size, so there is no cap for one to exceed and never will
+// be, and a fleet of eight costs a client exactly what a fleet of one does (ADR 0049). It is the
+// only order that moves ships now -- the two that carried lists retired with the control groups
+// that sent them (Design/Fleets-slice-6.md 2.10).
 struct FleetOrder
 {
   std::uint8_t slot = 0;
@@ -200,10 +184,13 @@ inline constexpr std::uint8_t FLEET_STATUS_KIND_MASK = 0x07;
 inline constexpr std::uint8_t FLEET_STATUS_ENGAGED = 0x40;
 inline constexpr std::uint8_t FLEET_STATUS_UNDER_ATTACK = 0x80;
 
-// How many ships fit in one datagram of each kind. Derived from MAX_DATAGRAM_BYTES rather than
-// chosen, so the day the record grows these follow it.
+// How many ships fit in one snapshot fragment. Derived from MAX_DATAGRAM_BYTES rather than chosen,
+// so the day the record grows this follows it.
+//
+// Its counterpart MaxShipsPerOrder is gone with the ship-list orders it capped. An order names a
+// fleet now and carries no ships at all, so there is no size for one to exceed -- which is the
+// property ADR 0049 was for, and the cap's retirement is the visible proof of it.
 [[nodiscard]] std::uint32_t ShipsPerSnapshotFragment() noexcept;
-[[nodiscard]] std::uint32_t MaxShipsPerOrder() noexcept;
 
 // Sends a world as one or more datagrams.
 //
@@ -451,19 +438,15 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes);
 [[nodiscard]] bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld);
 
 // Orders travel the other way. Written by the client half, read and applied by the server half.
-[[nodiscard]] bool WriteMoveOrder(const MoveOrder& _order, Neuron::Transport& _transport);
-[[nodiscard]] bool ReadMoveOrder(std::span<const std::uint8_t> _datagram, MoveOrder& _outOrder);
-
-// A dock order's own header is smaller than a move order's -- a station handle in place of a
-// destination and a facing -- so it would admit two more ships. It deliberately does not: the cap
-// stays MaxShipsPerOrder(), because the client's selection logic already agrees on one number and
-// two caps differing by two is a fact nobody will remember and no test would pin.
-[[nodiscard]] bool WriteDockOrder(const DockOrder& _order, Neuron::Transport& _transport);
-[[nodiscard]] bool ReadDockOrder(std::span<const std::uint8_t> _datagram, DockOrder& _outOrder);
-
-// A fleet order, on the same reliable lane and in the same shape. The reader refuses a slot past
-// FLEET_SLOTS and a kind past the last one it knows, because a malformed message is content and
-// content fails closed rather than being passed on to a gate that would have to guess (AGENTS.md 5).
+//
+// There is exactly one kind of them that moves ships, and it names a fleet (ADR 0049). The
+// ship-list move and dock orders that stood here retired with the control groups that sent them:
+// nothing wrote one once selection was fleet-grain, and a wire message nothing writes is a second
+// way to command waiting to be found (Design/Fleets-slice-6.md 2.10).
+//
+// The reader refuses a slot past FLEET_SLOTS and a kind past the last one it knows, because a
+// malformed message is content and content fails closed rather than being passed on to a gate that
+// would have to guess (AGENTS.md 5).
 [[nodiscard]] bool WriteFleetOrder(const FleetOrder& _order, Neuron::Transport& _transport);
 [[nodiscard]] bool ReadFleetOrder(std::span<const std::uint8_t> _datagram, FleetOrder& _outOrder);
 

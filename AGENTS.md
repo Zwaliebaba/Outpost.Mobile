@@ -82,7 +82,8 @@ stops well short of a network: one client, one process,
 `127.0.0.1` only, and a self-signed certificate the client does not validate. The wire has two lanes
 and the format chooses by asking whether a later message makes a lost one right (`ADR 0029`):
 positions are datagrams and heal themselves, while departures, orders and fleet rosters take the
-reliable lane and cannot be lost. A station's ledger takes neither shape: it is *asked for*, and the
+reliable lane and cannot be lost. There is one order that moves ships and it names a **fleet** rather
+than a list of them (ADR 0049), so its size does not depend on how many ships it moves. A station's ledger takes neither shape: it is *asked for*, and the
 request/reply pair is the only one on this seam (ADR 0051). The seam serves N subscribers now rather
 than one: `Game::Publisher` holds a table of them, each with its own interest set, writer, faction,
 phase, order budget, despawn cursor and last-sent fleet rosters (ADR 0030). What remains missing is the far end — this executable adds exactly one entry,

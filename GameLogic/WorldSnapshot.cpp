@@ -19,7 +19,11 @@ namespace
 // otherwise would fail on the first ARM64 client (Design/Archive/Collision.md 2 puts servers on x64 and
 // clients anywhere).
 constexpr std::uint8_t KIND_SNAPSHOT = 1;
-constexpr std::uint8_t KIND_MOVE_ORDER = 2;
+
+// 2 and 4 were the ship-list move and dock orders. They are RETIRED rather than reused: a client
+// built against an older tree would have its move orders read as whatever took the number, and a
+// kind that once meant something is the one value a format must not recycle
+// (Design/Fleets-slice-6.md 2.10).
 
 // Leaves and deaths, on the reliable lane and no longer in the snapshot header.
 //
@@ -30,13 +34,9 @@ constexpr std::uint8_t KIND_MOVE_ORDER = 2;
 // reason about, and the unreliable copy would still be the one that arrived first.
 constexpr std::uint8_t KIND_LEAVE = 3;
 
-// The dock order, beside the move order. A second kind rather than a flag on the first, because the
-// two carry different payloads -- a station handle against a destination and a facing -- and a
-// discriminated kind is what the format already uses to say so.
-constexpr std::uint8_t KIND_DOCK_ORDER = 4;
-
 // An order that names a fleet rather than the ships in it (ADR 0049). It is the smallest message on
-// this lane and the only one whose size does not depend on how many ships it moves.
+// this lane, and since the two that carried ship lists retired it is the only one that moves ships
+// at all.
 constexpr std::uint8_t KIND_FLEET_ORDER = 5;
 
 // Who is in a fleet, downward and reliably. It is not in the ship record and never will be:
@@ -69,8 +69,8 @@ constexpr std::uint32_t SNAPSHOT_HEADER_BYTES = 1 + 1 + 4 + 4 + 4 + 8 + 4 + 1;
 // fleet is under attack" would leave a button dark through the fight, and stamping it costs less
 // than any scheme for repairing it. Which means ShipsPerSnapshotFragment must be sized against the
 // WORST case rather than against what an update happens to carry -- one number that every caller
-// and three tests agree on, which is the trade MaxShipsPerOrder already argues for below. It costs
-// one record a fragment: 22 rather than 23 (Design/Fleets-slice-5.md 2.2).
+// and every test agree on, rather than the truer number nobody can state. It costs one record a
+// fragment: 22 rather than 23 (Design/Fleets-slice-5.md 2.2).
 constexpr std::uint32_t FLEET_STATUS_BYTES = 4 + 4 + 2 + 2 + 1 + 1;
 constexpr std::uint32_t FLEET_BLOCK_MAX_BYTES = 1 + FLEET_SLOTS * FLEET_STATUS_BYTES;
 
@@ -93,8 +93,6 @@ constexpr std::uint32_t LEAVE_HEADER_BYTES = 1 + 8 + 4 + 4 + 4;
 // hundred-ship update is 5 fragments instead of 8, which is what finding E1 cares about: at 2%
 // datagram loss it completes 90% of the time rather than 85% (Design/Archive/QuantizedWire-work-order.md).
 constexpr std::uint32_t SHIP_RECORD_BYTES = 8 + 8 + 4 + 4 + 4 + 12 + 1 + 1 + 1 + 4;
-// kind, orderId, hasFacing, facingRad, destination, handleCount
-constexpr std::uint32_t ORDER_HEADER_BYTES = 1 + 4 + 1 + 4 + 24 + 4;
 // The saved state's magic and format byte. Not a KIND_* value: a state buffer is not a datagram and
 // never meets SnapshotReceiver::Accept, so the magic is what turns feeding it to one into a refusal
 // rather than a misread. The format byte is what makes a disagreement between two builds a refusal
@@ -442,17 +440,6 @@ private:
 std::uint32_t ShipsPerSnapshotFragment() noexcept
 {
   return (Neuron::MAX_DATAGRAM_BYTES - SNAPSHOT_HEADER_BYTES - FLEET_BLOCK_MAX_BYTES) / SHIP_RECORD_BYTES;
-}
-
-// Still derived from the datagram bound, though an order now travels on the reliable lane and could
-// be MAX_RELIABLE_BYTES long (ADR 0029). Keeping the smaller cap is deliberate: it is the number
-// every existing test and the client's selection logic already agree on, and raising it is a wire
-// change with nobody asking for it. The day a formation of more than this many ships is orderable,
-// it moves -- and it moves as its own slice, because the cap is what stops one click from becoming
-// an unbounded amount of pathfinding.
-std::uint32_t MaxShipsPerOrder() noexcept
-{
-  return (Neuron::MAX_DATAGRAM_BYTES - ORDER_HEADER_BYTES) / ENTITY_ID_BYTES;
 }
 
 namespace
@@ -1467,101 +1454,7 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
   return true;
 }
 
-bool WriteMoveOrder(const MoveOrder& _order, Neuron::Transport& _transport)
-{
-  if (_order.ships.empty() || _order.ships.size() > MaxShipsPerOrder())
-    return false;
-
-  std::vector<std::uint8_t> bytes;
-  ByteWriter out(bytes);
-  out.U8(KIND_MOVE_ORDER);
-  out.U32(0); // order id, reserved: nothing acknowledges an order yet
-  out.U8(_order.hasFacing ? 1u : 0u);
-  out.F32(_order.facingRad);
-  out.Pos(_order.destination);
-  out.U32(static_cast<std::uint32_t>(_order.ships.size()));
-  for (const EntityId entity : _order.ships)
-    out.Entity(entity);
-
-  // On the reliable lane: a dropped order is a click the player made and the game ignored, which is
-  // the one failure mode no amount of interpolation covers up (Design/Archive/QuicTransport.md 8).
-  return _transport.SendReliable(bytes.data(), static_cast<std::uint32_t>(bytes.size()));
-}
-
-bool ReadMoveOrder(std::span<const std::uint8_t> _datagram, MoveOrder& _outOrder)
-{
-  ByteReader in(_datagram);
-  if (in.U8() != KIND_MOVE_ORDER)
-    return false;
-
-  (void)in.U32(); // order id
-  const bool hasFacing = in.U8() != 0;
-  const float facingRad = in.F32();
-  const WorldPos destination = in.Pos();
-  const std::uint32_t count = in.U32();
-  if (!in.Ok() || count == 0 || count > MaxShipsPerOrder() || in.Remaining() < count * ENTITY_ID_BYTES)
-    return false;
-
-  _outOrder.ships.clear();
-  _outOrder.ships.reserve(count);
-  for (std::uint32_t at = 0; at < count; ++at)
-    _outOrder.ships.push_back(in.Entity());
-  if (!in.Ok())
-    return false;
-
-  _outOrder.destination = destination;
-  _outOrder.facingRad = facingRad;
-  _outOrder.hasFacing = hasFacing;
-  return true;
-}
-
 // kind, orderId, station handle, handleCount -- 17 bytes, against the move order's 38.
-bool WriteDockOrder(const DockOrder& _order, Neuron::Transport& _transport)
-{
-  // MaxShipsPerOrder, not a cap of its own. This header is smaller than a move order's, so its own
-  // arithmetic would admit two more ships -- and two caps differing by two is a fact nobody would
-  // remember and no test would pin. One number, which the client's selection logic already agrees
-  // on (Design/Archive/Stations-slice-3.md 2.6).
-  if (_order.ships.empty() || _order.ships.size() > MaxShipsPerOrder())
-    return false;
-
-  std::vector<std::uint8_t> bytes;
-  ByteWriter out(bytes);
-  out.U8(KIND_DOCK_ORDER);
-  out.U32(0); // order id, reserved: nothing acknowledges an order yet
-  out.Entity(_order.station);
-  out.U32(static_cast<std::uint32_t>(_order.ships.size()));
-  for (const EntityId entity : _order.ships)
-    out.Entity(entity);
-
-  // The reliable lane, for the move order's reason: a dropped order is a click the player made and
-  // the game ignored (ADR 0029).
-  return _transport.SendReliable(bytes.data(), static_cast<std::uint32_t>(bytes.size()));
-}
-
-bool ReadDockOrder(std::span<const std::uint8_t> _datagram, DockOrder& _outOrder)
-{
-  ByteReader in(_datagram);
-  if (in.U8() != KIND_DOCK_ORDER)
-    return false;
-
-  (void)in.U32(); // order id
-  const EntityId station = in.Entity();
-  const std::uint32_t count = in.U32();
-  if (!in.Ok() || count == 0 || count > MaxShipsPerOrder() || in.Remaining() < count * ENTITY_ID_BYTES)
-    return false;
-
-  _outOrder.ships.clear();
-  _outOrder.ships.reserve(count);
-  for (std::uint32_t at = 0; at < count; ++at)
-    _outOrder.ships.push_back(in.Entity());
-  if (!in.Ok())
-    return false;
-
-  _outOrder.station = station;
-  return true;
-}
-
 bool WriteFleetOrder(const FleetOrder& _order, Neuron::Transport& _transport)
 {
   if (_order.slot >= FLEET_SLOTS || _order.kind > FleetOrderKind::Mine)
