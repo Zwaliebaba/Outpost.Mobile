@@ -1,8 +1,14 @@
 # Combat — mounts, gunnery, and the acts a shot states
 
 **Status: agreed with the owner on 2026-08-31 — the six decisions in §15 were put and taken the
-same day, each the recommended option.** No slice has landed; §16 lists the five and the
-dependencies between them, and slice 1's work order is the next document owed.
+same day, each the recommended option.** No slice has landed. §16 lists the five and the
+dependencies between them; slice 1's work order is written
+([`Combat-slice-1.md`](Combat-slice-1.md)) and is what an implementer picks up next.
+
+**One correction this document has already taken:** §8's stand-off reads the shortest range among
+a hull's *traversing* mounts rather than among all of them, so that a bow-fixed hull takes no
+stand-off and flies the attack runs the same section describes. The first reading contradicted its
+own next sentence, and the work order caught it before a line was written.
 
 This is the design the rest of the tree has been writing IOUs against. ADR 0041 closed with "the
 combat design meets this at two named sockets and needs nothing else: it calls `RecordAggression`
@@ -263,13 +269,14 @@ the rule is restated here so the loot design finds it, keyed to the garrison, no
 wrong for gunnery: eight ships aimed at one point arrive as a scrum with their turrets parked on
 their neighbours' hulls. The chase keeps its chassis — re-plan on `PURSUIT_REPLAN_METRES` of
 drift, never per tick — and gains a stand-off: the destination becomes the point
-`ENGAGE_STANDOFF_FRACTION` of the hull's shortest mounted range along the bearing from target to
-pursuer, so a gunship holds where *all* its guns bear and the separation solver stops being the
-thing that ends every fight. A hull whose only mounts are bow-fixed gets its behavior from its
-arc: to satisfy §4's gate it must point at its quarry, so a fighter flies attack runs without one
-line written for attack runs. Unarmed combatants — there are none in the table today, but the
-Q-ship comment in `HullSpec.h` insists one stays expressible — shadow at the old range, which is
-the degenerate stand-off of a hull with no mounts.
+`ENGAGE_STANDOFF_FRACTION` of the hull's shortest **traversing** mount's range along the bearing
+from target to pursuer, so a gunship holds where *all* its turrets bear and the separation solver
+stops being the thing that ends every fight. A hull whose mounts are all bow-fixed takes no
+stand-off at all and is sent at the target itself, because its behavior comes from its arc: to
+satisfy §4's gate it must point at its quarry, so a fighter flies attack runs and overshoots
+without one line written for attack runs. Unarmed combatants — there are none in the table today,
+but the Q-ship comment in `HullSpec.h` insists one stays expressible — shadow at the old range,
+which is the degenerate case of the same arithmetic.
 
 The furball is accepted, named, and bounded: fighters orbiting inside each other's envelopes read
 as a dogfight and the avoidance table already keeps them apart; capitals hold painted stand-off
@@ -483,6 +490,7 @@ One agent per slice, one slice per layer at a time; each retargets the sentences
    attack order on a Vanguard station flipping the law and launching the garrison; immovable
    damage discarded while the act states. ADR due: *combat resolves deterministically, and the
    fire pass states the acts* (completing 0041/0050).
+   Work order: [`Combat-slice-1.md`](Combat-slice-1.md), written 2026-08-31.
 2. **The combat wire** (`GameLogic` seam) — `hullFraction` in the record, the fire block,
    receiver accessors, ALPN and format bumps. Tests beside the existing snapshot suite; ADR due:
    *fire events ride the datagram lane* (ADR 0029 applied).
