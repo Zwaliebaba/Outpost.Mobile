@@ -1,5 +1,6 @@
 #pragma once
 
+#include "HullSpec.h"
 #include "ShipState.h"
 #include "WorldPos.h"
 
@@ -129,6 +130,76 @@ struct FleetOrder
   EntityId target = INVALID_ENTITY_ID;  // Attack
 };
 
+// Who is in one fleet, as the owning client is told it.
+//
+// A statement of membership rather than a delta: a roster for a slot replaces that slot's list
+// whole, so a lost one is repaired by the next rather than compounding. It carries no position and
+// no order -- those ride the status block in every update, because they change every tick and this
+// changes at human speed (Design/Fleets.md 8.1).
+//
+// An empty members list is a fleet with nobody in space: a composed one whose manifest has not
+// begun to pour, or one that has just lost its last ship. It is NOT "the slot is free" -- that is
+// the status block's mask, which rides every update and cannot be lost.
+struct FleetRoster
+{
+  std::uint8_t slot = 0;
+  std::vector<EntityId> members;
+};
+
+// What one station holds, asked for rather than broadcast (ADR 0051).
+//
+// The request names a station and nothing else: whose rows are counted is the asker's own faction,
+// which the server takes from the subscriber and never from the message, so there is no field here
+// for a client to lie in.
+struct LedgerRequest
+{
+  EntityId station = INVALID_ENTITY_ID;
+};
+
+// The answer: how many of each hull the asker has docked there, indexed by hull id.
+//
+// A fixed array rather than a vector of rows, because the array IS the format -- and because
+// World::ComposeFleet already takes a span in exactly this shape, so the assembly screen's draft
+// goes back down the wire without being repacked on either side.
+struct LedgerReply
+{
+  EntityId station = INVALID_ENTITY_ID;
+  std::uint32_t hullCounts[HULL_COUNT]{};
+};
+
+// A draft, sent. The slot and the counts the assembly screen assembled; every gate is World's
+// (Design/Fleets.md 5.2), and the issuing faction is the subscriber's rather than anything stated
+// here -- the same rule every other order on this lane follows.
+struct ComposeOrder
+{
+  EntityId station = INVALID_ENTITY_ID;
+  std::uint8_t slot = 0;
+  std::uint32_t hullCounts[HULL_COUNT]{};
+};
+
+// One fleet as the status block states it: where it is, what it is doing, and how big it is.
+//
+// Not a message. It is decoded out of the snapshot header, which is where it rides so that a
+// player is told about all five fleets whether or not any of them is in the interest set -- four of
+// five routinely are not, which is the whole point of a fleet being able to be elsewhere
+// (Design/Fleets.md 8.2).
+struct FleetStatus
+{
+  WorldPos position;       // the centroid of live members, or the launch station while none is out
+  std::uint8_t status = 0; // bits 0-2 the kind shown, bit 6 engaged, bit 7 under attack
+  std::uint8_t count = 0;  // members in space plus manifest
+};
+
+// The status byte's low three bits, when the fleet is still pouring out of a dock.
+//
+// 6, which is the first value no FleetOrderKind uses. It is not a FleetOrderKind and must not
+// become one: nobody can issue it, IssueFleetOrder would have to refuse it, and putting it in the
+// enum would make the fleet order codec's own "kind > Mine" gate accept a value no order may carry.
+inline constexpr std::uint8_t FLEET_STATUS_LAUNCHING = 6;
+inline constexpr std::uint8_t FLEET_STATUS_KIND_MASK = 0x07;
+inline constexpr std::uint8_t FLEET_STATUS_ENGAGED = 0x40;
+inline constexpr std::uint8_t FLEET_STATUS_UNDER_ATTACK = 0x80;
+
 // How many ships fit in one datagram of each kind. Derived from MAX_DATAGRAM_BYTES rather than
 // chosen, so the day the record grows these follow it.
 [[nodiscard]] std::uint32_t ShipsPerSnapshotFragment() noexcept;
@@ -252,6 +323,42 @@ public:
     return _faction < FACTION_LIMIT && (m_hostileMask & static_cast<std::uint8_t>(1u << _faction)) != 0;
   }
 
+  // Bit s set: this client's faction holds a fleet in slot s, as of the last header that arrived.
+  //
+  // This, and not an empty roster, is what says a slot is held. A roster is stated once on the
+  // reliable lane and can be refused; the mask rides every update, so it heals itself -- the same
+  // trade hostileMask made, for the same reason (Design/Fleets.md 8.1, 8.2).
+  [[nodiscard]] std::uint8_t FleetMask() const noexcept
+  {
+    return m_fleetMask;
+  }
+
+  // What the last header said about one slot. A slot the mask does not hold reads back a default,
+  // which is a position at the origin and no bits -- so a caller that draws without checking the
+  // mask draws something obviously wrong rather than something plausibly wrong.
+  [[nodiscard]] const FleetStatus& FleetStatusOf(std::uint8_t _slot) const noexcept
+  {
+    return m_fleetStatus[(_slot < FLEET_SLOTS) ? _slot : 0];
+  }
+
+  // Who is in one slot, as of the last roster for it. Empty until one arrives, and empty for a
+  // composed fleet whose manifest has not begun to pour.
+  [[nodiscard]] std::span<const EntityId> RosterOf(std::uint8_t _slot) const noexcept;
+
+  // The last ledger reply that arrived, and how many have. The count is what lets a screen tell a
+  // fresh answer from the one still on display: replies are not ordered against anything and a
+  // second request for the same station is answered identically, so the payload alone cannot say
+  // whether the wire has spoken since the screen opened.
+  [[nodiscard]] const LedgerReply& Ledger() const noexcept
+  {
+    return m_ledger;
+  }
+
+  [[nodiscard]] std::uint32_t LedgerReplyCount() const noexcept
+  {
+    return m_ledgerReplies;
+  }
+
   // The handles the last applied update said were destroyed, as distinct from those that merely left
   // this subscriber's view. Valid until the next update applies; empty for a full snapshot.
   [[nodiscard]] std::span<const EntityId> Destroyed() const noexcept
@@ -297,6 +404,8 @@ private:
   void Apply();
   void Remove(EntityId _gone);
   [[nodiscard]] bool AcceptLeaves(std::span<const std::uint8_t> _message);
+  [[nodiscard]] bool AcceptRoster(std::span<const std::uint8_t> _message);
+  [[nodiscard]] bool AcceptLedgerReply(std::span<const std::uint8_t> _message);
 
   // What arrived in the update being assembled, held until every fragment is in. Applying as
   // fragments land would leave the world half-updated if one never arrived.
@@ -308,6 +417,11 @@ private:
   std::vector<EntityId> m_docked;           // dockings since the consumer last cleared them
   std::uint64_t m_lastLeaveTick = 0;
   std::uint8_t m_hostileMask = 0;
+  std::uint8_t m_fleetMask = 0;
+  FleetStatus m_fleetStatus[FLEET_SLOTS];
+  std::vector<EntityId> m_rosters[FLEET_SLOTS];
+  LedgerReply m_ledger;
+  std::uint32_t m_ledgerReplies = 0;
   WorldSnapshot m_latest;
   std::uint32_t m_buildingId = 0;
   std::uint64_t m_buildingTick = 0;
@@ -352,4 +466,23 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes);
 // content fails closed rather than being passed on to a gate that would have to guess (AGENTS.md 5).
 [[nodiscard]] bool WriteFleetOrder(const FleetOrder& _order, Neuron::Transport& _transport);
 [[nodiscard]] bool ReadFleetOrder(std::span<const std::uint8_t> _datagram, FleetOrder& _outOrder);
+
+// The roster, downward. Every reader below fails closed on anything it cannot mean -- a slot past
+// FLEET_SLOTS, a member count past MAX_FLEET_SHIPS, a hull table that is not this build's, a buffer
+// that ends early -- because a malformed message is content, and content fails closed rather than
+// being handed to a gate that would have to guess (AGENTS.md 5).
+[[nodiscard]] bool WriteFleetRoster(const FleetRoster& _roster, Neuron::Transport& _transport);
+[[nodiscard]] bool ReadFleetRoster(std::span<const std::uint8_t> _message, FleetRoster& _outRoster);
+
+// The ledger exchange: the only request/reply pair on this seam (ADR 0051). Everything else here
+// announces a fact; this one asks a question, because a station's contents are large, private,
+// slow-changing and wanted by exactly one client at exactly one moment.
+[[nodiscard]] bool WriteLedgerRequest(const LedgerRequest& _request, Neuron::Transport& _transport);
+[[nodiscard]] bool ReadLedgerRequest(std::span<const std::uint8_t> _message, LedgerRequest& _outRequest);
+[[nodiscard]] bool WriteLedgerReply(const LedgerReply& _reply, Neuron::Transport& _transport);
+[[nodiscard]] bool ReadLedgerReply(std::span<const std::uint8_t> _message, LedgerReply& _outReply);
+
+// The draft, upward. The last of the four order kinds, and the only one that names no ship at all.
+[[nodiscard]] bool WriteComposeOrder(const ComposeOrder& _order, Neuron::Transport& _transport);
+[[nodiscard]] bool ReadComposeOrder(std::span<const std::uint8_t> _message, ComposeOrder& _outOrder);
 } // namespace Game

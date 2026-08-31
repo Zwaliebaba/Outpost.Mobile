@@ -1,10 +1,11 @@
 # Fleets — composition at a station, five slots, and command at fleet grain
 
-**Status: agreed with the owner on 2026-08-31. Slices 1 to 3 — the table, compose and launch, and
-orders at fleet grain — are written and in review; their work orders are
-[`Fleets-slice-1.md`](Fleets-slice-1.md), [`Fleets-slice-2.md`](Fleets-slice-2.md),
-[`Fleets-slice-3.md`](Fleets-slice-3.md) and [`Fleets-slice-4.md`](Fleets-slice-4.md) — the whole
-`GameLogic` half.** Four decisions were put to the owner
+**Status: agreed with the owner on 2026-08-31. Slices 1 to 5 — the table, compose and launch,
+orders at fleet grain, the defense and the fleet wire — are written and in review; their work orders
+are [`Fleets-slice-1.md`](Fleets-slice-1.md), [`Fleets-slice-2.md`](Fleets-slice-2.md),
+[`Fleets-slice-3.md`](Fleets-slice-3.md), [`Fleets-slice-4.md`](Fleets-slice-4.md) and
+[`Fleets-slice-5.md`](Fleets-slice-5.md) — the whole `GameLogic` half, and everything that crosses
+the seam.** Four decisions were put to the owner
 and taken (§15); each was the recommended option. §16 lists the slices and the dependencies between
 them.
 
@@ -299,6 +300,22 @@ happen: a second compose claiming the same rows, and a ledger the screen shows d
 what launch will find. The cost is that a manifest stranded by its station's death loses its
 ships — tolerable today (nothing can destroy a station), stated here because the user-station
 design inherits it and may prefer the manifest to fall back into wreckage or a refund.
+
+> **Amendment, 2026-08-31 (slice 5).** `ComposeOrder` is on the wire, and two details of it are
+> narrower than the sketch above. It carries `u8 hullCount` ahead of the array, so a reader whose
+> hull table is a different size refuses rather than reading one hull's count as another's — the
+> `LedgerReply` carries the same byte for the same reason. And it carries **no size gate at all**:
+> how many ships a fleet may hold is `ComposeFleet`'s rule, and a codec enforcing it too would be a
+> second copy of it to keep in step (ADR 0014). A draft of a hundred Battleships decodes cleanly and
+> is then refused by the gate that owns the number.
+>
+> The screen the order comes from is fed by a **request**, not a broadcast: `LedgerRequest` up,
+> `LedgerReply` down, answered on the tick the request was read
+> ([ADR 0051](Decisions/0051-the-ledger-is-asked-for-not-broadcast.md)). Both rules this section
+> states about whose rows count — the issuer's own, and none at all in a hostile port — moved into
+> one `World::LedgerFor` that the reply and this gate both call, so a screen cannot offer what the
+> compose will refuse. That disagreement is the one this section's last paragraph is about, and it
+> was reachable until the two shared a function.
 
 ### 5.3 Launching — one hull per cadence
 
@@ -597,6 +614,25 @@ cursor's own joining rule applied to fleets. Fleet membership never travels in t
 a record is per-update and membership changes at human speed; the roster is the delta and the
 record stays 47 bytes.
 
+> **Amendment, 2026-08-31 (slice 5).** **`count == 0` is not the slot freeing; the mask is.** This
+> section and §8.2 disagree, and §8.2 is right. A composed fleet whose manifest has not begun to pour
+> has an empty roster and a live slot, so an empty membership cannot mean the slot is free — and the
+> two facts want different carriage anyway. A roster is stated once on a lane that can refuse it; the
+> mask rides every update and heals itself, which is the trade `hostileMask` already made. So
+> occupancy is the mask's, membership is the roster's, and `FLEET %d LOST` fires on the mask bit
+> clearing (§9.6).
+>
+> It follows that **there is no roster on compose**: a composed fleet has no membership to state, and
+> what the client needs — the slot is held, it is launching, it will be this big — is the whole of
+> what the status block already carries. The three remaining events are unchanged, and the publisher
+> is told about none of them: it holds the last membership it sent each subscriber and diffs it every
+> tick, which finds compose, launch, loss and retire without a single call site knowing fleets exist
+> ([slice 5](Fleets-slice-5.md) §2.6).
+>
+> The diff also **delivers to a joining subscriber for free** — its stored lists are empty, so its
+> first publish finds every occupied slot changed — which is what this section asked for as a rule of
+> its own.
+
 ### 8.2 The status block, every update
 
 The buttons must tell the truth about all five fleets at all times — position for the camera jump
@@ -621,6 +657,30 @@ readout, not simulation state: the publisher already owns per-subscriber derivat
 (`SplitTheLost`), sits outside the replay contract, and a centroid nobody simulates against
 cannot desynchronize anything. `alertTicks`, by contrast, is simulated (§7.3) and merely
 *sampled* here.
+
+> **Amendment, 2026-08-31 (slice 5).** Three things about the block are settled more narrowly in the
+> code than on the page.
+>
+> **It costs a ship record per fragment.** `ShipsPerSnapshotFragment()` takes no arguments — every
+> caller and three tests agree on one number — so it is sized against the block's *worst* case, five
+> fleets and 71 bytes, whatever a given update carries. That is 22 records a fragment against 23.
+> Sizing it against what an update actually holds would buy the record back and cost a number nobody
+> can state, which is the trade `MaxShipsPerOrder` already argues for in its own comment. The two
+> placements that would have cost nothing were both worse: a separate datagram loses the
+> idempotence-under-loss the block is bought for, and writing it only in fragment 0 gives back the
+> invariant that every fragment carries records and nothing else.
+>
+> **A slot is stated only when its position can be derived** — live members, or a live launch
+> structure. The one case with neither is the tick between a manifest being dropped for a dead
+> station and the next tick's retire freeing the slot; clearing the bit there tells the truth one
+> tick early rather than stating a position that means nothing.
+>
+> **The status byte's kind is a `FleetOrderKind` or the value 6, `Launching`**, which is not a
+> `FleetOrderKind` and must not become one: nobody can issue it, `IssueFleetOrder` would have to
+> refuse it, and adding it to the enum would make the fleet order codec's own range check accept a
+> value no order may carry. `count` is members plus manifest, so the button states the composed size
+> throughout a launch; the roster's own count is how many are out, and `LAUNCHING 4 OF 8` is the two
+> read together rather than a third number on the wire.
 
 ### 8.3 What stays withheld
 
@@ -914,13 +974,13 @@ whichever slice makes them false.
 | 2 | **Compose and launch**: `ComposeFleet` + gates, the manifest, the metronome + rally, `FLEET_LAUNCH_EVERY_TICKS`, dismantle-on-dock and retire-on-loss falling out of the prune, their tests — *in review*, [work order](Fleets-slice-2.md) | `GameLogic` | 1 | — |
 | 3 | **Fleet orders**: `FleetOrderKind`, the `FleetOrder` message + `IssueFleetOrder` + lowering, the cruise rule, `Stop`, `Attack` and `Mine` reserved-and-refused, patience, their tests — *in review*, [work order](Fleets-slice-3.md). The ship-list messages' retirement moved to slice 6, which is where the client stops sending them | `GameLogic` | 2 | [orders name a fleet, not ships](Decisions/0049-orders-name-a-fleet-not-ships.md) |
 | 4 | **The defense**: `RecordHostileAct`, `HullSpec::combatant`, threat/anchor/alert + the posture, `FLEET_ENGAGE_RANGE_METRES`/`FLEET_ALERT_TICKS`, the ordered attack sharing the chassis, their tests — *in review*, [work order](Fleets-slice-4.md) | `GameLogic` | 3 | [a fleet defends itself against stated acts, at fleet grain](Decisions/0050-a-fleet-defends-itself-against-stated-acts.md) |
-| 5 | **The fleet wire**: `FleetRoster` + join-time delivery, the status block + publish-side centroid, `LedgerRequest`/`LedgerReply` and the `ComposeOrder` that has no use without them (§5.2 — unlisted here until slice 2 placed it), receiver surfaces, their tests | `GameLogic` | 2 (roster), 4 (status bits) | the ledger is asked for, not broadcast — the first request/reply on the wire |
+| 5 | **The fleet wire**: `FleetRoster` + join-time delivery, the status block + publish-side centroid, `LedgerRequest`/`LedgerReply` and the `ComposeOrder` that has no use without them (§5.2 — unlisted here until slice 2 placed it), receiver surfaces, their tests — *in review*, [work order](Fleets-slice-5.md) | `GameLogic` | 2 (roster), 4 (status bits) | [the ledger is asked for, not broadcast](Decisions/0051-the-ledger-is-asked-for-not-broadcast.md) |
 | 6 | **The fleet bar**: buttons rebound (tap = select + fly-to, hold = sheet stub, glow, counts), selection at fleet grain, `FleetOrder` sending, group machinery and its log lines retired, the ship-list order messages retired with them, the boot scene as Fleet 1, F7, minimap fleet digits, screenshots at two sizes | `Outpost` | 3, 5 | — |
 | 7 | **Assembly**: the station long-press, `LedgerRequest` flow, the assembly screen, compose + launch end to end on screen, screenshots | `Outpost` | 5, 6 | — |
 | 8 | **The sheet**: status lines, member rows, the command row + target-tap arming, refusal and alert log lines complete, screenshots of the three states | `Outpost` | 6 (7 for a docked-adjacent demo) | — |
 
-Slices 1–5 are decided by their tests and by the suites staying green; 6–8 by screenshots and by
-what they must not touch. The seam holds throughout: nothing reaches the client outside the
+The whole of `GameLogic` is now written: slices 1–5 are decided by their tests and by the suites
+staying green; 6–8 by screenshots and by what they must not touch. The seam holds throughout: nothing reaches the client outside the
 roster, the status block, the ledger reply and the records it already had.
 
 What this phase leaves ready: a fleet that knows it is under attack for a combat design to arm, a

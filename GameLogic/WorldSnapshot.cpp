@@ -39,6 +39,20 @@ constexpr std::uint8_t KIND_DOCK_ORDER = 4;
 // this lane and the only one whose size does not depend on how many ships it moves.
 constexpr std::uint8_t KIND_FLEET_ORDER = 5;
 
+// Who is in a fleet, downward and reliably. It is not in the ship record and never will be:
+// a record is per-update and membership changes at human speed, so the roster is the delta and the
+// record stays 47 bytes (Design/Fleets.md 8.1).
+constexpr std::uint8_t KIND_FLEET_ROSTER = 6;
+
+// The one request/reply pair on this seam. A station's ledger is large, private, slow-changing and
+// wanted by exactly one client at exactly one moment -- broadcasting it would put every station's
+// contents on every wire ten times a second for a screen nobody has open (ADR 0051).
+constexpr std::uint8_t KIND_LEDGER_REQUEST = 7;
+constexpr std::uint8_t KIND_LEDGER_REPLY = 8;
+
+// A draft, upward. The fourth order kind and the only one that names no ship.
+constexpr std::uint8_t KIND_COMPOSE_ORDER = 9;
+
 // kind, complete, snapshotId, fragmentIndex, fragmentCount, tick, recordCount, hostileMask
 //
 // The mask is appended rather than inserted, so every field a reader already knew stays where it
@@ -46,6 +60,19 @@ constexpr std::uint8_t KIND_FLEET_ORDER = 5;
 // "you are now criminal" would leave a client believing itself honest for the rest of the match,
 // and one byte per update is the cheapest idempotence there is (Design/Archive/Stations.md 4.3).
 constexpr std::uint32_t SNAPSHOT_HEADER_BYTES = 1 + 1 + 4 + 4 + 4 + 8 + 4 + 1;
+
+// One fleet in the status block: the wire's narrowed sector pair, the record's own lattice, the
+// status byte and the count. A block is one mask byte plus this per set bit -- 1 byte at no fleets,
+// 71 at five, on an update that is already carrying a kilobyte of records.
+//
+// It rides EVERY fragment header, beside hostileMask and for hostileMask's reason: a lost "your
+// fleet is under attack" would leave a button dark through the fight, and stamping it costs less
+// than any scheme for repairing it. Which means ShipsPerSnapshotFragment must be sized against the
+// WORST case rather than against what an update happens to carry -- one number that every caller
+// and three tests agree on, which is the trade MaxShipsPerOrder already argues for below. It costs
+// one record a fragment: 22 rather than 23 (Design/Fleets-slice-5.md 2.2).
+constexpr std::uint32_t FLEET_STATUS_BYTES = 4 + 4 + 2 + 2 + 1 + 1;
+constexpr std::uint32_t FLEET_BLOCK_MAX_BYTES = 1 + FLEET_SLOTS * FLEET_STATUS_BYTES;
 
 // kind, tick, leaveCount, destroyedCount, dockedCount
 //
@@ -414,7 +441,7 @@ private:
 
 std::uint32_t ShipsPerSnapshotFragment() noexcept
 {
-  return (Neuron::MAX_DATAGRAM_BYTES - SNAPSHOT_HEADER_BYTES) / SHIP_RECORD_BYTES;
+  return (Neuron::MAX_DATAGRAM_BYTES - SNAPSHOT_HEADER_BYTES - FLEET_BLOCK_MAX_BYTES) / SHIP_RECORD_BYTES;
 }
 
 // Still derived from the datagram bound, though an order now travels on the reliable lane and could
@@ -456,6 +483,112 @@ void WriteShipRecord(ByteWriter& _out, const World& _world, ShipId _id)
   _out.U8(_world.IsStation(_id) ? SHIP_FLAG_STATION : std::uint8_t{0});
   _out.U32(ship.hullId);
 }
+
+// The status block: the one thing on this seam that tells a player about a fleet the interest set
+// has never heard of. Four of five fleets are routinely outside it, which is the point of them.
+//
+// Everything here is DERIVED and nothing is held. The centroid is a readout -- the publisher
+// already derives per subscriber in SplitTheLost, sits outside the replay contract, and a number
+// nobody simulates against cannot desynchronize anything (Design/Fleets.md 8.2). The check on that
+// claim is the save format: if a field of this block ever had to live on Fleet, WORLD_STATE_FORMAT
+// would have to move, and it does not.
+//
+// A slot is stated when its position can be DERIVED -- a live member, or a live launch structure.
+// A fleet with neither is the one tick between a manifest being dropped for a dead station and the
+// next tick's retire freeing the slot; clearing the bit there says the truth one tick early rather
+// than stating a position that means nothing.
+void WriteFleetBlock(ByteWriter& _out, const World& _world, FactionId _viewer)
+{
+  WorldPos positions[FLEET_SLOTS];
+  std::uint8_t statuses[FLEET_SLOTS] = {};
+  std::uint8_t counts[FLEET_SLOTS] = {};
+  std::uint8_t mask = 0;
+
+  for (std::uint32_t slot = 0; slot < FLEET_SLOTS; ++slot)
+  {
+    const World::FleetId id = _world.FleetInSlot(_viewer, static_cast<std::uint8_t>(slot));
+    if (id == World::INVALID_FLEET_ID)
+      continue;
+    const World::Fleet& fleet = _world.FleetOf(id);
+
+    // The centroid, through OffsetX/OffsetZ from the first live member rather than by averaging the
+    // fields, so it is right with a sector boundary through the middle of a fleet.
+    WorldPos centre;
+    bool anchored = false;
+    float sumX = 0.0f;
+    float sumZ = 0.0f;
+    std::uint32_t live = 0;
+    for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+    {
+      const ShipId member = _world.Resolve(fleet.members[at]);
+      if (member == INVALID_SHIP_ID)
+        continue;
+      const WorldPos& pos = _world.Ships()[member].posWorld;
+      if (!anchored)
+      {
+        centre = pos;
+        anchored = true;
+      }
+      sumX += OffsetX(centre, pos);
+      sumZ += OffsetZ(centre, pos);
+      ++live;
+    }
+
+    if (anchored)
+    {
+      Translate(centre, sumX / static_cast<float>(live), sumZ / static_cast<float>(live));
+    }
+    else
+    {
+      // Nobody out yet: the fleet is where its door is, which is where its first hull will appear.
+      const ShipId structure = _world.Resolve(fleet.launchStructure);
+      if (structure == INVALID_SHIP_ID)
+        continue;
+      centre = _world.Ships()[structure].posWorld;
+    }
+
+    // Launching outranks the standing order in what is SHOWN, not in what is done: a fleet ordered
+    // to move mid-launch is both, and the launch is the fact the player has no other way to see.
+    std::uint8_t status = (fleet.manifestCount != 0) ? FLEET_STATUS_LAUNCHING : static_cast<std::uint8_t>(fleet.orderKind);
+
+    // Engaged is the threat surviving this tick's stand-down check, which World has already run --
+    // so the row holds a threat only while the alert, the leash and the target all still hold. The
+    // two bits therefore differ exactly when the alert outlives the fight, which is what buying two
+    // of them was for (Design/Fleets.md 7.2, 7.3).
+    if (fleet.threat.generation != 0)
+      status |= FLEET_STATUS_ENGAGED;
+    if (fleet.alertTicks > 0)
+      status |= FLEET_STATUS_UNDER_ATTACK;
+
+    // Members in space plus manifest, so the count is the fleet's composed size throughout a launch
+    // and does not climb as the hulls appear. The roster's own count is how many are out, and the
+    // difference between the two is what "LAUNCHING 4 OF 8" is drawn from.
+    // A byte, because ComposeFleet and FormFleet both refuse past MAX_FLEET_SHIPS and the manifest
+    // only ever shrinks -- so this sum has a hard ceiling of 8 and no clamp is a guard against
+    // anything reachable.
+    static_assert(MAX_FLEET_SHIPS <= 0xFFu, "a fleet's size no longer fits the status block's count byte");
+    const std::uint32_t total = live + fleet.manifestCount;
+
+    mask |= static_cast<std::uint8_t>(1u << slot);
+    positions[slot] = centre;
+    statuses[slot] = status;
+    counts[slot] = static_cast<std::uint8_t>(total);
+  }
+
+  _out.U8(mask);
+  for (std::uint32_t slot = 0; slot < FLEET_SLOTS; ++slot)
+  {
+    if ((mask & (1u << slot)) == 0)
+      continue;
+    const LatticePos pos = ToLattice(positions[slot]);
+    _out.I32(ToWireSector(pos.sectorX));
+    _out.I32(ToWireSector(pos.sectorZ));
+    _out.U16(pos.stepX);
+    _out.U16(pos.stepZ);
+    _out.U8(statuses[slot]);
+    _out.U8(counts[slot]);
+  }
+}
 } // namespace
 
 std::uint32_t SnapshotWriter::Write(const World& _world, Neuron::Transport& _transport, FactionId _viewer)
@@ -487,6 +620,7 @@ std::uint32_t SnapshotWriter::Write(const World& _world, Neuron::Transport& _tra
     out.U64(_world.Tick());
     out.U32(count);
     out.U8(_world.HostileMaskFor(_viewer));
+    WriteFleetBlock(out, _world, _viewer);
 
     for (std::uint32_t at = 0; at < count; ++at)
       WriteShipRecord(out, _world, static_cast<ShipId>(first + at));
@@ -589,6 +723,7 @@ std::uint32_t SnapshotWriter::WriteInterest(const World& _world, std::span<const
     out.U64(_world.Tick());
     out.U32(count);
     out.U8(_world.HostileMaskFor(_viewer));
+    WriteFleetBlock(out, _world, _viewer);
 
     for (const ShipId id : m_resolvedScratch)
       WriteShipRecord(out, _world, id);
@@ -619,6 +754,10 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
   const std::uint8_t kind = in.U8();
   if (kind == KIND_LEAVE)
     return AcceptLeaves(_datagram);
+  if (kind == KIND_FLEET_ROSTER)
+    return AcceptRoster(_datagram);
+  if (kind == KIND_LEDGER_REPLY)
+    return AcceptLedgerReply(_datagram);
   if (kind != KIND_SNAPSHOT)
     return false;
 
@@ -629,6 +768,25 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
   const std::uint64_t tick = in.U64();
   const std::uint32_t count = in.U32();
   const std::uint8_t hostileMask = in.U8();
+
+  // Read before the header is judged, because the records begin after it and a block half-read
+  // would leave the cursor inside one. A slot the mask does not claim keeps whatever it had, which
+  // is nothing until the mask claims it.
+  const std::uint8_t fleetMask = in.U8();
+  FleetStatus fleets[FLEET_SLOTS];
+  for (std::uint32_t slot = 0; slot < FLEET_SLOTS; ++slot)
+  {
+    if ((fleetMask & (1u << slot)) == 0)
+      continue;
+    const std::int32_t sectorX = in.I32();
+    const std::int32_t sectorZ = in.I32();
+    const std::uint16_t stepX = in.U16();
+    const std::uint16_t stepZ = in.U16();
+    fleets[slot].position = FromLattice(sectorX, sectorZ, stepX, stepZ);
+    fleets[slot].status = in.U8();
+    fleets[slot].count = in.U8();
+  }
+
   if (!in.Ok() || fragmentCount == 0 || fragment >= fragmentCount)
     return false;
 
@@ -642,6 +800,17 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
   // to any record, so taking it from whatever fragment arrives is strictly more robust. Below the
   // staleness check, so a late fragment of a superseded update cannot walk it backwards.
   m_hostileMask = hostileMask;
+
+  // The status block takes the mask's treatment for the mask's reason: it is coupled to no record,
+  // so taking it from whatever fragment arrives is strictly more robust than waiting for a whole
+  // update, and robustness against loss is the entire argument for stamping it on every one. Below
+  // the staleness check, so a late fragment of a superseded update cannot walk a fleet backwards.
+  m_fleetMask = fleetMask;
+  for (std::uint32_t slot = 0; slot < FLEET_SLOTS; ++slot)
+  {
+    if ((fleetMask & (1u << slot)) != 0)
+      m_fleetStatus[slot] = fleets[slot];
+  }
 
   if (snapshotId != m_buildingId)
   {
@@ -734,6 +903,35 @@ void SnapshotReceiver::Remove(EntityId _gone)
 // of the split: a departure no longer waits on the fragments of an update that may never complete.
 // A handle that is not held is removed by a no-op, which is what makes the two lanes safe in either
 // order.
+std::span<const EntityId> SnapshotReceiver::RosterOf(std::uint8_t _slot) const noexcept
+{
+  return (_slot < FLEET_SLOTS) ? std::span<const EntityId>(m_rosters[_slot]) : std::span<const EntityId>();
+}
+
+bool SnapshotReceiver::AcceptRoster(std::span<const std::uint8_t> _message)
+{
+  FleetRoster roster;
+  if (!ReadFleetRoster(_message, roster))
+    return false;
+
+  // Replaces that slot's list whole. A roster is a statement of membership rather than a delta,
+  // which is what lets a lost one be repaired by the next instead of compounding into a list that
+  // is wrong in a way nothing can correct (Design/Fleets.md 8.1).
+  m_rosters[roster.slot] = std::move(roster.members);
+  return true;
+}
+
+bool SnapshotReceiver::AcceptLedgerReply(std::span<const std::uint8_t> _message)
+{
+  if (!ReadLedgerReply(_message, m_ledger))
+    return false;
+
+  // Counted, because two replies for one station are identical and a screen has no other way to
+  // tell a fresh answer from the one it is already showing.
+  ++m_ledgerReplies;
+  return true;
+}
+
 bool SnapshotReceiver::AcceptLeaves(std::span<const std::uint8_t> _message)
 {
   ByteReader in(_message);
@@ -1407,6 +1605,156 @@ bool ReadFleetOrder(std::span<const std::uint8_t> _datagram, FleetOrder& _outOrd
   _outOrder.hasFacing = hasFacing;
   _outOrder.station = station;
   _outOrder.target = target;
+  return true;
+}
+
+bool WriteFleetRoster(const FleetRoster& _roster, Neuron::Transport& _transport)
+{
+  if (_roster.slot >= FLEET_SLOTS || _roster.members.size() > MAX_FLEET_SHIPS)
+    return false;
+
+  std::vector<std::uint8_t> bytes;
+  ByteWriter out(bytes);
+  out.U8(KIND_FLEET_ROSTER);
+  out.U8(_roster.slot);
+  out.U8(static_cast<std::uint8_t>(_roster.members.size()));
+  for (const EntityId member : _roster.members)
+    out.Entity(member);
+  return _transport.SendReliable(bytes.data(), static_cast<std::uint32_t>(bytes.size()));
+}
+
+bool ReadFleetRoster(std::span<const std::uint8_t> _message, FleetRoster& _outRoster)
+{
+  ByteReader in(_message);
+  if (in.U8() != KIND_FLEET_ROSTER)
+    return false;
+
+  const std::uint8_t slot = in.U8();
+  const std::uint8_t count = in.U8();
+  if (!in.Ok() || slot >= FLEET_SLOTS || count > MAX_FLEET_SHIPS)
+    return false;
+
+  // Into a local and copied out on success, so a refused read leaves the caller's roster as it was
+  // rather than half replaced -- which for a roster is the difference between a stale membership
+  // and an invented one.
+  std::vector<EntityId> members;
+  members.reserve(count);
+  for (std::uint8_t at = 0; at < count; ++at)
+    members.push_back(in.Entity());
+  if (!in.Ok())
+    return false;
+
+  _outRoster.slot = slot;
+  _outRoster.members = std::move(members);
+  return true;
+}
+
+bool WriteLedgerRequest(const LedgerRequest& _request, Neuron::Transport& _transport)
+{
+  std::vector<std::uint8_t> bytes;
+  ByteWriter out(bytes);
+  out.U8(KIND_LEDGER_REQUEST);
+  out.Entity(_request.station);
+  return _transport.SendReliable(bytes.data(), static_cast<std::uint32_t>(bytes.size()));
+}
+
+bool ReadLedgerRequest(std::span<const std::uint8_t> _message, LedgerRequest& _outRequest)
+{
+  ByteReader in(_message);
+  if (in.U8() != KIND_LEDGER_REQUEST)
+    return false;
+
+  const EntityId station = in.Entity();
+  if (!in.Ok())
+    return false;
+
+  // No faction field, and its absence is the design: whose rows are counted is the subscriber's own
+  // faction, which the server holds and a client cannot state (ADR 0051).
+  _outRequest.station = station;
+  return true;
+}
+
+bool WriteLedgerReply(const LedgerReply& _reply, Neuron::Transport& _transport)
+{
+  std::vector<std::uint8_t> bytes;
+  ByteWriter out(bytes);
+  out.U8(KIND_LEDGER_REPLY);
+  out.Entity(_reply.station);
+
+  // The hull table's own size, on the wire. It is what makes a reader from a build with a different
+  // table refuse rather than read one row's count as another's -- a misread that would show a
+  // player a ledger of the wrong hulls and let them compose from it.
+  out.U8(static_cast<std::uint8_t>(HULL_COUNT));
+  for (std::uint32_t hull = 0; hull < HULL_COUNT; ++hull)
+    out.U32(_reply.hullCounts[hull]);
+  return _transport.SendReliable(bytes.data(), static_cast<std::uint32_t>(bytes.size()));
+}
+
+bool ReadLedgerReply(std::span<const std::uint8_t> _message, LedgerReply& _outReply)
+{
+  ByteReader in(_message);
+  if (in.U8() != KIND_LEDGER_REPLY)
+    return false;
+
+  const EntityId station = in.Entity();
+  const std::uint8_t hulls = in.U8();
+  if (!in.Ok() || hulls != HULL_COUNT)
+    return false;
+
+  std::uint32_t counts[HULL_COUNT] = {};
+  for (std::uint32_t hull = 0; hull < HULL_COUNT; ++hull)
+    counts[hull] = in.U32();
+  if (!in.Ok())
+    return false;
+
+  _outReply.station = station;
+  for (std::uint32_t hull = 0; hull < HULL_COUNT; ++hull)
+    _outReply.hullCounts[hull] = counts[hull];
+  return true;
+}
+
+bool WriteComposeOrder(const ComposeOrder& _order, Neuron::Transport& _transport)
+{
+  if (_order.slot >= FLEET_SLOTS)
+    return false;
+
+  std::vector<std::uint8_t> bytes;
+  ByteWriter out(bytes);
+  out.U8(KIND_COMPOSE_ORDER);
+  out.U32(0); // order id, reserved: nothing acknowledges an order yet
+  out.Entity(_order.station);
+  out.U8(_order.slot);
+  out.U8(static_cast<std::uint8_t>(HULL_COUNT));
+  for (std::uint32_t hull = 0; hull < HULL_COUNT; ++hull)
+    out.U32(_order.hullCounts[hull]);
+  return _transport.SendReliable(bytes.data(), static_cast<std::uint32_t>(bytes.size()));
+}
+
+bool ReadComposeOrder(std::span<const std::uint8_t> _message, ComposeOrder& _outOrder)
+{
+  ByteReader in(_message);
+  if (in.U8() != KIND_COMPOSE_ORDER)
+    return false;
+
+  (void)in.U32(); // order id
+  const EntityId station = in.Entity();
+  const std::uint8_t slot = in.U8();
+  const std::uint8_t hulls = in.U8();
+  if (!in.Ok() || slot >= FLEET_SLOTS || hulls != HULL_COUNT)
+    return false;
+
+  std::uint32_t counts[HULL_COUNT] = {};
+  for (std::uint32_t hull = 0; hull < HULL_COUNT; ++hull)
+    counts[hull] = in.U32();
+  if (!in.Ok())
+    return false;
+
+  // No size gate here, and deliberately: how many ships a fleet may hold is ComposeFleet's rule,
+  // and a codec that enforced it too would be a second copy of it to keep in step (ADR 0014).
+  _outOrder.station = station;
+  _outOrder.slot = slot;
+  for (std::uint32_t hull = 0; hull < HULL_COUNT; ++hull)
+    _outOrder.hullCounts[hull] = counts[hull];
   return true;
 }
 } // namespace Game

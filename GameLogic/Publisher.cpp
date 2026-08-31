@@ -7,6 +7,21 @@
 
 namespace Game
 {
+namespace
+{
+// Whether a faction holds any slot at all. What decides that an update with no records is still
+// worth sending, because its header carries the status block.
+[[nodiscard]] bool HasAnyFleet(const World& _world, FactionId _faction) noexcept
+{
+  for (std::uint8_t slot = 0; slot < FLEET_SLOTS; ++slot)
+  {
+    if (_world.FleetInSlot(_faction, slot) != World::INVALID_FLEET_ID)
+      return true;
+  }
+  return false;
+}
+} // namespace
+
 Publisher::Handle Publisher::Add(const Desc& _desc)
 {
   const std::uint32_t index = static_cast<std::uint32_t>(m_subscribers.size());
@@ -155,6 +170,8 @@ void Publisher::ApplyOrders(World& _world)
         MoveOrder order;
         DockOrder dockOrder;
         FleetOrder fleetOrder;
+        LedgerRequest ledgerRequest;
+        ComposeOrder composeOrder;
         if (ReadFleetOrder(message, fleetOrder))
         {
           // The smallest branch here, and deliberately: an order that names a fleet resolves one id
@@ -169,6 +186,30 @@ void Publisher::ApplyOrders(World& _world)
           command.station = _world.ResolveEntity(fleetOrder.station);
           command.target = _world.ResolveEntity(fleetOrder.target);
           (void)_world.IssueFleetOrder(subscriber.faction, fleetOrder.slot, command);
+        }
+        else if (ReadLedgerRequest(message, ledgerRequest))
+        {
+          // Answered here, on the tick the question was read, and not queued for Publish: a reply
+          // is an answer rather than an announcement, so it belongs at the question. Holding it for
+          // this subscriber's phase would make the assembly screen's opening wait on an update slot
+          // for no reason at all (ADR 0051).
+          LedgerReply reply;
+          reply.station = ledgerRequest.station;
+
+          // A station that is not one, or is gone, is answered with zeros rather than with silence.
+          // The screen has to open on something, and a reply that never comes is indistinguishable
+          // from a lost one -- which would leave a player looking at a spinner over a dead dock.
+          const ShipId structure = _world.ResolveEntity(ledgerRequest.station);
+          _world.LedgerFor(_world.StationAt(structure), subscriber.faction, reply.hullCounts);
+          (void)WriteLedgerReply(reply, *subscriber.transport);
+        }
+        else if (ReadComposeOrder(message, composeOrder))
+        {
+          // Every gate is World's, including the standing gate and the slot gate, for ADR 0014's
+          // reason; the issuing faction is the subscriber's and never the message's, so a client
+          // cannot compose out of somebody else's ledger by saying it is somebody else.
+          const ShipId structure = _world.ResolveEntity(composeOrder.station);
+          (void)_world.ComposeFleet(_world.StationAt(structure), composeOrder.slot, composeOrder.hullCounts, subscriber.faction);
         }
         else if (ReadMoveOrder(message, order))
         {
@@ -210,7 +251,16 @@ void Publisher::Publish(World& _world)
 {
   for (Subscriber& subscriber : m_subscribers)
   {
-    if (subscriber.transport != nullptr && subscriber.interest.IsDueOn(_world.Tick(), subscriber.phase))
+    if (subscriber.transport == nullptr)
+      continue;
+
+    // Rosters first, and on every tick rather than on the due ones. A roster is what says who is in
+    // a fleet; the status block that rides the update says where it is and what it is doing, and a
+    // block describing a membership the client has not been told yet is a button that cannot draw
+    // itself (Design/Fleets.md 8.1).
+    PublishRosters(_world, subscriber);
+
+    if (subscriber.interest.IsDueOn(_world.Tick(), subscriber.phase))
       PublishOne(_world, subscriber);
   }
 
@@ -221,6 +271,45 @@ void Publisher::Publish(World& _world)
   for (const Subscriber& subscriber : m_subscribers)
     minimum = std::min(minimum, subscriber.despawnCursor);
   _world.TrimDespawnsBefore(minimum);
+}
+
+void Publisher::PublishRosters(const World& _world, Subscriber& _subscriber)
+{
+  // The publisher's own scratch rather than a local, so the common case -- five slots, nothing
+  // changed -- allocates nothing. Every other buffer here is held for the same reason.
+  FleetRoster& roster = m_rosterScratch;
+  for (std::uint8_t slot = 0; slot < FLEET_SLOTS; ++slot)
+  {
+    // The world's own membership for this slot, as ids. The fleet holds handles because a reference
+    // that outlives a tick has to (ADR 0005); the wire holds identities because a client has never
+    // been given a handle and could not interpret one (ADR 0047). This is where the two meet, the
+    // same meeting SplitTheLost is.
+    roster.slot = slot;
+    roster.members.clear();
+
+    const World::FleetId id = _world.FleetInSlot(_subscriber.faction, slot);
+    if (id != World::INVALID_FLEET_ID)
+    {
+      const World::Fleet& fleet = _world.FleetOf(id);
+      for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+      {
+        const EntityId entity = _world.EntityIdOf(fleet.members[at]);
+        if (entity != INVALID_ENTITY_ID)
+          roster.members.push_back(entity);
+      }
+    }
+
+    if (roster.members == _subscriber.lastRoster[slot])
+      continue;
+
+    // Recorded as sent even if the lane refuses it. Nothing on this seam retries -- a refused leave
+    // is counted and dropped, and a roster is the same shape of fact -- and re-sending it next tick
+    // would turn one refusal into a message every tick for as long as the lane stayed full, which is
+    // the opposite of what a full lane needs. The mask keeps telling the truth about the slot
+    // meanwhile, which is the reason occupancy rides the update and membership does not.
+    _subscriber.lastRoster[slot] = roster.members;
+    (void)WriteFleetRoster(roster, *_subscriber.transport);
+  }
 }
 
 void Publisher::PublishOne(const World& _world, Subscriber& _subscriber)
@@ -234,8 +323,15 @@ void Publisher::PublishOne(const World& _world, Subscriber& _subscriber)
   m_sendScratch.insert(m_sendScratch.end(), _subscriber.interest.Refreshed().begin(), _subscriber.interest.Refreshed().end());
 
   SplitTheLost(_world, _subscriber);
-  if (m_sendScratch.empty() && _subscriber.interest.Left().empty())
-    return; // nothing changed and nothing came due; an empty update is not information
+
+  // An empty update is not information -- unless this subscriber has a fleet, in which case the
+  // header alone is. The case this guard would otherwise break is the one the whole feature is for:
+  // four of five fleets are routinely outside the interest set, so a player whose camera is over
+  // empty space would be told nothing about any of them. A zero-record fragment carrying a status
+  // block is 28 to 98 bytes at the update rate, and it is the only thing that says where they are
+  // (Design/Fleets.md 8.2, Design/Fleets-slice-5.md 2.8).
+  if (m_sendScratch.empty() && _subscriber.interest.Left().empty() && !HasAnyFleet(_world, _subscriber.faction))
+    return;
 
   // The subscriber's faction is what the header's hostileMask is stated for. The publisher is the
   // only thing that knows whose view an update is; this is not a second authority check.

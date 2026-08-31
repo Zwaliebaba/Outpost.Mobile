@@ -500,6 +500,22 @@ public:
     return static_cast<std::uint32_t>(m_fleets.size());
   }
 
+  // How many of each hull _asker itself has docked at _station. _outCounts is indexed by hull id and
+  // must be at least HULL_COUNT long; anything past that is left alone.
+  //
+  // Two rules, and they are ComposeFleet's rules rather than this function's: only the asker's OWN
+  // rows are counted, because whose is docked in a station is nobody else's business
+  // (Design/Archive/Stations.md 6.2), and a station whose owner holds the asker hostile reads all
+  // zeros, because you do not take inventory in a port that would not let you assemble in it. They
+  // live here, in one function both callers use, precisely so a screen cannot offer what a compose
+  // will refuse -- which is the disagreement ComposeFleet's own ledger comment exists to prevent
+  // (Design/Fleets.md 5.2, 8.3).
+  //
+  // A station id past the table, or one whose structure is gone, reads zeros too. That is what a
+  // ledger request over the wire is answered with, and it is the honest reading: an absent station
+  // holds nothing.
+  void LedgerFor(StationId _station, FactionId _asker, std::span<std::uint32_t> _outCounts) const noexcept;
+
   // What happened to a compose. Returned for the local host's log and for tests; nothing returns
   // over the wire, because an order is fire-and-forget and the client's affordance already knew --
   // IssueDockOrder's sentence, and for its reason (Design/Fleets.md 5.2).

@@ -355,6 +355,32 @@ const World::Fleet& World::FleetOf(FleetId _id) const noexcept
   return (_id < m_fleets.size()) ? m_fleets[_id] : NONE;
 }
 
+void World::LedgerFor(StationId _station, FactionId _asker, std::span<std::uint32_t> _outCounts) const noexcept
+{
+  const std::size_t stated = (_outCounts.size() < HULL_COUNT) ? _outCounts.size() : std::size_t{HULL_COUNT};
+  for (std::size_t hull = 0; hull < stated; ++hull)
+    _outCounts[hull] = 0;
+
+  if (_station >= m_stations.size())
+    return;
+
+  const Station& station = m_stations[_station];
+  if (Resolve(station.structure) == INVALID_SHIP_ID)
+    return;
+
+  // The same standing gate ComposeFleet applies, and zeros rather than a refusal because this
+  // function has no way to say no -- a caller that needs the distinction asks ComposeFleet, which
+  // still runs its own gate and still returns RefusedStanding.
+  if (StandingOf(station.ownerFaction, _asker) == Standing::Hostile)
+    return;
+
+  for (const DockedShip& docked : station.docked)
+  {
+    if (docked.factionId == _asker && docked.hullId < stated)
+      ++_outCounts[docked.hullId];
+  }
+}
+
 World::ComposeResult World::ComposeFleet(StationId _station, std::uint8_t _slot, std::span<const std::uint32_t> _hullCounts,
                                          FactionId _issuerFaction)
 {
@@ -391,14 +417,11 @@ World::ComposeResult World::ComposeFleet(StationId _station, std::uint8_t _slot,
   if (total == 0 || total > MAX_FLEET_SHIPS)
     return ComposeResult::TooMany;
 
-  // The issuer's own rows, and only those: whose is docked in a station is nobody else's business
-  // (Design/Archive/Stations.md 6.2), so a player cannot compose a fleet out of somebody else's ships.
+  // The issuer's own rows, and only those -- through the function a ledger request over the wire
+  // also answers with, so what a screen was shown and what this gate reads cannot drift apart
+  // (Design/Fleets.md 8.3).
   std::uint32_t available[HULL_COUNT] = {};
-  for (const DockedShip& docked : station.docked)
-  {
-    if (docked.factionId == _issuerFaction && docked.hullId < HULL_COUNT)
-      ++available[docked.hullId];
-  }
+  LedgerFor(_station, _issuerFaction, available);
   for (std::uint32_t hull = 0; hull < HULL_COUNT; ++hull)
   {
     if (wanted[hull] > available[hull])

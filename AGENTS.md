@@ -81,10 +81,11 @@ the running game states one yet, and a protector has no weapon either (ADR 0041)
 stops well short of a network: one client, one process,
 `127.0.0.1` only, and a self-signed certificate the client does not validate. The wire has two lanes
 and the format chooses by asking whether a later message makes a lost one right (`ADR 0029`):
-positions are datagrams and heal themselves, while departures and move orders take the reliable
-lane and cannot be lost. The seam serves N subscribers now rather than one: `Game::Publisher` holds
-a table of them, each with its own interest set, writer, faction, phase, order budget and despawn
-cursor (ADR 0030). What remains missing is the far end — this executable adds exactly one entry,
+positions are datagrams and heal themselves, while departures, orders and fleet rosters take the
+reliable lane and cannot be lost. A station's ledger takes neither shape: it is *asked for*, and the
+request/reply pair is the only one on this seam (ADR 0051). The seam serves N subscribers now rather
+than one: `Game::Publisher` holds a table of them, each with its own interest set, writer, faction,
+phase, order budget, despawn cursor and last-sent fleet rosters (ADR 0030). What remains missing is the far end — this executable adds exactly one entry,
 there is no second machine to be on the other side of it, and no decided way to tell a headless
 build what to be.
 The client sees the world through the seam, filtered to what one subscriber can see (§2).
