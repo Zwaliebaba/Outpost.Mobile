@@ -1595,6 +1595,9 @@ public:
 
     const Game::ShipId quarry =
       world.SpawnShip(Game::LocalPos(1800.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
+    const Game::ShipHandle quarryHandle = world.HandleOf(quarry);
+    const Game::ShipHandle corvetteHandle = world.HandleOf(corvette);
+    const Game::ShipHandle minerHandle = world.HandleOf(miner);
     const Game::WorldPos minerWas = world.Ship(miner).posWorld;
 
     Assert::AreEqual(Code(Game::World::FleetOrderResult::NoSuchTarget),
@@ -1603,15 +1606,28 @@ public:
                      L"the attack order was refused");
 
     // About 1.8 km at a Corvette's 30 m/s is a minute; the budget is that with room to spare.
+    //
+    // The closing is measured *while there is something to measure it against*, and the ids are held
+    // as handles, because a combatant that arrives now also shoots: a Corvette kills a 60-point
+    // Interceptor in about four and a half seconds, the order completes with its target
+    // (Design/Archive/Fleets.md 6.5), and a raw ShipId kept across that is an index past the end
+    // (ADR 0005, ADR 0052). Before combat this row could hold one for 4,500 ticks and read it back.
+    float closest = 1.0e30f;
     for (int tick = 0; tick < 4500; ++tick)
+    {
       world.Step();
+      const Game::ShipId live = world.Resolve(quarryHandle);
+      if (live == Game::INVALID_SHIP_ID)
+        break;
+      closest = std::min(closest, Game::Distance(world.Ship(world.Resolve(corvetteHandle)).posWorld, world.Ship(live).posWorld));
+    }
 
-    // The Corvette shadows it -- avoidance is what holds it off the hull, which is what shadowing is
-    // until there is a weapon to fire. The Miner holds where the order found it.
-    Assert::IsTrue(Game::Distance(world.Ship(corvette).posWorld, world.Ship(quarry).posWorld) < 250.0f,
-                   L"the combatant did not close on its target");
-    Assert::IsTrue(Game::Distance(world.Ship(miner).posWorld, minerWas) < 60.0f, L"the non-combatant was dragged into the attack");
-    Assert::AreEqual(Game::OrderState::Idle, world.Ship(miner).order, L"the non-combatant did not hold");
+    // The Corvette closed to where its guns bear. The Miner holds where the order found it.
+    Assert::IsTrue(closest < 250.0f, L"the combatant did not close on its target");
+    const Game::ShipId minerNow = world.Resolve(minerHandle);
+    Assert::AreNotEqual(Game::INVALID_SHIP_ID, minerNow, L"the non-combatant was lost");
+    Assert::IsTrue(Game::Distance(world.Ship(minerNow).posWorld, minerWas) < 60.0f, L"the non-combatant was dragged into the attack");
+    Assert::AreEqual(Game::OrderState::Idle, world.Ship(minerNow).order, L"the non-combatant did not hold");
   }
 
   TEST_METHOD(AnOrderedAttackHasNoLeash)
