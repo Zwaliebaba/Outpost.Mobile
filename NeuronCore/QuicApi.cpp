@@ -18,7 +18,7 @@ namespace
 // The application-layer protocol name both ends offer. It bumps the day the wire format's KIND_*
 // bytes change meaning, so that two builds which cannot talk refuse at the handshake rather than at
 // the parser (Design/Archive/QuicTransport.md 4.3).
-constexpr const char* QUIC_ALPN = "outpost-3";
+constexpr const char* QUIC_ALPN = "outpost-4";
 
 // One bidirectional stream is negotiated, and QuicTransport opens it: it is the reliable lane
 // (ADR 0029). Reserving the count here before the lane existed is what let that slice land without

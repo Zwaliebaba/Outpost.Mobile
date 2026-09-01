@@ -39,6 +39,22 @@ struct DespawnRecord
   DespawnCause cause = DespawnCause::Destroyed;
 };
 
+// One shot that landed, as the wire will state it.
+//
+// Entities rather than handles or ids, and taken while both ships are still live: a shot is read by
+// a subscriber several ticks after it happened, by which time either end of it may have been
+// despawned, and an id is an identity where a handle is a reference into one World (ADR 0047).
+//
+// The mount index is here because the view needs to know which muzzle to flash. It is the only
+// piece of a mount that ever reaches a client -- the aim, the cooldown and the held target stay
+// server-side as the intent they are (Design/Combat.md 3.2).
+struct ShotRecord
+{
+  EntityId shooter = INVALID_ENTITY_ID;
+  EntityId victim = INVALID_ENTITY_ID;
+  std::uint32_t mount = 0;
+};
+
 // The authoritative world. One dense array per entity kind, indexed by id -- no maps, no pointers
 // between entities, no iteration order that is not array order, because all three are how a
 // simulation stops reproducing itself.
@@ -314,6 +330,30 @@ public:
   // subscribers, so what remains is exactly what at least one of them has still to hear -- which is
   // why the log cannot do this for itself: it does not know who is reading it.
   void TrimDespawnsBefore(std::uint64_t _cursor) noexcept;
+
+  // --- the shot log ---------------------------------------------------------------------------
+
+  // Every shot that landed, read by cursor and trimmed by whoever is reading -- the despawn log's
+  // mechanism with a different record, and ADR 0027's argument unchanged (Design/Combat-slice-2.md 2.1).
+  //
+  // It is a log rather than one tick's worth because an update goes out every
+  // INTEREST_UPDATE_EVERY_TICKS and a view fed only the newest tick would miss five sixths of the
+  // gunfire in the game.
+  //
+  // Deliberately NOT in the save format. Nothing in Step reads it, so it changes no recorded
+  // outcome, and a reloaded world with no tracers pending is the correct picture of one that has
+  // just resumed. The despawn log is saved because a client that missed a death has a ghost ship for
+  // the rest of the match; a client that missed a muzzle flash has nothing at all.
+  [[nodiscard]] std::uint64_t ShotHead() const noexcept
+  {
+    return m_shotBase + m_shotLog.size();
+  }
+
+  [[nodiscard]] std::span<const ShotRecord> ShotsSince(std::uint64_t _cursor) const noexcept;
+
+  // Drops every shot before _cursor. The publisher passes the minimum across its subscribers, for
+  // the reason TrimDespawnsBefore gives: the log does not know who is reading it.
+  void TrimShotsBefore(std::uint64_t _cursor) noexcept;
 
   // The handle for a live ship. Null (generation 0) if the id is not one.
   [[nodiscard]] ShipHandle HandleOf(ShipId _id) const noexcept;
@@ -934,6 +974,8 @@ private:
   std::vector<std::uint32_t> m_freeSlots;  // reused last-in-first-out, so reuse is reproducible
   std::vector<DespawnRecord> m_despawnLog; // read by cursor, trimmed by the publisher, never by Step
   std::uint64_t m_despawnBase = 0;         // the sequence of m_despawnLog[0]; rises with every trim
+  std::vector<ShotRecord> m_shotLog;       // the same, for gunfire, and not saved (ShotHead)
+  std::uint64_t m_shotBase = 0;
   std::uint64_t m_tick = 0;
 
   // Issued once each and never reused, which is what makes an id an identity rather than a
@@ -1036,6 +1078,7 @@ private:
     ShipHandle shooter;
     ShipHandle victim;
     std::uint32_t damage = 0;
+    std::uint32_t mount = 0; // which of the shooter's mounts fired: the view's muzzle, nothing else
   };
   std::vector<Shot> m_shotScratch;
 

@@ -4,6 +4,11 @@ Implements slice 2 of [`Combat.md`](Combat.md) §16: the hull fraction in the sh
 block on the datagram lane, the receiver accessors that carry both, and the handshake bump that
 makes two builds which disagree refuse rather than misparse (design §9).
 
+**Status: landed 2026-09-01 and in review**, with
+[ADR 0053](Decisions/0053-fire-events-ride-the-datagram-lane.md). Two rows landed under names other
+than §4's — `AFireBlockOverTheCapKeepsTheNewest` and `SilenceIsNotSent`, both saying what they
+check rather than what they forbid — and nothing else in this order changed on contact.
+
 **Layer:** `GameLogic` (the wire seam) and `GameLogicTests`, plus one constant in `NeuronCore`.
 **Depends on:** slice 1, merged or on this branch — there is nothing to report until something
 fires and something loses hull points.

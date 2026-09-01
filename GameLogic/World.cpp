@@ -678,6 +678,29 @@ void World::TrimDespawnsBefore(std::uint64_t _cursor) noexcept
   m_despawnBase = _cursor;
 }
 
+std::span<const ShotRecord> World::ShotsSince(std::uint64_t _cursor) const noexcept
+{
+  // DespawnsSince' rule, and its reason: a cursor older than what the log still holds returns
+  // everything held rather than reporting the gap. Over-reporting is the safe direction here too --
+  // the publisher intersects these with one subscriber's interest set, so a shot it should not see
+  // is dropped there.
+  if (_cursor <= m_shotBase)
+    return m_shotLog;
+  const std::uint64_t offset = _cursor - m_shotBase;
+  if (offset >= m_shotLog.size())
+    return {};
+  return std::span<const ShotRecord>(m_shotLog).subspan(static_cast<std::size_t>(offset));
+}
+
+void World::TrimShotsBefore(std::uint64_t _cursor) noexcept
+{
+  if (_cursor <= m_shotBase)
+    return;
+  const std::uint64_t drop = std::min<std::uint64_t>(_cursor - m_shotBase, m_shotLog.size());
+  m_shotLog.erase(m_shotLog.begin(), m_shotLog.begin() + static_cast<std::ptrdiff_t>(drop));
+  m_shotBase += drop;
+}
+
 ShipHandle World::HandleOf(ShipId _id) const noexcept
 {
   if (_id >= m_ships.size())
@@ -1581,7 +1604,7 @@ void World::StepMounts()
         continue;
 
       mount.cooldownTicks = device.cooldownTicks;
-      m_shotScratch.push_back(Shot{HandleOf(id), HandleOf(target), device.damage});
+      m_shotScratch.push_back(Shot{HandleOf(id), HandleOf(target), device.damage, at});
     }
   }
 
@@ -1592,6 +1615,12 @@ void World::StepMounts()
     const ShipId victim = Resolve(shot.victim);
     if (victim == INVALID_SHIP_ID)
       continue;
+
+    // Logged before the damage lands and above the discard below, because a shot at a station is
+    // still a shot: it draws a tracer and an impact whatever the hull does with the damage. Here
+    // rather than in the walk so that a shot at something already gone is not reported -- the walk
+    // resolves nothing, and this is the first place that does.
+    m_shotLog.push_back(ShotRecord{EntityIdOf(shot.shooter), EntityIdOf(shot.victim), shot.mount});
 
     ShipState& hit = m_ships[victim];
     // An indestructible hull discards its damage, which is how Design/Archive/Stations.md 8.5's rule

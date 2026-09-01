@@ -9,6 +9,19 @@ namespace Game
 {
 namespace
 {
+// Whether a list of departed entities names this one. Linear because these lists are a handful of
+// ids at most -- what left one subscriber's view on one update -- and sorting them to binary-search
+// would cost more than the scan.
+[[nodiscard]] bool Names(std::span<const EntityId> _entities, EntityId _entity) noexcept
+{
+  for (const EntityId entity : _entities)
+  {
+    if (entity == _entity)
+      return true;
+  }
+  return false;
+}
+
 // Whether a faction holds any slot at all. What decides that an update with no records is still
 // worth sending, because its header carries the status block.
 [[nodiscard]] bool HasAnyFleet(const World& _world, FactionId _faction) noexcept
@@ -57,6 +70,7 @@ Publisher::Handle Publisher::Add(const Desc& _desc)
   // right for a subscriber present from the first tick and wrong for one joining a running world;
   // that caller passes World::DespawnHead() (ADR 0027).
   added.despawnCursor = _desc.openingDespawnCursor;
+  added.shotCursor = _desc.openingShotCursor;
 
   m_subscriberSlot.push_back(slot);
   return Handle{slot, m_slots[slot].generation};
@@ -241,6 +255,13 @@ void Publisher::Publish(World& _world)
   for (const Subscriber& subscriber : m_subscribers)
     minimum = std::min(minimum, subscriber.despawnCursor);
   _world.TrimDespawnsBefore(minimum);
+
+  // And the shot log, on the same terms: what remains is what at least one subscriber has still to
+  // hear about, and with no subscribers the head is the minimum because nobody is owed anything.
+  std::uint64_t oldestShot = _world.ShotHead();
+  for (const Subscriber& subscriber : m_subscribers)
+    oldestShot = std::min(oldestShot, subscriber.shotCursor);
+  _world.TrimShotsBefore(oldestShot);
 }
 
 void Publisher::PublishRosters(const World& _world, Subscriber& _subscriber)
@@ -293,6 +314,34 @@ void Publisher::PublishOne(const World& _world, Subscriber& _subscriber)
   m_sendScratch.insert(m_sendScratch.end(), _subscriber.interest.Refreshed().begin(), _subscriber.interest.Refreshed().end());
 
   SplitTheLost(_world, _subscriber);
+
+  // The gunfire, filtered to what this subscriber can see either end of.
+  //
+  // Either end, and the target end is the one that matters: being shot at from outside your own
+  // interest set is exactly the event a player must not be denied. The three departure lists are
+  // consulted after the subscribed set because they cover the one case a live handle cannot -- a
+  // ship that died in view on this very update, which is the shot a player most wants to have seen.
+  //
+  // The cursor advances whether or not anything is sent, exactly as the despawn cursor does: gunfire
+  // nobody could see has nobody to tell.
+  const std::span<const ShipHandle> subscribed = _subscriber.interest.Subscribed();
+  const auto sees = [&](EntityId _entity)
+  {
+    const ShipHandle handle = _world.HandleOfEntity(_entity);
+    if (handle.generation != 0 && std::binary_search(subscribed.begin(), subscribed.end(), handle, HandleOrderBefore))
+      return true;
+    return Names(m_destroyedScratch, _entity) || Names(m_dockedScratch, _entity) || Names(m_leftScratch, _entity);
+  };
+
+  m_fireScratch.clear();
+  for (const ShotRecord& shot : _world.ShotsSince(_subscriber.shotCursor))
+  {
+    if (sees(shot.shooter) || sees(shot.victim))
+      m_fireScratch.push_back(shot);
+  }
+  _subscriber.shotCursor = _world.ShotHead();
+  if (!m_fireScratch.empty())
+    (void)_subscriber.writer.WriteFire(_world.Tick(), m_fireScratch, *_subscriber.transport);
 
   // An empty update is not information -- unless this subscriber has a fleet, in which case the
   // header alone is. The case this guard would otherwise break is the one the whole feature is for:

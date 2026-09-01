@@ -87,3 +87,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0050](0050-a-fleet-defends-itself-against-stated-acts.md) | A fleet defends itself against stated acts, at fleet grain | accepted |
 | [0051](0051-the-ledger-is-asked-for-not-broadcast.md) | The ledger is asked for, not broadcast | accepted |
 | [0052](0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md) | Gunnery is deterministic, and the fire pass states the acts | accepted |
+| [0053](0053-fire-events-ride-the-datagram-lane.md) | Fire events ride the datagram lane | accepted |

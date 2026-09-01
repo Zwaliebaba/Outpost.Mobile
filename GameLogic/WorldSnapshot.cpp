@@ -53,6 +53,14 @@ constexpr std::uint8_t KIND_LEDGER_REPLY = 8;
 // A draft, upward. The fourth order kind and the only one that names no ship.
 constexpr std::uint8_t KIND_COMPOSE_ORDER = 9;
 
+// Gunfire, downward, on the DATAGRAM lane -- the one message here whose answer to ADR 0029's
+// question is "no, a later message does not make a lost one right", and which takes that lane
+// anyway. The question is the wrong one for a message whose only consumers are a muzzle flash, a
+// tracer and a turret slew: every authoritative consequence of a shot already travels elsewhere and
+// reliably -- the damage as a fraction in the ship record, the death in a leave run -- so a lost
+// flash is not a lie, while a late one draws a line into empty space (ADR 0053).
+constexpr std::uint8_t KIND_FIRE = 10;
+
 // kind, complete, snapshotId, fragmentIndex, fragmentCount, tick, recordCount, hostileMask
 //
 // The mask is appended rather than inserted, so every field a reader already knew stays where it
@@ -92,7 +100,14 @@ constexpr std::uint32_t LEAVE_HEADER_BYTES = 1 + 8 + 4 + 4 + 4;
 // 27-byte header that is 23 ship records per fragment against the 13 this replaces -- so a
 // hundred-ship update is 5 fragments instead of 8, which is what finding E1 cares about: at 2%
 // datagram loss it completes 90% of the time rather than 85% (Design/Archive/QuantizedWire-work-order.md).
-constexpr std::uint32_t SHIP_RECORD_BYTES = 8 + 8 + 4 + 4 + 4 + 12 + 1 + 1 + 1 + 4;
+constexpr std::uint32_t SHIP_RECORD_BYTES = 8 + 8 + 4 + 4 + 4 + 12 + 1 + 1 + 1 + 4 + 1;
+
+// kind, tick, count, then the events. Seventeen bytes each: two entities and a mount index narrowed
+// to the byte it fits in, since MAX_MOUNTS is six.
+constexpr std::uint32_t FIRE_HEADER_BYTES = 1 + 8 + 2;
+constexpr std::uint32_t FIRE_EVENT_BYTES = 8 + 8 + 1;
+static_assert(FIRE_HEADER_BYTES + MAX_FIRE_EVENTS * FIRE_EVENT_BYTES <= Neuron::MAX_DATAGRAM_BYTES,
+              "a full fire message must fit one datagram, or the cap is meaningless");
 // The saved state's magic and format byte. Not a KIND_* value: a state buffer is not a datagram and
 // never meets SnapshotReceiver::Accept, so the magic is what turns feeding it to one into a refusal
 // rather than a misread. The format byte is what makes a disagreement between two builds a refusal
@@ -469,6 +484,14 @@ void WriteShipRecord(ByteWriter& _out, const World& _world, ShipId _id)
   _out.U8(ship.factionId);
   _out.U8(_world.IsStation(_id) ? SHIP_FLAG_STATION : std::uint8_t{0});
   _out.U32(ship.hullId);
+
+  // 255ths of whole, and 255 for a hull that cannot be destroyed: an indestructible thing is
+  // undamaged, which is the only honest answer and the one that keeps a station's bar from reading
+  // empty. The multiply is done in 32 bits before the divide, so a Carrier's 5,200 points do not
+  // overflow on their way to a byte.
+  const std::uint32_t maxHullPoints = HullSpecOf(ship.hullId).maxHullPoints;
+  const std::uint32_t fraction = (maxHullPoints > 0) ? (ship.hullPoints * 255u) / maxHullPoints : 255u;
+  _out.U8(static_cast<std::uint8_t>(fraction));
 }
 
 // The status block: the one thing on this seam that tells a player about a fleet the interest set
@@ -621,6 +644,32 @@ std::uint32_t SnapshotWriter::Write(const World& _world, Neuron::Transport& _tra
   return sent;
 }
 
+bool SnapshotWriter::WriteFire(std::uint64_t _tick, std::span<const ShotRecord> _shots, Neuron::Transport& _transport)
+{
+  if (_shots.empty())
+    return false; // silence is not information, and an empty message is a datagram spent on nothing
+
+  // Over the cap the OLDEST go, which is why this counts back from the end rather than forward from
+  // the start: what a player is looking at is the gunfire that just happened.
+  const std::size_t taken = std::min<std::size_t>(_shots.size(), MAX_FIRE_EVENTS);
+  const std::span<const ShotRecord> newest = _shots.last(taken);
+
+  m_fireScratch.clear();
+  ByteWriter out(m_fireScratch);
+  out.U8(KIND_FIRE);
+  out.U64(_tick);
+  out.U16(static_cast<std::uint16_t>(taken));
+  for (const ShotRecord& shot : newest)
+  {
+    out.Entity(shot.shooter);
+    out.Entity(shot.victim);
+    // Narrowed to a byte because MAX_MOUNTS is six. A mount index past what the shooter's hull
+    // carries is a diagnostic on the far side rather than anything to check here.
+    out.U8(static_cast<std::uint8_t>(shot.mount));
+  }
+  return _transport.Send(m_fireScratch.data(), static_cast<std::uint32_t>(m_fireScratch.size()));
+}
+
 bool SnapshotWriter::WriteLeaves(std::uint64_t _tick, std::span<const EntityId> _left, std::span<const EntityId> _destroyed,
                                  std::span<const EntityId> _docked, Neuron::Transport& _transport)
 {
@@ -745,6 +794,8 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
     return AcceptRoster(_datagram);
   if (kind == KIND_LEDGER_REPLY)
     return AcceptLedgerReply(_datagram);
+  if (kind == KIND_FIRE)
+    return AcceptFire(_datagram);
   if (kind != KIND_SNAPSHOT)
     return false;
 
@@ -844,6 +895,7 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
     ship.factionId = in.U8();
     ship.flags = in.U8();
     ship.hullId = in.U32();
+    ship.hullFraction = in.U8();
     if (!in.Ok())
     {
       AbandonInProgress();
@@ -893,6 +945,36 @@ void SnapshotReceiver::Remove(EntityId _gone)
 std::span<const EntityId> SnapshotReceiver::RosterOf(std::uint8_t _slot) const noexcept
 {
   return (_slot < FLEET_SLOTS) ? std::span<const EntityId>(m_rosters[_slot]) : std::span<const EntityId>();
+}
+
+bool SnapshotReceiver::AcceptFire(std::span<const std::uint8_t> _message)
+{
+  ByteReader in(_message);
+  in.U8(); // the kind, already read by the dispatch
+  const std::uint64_t tick = in.U64();
+  const std::uint32_t count = in.U16();
+  if (!in.Ok() || count > MAX_FIRE_EVENTS)
+    return false;
+
+  // Read whole before any of it is kept, so a truncated message leaves the accumulated list as it
+  // was rather than half-appended -- AcceptLeaves' rule, and its reason.
+  m_fireScratch.clear();
+  for (std::uint32_t at = 0; at < count; ++at)
+  {
+    FireEvent event;
+    event.shooter = in.Entity();
+    event.target = in.Entity();
+    event.mount = in.U8();
+    m_fireScratch.push_back(event);
+  }
+  if (!in.Ok())
+    return false;
+
+  m_lastFireTick = tick;
+  // Accumulated rather than replaced: two fire messages in one pump must not lose the first one's
+  // tracers, which is why the consumer clears rather than the receiver guessing.
+  m_fire.insert(m_fire.end(), m_fireScratch.begin(), m_fireScratch.end());
+  return !m_fire.empty();
 }
 
 bool SnapshotReceiver::AcceptRoster(std::span<const std::uint8_t> _message)
