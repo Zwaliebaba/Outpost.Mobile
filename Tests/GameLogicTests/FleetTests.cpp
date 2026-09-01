@@ -210,6 +210,23 @@ Game::World::FleetId MixedFleet(Game::World& _world, Game::World::StationId _sta
   return fleet;
 }
 
+// A fleet with nothing in it that shoots. It exists for the rows that want a defense's *posture*
+// held still while something else is measured: an armed fleet now kills what it is roused against,
+// and a row about the alert would otherwise be measuring how fast a Corvette shoots (ADR 0052).
+Game::World::FleetId UnarmedFleet(Game::World& _world, Game::World::StationId _station, std::uint8_t _slot)
+{
+  DockShips(_world, _station, Game::HullId::Miner, 1);
+  std::vector<std::uint32_t> counts = ZeroCounts();
+  Want(counts, Game::HullId::Miner, 1);
+  Assert::AreEqual(Code(Game::World::ComposeResult::Composed), Code(_world.ComposeFleet(_station, _slot, counts, Game::FACTION_PLAYER)),
+                   L"the compose was refused");
+  for (int tick = 0; tick < static_cast<int>(Game::FLEET_LAUNCH_EVERY_TICKS) + 400; ++tick)
+    _world.Step();
+  const Game::World::FleetId fleet = _world.FleetInSlot(Game::FACTION_PLAYER, _slot);
+  Assert::AreEqual(1u, _world.FleetOf(fleet).memberCount, L"the fleet did not finish launching");
+  return fleet;
+}
+
 // The fleet's members split the way the defense splits them.
 Game::ShipId CombatantOf(const Game::World& _world, Game::World::FleetId _fleet)
 {
@@ -1348,8 +1365,9 @@ public:
     for (int tick = 0; tick < 300; ++tick)
       world.Step();
 
-    // Somebody shoots the Miner. Nothing in this tree can actually do that, which is the whole
-    // reason RecordHostileAct exists as a socket (ADR 0050).
+    // Somebody shoots the Miner. Something in this tree can now actually do that -- the fire pass
+    // calls this itself (ADR 0052) -- but the socket is still what this row drives, because an act
+    // stated by hand is the only way to put a fleet in a known posture on a known tick.
     const Game::ShipId raider =
       world.SpawnShip(world.Ship(miner).posWorld, 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
     const Game::ShipHandle raiderHandle = world.HandleOf(raider);
@@ -1363,9 +1381,14 @@ public:
 
     // The Corvette turns on the raider; the Miner keeps flying the order it was given, and does not
     // flee -- fleeing is a judgment about where safety is, which is a sense this design has none of.
-    Assert::IsTrue(Game::Distance(world.Ship(corvette).posWorld, world.Ship(raider).posWorld) <
-                     Game::Distance(world.Ship(miner).posWorld, world.Ship(raider).posWorld),
-                   L"the combatant did not close on the attacker");
+    //
+    // "Turns on" is read as gunfire rather than as distance, and that change is this phase's rather
+    // than this row's. The raider was spawned on top of the Miner, which is well inside a Corvette's
+    // 180 m turrets, so the combatant is already where its guns bear and a pursuit that closed
+    // further would be one that had learned nothing (Design/Combat.md 8). What says it turned is
+    // that the raider is losing hull points, and nothing but this fleet is shooting at it.
+    Assert::IsTrue(world.Ship(raider).hullPoints < Game::HullSpecOf(Game::HullId::Interceptor).maxHullPoints,
+                   L"the combatant did not turn its guns on the attacker");
     Assert::AreEqual(0.0f, world.Ship(corvette).orderSpeedCapMetresPerSec, 0.0f, L"a chase was held to the fleet's cruising pace");
     Assert::AreEqual(Game::OrderState::Moving, world.Ship(miner).order, L"the non-combatant abandoned its order");
     Assert::IsTrue(Game::Distance(world.Ship(miner).posWorld, point) < Game::Distance(world.Ship(corvette).posWorld, point),
@@ -1498,11 +1521,17 @@ public:
   {
     Game::World world;
     const Game::World::StationId station = MakeStationAt(world, 0.0f, 0.0f);
-    const Game::World::FleetId fleet = MixedFleet(world, station, 0);
+    const Game::World::FleetId fleet = UnarmedFleet(world, station, 0);
     const Game::ShipId miner = NonCombatantOf(world, fleet);
 
     // A raider that stays put well inside the leash: only the alert can end this engagement, which
     // is what makes it one of the three things being engaged is.
+    //
+    // That isolation is why this row's fleet is the Miner alone. Once combatants shoot (ADR 0052) a
+    // Corvette kills a 60-point Interceptor in about four and a half seconds, and the engagement
+    // would then end because the threat DIED -- a fourth thing, and a true one, but not the thing
+    // this row exists to measure. A fleet with nothing armed in it cannot end a fight any way but by
+    // the clock, which is the reading this row has always wanted.
     const Game::ShipId raider =
       world.SpawnShip(world.Ship(miner).posWorld, 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
     const Game::ShipHandle raiderHandle = world.HandleOf(raider);
@@ -1566,6 +1595,9 @@ public:
 
     const Game::ShipId quarry =
       world.SpawnShip(Game::LocalPos(1800.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
+    const Game::ShipHandle quarryHandle = world.HandleOf(quarry);
+    const Game::ShipHandle corvetteHandle = world.HandleOf(corvette);
+    const Game::ShipHandle minerHandle = world.HandleOf(miner);
     const Game::WorldPos minerWas = world.Ship(miner).posWorld;
 
     Assert::AreEqual(Code(Game::World::FleetOrderResult::NoSuchTarget),
@@ -1574,15 +1606,28 @@ public:
                      L"the attack order was refused");
 
     // About 1.8 km at a Corvette's 30 m/s is a minute; the budget is that with room to spare.
+    //
+    // The closing is measured *while there is something to measure it against*, and the ids are held
+    // as handles, because a combatant that arrives now also shoots: a Corvette kills a 60-point
+    // Interceptor in about four and a half seconds, the order completes with its target
+    // (Design/Archive/Fleets.md 6.5), and a raw ShipId kept across that is an index past the end
+    // (ADR 0005, ADR 0052). Before combat this row could hold one for 4,500 ticks and read it back.
+    float closest = 1.0e30f;
     for (int tick = 0; tick < 4500; ++tick)
+    {
       world.Step();
+      const Game::ShipId live = world.Resolve(quarryHandle);
+      if (live == Game::INVALID_SHIP_ID)
+        break;
+      closest = std::min(closest, Game::Distance(world.Ship(world.Resolve(corvetteHandle)).posWorld, world.Ship(live).posWorld));
+    }
 
-    // The Corvette shadows it -- avoidance is what holds it off the hull, which is what shadowing is
-    // until there is a weapon to fire. The Miner holds where the order found it.
-    Assert::IsTrue(Game::Distance(world.Ship(corvette).posWorld, world.Ship(quarry).posWorld) < 250.0f,
-                   L"the combatant did not close on its target");
-    Assert::IsTrue(Game::Distance(world.Ship(miner).posWorld, minerWas) < 60.0f, L"the non-combatant was dragged into the attack");
-    Assert::AreEqual(Game::OrderState::Idle, world.Ship(miner).order, L"the non-combatant did not hold");
+    // The Corvette closed to where its guns bear. The Miner holds where the order found it.
+    Assert::IsTrue(closest < 250.0f, L"the combatant did not close on its target");
+    const Game::ShipId minerNow = world.Resolve(minerHandle);
+    Assert::AreNotEqual(Game::INVALID_SHIP_ID, minerNow, L"the non-combatant was lost");
+    Assert::IsTrue(Game::Distance(world.Ship(minerNow).posWorld, minerWas) < 60.0f, L"the non-combatant was dragged into the attack");
+    Assert::AreEqual(Game::OrderState::Idle, world.Ship(minerNow).order, L"the non-combatant did not hold");
   }
 
   TEST_METHOD(AnOrderedAttackHasNoLeash)

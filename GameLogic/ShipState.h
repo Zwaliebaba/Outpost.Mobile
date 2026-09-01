@@ -163,6 +163,26 @@ inline constexpr EntityId ENTITY_SERIAL_MASK = (EntityId{1} << ENTITY_SERIAL_BIT
   return _entity & ENTITY_SERIAL_MASK;
 }
 
+// One shot that landed.
+//
+// It lives here rather than beside the despawn log it is modelled on, and the reason is the wire:
+// SnapshotWriter names this type, and a header that describes the seam must not have to include the
+// whole authoritative World to do it. ShipState.h is what both sides already share.
+//
+// Entities rather than handles or ids, and taken while both ships are still live: a shot is read by
+// a subscriber several ticks after it happened, by which time either end may have been despawned,
+// and an id is an identity where a handle is a reference into one World (ADR 0047).
+//
+// The mount index is here because the view needs to know which muzzle to flash. It is the only
+// piece of a mount that ever reaches a client -- the aim, the cooldown and the held target stay
+// server-side as the intent they are (Design/Combat.md 3.2).
+struct ShotRecord
+{
+  EntityId shooter = INVALID_ENTITY_ID;
+  EntityId victim = INVALID_ENTITY_ID;
+  std::uint32_t mount = 0;
+};
+
 enum class OrderState : std::uint8_t
 {
   Idle,
@@ -174,10 +194,11 @@ enum class OrderState : std::uint8_t
 // business and this is a fleet's, and the two never mean the same thing: every member of a fleet
 // under Move is Moving, Aligning or Idle at its own slot at different moments of the same order.
 //
-// Declared whole so the byte never renumbers, and two of the six are refused for now, each for its
-// own reason. Attack waits for the slice that gives it the protector's pursuit chassis and a
-// combatant flag to aim it with; Mine waits for a mining design and for something in the world to
-// mine, since a rock is presentation and a ship flies through it (ADR 0016, Design/Archive/Fleets.md 6.6).
+// Declared whole so the byte never renumbers, and one of the six is still refused: Mine waits for a
+// mining design and for something in the world to mine, since a rock is presentation and a ship
+// flies through it (ADR 0016, Design/Archive/Fleets.md 6.6). Attack was refused beside it until it
+// had the protector's pursuit chassis and a combatant flag to aim with, and then until the guns it
+// aims were real; both have landed, and it now means what it says (Design/Combat.md 6).
 //
 // Stop is a kind a message carries and never a standing order a row holds: stopping is asking for
 // Idle, and what the row stores is what it was left in.
@@ -240,5 +261,15 @@ struct ShipState
   // Whose ship this is. Simulation state by AGENTS.md 5's own test -- a spectator would need it --
   // and it travels in the snapshot record like everything else here.
   FactionId factionId = FACTION_PLAYER;
+
+  // What this ship has left, spawned at its hull's maxHullPoints and subtracted saturating at zero
+  // by the fire pass. A hull whose maximum is zero is indestructible and this stays zero for its
+  // whole life -- the one reading under which "at zero" does not mean "dead" (HullSpec.h).
+  //
+  // An unsigned integer rather than a float, and that is a determinism result rather than a taste:
+  // every damage number in the device table is whole, so the damage path holds no float at all and
+  // is bit-exact under every summation order on every machine. A float would have been fine today
+  // and a liability the first afternoon somebody added a fractional resist.
+  std::uint32_t hullPoints = 0;
 };
 } // namespace Game

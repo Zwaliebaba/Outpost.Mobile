@@ -72,6 +72,11 @@ public:
     // It is a field rather than something Add works out for itself, because Add has no World and
     // giving it one to read a single number would be a dependency for a default.
     std::uint64_t openingDespawnCursor = 0;
+
+    // Where in the world's shot log this subscriber starts reading, on the same terms and for the
+    // same reason: a subscriber joining a running world passes World::ShotHead() and is told about
+    // gunfire from now on rather than about a battle it did not watch (ADR 0027, ADR 0053).
+    std::uint64_t openingShotCursor = 0;
   };
 
   // Adds a subscriber and returns its handle. Its phase is assigned here, from the slot it takes, so
@@ -122,6 +127,7 @@ private:
     std::uint32_t ordersPerTick = 8;
     std::uint32_t phase = 0;
     std::uint64_t despawnCursor = 0;
+    std::uint64_t shotCursor = 0;
     std::uint32_t throttledTicks = 0;
     WorldPos centre;
     InterestSet interest;
@@ -184,6 +190,7 @@ private:
   // and the wire deals in identities, and SplitTheLost is where the two meet (ADR 0047).
   std::vector<ShipHandle> m_sendScratch;
   std::vector<ShipHandle> m_departedScratch; // sorted handles of everything the log said left, any cause
+  std::vector<ShotRecord> m_fireScratch;
   std::vector<EntityId> m_leftScratch;
   std::vector<EntityId> m_destroyedScratch;
   std::vector<EntityId> m_dockedScratch;

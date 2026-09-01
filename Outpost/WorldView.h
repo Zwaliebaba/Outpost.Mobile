@@ -100,6 +100,20 @@ public:
   };
 
   // One authored exhaust nozzle: where it is on the hull, what colour it burns and how wide.
+  // One shot the wire told this client about, held for as long as it is drawn.
+  //
+  // Both ends are frozen at arrival rather than followed per frame, and that is the same rule
+  // ShipExplosion is built on: either ship may have died on the tick the shot landed, and a tracer
+  // that chased a live record would snap to nothing halfway through its own flight
+  // (Design/Combat-slice-4.md 2.1).
+  struct GunShot
+  {
+    DirectX::XMFLOAT3 fromWorld{0.0f, 0.0f, 0.0f};
+    DirectX::XMFLOAT3 toWorld{0.0f, 0.0f, 0.0f};
+    Neuron::Rgba colour{1.0f, 1.0f, 1.0f, 1.0f}; // the shooter's livery: whose fire that was
+    float ageSec = 0.0f;
+  };
+
   struct ExhaustView
   {
     DirectX::XMFLOAT3 local{0.0f, 0.0f, 0.0f}; // nozzle position in mesh space
@@ -161,6 +175,10 @@ public:
     // Whose the record was, kept past the record: a hull that docked is counted for the log only
     // when it was the player's, and by then the snapshot no longer holds it.
     Game::FactionId faction = Game::FACTION_PLAYER;
+
+    // What the record said this hull had left, 255ths of whole. Carried for the same reason faction
+    // is: the sheet asks about a member after the record that answered has been superseded.
+    std::uint8_t hullFraction = 255;
 
     bool selected = false;
     float ringFade = 0.0f;  // 0..1 alpha ramp on select and deselect
@@ -404,6 +422,11 @@ public:
   // very most -- rather than growing for the length of a match, which is the whole reason this is
   // one narrow answer and not a general memory of departed ships (Design/Archive/Fleets-slice-8.md 2.2).
   [[nodiscard]] std::uint32_t HullOfMember(Game::EntityId _entity) const noexcept;
+
+  // How whole a fleet member is, 0..1, or -1 for one this client holds no record for -- a fleet
+  // somewhere the camera has never been. A caller that could not tell those apart would draw a
+  // healthy pip for a ship it knows nothing about (Design/Combat-slice-4.md 2.3).
+  [[nodiscard]] float ConditionOfMember(Game::EntityId _entity) const noexcept;
 
   // The order a sheet button armed, waiting for the world tap that supplies its target. None until
   // one is pressed, and cleared by the next tap whether or not it landed on something the order can
@@ -650,6 +673,13 @@ private:
   // this is what it does about it.
   void ExplodeTheLost(std::uint64_t _tick);
 
+  // Which carried record is this entity, or m_ships.size() for none.
+  [[nodiscard]] std::size_t IndexOfEntity(Game::EntityId _entity) const noexcept;
+
+  // Turns the update's fire events into drawable shots, resolving both ends against the records this
+  // client holds *now*, while it still holds them.
+  void TakeTheGunfire();
+
   Game::WorldPos m_viewOrigin;
   Game::FactionId m_ownFaction = Game::FACTION_PLAYER;
   Neuron::Transport* m_transport = nullptr;
@@ -692,6 +722,19 @@ private:
   // because what the view decides (where each glow is, how big, how bright) and how a quad faces
   // the camera are different jobs, and only the second is worth a test.
   std::vector<Neuron::GlowSample> m_glowSamples;
+
+  // The shots being drawn, oldest first, capped at MAX_DRAWN_SHOTS.
+  std::vector<GunShot> m_shots;
+
+  // Who this client's own ships have shot at lately, so that a death can be attributed to the
+  // player without the wire ever stating a killer (ADR 0053 keeps attribution off it). Entity and
+  // the age of the last shot at it; pruned by GUN_KILL_CREDIT_SEC.
+  struct ShotAt
+  {
+    Game::EntityId entity = Game::INVALID_ENTITY_ID;
+    float ageSec = 0.0f;
+  };
+  std::vector<ShotAt> m_shotAt;
   std::vector<Neuron::FxVertex> m_fxGlowVerts;
 
   // What the last Render submitted and what it skipped, so the saving is read off the screen rather

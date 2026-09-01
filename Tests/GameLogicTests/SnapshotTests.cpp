@@ -69,6 +69,19 @@ Game::ShipId SpawnAt(Game::World& _world, float _x, float _z, Game::HullId _hull
   return _world.SpawnShip(Game::LocalPos(_x, _z), 0.0f, static_cast<std::uint32_t>(_hull), _faction);
 }
 
+// One decoded record by identity. The receiver holds a set, not a list in spawn order, so a row
+// that indexed into it would be asserting against whatever the upsert happened to append.
+[[nodiscard]] const Game::ShipSnapshot& FindShip(const Game::SnapshotReceiver& _receiver, Game::EntityId _entity)
+{
+  for (const Game::ShipSnapshot& ship : _receiver.Latest().ships)
+  {
+    if (ship.entity == _entity)
+      return ship;
+  }
+  Assert::Fail(L"the snapshot held no record for that entity");
+  return _receiver.Latest().ships.front();
+}
+
 [[nodiscard]] bool Holds(std::span<const Game::EntityId> _set, Game::EntityId _entity)
 {
   for (const Game::EntityId entity : _set)
@@ -182,8 +195,110 @@ public:
     // the header, and it is sized against its WORST case -- five fleets, 71 bytes -- rather than
     // against what an update happens to carry, so that this stays one number every caller and every
     // test agree on (Design/Archive/Fleets-slice-5.md 2.2).
-    Assert::AreEqual(22u, Game::ShipsPerSnapshotFragment(), L"the record plus the fleet block no longer fits 22 ships in a datagram");
+    //
+    // And 21 rather than that 22 since the record gained a hull fraction: one byte on 47 costs a
+    // record a fragment, which is the price of a client being able to draw a damage bar at all
+    // (Design/Combat-slice-2.md 2.2). The figure moves with the record by construction -- that is what
+    // this row is for -- and what matters is that it is *derived*, so nobody has to remember it.
+    Assert::AreEqual(21u, Game::ShipsPerSnapshotFragment(), L"the record plus the fleet block no longer fits 21 ships in a datagram");
     Assert::IsTrue(Game::ShipsPerSnapshotFragment() < 64, L"the record got suspiciously small");
+  }
+
+  TEST_METHOD(AShipRecordCarriesItsHullFraction)
+  {
+    // A fraction rather than the number, because a fraction is what a pip row and a target bar draw
+    // (Design/Combat.md 9.1, 10.3). Three readings matter: whole, hurt, and a hull with nothing to
+    // lose -- which reads whole, because undamaged is the only honest answer for a station.
+    // The damage is done by the fire pass rather than by a setter, because there is no setter and
+    // there should not be one: hull points are the pass's to spend (ADR 0052), and a test that
+    // reached past it would be asserting about a state the simulation cannot reach.
+    Game::World world;
+    const Game::ShipId station = SpawnAt(world, 900.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+    const Game::ShipId victim = SpawnAt(world, 0.0f, 0.0f, Game::HullId::Frigate, Game::FACTION_PLAYER);
+    SpawnAt(world, 0.0f, 120.0f, Game::HullId::Frigate, Game::FACTION_VANDAL);
+
+    CaptureTransport link;
+    Game::SnapshotWriter writer;
+    Game::SnapshotReceiver receiver;
+    Assert::AreEqual(1u, writer.Write(world, link));
+    FeedBothLanes(receiver, link);
+    Assert::AreEqual(std::uint8_t{255}, FindShip(receiver, world.EntityIdOf(victim)).hullFraction, L"a whole hull did not read whole");
+    Assert::AreEqual(std::uint8_t{255}, FindShip(receiver, world.EntityIdOf(station)).hullFraction,
+                     L"a hull that cannot be destroyed did not read whole");
+
+    for (int tick = 0; tick < 300; ++tick)
+      world.Step();
+
+    const std::uint32_t points = world.Ship(victim).hullPoints;
+    Assert::IsTrue(points > 0 && points < Game::HullSpecOf(Game::HullId::Frigate).maxHullPoints,
+                   L"the victim was not hurt, or not survived");
+
+    link.sent.clear();
+    link.sentReliable.clear();
+    Assert::AreEqual(1u, writer.Write(world, link));
+    FeedBothLanes(receiver, link);
+
+    // The encoding is what this row is about: 255ths of whole, computed the way the writer does it.
+    const std::uint32_t expected = (points * 255u) / Game::HullSpecOf(Game::HullId::Frigate).maxHullPoints;
+    Assert::AreEqual(static_cast<std::uint8_t>(expected), FindShip(receiver, world.EntityIdOf(victim)).hullFraction,
+                     L"the fraction on the wire is not what the hull points say");
+    Assert::AreEqual(std::uint8_t{255}, FindShip(receiver, world.EntityIdOf(station)).hullFraction,
+                     L"the station lost hull points it does not have");
+  }
+
+  TEST_METHOD(AFireBlockRoundTrips)
+  {
+    // Shooter, target and mount, in the order they were fired. The mount is the only piece of a
+    // mount that ever reaches a client, and it is there so the view knows which muzzle to flash.
+    CaptureTransport link;
+    Game::SnapshotWriter writer;
+    Game::SnapshotReceiver receiver;
+
+    const Game::ShotRecord shots[] = {{11, 22, 0}, {11, 22, 1}, {33, 11, 4}};
+    Assert::IsTrue(writer.WriteFire(7, shots, link), L"the fire message was not sent");
+    Assert::AreEqual(std::size_t{1}, link.sent.size(), L"gunfire did not take the datagram lane");
+    Assert::AreEqual(std::size_t{0}, link.sentReliable.size(), L"gunfire took the reliable lane");
+
+    FeedBothLanes(receiver, link);
+    const std::span<const Game::FireEvent> fire = receiver.Fire();
+    Assert::AreEqual(std::size_t{3}, fire.size(), L"the events did not all arrive");
+    Assert::AreEqual(Game::EntityId{11}, fire[0].shooter);
+    Assert::AreEqual(Game::EntityId{22}, fire[0].target);
+    Assert::AreEqual(0u, fire[0].mount);
+    Assert::AreEqual(4u, fire[2].mount, L"the mount index did not survive");
+
+    // Accumulated across a drain until the consumer says it has drawn them, which is what stops two
+    // messages in one pump losing the first one's tracers.
+    receiver.ClearFire();
+    Assert::AreEqual(std::size_t{0}, receiver.Fire().size(), L"clearing did not empty the list");
+  }
+
+  TEST_METHOD(AFireBlockOverTheCapKeepsTheNewest)
+  {
+    // The newest gunfire is the gunfire a player is looking at, so the cap drops from the front.
+    std::vector<Game::ShotRecord> shots;
+    for (std::uint32_t at = 0; at < Game::MAX_FIRE_EVENTS + 20; ++at)
+      shots.push_back(Game::ShotRecord{at + 1, 999, 0});
+
+    CaptureTransport link;
+    Game::SnapshotWriter writer;
+    Game::SnapshotReceiver receiver;
+    Assert::IsTrue(writer.WriteFire(3, shots, link));
+    FeedBothLanes(receiver, link);
+
+    const std::span<const Game::FireEvent> fire = receiver.Fire();
+    Assert::AreEqual(static_cast<std::size_t>(Game::MAX_FIRE_EVENTS), fire.size(), L"the cap was not applied");
+    Assert::AreEqual(shots.back().shooter, fire.back().shooter, L"the newest shot was dropped");
+    Assert::AreEqual(shots[20].shooter, fire.front().shooter, L"the oldest shots were not the ones dropped");
+  }
+
+  TEST_METHOD(SilenceIsNotSent)
+  {
+    // An empty message is a datagram spent on nothing, and a quiet tick is most of them.
+    CaptureTransport link;
+    Game::SnapshotWriter writer;
+    Assert::IsFalse(writer.WriteFire(1, {}, link), L"an empty fire message reported a send");
+    Assert::AreEqual(std::size_t{0}, link.sent.size(), L"silence went on the wire");
   }
 
   TEST_METHOD(OneShipRoundTripsFieldForField)

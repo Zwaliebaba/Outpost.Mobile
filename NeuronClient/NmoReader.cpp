@@ -805,12 +805,23 @@ bool Expand(const Cursor& _cursor, const MeshView& _mesh, MeshData& _outMesh)
   }
   _outMesh.verts.reserve(static_cast<std::size_t>(triangles) * 3);
   _outMesh.markers.reserve(markers);
+  _outMesh.subMeshes.reserve(_mesh.subMeshes.size());
 
   std::vector<std::string_view> names; // kept only for the collision sweep below
-  names.reserve(markers);
+  names.reserve(markers + _mesh.subMeshes.size());
+  std::vector<std::string_view> partNames;
+  partNames.reserve(_mesh.subMeshes.size());
 
   for (const SubMeshView& sub : _mesh.subMeshes)
   {
+    // Where this part's run begins. Expand has always emitted the submeshes in order and
+    // contiguously; all that is new is writing down where each one started
+    // (Design/Combat-slice-3.md 2.3).
+    MeshSubMesh part;
+    part.nameHash = sub.named ? Fnv1a(sub.name) : 0u;
+    part.firstVertex = static_cast<std::uint32_t>(_outMesh.verts.size());
+    part.firstMarker = static_cast<std::uint32_t>(_outMesh.markers.size());
+
     const NmoSubMesh& record = sub.record;
     const NmoMaterial& material = _mesh.materials[record.materialIndex];
     // A submesh has exactly one material, so the flag is read once here and written to every vertex
@@ -839,9 +850,42 @@ bool Expand(const Cursor& _cursor, const MeshView& _mesh, MeshData& _outMesh)
       marker.param0 = view.record.param0;
       marker.param1 = view.record.param1;
       marker.raceTinted = (view.record.flags & static_cast<std::uint32_t>(NmoMarkerFlags::RaceTinted)) != 0;
+      marker.parentBone = view.record.parentBone;
       _outMesh.markers.push_back(marker);
       names.push_back(view.name);
     }
+
+    part.vertexCount = static_cast<std::uint32_t>(_outMesh.verts.size()) - part.firstVertex;
+    part.markerCount = static_cast<std::uint32_t>(_outMesh.markers.size()) - part.firstMarker;
+
+    // The part's own bind-pose bounds, stated by the file or accumulated from what it just emitted.
+    // The absent case is the mesh-level one exactly: a writer that did not state something it was
+    // not obliged to state, rather than anything being repaired.
+    if (record.extents.boxMin.x <= record.extents.boxMax.x)
+    {
+      part.boundsMin = record.extents.boxMin;
+      part.boundsMax = record.extents.boxMax;
+    }
+    else
+    {
+      XMFLOAT3 partMin(1e30f, 1e30f, 1e30f);
+      XMFLOAT3 partMax(-1e30f, -1e30f, -1e30f);
+      for (std::uint32_t at = 0; at < part.vertexCount; ++at)
+      {
+        const MeshVertex& vertex = _outMesh.verts[part.firstVertex + at];
+        partMin = XMFLOAT3(std::min(partMin.x, vertex.px), std::min(partMin.y, vertex.py), std::min(partMin.z, vertex.pz));
+        partMax = XMFLOAT3(std::max(partMax.x, vertex.px), std::max(partMax.y, vertex.py), std::max(partMax.z, vertex.pz));
+      }
+      if (partMin.x <= partMax.x)
+      {
+        part.boundsMin = partMin;
+        part.boundsMax = partMax;
+      }
+    }
+
+    _outMesh.subMeshes.push_back(part);
+    if (sub.named)
+      partNames.push_back(sub.name);
   }
 
   // Names are hashed and never stored, so two names that hash alike are one marker as far as every
@@ -853,6 +897,18 @@ bool Expand(const Cursor& _cursor, const MeshView& _mesh, MeshData& _outMesh)
     {
       if (_outMesh.markers[earlier].nameHash == _outMesh.markers[index].nameHash && names[earlier] != names[index])
         return _cursor.Reject(9, "marker names '{}' and '{}' collide under FNV-1a; rename one", names[earlier], names[index]);
+    }
+  }
+
+  // And the same sweep over the parts, because a submesh name is hashed on the same terms and a
+  // consumer addressing a turret by hash has the same right not to get the wrong one. Unnamed parts
+  // are left out of it: they all hash to zero on purpose and are addressed by index.
+  for (std::size_t index = 0; index < partNames.size(); ++index)
+  {
+    for (std::size_t earlier = 0; earlier < index; ++earlier)
+    {
+      if (Fnv1a(partNames[earlier]) == Fnv1a(partNames[index]) && partNames[earlier] != partNames[index])
+        return _cursor.Reject(9, "submesh names '{}' and '{}' collide under FNV-1a; rename one", partNames[earlier], partNames[index]);
     }
   }
 

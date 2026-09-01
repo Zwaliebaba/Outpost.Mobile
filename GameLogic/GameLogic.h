@@ -23,6 +23,7 @@
 #include "SimTuning.h"
 #include "WorldPos.h"
 #include "ShipState.h"
+#include "DeviceSpec.h"
 #include "HullSpec.h"
 #include "Collision.h"
 #include "PathGrid.h"

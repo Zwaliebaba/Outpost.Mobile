@@ -49,14 +49,21 @@ and its ledger comes back as a *reply* to a request (ADR 0051) on the assembly s
 of up to eight hulls becomes a fleet in a free slot and launches. That is the only way out of a
 ledger: undocking as such still does not exist, and the rest of the station management menu — trade,
 repair, cargo — is still the next phase's. A station whose owner holds the player hostile refuses
-both the dock and the ledger before either is sent, the Vandal base from the first frame. F6 declares
-a selected ship an aggressor against the nearest Vanguard station: the law turns red across the map,
-the station launches its Corvette garrison one every 1.5 s, and they shadow the aggressor until it
-dies -- which nothing can make it do, since there is still no combat (ADR 0041). F7 is the same kind
-of hook pointed the other way: it declares the nearest hostile the attacker of the player's selected
-fleet, so the defense, the button's red pulse and the minimap's red digit can be watched. `CONTACTS` counts the records whose faction holds the player hostile by the
+both the dock and the ledger before either is sent, the Vandal base from the first frame. An attack order on a Vanguard
+ship or station makes the player an aggressor: the law turns red across the map, the station launches
+its Corvette garrison one every 1.5 s, and they hunt the aggressor until it dies -- which its guns can
+now make it do. The same act pointed the other way rouses a fleet's own defense, its button's red
+pulse and its minimap digit. Both judgments are the simulation's own, stated off shots it observed;
+no client message declares one and none ever will (ADR 0041, ADR 0052). `CONTACTS` counts the records whose faction holds the player hostile by the
 update header's mask (ADR 0039), which at boot is the Vandal four and never a Vanguard station.
-There is still no combat. Three worlds and six asteroids share the sky with the fleet, and they are
+Combat is here, and it is one number deep. Hulls carry authored mounts, a mount carries a device, and
+a device fires when range, arc, a settled aim and a spent cooldown all allow it -- no dice anywhere,
+so a miss is a turret that lost a crossing target and a player can see why (ADR 0052). Damage is one
+unsigned number per ship, a hull at zero leaves through the despawn door every death already used, and
+an indestructible hull discards its damage while the act it provoked still counts. The wire carries a
+hull fraction in every ship record and gunfire as its own loss-tolerant datagram (ADR 0053), which is
+what the muzzle flashes, tracers and condition pips are drawn from. Three worlds and six asteroids
+share the sky with the fleet, and they are
 made two different ways (`Design/Decisions/0026`): a world is a smooth sphere wearing an authored
 equirectangular map, sampled per pixel off the direction so it has no seam, while a rock is still a
 seeded low-poly heightfield on a cube-sphere with one flat colour per triangle from a colour ramp and
@@ -82,16 +89,21 @@ stops, rather than running on a second path nobody is testing (`Design/Decisions
 `NeuronCore`, now as what the tests drive: it is the only way to drop or delay a datagram on
 purpose.
 
-**Deliberately not here yet**, so nobody goes looking for it: no audio, no combat, no economy, no
-damage model, and no save *file* — a `World` can be written out, read back and replayed to byte
+**Deliberately not here yet**, so nobody goes looking for it: no audio, no economy, no shields or
+armour classes past the one hull number, no turret that turns -- a hull's guns fire and its geometry
+holds still -- and no save *file* — a `World` can be written out, read back and replayed to byte
 equality (`WorldStateTests`), but the codec is bytes in memory and no format versions it. The
 content pipeline is still NMO and DDS, with `Tools/DdsBake.py` baking the DDS half's mips and BC
-compression offline. Tuning is `constexpr` in `SimTuning.h`, `HullSpec.h` and `ViewTuning.h` (§5);
-what a *deployment* may change without a rebuild — the port, the backlog, one subscriber's interest
-numbers — lives in `Outpost/Assets/Server.cfg`, read by the composition root alone (ADR 0043). The hostiles above
-have no weapons and no senses: the patrol is a metronome that never reacts to anything, and no
-station can be destroyed. The Vanguard's protectors react, but only to a stated act -- nothing in
-the running game states one yet, and a protector has no weapon either (ADR 0041). The networking
+compression offline. Tuning is `constexpr` in `SimTuning.h`, `HullSpec.h`, `DeviceSpec.h` and
+`ViewTuning.h` (§5); what a *deployment* may change without a rebuild — the port, the backlog, one
+subscriber's interest numbers — lives in `Outpost/Assets/Server.cfg`, read by the composition root
+alone (ADR 0043). The hostiles above
+have weapons and one sense -- a mount acquires the nearest ship its faction already holds hostile out
+of the neighbour list the sense pass built -- but their helms react to nothing: the patrol is still a
+metronome that walks its ring while its fixed bow guns fire, and no
+station can be destroyed: an immovable hull discards its damage, which is how a Vanguard station's
+indestructibility is spelled (ADR 0052). The Vanguard's protectors react only to a stated act, and a
+landed shot is what states one now -- they carry the same guns everything else does (ADR 0041). The networking
 stops well short of a network: one client, one process,
 `127.0.0.1` only, and a self-signed certificate the client does not validate. The wire has two lanes
 and the format chooses by asking whether a later message makes a lost one right (`ADR 0029`):
@@ -310,14 +322,14 @@ does not have.
 | Path | What it is |
 |---|---|
 | `NeuronCore/` | Engine primitives shared by every layer — zero game semantics, no graphics API, headless (below). Diagnostics, file IO, framerate-independent easing, the frame clock, the seeded `Pcg32` (ADR 0012), and the seam: `Transport`, with `LoopbackTransport` behind it for the tests and the MsQuic implementation the game runs on — `QuicApi`, `QuicTransport`, `QuicListener` and the self-signed `DevCertificate` (ADRs 0021, 0023). No content readers: those live with their consumer (below). |
-| `GameLogic/` | The deterministic simulation, namespace `Game`. `World`, `ShipState`, `WorldPos`, `HullSpec`, `Movement`, `Collision`, `SpatialIndex`, `PathGrid`, `Formation`, `Patrol`, `SimTuning`, `InterestSet`, `PathIslands` (the architecture partitioned into islands, one `PathGrid` over each, ADR 0033), `UniverseLayout` (a solar system's star and planet sites from a seed — static content both halves read, ADR 0037, and the library's only randomness), `WorldSnapshot` (the wire format, ADR 0008) and `Publisher` (the fan-out to N subscribers, ADR 0030). Depends on NeuronCore only. |
+| `GameLogic/` | The deterministic simulation, namespace `Game`. `World`, `ShipState`, `WorldPos`, `HullSpec`, `DeviceSpec` (what a gun is; `HullSpec` says where a hull carries one), `Movement`, `Collision`, `SpatialIndex`, `PathGrid`, `Formation`, `Patrol`, `SimTuning`, `InterestSet`, `PathIslands` (the architecture partitioned into islands, one `PathGrid` over each, ADR 0033), `UniverseLayout` (a solar system's star and planet sites from a seed — static content both halves read, ADR 0037, and the library's only randomness), `WorldSnapshot` (the wire format, ADR 0008) and `Publisher` (the fan-out to N subscribers, ADR 0030). Depends on NeuronCore only. |
 | `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, the explosion's `FxRenderer`/`MeshShatter`/`SpriteParticles` and the `GlowBillboards` the thruster plume is built with, `ViewCulling` (the camera's frustum and the sphere test everything drawn is gated on), the planet pipeline (`CubeSphere`, `Noise3`, `BodyDesc`/`BodyParams`/`BodyField`, `BodyMeshBuilder`, `BodyRenderer`, `ColourRamp` — see [`Design/Archive/PlanetRenderer.md`](Design/Archive/PlanetRenderer.md)), the star field (`SkyField`, `SkyRenderer`, `SkyVertex` — [`Design/Archive/Skybox.md`](Design/Archive/Skybox.md)), and the content readers `DdsImage`, `NmoFile`/`NmoReader`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
 | `Outpost/` | The executable: composition root, presentation state, the HUD and its event log, the modal `AssemblyScreen` a station long-press opens, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
 | `NeuronClient/Shaders/` | HLSL (§3). DXC compiles it, as shader model 6.7 DXIL, into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
 | `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). |
-| `Tools/` | Content tools, stdlib Python only: the NMO ship-mesh codec and Blender add-on (`BlenderNmo/`), the OBJ→NMO converter (`ObjToNmo.py`), the DDS mip-and-BC baker (`DdsBake.py`), and their tests (`Nmo*Test.py` — the codec test needs bare python3, the Blender one the `bpy` wheel). [`Design/Archive/NmoFormat.md`](Design/Archive/NmoFormat.md) is the format; nothing here is engine code, and no `.vcxproj` names it. The shipping corpus is *not* converted here: the hulls are authored as GLB in `Art/Meshes/` and converted by `Art/Meshes/GlbToNmo.py`, which sits beside them because that is where an artist looks for it ([ADR 0035](Design/Decisions/0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md)). `ObjToNmo.py` stays as the OBJ path's record and the Blender test's fixture source. |
+| `Tools/` | Content tools, stdlib Python only: the NMO ship-mesh codec and Blender add-on (`BlenderNmo/`), the OBJ→NMO converter (`ObjToNmo.py`), the DDS mip-and-BC baker (`DdsBake.py`), and their tests (`Nmo*Test.py` — the codec test needs bare python3, the Blender one the `bpy` wheel, and `NmoShippedArtTest.py` reads the shipping hulls in `Outpost/Assets/Meshes/` to assert what the game's art guarantees a consumer: every part named, bounded and collision-free under FNV-1a, which is what lets a client address one part of a hull, [`Design/Combat-slice-3.md`](Design/Combat-slice-3.md) §2.6). None of the three runs in CI, so run the one your change touches by hand. [`Design/Archive/NmoFormat.md`](Design/Archive/NmoFormat.md) is the format; nothing here is engine code, and no `.vcxproj` names it. The shipping corpus is *not* converted here: the hulls are authored as GLB in `Art/Meshes/` and converted by `Art/Meshes/GlbToNmo.py`, which sits beside them because that is where an artist looks for it ([ADR 0035](Design/Decisions/0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md)). `ObjToNmo.py` stays as the OBJ path's record and the Blender test's fixture source. |
 | `Design/` | Designs with a slice still open, `Screenprints/`, `Archive/` for designs whose slices have all landed and for the work orders that landed them, and `Design/Decisions/` — the architecture decision records (§9). An archived design is still the document its area is reviewed against and is cited from code as before; `Design/` itself is the list of what is unfinished. Its `README.md` says which document is which and how a slice moves from a design into the tree (§7). |
 | `.github/` | CI (§6) and the pull request template every slice answers (§7). |
 
@@ -768,6 +780,9 @@ configurations you built.
 - [ ] Moved a type between libraries, changed a dependency rule, added a project, or turned an
       alternative down that someone will propose again? There is a decision record for it (§9),
       the index lists it, and any sentence here it made false has changed.
+- [ ] Came back different from the design? The design is **amended in place** in this commit to say
+      what was built (ADR 0054), the work order records what changed on contact and why, and the
+      design's shape moved without its argument being retrofitted. No check catches this one.
 - [ ] The pull request answers its template: work order, layers touched, out of scope,
       assumptions, evidence.
 

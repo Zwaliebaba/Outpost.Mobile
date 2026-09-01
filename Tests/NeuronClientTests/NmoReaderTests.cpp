@@ -27,6 +27,43 @@ constexpr std::uint32_t FIXTURE_HULL_VERTICES = 36;
 constexpr std::uint32_t FIXTURE_TURRET_VERTICES = 12;
 constexpr std::uint32_t FIXTURE_MARKERS = 6;
 
+// The hash a submesh or marker name is stored under. Spelled here rather than reached for out of
+// the reader, so a row asserting "the Turret is addressable" fails if either side of that agreement
+// moves (Design/Archive/NmoFormat.md 5.10).
+[[nodiscard]] std::uint32_t NameHash(std::string_view _name)
+{
+  std::uint32_t hash = 2166136261u;
+  for (const char character : _name)
+    hash = (hash ^ static_cast<std::uint8_t>(character)) * 16777619u;
+  return hash;
+}
+
+// Every submesh's run, in order, with no gap and no overlap, covering the whole soup. It is the one
+// property a consumer drawing one part depends on, and it is cheap enough to assert whole.
+[[nodiscard]] bool RangesTile(const Neuron::MeshData& _mesh)
+{
+  std::uint32_t vertex = 0;
+  std::uint32_t marker = 0;
+  for (const Neuron::MeshSubMesh& part : _mesh.subMeshes)
+  {
+    if (part.firstVertex != vertex || part.firstMarker != marker)
+      return false;
+    vertex += part.vertexCount;
+    marker += part.markerCount;
+  }
+  return vertex == _mesh.verts.size() && marker == _mesh.markers.size();
+}
+
+[[nodiscard]] const Neuron::MeshSubMesh* PartNamed(const Neuron::MeshData& _mesh, std::string_view _name)
+{
+  for (const Neuron::MeshSubMesh& part : _mesh.subMeshes)
+  {
+    if (part.nameHash == NameHash(_name))
+      return &part;
+  }
+  return nullptr;
+}
+
 template <typename T> T Peek(const Neuron::ByteBuffer& _bytes, std::size_t _offset)
 {
   T value = {};
@@ -345,6 +382,80 @@ public:
   }
 
   // --- what the fixture is supposed to arrive as -----------------------------------------------
+
+  TEST_METHOD(TheFixtureKeepsItsSubMeshes)
+  {
+    // The reader has always parsed these and Expand used to flatten them away. What is new is that
+    // a consumer can now address one part of a hull (Design/Combat-slice-3.md 2.1).
+    Neuron::MeshData mesh;
+    Assert::IsTrue(Neuron::NmoReader::Load(L"", FIXTURE_NAME, mesh), L"the fixture did not load");
+    Assert::AreEqual(std::size_t{2}, mesh.subMeshes.size(), L"the Gunship's two parts did not both survive");
+
+    const Neuron::MeshSubMesh* hull = PartNamed(mesh, "Hull");
+    const Neuron::MeshSubMesh* turret = PartNamed(mesh, "Turret");
+    Assert::IsNotNull(hull, L"the Hull is not addressable by name");
+    Assert::IsNotNull(turret, L"the Turret is not addressable by name");
+    Assert::IsTrue(hull->firstVertex < turret->firstVertex, L"the parts are not in file order");
+  }
+
+  TEST_METHOD(ASubMeshOwnsAContiguousRunOfVertices)
+  {
+    Neuron::MeshData mesh;
+    Assert::IsTrue(Neuron::NmoReader::Load(L"", FIXTURE_NAME, mesh), L"the fixture did not load");
+    Assert::IsTrue(RangesTile(mesh), L"the submesh ranges do not tile the soup exactly");
+
+    Assert::AreEqual(FIXTURE_HULL_VERTICES, PartNamed(mesh, "Hull")->vertexCount, L"the hull's run is the wrong length");
+    Assert::AreEqual(FIXTURE_TURRET_VERTICES, PartNamed(mesh, "Turret")->vertexCount, L"the turret's run is the wrong length");
+  }
+
+  TEST_METHOD(ASubMeshOwnsItsOwnMarkers)
+  {
+    // The fixture puts five markers on the hull and one -- the bone-parented Muzzle -- on the
+    // turret, which is exactly the split a muzzle flash has to be able to make.
+    Neuron::MeshData mesh;
+    Assert::IsTrue(Neuron::NmoReader::Load(L"", FIXTURE_NAME, mesh), L"the fixture did not load");
+    Assert::AreEqual(FIXTURE_MARKERS, static_cast<std::uint32_t>(mesh.markers.size()), L"the fixture lost a marker");
+    Assert::AreEqual(5u, PartNamed(mesh, "Hull")->markerCount, L"the hull's markers are not the hull's");
+    Assert::AreEqual(1u, PartNamed(mesh, "Turret")->markerCount, L"the turret's marker is not the turret's");
+  }
+
+  TEST_METHOD(ASubMeshCarriesItsOwnBounds)
+  {
+    // The turret's bounds are the turret's, not the hull's, and its pivot is inside them. That pivot
+    // is what a slice that turns a turret turns it about, so it is asserted rather than assumed.
+    Neuron::MeshData mesh;
+    Assert::IsTrue(Neuron::NmoReader::Load(L"", FIXTURE_NAME, mesh), L"the fixture did not load");
+    const Neuron::MeshSubMesh& turret = *PartNamed(mesh, "Turret");
+    const Neuron::MeshSubMesh& hull = *PartNamed(mesh, "Hull");
+
+    Assert::IsTrue(turret.boundsMin.x >= hull.boundsMin.x - 1e-4f && turret.boundsMax.x <= hull.boundsMax.x + 1e-4f,
+                   L"the turret's bounds are not inside the hull's");
+    Assert::IsFalse(turret.boundsMin.z == hull.boundsMin.z && turret.boundsMax.z == hull.boundsMax.z,
+                    L"the turret was given the whole mesh's bounds");
+
+    const XMFLOAT3 pivot = turret.Pivot();
+    Assert::IsTrue(pivot.x >= turret.boundsMin.x && pivot.x <= turret.boundsMax.x, L"the pivot is outside its own part");
+    Assert::IsTrue(pivot.y >= turret.boundsMin.y && pivot.y <= turret.boundsMax.y, L"the pivot is outside its own part");
+    Assert::IsTrue(pivot.z >= turret.boundsMin.z && pivot.z <= turret.boundsMax.z, L"the pivot is outside its own part");
+  }
+
+  TEST_METHOD(AMarkerRemembersItsBone)
+  {
+    // The fixture's Muzzle rides the Barrel; its exhausts and nav lights ride nothing. The reader
+    // has always validated this field and Expand used to drop it.
+    Neuron::MeshData mesh;
+    Assert::IsTrue(Neuron::NmoReader::Load(L"", FIXTURE_NAME, mesh), L"the fixture did not load");
+
+    bool bound = false;
+    bool loose = false;
+    for (const Neuron::MeshMarker& marker : mesh.markers)
+    {
+      bound = bound || marker.parentBone >= 0;
+      loose = loose || marker.parentBone < 0;
+    }
+    Assert::IsTrue(bound, L"the bone-parented marker lost its bone");
+    Assert::IsTrue(loose, L"an unparented marker did not read -1");
+  }
 
   TEST_METHOD(TheFixtureLoadsItsTriangles)
   {

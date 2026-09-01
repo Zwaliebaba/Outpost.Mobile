@@ -84,10 +84,38 @@ struct ShipSnapshot
   std::uint8_t flags = 0;
 
   std::uint32_t hullId = 0;
+
+  // What this ship has left, as 255ths of whole. A fraction rather than the number, because a
+  // fraction is what a pip row and a target bar draw and the number itself is server-side like every
+  // other quantity the simulation reasons with.
+  //
+  // In the record rather than in an event, and ADR 0029's own question is what settles it: a lost
+  // fraction is corrected by the next update six ticks later, so this is state that heals and late
+  // is worse than lost. A hull that cannot be destroyed reads 255 -- undamaged is the only honest
+  // answer for a thing with nothing to lose (Design/Combat-slice-2.md 2.2).
+  std::uint8_t hullFraction = 255;
 };
 
 // Bit 0 of ShipSnapshot::flags.
 inline constexpr std::uint8_t SHIP_FLAG_STATION = 0x01;
+
+// One shot, as a client is told about it: who fired, at what, and from which mount.
+//
+// It is an event rather than state, and it is the only thing on this seam that is. What it does NOT
+// carry is as deliberate as what it does: no damage number, because the fraction in the record
+// already says what happened; and no kill attribution, because a leave run states that a ship was
+// destroyed and never by whom (Design/Combat.md 9.2, 14).
+struct FireEvent
+{
+  EntityId shooter = INVALID_ENTITY_ID;
+  EntityId target = INVALID_ENTITY_ID;
+  std::uint32_t mount = 0;
+};
+
+// The most one fire message carries. Seventeen bytes each, so sixty-four is comfortably inside a
+// datagram, and past what any battle this envelope holds produces in one update period. Over it the
+// OLDEST are dropped: the newest gunfire is the gunfire a player is looking at.
+inline constexpr std::uint32_t MAX_FIRE_EVENTS = 64;
 
 // A decoded snapshot: what the client renders instead of reaching into World.
 struct WorldSnapshot
@@ -232,6 +260,15 @@ public:
   bool WriteLeaves(std::uint64_t _tick, std::span<const EntityId> _left, std::span<const EntityId> _destroyed,
                    std::span<const EntityId> _docked, Neuron::Transport& _transport);
 
+  // The gunfire since this subscriber last heard, as one datagram. False when there was none to
+  // send or the lane refused it; nothing is retried, because a lost muzzle flash is not a lie and a
+  // late one draws a line into empty space (Design/Combat-slice-2.md 2.3).
+  //
+  // More than MAX_FIRE_EVENTS keeps the newest. It is a separate message rather than a block in the
+  // fragment header for one reason worth stating: the fleet status block rides every fragment so it
+  // heals, and a list of events stamped on every fragment would draw every tracer once per fragment.
+  bool WriteFire(std::uint64_t _tick, std::span<const ShotRecord> _shots, Neuron::Transport& _transport);
+
   // How many leave messages the lane has refused. Nothing repeats a refused one, so this is the
   // count of departures a subscriber was never told about -- a number that should be zero, and a
   // diagnostic when it is not.
@@ -259,6 +296,7 @@ private:
   std::uint32_t m_refusedLeaves = 0;
   std::vector<std::uint8_t> m_scratch;
   std::vector<std::uint8_t> m_leaveScratch;
+  std::vector<std::uint8_t> m_fireScratch;
   std::vector<ShipId> m_resolvedScratch;
 };
 
@@ -374,6 +412,19 @@ public:
     m_docked.clear();
   }
 
+  // The gunfire the last messages carried. Accumulated across a drain and cleared by the consumer,
+  // which is Destroyed()'s idiom and its reason: two fire messages in one pump must not leave the
+  // first one's tracers undrawn.
+  [[nodiscard]] std::span<const FireEvent> Fire() const noexcept
+  {
+    return m_fire;
+  }
+
+  void ClearFire() noexcept
+  {
+    m_fire.clear();
+  }
+
   // The tick the last departure message was written on. Diagnostics: how stale a departure was.
   [[nodiscard]] std::uint64_t LastLeaveTick() const noexcept
   {
@@ -391,6 +442,7 @@ private:
   void Apply();
   void Remove(EntityId _gone);
   [[nodiscard]] bool AcceptLeaves(std::span<const std::uint8_t> _message);
+  [[nodiscard]] bool AcceptFire(std::span<const std::uint8_t> _message);
   [[nodiscard]] bool AcceptRoster(std::span<const std::uint8_t> _message);
   [[nodiscard]] bool AcceptLedgerReply(std::span<const std::uint8_t> _message);
 
@@ -402,6 +454,9 @@ private:
   std::vector<EntityId> m_dockedScratch;    // and for the dockings
   std::vector<EntityId> m_destroyed;        // deaths since the consumer last cleared them
   std::vector<EntityId> m_docked;           // dockings since the consumer last cleared them
+  std::vector<FireEvent> m_fire;            // gunfire since the consumer last cleared it
+  std::vector<FireEvent> m_fireScratch;     // one message, read whole before any of it is kept
+  std::uint64_t m_lastFireTick = 0;
   std::uint64_t m_lastLeaveTick = 0;
   std::uint8_t m_hostileMask = 0;
   std::uint8_t m_fleetMask = 0;

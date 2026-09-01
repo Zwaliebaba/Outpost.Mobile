@@ -33,6 +33,9 @@ ShipId World::SpawnShipAs(EntityId _entity, const WorldPos& _posWorld, float _he
   ship.prevHeading = _headingRad;
   ship.hullId = _hullId;
   ship.factionId = _factionId;
+  // Whole, or zero for a hull that cannot be hurt at all -- the same value either way, because
+  // maxHullPoints is what "indestructible" is spelled as (HullSpec.h).
+  ship.hullPoints = HullSpecOf(_hullId).maxHullPoints;
 
   const ShipId id = static_cast<ShipId>(m_ships.size());
   m_ships.push_back(ship);
@@ -65,6 +68,13 @@ ShipId World::SpawnShipAs(EntityId _entity, const WorldPos& _posWorld, float _he
   m_patrols.emplace_back();
   m_dockings.emplace_back();
   m_protectors.emplace_back();
+
+  // Every mount starts pointed where it was bolted on, which is the only aim it has before it has
+  // seen anything. A turret slews from there; a fixed mount never leaves it.
+  ShipMounts& mounts = m_mounts.emplace_back();
+  const HullSpec& spawnedHull = HullSpecOf(_hullId);
+  for (std::uint32_t at = 0; at < spawnedHull.MountCount(); ++at)
+    mounts.mount[at].aimBearingRad = spawnedHull.loadout.mount[at].bearingRad;
 
   // Only an immovable can change the static set. A spawn appends, so no existing id moves and
   // nothing already in the store is disturbed -- which is why this needs no id-shift caveat and the
@@ -108,6 +118,7 @@ bool World::DespawnShip(ShipHandle _handle, DespawnCause _cause)
     m_patrols[id] = m_patrols[last];
     m_dockings[id] = m_dockings[last];
     m_protectors[id] = m_protectors[last];
+    m_mounts[id] = m_mounts[last];
     m_shipSlot[id] = m_shipSlot[last];
     m_slots[m_shipSlot[id]].ship = id; // the moved ship keeps its slot, and its handles keep working
   }
@@ -116,6 +127,7 @@ bool World::DespawnShip(ShipHandle _handle, DespawnCause _cause)
   m_patrols.pop_back();
   m_dockings.pop_back();
   m_protectors.pop_back();
+  m_mounts.pop_back();
   m_shipSlot.pop_back();
 
   Slot& freed = m_slots[_handle.slot];
@@ -195,7 +207,10 @@ void World::PursueTarget(ShipId _ship, ShipId _target)
   // answer this test the same way on the same tick.
   ShipState& ship = m_ships[_ship];
   const WorldPos& targetPos = m_ships[_target].posWorld;
-  const bool drifted = Distance(m_routes[_ship].destination, targetPos) > PURSUIT_REPLAN_METRES;
+  // Measured against where the target was when this route was planned, and NOT against the route's
+  // destination: with a stand-off those are different points, and the difference is a constant that
+  // the old test read as drift on every tick of every chase (World.h, Route::pursuitAimedAt).
+  const bool drifted = Distance(m_routes[_ship].pursuitAimedAt, targetPos) > PURSUIT_REPLAN_METRES;
   if (ship.order != OrderState::Idle && !drifted)
     return;
 
@@ -206,7 +221,31 @@ void World::PursueTarget(ShipId _ship, ShipId _target)
   // A fleet member may have been halfway into a station when the shooting started. On the protector
   // path this is already false by the time a duty pursues, so it costs that caller nothing.
   m_dockings[_ship].active = false;
-  PlanRoute(_ship, targetPos, HullSpecOf(ship.hullId).BoundingRadiusMetres() + PATH_CLEARANCE_MARGIN_METRES);
+
+  // Short of the target by what this hull's turrets need, along the bearing from the target back to
+  // the pursuer, so a gunship holds where its guns bear. Zero for a hull with no traversing mount,
+  // which is what sends a fighter at its quarry and makes the pass a pass (Design/Combat.md 8).
+  const HullSpec& hull = HullSpecOf(ship.hullId);
+  WorldPos aimPoint = targetPos;
+  const float standoff = EngageStandoffMetres(hull);
+  if (standoff > 0.0f)
+  {
+    const float toPursuerX = OffsetX(targetPos, ship.posWorld);
+    const float toPursuerZ = OffsetZ(targetPos, ship.posWorld);
+    const float span = std::sqrt(toPursuerX * toPursuerX + toPursuerZ * toPursuerZ);
+    // Clamped to where the pursuer already is, so a stand-off only ever stops a chase short and
+    // never turns one into a withdrawal. A hull already inside its own gunnery range is a hull whose
+    // guns already bear, and backing it out to a nominal range would spend seconds to arrive at a
+    // worse position than it was in -- besides oscillating against any target that closes.
+    const float held = (span < standoff) ? span : standoff;
+    // Sitting exactly on top of the target leaves no bearing to stand off along. Holding station
+    // where it is beats dividing by zero, and the next tick it has moved and there is one again.
+    if (span > 0.001f)
+      Translate(aimPoint, toPursuerX / span * held, toPursuerZ / span * held);
+  }
+
+  m_routes[_ship].pursuitAimedAt = targetPos;
+  PlanRoute(_ship, aimPoint, hull.BoundingRadiusMetres() + PATH_CLEARANCE_MARGIN_METRES);
 }
 
 void World::RecordHostileAct(ShipHandle _attacker, ShipHandle _victim)
@@ -230,6 +269,16 @@ void World::RecordHostileAct(ShipHandle _attacker, ShipHandle _victim)
 const World::ProtectorDuty& World::ProtectorOf(ShipId _id) const noexcept
 {
   return m_protectors[_id];
+}
+
+const World::ShipMounts& World::MountsOf(ShipId _id) const noexcept
+{
+  return m_mounts[_id];
+}
+
+const WorldPos& World::PursuitAimedAt(ShipId _id) const noexcept
+{
+  return m_routes[_id].pursuitAimedAt;
 }
 
 std::uint32_t World::LaunchedProtectorCount(StationId _station) const noexcept
@@ -550,6 +599,11 @@ World::FleetOrderResult World::IssueFleetOrder(FactionId _issuerFaction, std::ui
   {
     if (_command.target >= m_ships.size())
       return FleetOrderResult::NoSuchTarget;
+    // No mount may resolve to a friend and neither may an order, which is where the structural half
+    // of "there is no friendly fire" is actually held (Design/Combat.md 11). In the simulation and
+    // not on the sheet, for ADR 0014's reason.
+    if (m_ships[_command.target].factionId == _issuerFaction)
+      return FleetOrderResult::RefusedFriendly;
     target = HandleOf(_command.target);
   }
   else if (_command.kind == FleetOrderKind::Mine)
@@ -622,6 +676,29 @@ void World::TrimDespawnsBefore(std::uint64_t _cursor) noexcept
   }
   m_despawnLog.erase(m_despawnLog.begin(), m_despawnLog.begin() + static_cast<std::ptrdiff_t>(offset));
   m_despawnBase = _cursor;
+}
+
+std::span<const ShotRecord> World::ShotsSince(std::uint64_t _cursor) const noexcept
+{
+  // DespawnsSince' rule, and its reason: a cursor older than what the log still holds returns
+  // everything held rather than reporting the gap. Over-reporting is the safe direction here too --
+  // the publisher intersects these with one subscriber's interest set, so a shot it should not see
+  // is dropped there.
+  if (_cursor <= m_shotBase)
+    return m_shotLog;
+  const std::uint64_t offset = _cursor - m_shotBase;
+  if (offset >= m_shotLog.size())
+    return {};
+  return std::span<const ShotRecord>(m_shotLog).subspan(static_cast<std::size_t>(offset));
+}
+
+void World::TrimShotsBefore(std::uint64_t _cursor) noexcept
+{
+  if (_cursor <= m_shotBase)
+    return;
+  const std::uint64_t drop = std::min<std::uint64_t>(_cursor - m_shotBase, m_shotLog.size());
+  m_shotLog.erase(m_shotLog.begin(), m_shotLog.begin() + static_cast<std::ptrdiff_t>(drop));
+  m_shotBase += drop;
 }
 
 ShipHandle World::HandleOf(ShipId _id) const noexcept
@@ -773,6 +850,19 @@ namespace
   }
   Translate(point, dx / distance * _dockRangeMetres, dz / distance * _dockRangeMetres);
   return point;
+}
+
+// The bearing from a ship to a point, in that ship's own hull frame: 0 is dead ahead, positive is to
+// starboard, wrapped to (-pi, pi].
+//
+// atan2(x, z) rather than the usual atan2(y, x), because this game's heading convention is north-up
+// -- 0 points along +Z and forward is (sin h, 0, cos h) -- and PatrolRingPoint reads a bearing the
+// same way. XMScalarModAngle is the tree's wrap and Movement.cpp's headingError already uses it;
+// a second one written here would be a second thing to get wrong.
+[[nodiscard]] float BearingInHullFrame(const ShipState& _ship, const WorldPos& _targetPos) noexcept
+{
+  const float worldBearingRad = std::atan2(OffsetX(_ship.posWorld, _targetPos), OffsetZ(_ship.posWorld, _targetPos));
+  return XMScalarModAngle(worldBearingRad - _ship.headingRad);
 }
 } // namespace
 
@@ -1380,6 +1470,202 @@ void World::StepFleets()
   }
 }
 
+bool World::HoldsHostile(ShipId _owner, ShipId _other) const noexcept
+{
+  return StandingOf(m_ships[_owner].factionId, m_ships[_other].factionId) == Standing::Hostile;
+}
+
+bool World::MountTargetStands(ShipId _shooter, ShipId _target, const DeviceSpec& _device) const noexcept
+{
+  if (_target == INVALID_SHIP_ID || _target >= m_ships.size() || _target == _shooter)
+    return false;
+
+  const ShipState& shooter = m_ships[_shooter];
+  const ShipState& target = m_ships[_target];
+
+  // No priority may resolve to a friend. This one line is where "there is no friendly fire" stops
+  // being a promise in a design document and becomes a property of the simulation: a shot lands on
+  // its acquired target and nowhere else, and an own-faction ship is never acquired
+  // (Design/Combat.md 11, ADR 0052).
+  if (target.factionId == shooter.factionId)
+    return false;
+
+  const float toSkin = Distance(shooter.posWorld, target.posWorld) - HullSpecOf(target.hullId).BoundingRadiusMetres();
+  return toSkin <= _device.rangeMetres;
+}
+
+ShipId World::ChooseMountTarget(ShipId _ship, const DeviceSpec& _device, const MountState& _mount) const noexcept
+{
+  // 1 and 2 are the fleet's: the threat it took, then the attack it was ordered to make. A stated
+  // target is shot whatever the standing table says, because an ordered attack on a neutral is the
+  // player spending their own standing -- which is what makes it a decision rather than an accident.
+  const FleetId fleet = FleetAt(_ship);
+  if (fleet != INVALID_FLEET_ID)
+  {
+    const Fleet& row = m_fleets[fleet];
+    // A threat handle only survives in the row while the fleet is engaged: StepFleets clears it on
+    // the stand-down, so this needs no second reading of the alert and the leash.
+    const ShipId threat = Resolve(row.threat);
+    if (MountTargetStands(_ship, threat, _device))
+      return threat;
+
+    if (row.orderKind == FleetOrderKind::Attack)
+    {
+      const ShipId ordered = Resolve(row.orderTarget);
+      if (MountTargetStands(_ship, ordered, _device))
+        return ordered;
+    }
+  }
+
+  // 3 is a protector's, and it is a protector's whole life: it is in no fleet, and the station that
+  // launched it named the aggressor it is out here for.
+  if (m_protectors[_ship].active)
+  {
+    const ShipId quarry = Resolve(m_protectors[_ship].target);
+    if (MountTargetStands(_ship, quarry, _device))
+      return quarry;
+  }
+
+  // The target this mount already held, which is what stops it restarting its traverse every time
+  // two candidates trade places by a metre -- avoidHeadingRad's argument at gunnery scale. Hostile
+  // standing is required of it even though it may have been acquired as a stated target, so an order
+  // that ends is an order the guns stop obeying rather than a grudge they keep.
+  const ShipId held = Resolve(_mount.target);
+  if (MountTargetStands(_ship, held, _device) && HoldsHostile(_ship, held))
+    return held;
+
+  // 4 is the only sense in this design: the nearest ship this one's faction already holds hostile,
+  // read out of the list the sense pass built and sorted by (surface proximity, ShipId). No query of
+  // its own, no cadence, no scan -- and the neighbour cap's honest consequence rides along with it.
+  // A hull whose K nearest are all friends does not see the enemy K+1 away, holds its fire and is
+  // shot; the stated act that follows rouses its fleet, which is the failure correcting itself
+  // rather than a case needing a mechanism (Design/Combat.md 5.2).
+  for (const Neighbour& candidate : NeighboursOf(_ship))
+  {
+    if (MountTargetStands(_ship, candidate.id, _device) && HoldsHostile(_ship, candidate.id))
+      return candidate.id;
+  }
+  return INVALID_SHIP_ID;
+}
+
+void World::StepMounts()
+{
+  m_shotScratch.clear();
+  m_deathScratch.clear();
+
+  // 1. The walk. It reads every ship's settled position and writes only the mounts of the ship it is
+  //    visiting, so no part of its answer depends on the order the array is walked in.
+  for (ShipId id = 0; id < m_ships.size(); ++id)
+  {
+    const ShipState& shooter = m_ships[id];
+    const HullSpec& hull = HullSpecOf(shooter.hullId);
+    ShipMounts& mounts = m_mounts[id];
+
+    for (std::uint32_t at = 0; at < hull.MountCount(); ++at)
+    {
+      MountState& mount = mounts.mount[at];
+      if (mount.cooldownTicks > 0)
+        --mount.cooldownTicks;
+
+      const MountSpec& spec = hull.loadout.mount[at];
+      const DeviceSpec& device = DeviceSpecOf(spec.device);
+      // A mining tool cycles in a design that does not exist yet. The byte is reserved so it never
+      // renumbers and the pass skips it, rather than guessing what extraction would mean.
+      if (device.kind != DeviceKind::Gun)
+        continue;
+
+      const ShipId target = ChooseMountTarget(id, device, mount);
+      mount.target = (target != INVALID_SHIP_ID) ? HandleOf(target) : ShipHandle{};
+      if (target == INVALID_SHIP_ID)
+        continue;
+
+      // Recomputed from where the ships are, never from the neighbour record's cached offsets: that
+      // list is a candidate set built before this tick's motion, and the ships have moved since.
+      const float bearingRad = BearingInHullFrame(shooter, m_ships[target].posWorld);
+      const float offBoreRad = XMScalarModAngle(bearingRad - spec.bearingRad);
+      const bool bears = std::fabs(offBoreRad) <= spec.arcHalfRad;
+
+      // The slew happens whether or not the shot does, because tracking is what a turret is for and
+      // arriving aimed is the thing FIRE_ALIGN_RAD measures. A fixed mount has no slew at all: its
+      // arc is its whole gate, and the hull's own turn is its traverse.
+      bool aimed = true;
+      if (!device.Fixed())
+      {
+        const float wantedRad = XMScalarModAngle(spec.bearingRad + std::clamp(offBoreRad, -spec.arcHalfRad, spec.arcHalfRad));
+        const float stepRad = device.traverseRadPerSec * TICK_DT;
+        const float deltaRad = std::clamp(XMScalarModAngle(wantedRad - mount.aimBearingRad), -stepRad, stepRad);
+        mount.aimBearingRad = XMScalarModAngle(mount.aimBearingRad + deltaRad);
+        aimed = std::fabs(XMScalarModAngle(bearingRad - mount.aimBearingRad)) <= FIRE_ALIGN_RAD;
+      }
+
+      // Range was spent in the selection above, which is where it belongs (World.h,
+      // MountTargetStands). What is left is arc, aim and the cooldown.
+      if (!bears || !aimed || mount.cooldownTicks > 0)
+        continue;
+
+      mount.cooldownTicks = device.cooldownTicks;
+      m_shotScratch.push_back(Shot{HandleOf(id), HandleOf(target), device.damage, at});
+    }
+  }
+
+  // 2. Damage, applied after the walk rather than during it: the walk is a read of every ship's
+  //    position and this is a write to some of them.
+  for (const Shot& shot : m_shotScratch)
+  {
+    const ShipId victim = Resolve(shot.victim);
+    if (victim == INVALID_SHIP_ID)
+      continue;
+
+    // Logged before the damage lands and above the discard below, because a shot at a station is
+    // still a shot: it draws a tracer and an impact whatever the hull does with the damage. Here
+    // rather than in the walk so that a shot at something already gone is not reported -- the walk
+    // resolves nothing, and this is the first place that does.
+    m_shotLog.push_back(ShotRecord{EntityIdOf(shot.shooter), EntityIdOf(shot.victim), shot.mount});
+
+    ShipState& hit = m_ships[victim];
+    // An indestructible hull discards its damage, which is how Design/Archive/Stations.md 8.5's rule
+    // -- "however it models damage, a Vanguard station's is discarded" -- is implemented. It is the
+    // hull that decides, not the faction, so there is no station special case here at all.
+    if (HullSpecOf(hit.hullId).maxHullPoints == 0)
+      continue;
+
+    const bool wasStanding = hit.hullPoints > 0;
+    hit.hullPoints = (hit.hullPoints > shot.damage) ? hit.hullPoints - shot.damage : 0;
+    // On the transition only, so eight shots landing on one hull in one tick collect one death.
+    if (wasStanding && hit.hullPoints == 0)
+      m_deathScratch.push_back(shot.victim);
+  }
+
+  // 3. The acts, and BEFORE the deaths below. That order is the whole reason these are three loops
+  //    and not one: RecordHostileAct resolves its victim and returns early on a stale handle, so a
+  //    fleet member killed outright by a single shot would rouse nobody at all if its death had
+  //    already been applied. Being killed is the loudest hostile act there is.
+  for (const Shot& shot : m_shotScratch)
+  {
+    RecordHostileAct(shot.shooter, shot.victim);
+
+    const ShipId victim = Resolve(shot.victim);
+    if (victim == INVALID_SHIP_ID)
+      continue;
+
+    // An act against a station, or against a garrison ship out on its duty, is the law's business
+    // rather than a fleet's: Design/Archive/Stations.md 8.1's "the first hostile act against a
+    // station or its garrison", which is the sentence ADR 0041 left this design to call.
+    StationId provoked = StationAt(victim);
+    if (provoked == INVALID_STATION_ID && m_protectors[victim].active)
+      provoked = m_protectors[victim].home;
+    if (provoked != INVALID_STATION_ID)
+      RecordAggression(shot.shooter, provoked);
+  }
+
+  // 4. The deaths, through the door ADR 0040 already opened. Everything a death means to the rest of
+  //    the game -- the departure run on the wire, the shatter and the shock ring, the fleet's prune,
+  //    a protector's slot returning to its complement -- is already on the other side of it, which
+  //    is why this pass is so much smaller than what it does.
+  for (const ShipHandle& dead : m_deathScratch)
+    (void)DespawnShip(dead, DespawnCause::Destroyed);
+}
+
 void World::PlanRoute(ShipId _id, const WorldPos& _destination, float _requiredClearanceMetres)
 {
   ShipState& ship = m_ships[_id];
@@ -1793,6 +2079,10 @@ void World::Step()
 
   ApplySeparation();
   ApplyBlocking();
+
+  // The guns go last, once every ship has finished moving and while the neighbour list the sense
+  // pass built is still addressed by the ids it was built with (World.h, StepMounts).
+  StepMounts();
   ++m_tick;
 }
 

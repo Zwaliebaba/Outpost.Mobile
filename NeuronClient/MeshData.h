@@ -55,11 +55,57 @@ struct MeshMarker
   // bool rather than the file's flag word because one bit is defined and a consumer asking "is this
   // liveried" should not be asking it to bitmask arithmetic.
   bool raceTinted = false;
+
+  // Which bone of its submesh's own table this marker rides, or -1 for one bolted to the mesh. The
+  // reader has always read and validated it (Design/Archive/NmoFormat.md 5.10) and Expand used to
+  // drop it; it is carried now because it is the difference between a muzzle that follows a barrel
+  // and one that floats where the barrel used to be.
+  //
+  // Nothing reads it yet, and no shipped hull sets it: every hull in the game is rigid submeshes
+  // with no rig at all (Design/Combat-slice-3.md 2.6). It is four bytes on a struct loaded once per
+  // hull, against reading the format a second time the day a rigged hull is authored.
+  std::int32_t parentBone = -1;
 };
 
-// A mesh as it comes off disk: triangle soup, its bounds, and the markers its author placed on it.
-// Deliberately free of graphics API types, so a loader, a test and a tool can all hold one without
-// a device.
+// One named part of a mesh: a hull, a turret, a nacelle.
+//
+// It is an INDEX over the triangle soup rather than a second copy of it. Expand emits every
+// submesh's vertices contiguously and in file order, so a part is a run, and a consumer that does
+// not care -- the scene pass, the shatter -- goes on drawing MeshData::verts whole without knowing
+// this exists. That is what makes turning one part of a hull cost nothing for every hull that does
+// not.
+struct MeshSubMesh
+{
+  // FNV-1a 32 of the part's name, hashed and not stored for MeshMarker::nameHash's reason. An
+  // unnamed submesh hashes to 0 and is addressable by its index, which the format allows and the
+  // golden fixture's second mesh deliberately exercises.
+  std::uint32_t nameHash = 0;
+
+  std::uint32_t firstVertex = 0; // into MeshData::verts
+  std::uint32_t vertexCount = 0;
+  std::uint32_t firstMarker = 0; // into MeshData::markers
+  std::uint32_t markerCount = 0;
+
+  // This part's own bind-pose bounds, from the file where it states them and accumulated from its
+  // own vertices where it does not -- the mesh-level rule (Design/Archive/NmoFormat.md 5.9), one
+  // scope down.
+  DirectX::XMFLOAT3 boundsMin{0.0f, 0.0f, 0.0f};
+  DirectX::XMFLOAT3 boundsMax{0.0f, 0.0f, 0.0f};
+
+  // What a part turns about. A turret bolted to a hull pivots on its own centre, and every shipped
+  // turret states bounds that put that centre where a gun would actually be mounted -- the
+  // Battleship's forward turret spans (-4.83, 11.33, 14.67) to (4.83, 15.04, 24.33), and turns on
+  // the middle of it.
+  [[nodiscard]] DirectX::XMFLOAT3 Pivot() const noexcept
+  {
+    return DirectX::XMFLOAT3((boundsMin.x + boundsMax.x) * 0.5f, (boundsMin.y + boundsMax.y) * 0.5f, (boundsMin.z + boundsMax.z) * 0.5f);
+  }
+};
+
+// A mesh as it comes off disk: triangle soup, its bounds, the markers its author placed on it, and
+// the index of named parts over the soup that lets a consumer address one of them without a second
+// copy. Deliberately free of graphics API types, so a loader, a test and a tool can all hold one
+// without a device.
 struct MeshData
 {
   std::vector<MeshVertex> verts;
@@ -68,6 +114,10 @@ struct MeshData
 
   // Every marker the file carried, in submesh then file order, whatever its kind.
   std::vector<MeshMarker> markers;
+
+  // The mesh's parts, in file order, indexing the two vectors above. Empty for nothing: every mesh
+  // has at least one submesh, so a reader that produced none produced no geometry either.
+  std::vector<MeshSubMesh> subMeshes;
 
   [[nodiscard]] DirectX::XMFLOAT3 BoundsCentre() const noexcept
   {

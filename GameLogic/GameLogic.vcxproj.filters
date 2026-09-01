@@ -39,6 +39,9 @@
     <ClInclude Include="HullSpec.h">
       <Filter>Tuning</Filter>
     </ClInclude>
+    <ClInclude Include="DeviceSpec.h">
+      <Filter>Tuning</Filter>
+    </ClInclude>
     <ClInclude Include="Formation.h">
       <Filter>Motion</Filter>
     </ClInclude>

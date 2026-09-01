@@ -156,6 +156,138 @@ std::uint32_t CountRosters(const std::vector<std::vector<std::uint8_t>>& _messag
 TEST_CLASS(PublisherTests)
 {
 public:
+  TEST_METHOD(AFireEventReachesBothEnds)
+  {
+    // A real battle rather than a hand-built log: the point of this row is that the shot the fire
+    // pass recorded is the shot the client is told about, through the cursor, the filter and both
+    // codecs (Design/Combat-slice-2.md 2.3, 2.4).
+    Game::World world;
+    (void)SpawnAt(world, 0.0f, 0.0f, Game::FACTION_PLAYER);
+    (void)SpawnAt(world, 0.0f, 120.0f, Game::FACTION_VANDAL);
+
+    Link link;
+    Game::Publisher publisher;
+    Game::Publisher::Desc desc;
+    desc.transport = &link.server;
+    (void)publisher.Add(desc);
+
+    for (std::uint64_t tick = 0; tick < 120; ++tick)
+    {
+      link.Pump(tick);
+      world.Step();
+      publisher.Publish(world);
+      link.Pump(tick);
+    }
+
+    Game::SnapshotReceiver view;
+    link.DrainInto(view);
+    Assert::IsFalse(view.Fire().empty(), L"a battle in plain view produced no gunfire on the wire");
+
+    // And the damage arrived as state rather than as an event, which is the other half of the slice.
+    bool sawDamage = false;
+    for (const Game::ShipSnapshot& ship : view.Latest().ships)
+      sawDamage = sawDamage || ship.hullFraction < 255;
+    Assert::IsTrue(sawDamage, L"nobody's hull fraction moved");
+  }
+
+  TEST_METHOD(AFireEventReachesTheShotAsWellAsTheShooter)
+  {
+    // Being shot at from outside your own interest set is exactly the event a player must not be
+    // denied, so either end being in view is enough. The subscriber watches the victim; the shooter
+    // sits beyond its radius, which a Corvette's turrets comfortably out-range.
+    Game::World world;
+    const Game::ShipId victim = SpawnAt(world, 0.0f, 0.0f, Game::FACTION_PLAYER);
+    (void)SpawnAt(world, 0.0f, 120.0f, Game::FACTION_VANDAL);
+
+    Link link;
+    Game::Publisher publisher;
+    Game::Publisher::Desc desc;
+    desc.transport = &link.server;
+    // A radius that holds the victim and not much else, so the shooter is outside it.
+    desc.interest.radiusMetres = 60.0f;
+    (void)publisher.Add(desc);
+
+    for (std::uint64_t tick = 0; tick < 120; ++tick)
+    {
+      link.Pump(tick);
+      world.Step();
+      publisher.Publish(world);
+      link.Pump(tick);
+    }
+
+    Game::SnapshotReceiver view;
+    link.DrainInto(view);
+    const Game::EntityId victimEntity = world.EntityIdOf(victim);
+    bool aimedAtTheVictim = false;
+    for (const Game::FireEvent& event : view.Fire())
+      aimedAtTheVictim = aimedAtTheVictim || event.target == victimEntity;
+    Assert::IsTrue(aimedAtTheVictim, L"a shot at a ship in view from a shooter outside it was not delivered");
+  }
+
+  TEST_METHOD(AJoiningSubscriberHearsNoOldGunfire)
+  {
+    // ADR 0027's joining rule, at the shot log: opened at the head, a subscriber is told about
+    // gunfire from now on and about none of the battle it did not watch.
+    Game::World world;
+    (void)SpawnAt(world, 0.0f, 0.0f, Game::FACTION_PLAYER);
+    (void)SpawnAt(world, 0.0f, 120.0f, Game::FACTION_VANDAL);
+    for (int tick = 0; tick < 120; ++tick)
+      world.Step();
+    Assert::IsTrue(world.ShotHead() > 0, L"the battle produced no shots to be late for");
+
+    Link link;
+    Game::Publisher publisher;
+    Game::Publisher::Desc desc;
+    desc.transport = &link.server;
+    desc.openingDespawnCursor = world.DespawnHead();
+    desc.openingShotCursor = world.ShotHead();
+    (void)publisher.Add(desc);
+
+    const std::uint64_t joined = world.ShotHead();
+    for (std::uint64_t tick = 0; tick < Game::INTEREST_UPDATE_EVERY_TICKS; ++tick)
+    {
+      link.Pump(tick);
+      world.Step();
+      publisher.Publish(world);
+      link.Pump(tick);
+    }
+
+    Game::SnapshotReceiver view;
+    link.DrainInto(view);
+    // However many arrived, none may be from before it joined -- which is what the head-opened
+    // cursor buys, and there are only so many shots one update period can hold.
+    Assert::IsTrue(view.Fire().size() <= world.ShotHead() - joined, L"a joining subscriber was told about an old battle");
+  }
+
+  TEST_METHOD(TheShotLogIsTrimmedToTheSlowestSubscriber)
+  {
+    // The despawn log's rule, at the shot log: what remains is what at least one subscriber has
+    // still to hear about, and with nobody reading it the head is the minimum.
+    Game::World world;
+    (void)SpawnAt(world, 0.0f, 0.0f, Game::FACTION_PLAYER);
+    (void)SpawnAt(world, 0.0f, 120.0f, Game::FACTION_VANDAL);
+
+    Link link;
+    Game::Publisher publisher;
+    Game::Publisher::Desc desc;
+    desc.transport = &link.server;
+    (void)publisher.Add(desc);
+
+    for (std::uint64_t tick = 0; tick < 200; ++tick)
+    {
+      link.Pump(tick);
+      world.Step();
+      publisher.Publish(world);
+      link.Pump(tick);
+    }
+    Assert::IsTrue(world.ShotHead() > 0, L"the battle produced no shots at all");
+
+    // The one subscriber has read everything, so nothing older than the head is owed to anybody.
+    Assert::IsTrue(world.ShotsSince(world.ShotHead()).empty(), L"the log still held gunfire past its own head");
+    Assert::IsTrue(world.ShotsSince(0).size() <= Game::INTEREST_UPDATE_EVERY_TICKS * 4,
+                   L"the shot log is not being trimmed behind its readers");
+  }
+
   TEST_METHOD(TwoSubscribersSeeTheirOwnNeighbourhoods)
   {
     // The property the single-subscriber adapter could not have: two ends, two interest sets, two

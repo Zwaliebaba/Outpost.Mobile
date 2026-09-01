@@ -41,7 +41,7 @@ constexpr std::uint8_t KIND_FLEET_ORDER = 5;
 
 // Who is in a fleet, downward and reliably. It is not in the ship record and never will be:
 // a record is per-update and membership changes at human speed, so the roster is the delta and the
-// record stays 47 bytes (Design/Archive/Fleets.md 8.1).
+// record keeps the fixed width below (Design/Archive/Fleets.md 8.1).
 constexpr std::uint8_t KIND_FLEET_ROSTER = 6;
 
 // The one request/reply pair on this seam. A station's ledger is large, private, slow-changing and
@@ -52,6 +52,14 @@ constexpr std::uint8_t KIND_LEDGER_REPLY = 8;
 
 // A draft, upward. The fourth order kind and the only one that names no ship.
 constexpr std::uint8_t KIND_COMPOSE_ORDER = 9;
+
+// Gunfire, downward, on the DATAGRAM lane -- the one message here whose answer to ADR 0029's
+// question is "no, a later message does not make a lost one right", and which takes that lane
+// anyway. The question is the wrong one for a message whose only consumers are a muzzle flash, a
+// tracer and a turret slew: every authoritative consequence of a shot already travels elsewhere and
+// reliably -- the damage as a fraction in the ship record, the death in a leave run -- so a lost
+// flash is not a lie, while a late one draws a line into empty space (ADR 0053).
+constexpr std::uint8_t KIND_FIRE = 10;
 
 // kind, complete, snapshotId, fragmentIndex, fragmentCount, tick, recordCount, hostileMask
 //
@@ -84,21 +92,31 @@ constexpr std::uint32_t FLEET_BLOCK_MAX_BYTES = 1 + FLEET_SLOTS * FLEET_STATUS_B
 // which a docking never touches (Design/Archive/Stations-slice-3.md 2.1, ADR 0040).
 constexpr std::uint32_t LEAVE_HEADER_BYTES = 1 + 8 + 4 + 4 + 4;
 // handle, the sector pair, the local offsets, the prevPos delta, two angles, three floats, order,
-// faction, flags, hullId.
+// faction, flags, hullId, hullFraction.
 //
-// 47 bytes, from 83. What bought the 36 is below: positions moved onto a 0.125 m lattice, the
+// 48 bytes, from 83. What bought the 35 is below: positions moved onto a 0.125 m lattice, the
 // sector pair narrowed from i64 to i32 (ADR 0046), prevPos became a delta against posWorld rather
-// than a second whole position, and the two angles became turns16. At 1,152 bytes a datagram less a
-// 27-byte header that is 23 ship records per fragment against the 13 this replaces -- so a
-// hundred-ship update is 5 fragments instead of 8, which is what finding E1 cares about: at 2%
-// datagram loss it completes 90% of the time rather than 85% (Design/Archive/QuantizedWire-work-order.md).
-constexpr std::uint32_t SHIP_RECORD_BYTES = 8 + 8 + 4 + 4 + 4 + 12 + 1 + 1 + 1 + 4;
+// than a second whole position, and the two angles became turns16. The record was 47 until combat
+// put a byte of hull fraction in it, which is the one place state that heals belongs
+// (Design/Combat.md 9.1) -- and the capacity below re-derived itself, which is the point of deriving
+// it. At 1,152 bytes a datagram less the header and the fleet block that rides every fragment, that
+// is 21 ship records per fragment against the 13 this replaces -- so a hundred-ship update is 5
+// fragments instead of 8, which is what finding E1 cares about: at 2% datagram loss it completes 90%
+// of the time rather than 85% (Design/Archive/QuantizedWire-work-order.md).
+constexpr std::uint32_t SHIP_RECORD_BYTES = 8 + 8 + 4 + 4 + 4 + 12 + 1 + 1 + 1 + 4 + 1;
+
+// kind, tick, count, then the events. Seventeen bytes each: two entities and a mount index narrowed
+// to the byte it fits in, since MAX_MOUNTS is six.
+constexpr std::uint32_t FIRE_HEADER_BYTES = 1 + 8 + 2;
+constexpr std::uint32_t FIRE_EVENT_BYTES = 8 + 8 + 1;
+static_assert(FIRE_HEADER_BYTES + MAX_FIRE_EVENTS * FIRE_EVENT_BYTES <= Neuron::MAX_DATAGRAM_BYTES,
+              "a full fire message must fit one datagram, or the cap is meaningless");
 // The saved state's magic and format byte. Not a KIND_* value: a state buffer is not a datagram and
 // never meets SnapshotReceiver::Accept, so the magic is what turns feeding it to one into a refusal
 // rather than a misread. The format byte is what makes a disagreement between two builds a refusal
 // too -- there is nothing to migrate from yet, and a version nobody checks is a version nobody has.
 constexpr std::uint32_t WORLD_STATE_MAGIC = 0x54535750u; // 'PWST' little-endian: Persisted World STate
-constexpr std::uint8_t WORLD_STATE_FORMAT = 5;           // 2: the fleet table. 3: its manifest. 4: its order. 5: its threat
+constexpr std::uint8_t WORLD_STATE_FORMAT = 6;           // 2: the fleet table. 3: its manifest. 4: its order. 5: its threat. 6: the guns
 
 // An EntityId is a u64, which is exactly what a {slot, generation} pair cost. So identity became
 // global for no bytes at all: the ship record stays 47, a fragment stays 23 ships, and the order cap
@@ -469,6 +487,14 @@ void WriteShipRecord(ByteWriter& _out, const World& _world, ShipId _id)
   _out.U8(ship.factionId);
   _out.U8(_world.IsStation(_id) ? SHIP_FLAG_STATION : std::uint8_t{0});
   _out.U32(ship.hullId);
+
+  // 255ths of whole, and 255 for a hull that cannot be destroyed: an indestructible thing is
+  // undamaged, which is the only honest answer and the one that keeps a station's bar from reading
+  // empty. The multiply is done in 32 bits before the divide, so a Carrier's 5,200 points do not
+  // overflow on their way to a byte.
+  const std::uint32_t maxHullPoints = HullSpecOf(ship.hullId).maxHullPoints;
+  const std::uint32_t fraction = (maxHullPoints > 0) ? (ship.hullPoints * 255u) / maxHullPoints : 255u;
+  _out.U8(static_cast<std::uint8_t>(fraction));
 }
 
 // The status block: the one thing on this seam that tells a player about a fleet the interest set
@@ -621,6 +647,32 @@ std::uint32_t SnapshotWriter::Write(const World& _world, Neuron::Transport& _tra
   return sent;
 }
 
+bool SnapshotWriter::WriteFire(std::uint64_t _tick, std::span<const ShotRecord> _shots, Neuron::Transport& _transport)
+{
+  if (_shots.empty())
+    return false; // silence is not information, and an empty message is a datagram spent on nothing
+
+  // Over the cap the OLDEST go, which is why this counts back from the end rather than forward from
+  // the start: what a player is looking at is the gunfire that just happened.
+  const std::size_t taken = std::min<std::size_t>(_shots.size(), MAX_FIRE_EVENTS);
+  const std::span<const ShotRecord> newest = _shots.last(taken);
+
+  m_fireScratch.clear();
+  ByteWriter out(m_fireScratch);
+  out.U8(KIND_FIRE);
+  out.U64(_tick);
+  out.U16(static_cast<std::uint16_t>(taken));
+  for (const ShotRecord& shot : newest)
+  {
+    out.Entity(shot.shooter);
+    out.Entity(shot.victim);
+    // Narrowed to a byte because MAX_MOUNTS is six. A mount index past what the shooter's hull
+    // carries is a diagnostic on the far side rather than anything to check here.
+    out.U8(static_cast<std::uint8_t>(shot.mount));
+  }
+  return _transport.Send(m_fireScratch.data(), static_cast<std::uint32_t>(m_fireScratch.size()));
+}
+
 bool SnapshotWriter::WriteLeaves(std::uint64_t _tick, std::span<const EntityId> _left, std::span<const EntityId> _destroyed,
                                  std::span<const EntityId> _docked, Neuron::Transport& _transport)
 {
@@ -745,6 +797,8 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
     return AcceptRoster(_datagram);
   if (kind == KIND_LEDGER_REPLY)
     return AcceptLedgerReply(_datagram);
+  if (kind == KIND_FIRE)
+    return AcceptFire(_datagram);
   if (kind != KIND_SNAPSHOT)
     return false;
 
@@ -844,6 +898,7 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
     ship.factionId = in.U8();
     ship.flags = in.U8();
     ship.hullId = in.U32();
+    ship.hullFraction = in.U8();
     if (!in.Ok())
     {
       AbandonInProgress();
@@ -893,6 +948,36 @@ void SnapshotReceiver::Remove(EntityId _gone)
 std::span<const EntityId> SnapshotReceiver::RosterOf(std::uint8_t _slot) const noexcept
 {
   return (_slot < FLEET_SLOTS) ? std::span<const EntityId>(m_rosters[_slot]) : std::span<const EntityId>();
+}
+
+bool SnapshotReceiver::AcceptFire(std::span<const std::uint8_t> _message)
+{
+  ByteReader in(_message);
+  in.U8(); // the kind, already read by the dispatch
+  const std::uint64_t tick = in.U64();
+  const std::uint32_t count = in.U16();
+  if (!in.Ok() || count > MAX_FIRE_EVENTS)
+    return false;
+
+  // Read whole before any of it is kept, so a truncated message leaves the accumulated list as it
+  // was rather than half-appended -- AcceptLeaves' rule, and its reason.
+  m_fireScratch.clear();
+  for (std::uint32_t at = 0; at < count; ++at)
+  {
+    FireEvent event;
+    event.shooter = in.Entity();
+    event.target = in.Entity();
+    event.mount = in.U8();
+    m_fireScratch.push_back(event);
+  }
+  if (!in.Ok())
+    return false;
+
+  m_lastFireTick = tick;
+  // Accumulated rather than replaced: two fire messages in one pump must not lose the first one's
+  // tracers, which is why the consumer clears rather than the receiver guessing.
+  m_fire.insert(m_fire.end(), m_fireScratch.begin(), m_fireScratch.end());
+  return !m_fire.empty();
 }
 
 bool SnapshotReceiver::AcceptRoster(std::span<const std::uint8_t> _message)
@@ -1008,7 +1093,7 @@ void SnapshotReceiver::Apply()
 
 namespace
 {
-// One ship's simulation state, all fifteen fields -- including the five WorldSnapshot deliberately
+// One ship's simulation state, all sixteen fields -- including the six WorldSnapshot deliberately
 // withholds, which is the whole reason this codec had to exist beside it rather than reuse it.
 void WriteShipState(ByteWriter& _out, const ShipState& _ship)
 {
@@ -1027,6 +1112,7 @@ void WriteShipState(ByteWriter& _out, const ShipState& _ship)
   _out.F32(_ship.accelSample);
   _out.U32(_ship.hullId);
   _out.U8(_ship.factionId);
+  _out.U32(_ship.hullPoints);
 }
 
 void ReadShipState(ByteReader& _in, ShipState& _outShip)
@@ -1046,6 +1132,11 @@ void ReadShipState(ByteReader& _in, ShipState& _outShip)
   _outShip.accelSample = _in.F32();
   _outShip.hullId = _in.U32();
   _outShip.factionId = _in.U8();
+  // Clamped to what this hull can hold, which is the fail-closed direction: a file claiming an
+  // invincible Interceptor is a diagnostic, and one claiming a hull point past the maximum would
+  // outlive its own table the day that table is retuned (AGENTS.md 5).
+  const std::uint32_t maxHullPoints = HullSpecOf(_outShip.hullId).maxHullPoints;
+  _outShip.hullPoints = std::min(_in.U32(), maxHullPoints);
 }
 } // namespace
 
@@ -1088,6 +1179,11 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes)
       out.Pos(route.waypoint[at]);
     out.Pos(route.destination);
     out.Pos(route.legStart);
+    // Where the target stood when a pursuit planned this route. Left out, a reloaded chase would
+    // measure its quarry's drift against a default position, re-plan on its first tick and end its
+    // orders on different ticks than the run that saved it -- blockedTicks' own argument, one
+    // mechanism along (World.h, Route::pursuitAimedAt).
+    out.Pos(route.pursuitAimedAt);
     out.F32(route.requiredClearanceMetres);
     out.U32(route.cursor);
     // Arrived with ADR 0042, after this codec's first branch: the ticks a ship has pushed against a
@@ -1121,6 +1217,20 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes)
     out.U32(duty.home);
     out.Handle(duty.target);
     out.Bool(duty.active);
+  }
+
+  // The fifth parallel table. Every entry of every ship's block is written, including the ones past
+  // its hull's own mount count: they are never read, they are held at rest, and writing them is what
+  // makes a reloaded row compare equal to the row that was saved -- the fleet row's argument rather
+  // than the route's, because this block is compared whole.
+  for (const World::ShipMounts& mounts : _world.m_mounts)
+  {
+    for (const World::MountState& mount : mounts.mount)
+    {
+      out.F32(mount.aimBearingRad);
+      out.U32(mount.cooldownTicks);
+      out.Handle(mount.target);
+    }
   }
 
   // The slot table, which is what makes every handle in the four tables above still mean something
@@ -1242,6 +1352,7 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
       route.waypoint[at] = in.Pos();
     route.destination = in.Pos();
     route.legStart = in.Pos();
+    route.pursuitAimedAt = in.Pos();
     route.requiredClearanceMetres = in.F32();
     route.cursor = in.U32();
     route.blockedTicks = in.U32();
@@ -1276,6 +1387,24 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
     duty.home = in.U32();
     duty.target = in.Handle();
     duty.active = in.Bool();
+  }
+
+  std::vector<World::ShipMounts> mounts(shipCount);
+  for (std::uint32_t id = 0; id < shipCount; ++id)
+  {
+    const HullSpec& hull = HullSpecOf(ships[id].hullId);
+    for (std::uint32_t at = 0; at < MAX_MOUNTS; ++at)
+    {
+      World::MountState& mount = mounts[id].mount[at];
+      mount.aimBearingRad = in.F32();
+      // Clamped to what the device can actually hold, for the hull points' reason: a file claiming a
+      // gun that never reloads is a diagnostic, not a crash. A mount past this hull's own count has
+      // no device to ask, and is held at rest.
+      const std::uint32_t cooldownTicks = in.U32();
+      mount.cooldownTicks =
+        (at < hull.MountCount()) ? std::min(cooldownTicks, DeviceSpecOf(hull.loadout.mount[at].device).cooldownTicks) : 0;
+      mount.target = in.Handle();
+    }
   }
   if (!in.Ok())
     return false;
@@ -1418,6 +1547,7 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
   _outWorld.m_patrols = std::move(patrols);
   _outWorld.m_dockings = std::move(dockings);
   _outWorld.m_protectors = std::move(protectors);
+  _outWorld.m_mounts = std::move(mounts);
   _outWorld.m_slots = std::move(slots);
   _outWorld.m_freeSlots = std::move(freeSlots);
   _outWorld.m_despawnLog = std::move(despawnLog);
