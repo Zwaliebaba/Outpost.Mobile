@@ -5,6 +5,10 @@ Implements slice 1 of [`Combat.md`](Combat.md) §16: the device and mount tables
 the despawn door, and the stand-off that makes a pursuit hold its guns on a target instead of
 ramming it (design §3, §4, §5, §6, §7, §8).
 
+**Status: landed 2026-09-01 and in review.** §4a records the four things the implementation changed
+about this order; the decision record is
+[ADR 0052](Decisions/0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md).
+
 **Layer:** `GameLogic` and `GameLogicTests`.
 **Depends on:** nothing unmerged. Every socket it calls is on `main` — `RecordHostileAct` and
 `RecordAggression` (ADRs 0050, 0041), `PursueTarget`, `HullSpec::combatant`, the despawn door
@@ -375,6 +379,42 @@ the widened radii, and the two new `static_assert`s exercised by a row-shaped te
 - `Combat.md` §16 marks slice 1 *in review*.
 
 ---
+
+## 4a. What the implementation changed about this order
+
+Landed 2026-09-01. Four things came back different, and they are recorded here rather than left to
+be found in the diff — three of them are the review gate doing its job on an order written before
+the code existed.
+
+1. **The pass runs last in the tick, not in the standing-intent slot** (§2.5). Opportunistic
+   acquisition reads the neighbour list, a `Neighbour` names a `ShipId`, and a `ShipId` is an array
+   index that every despawn moves (ADR 0005). That list is trustworthy only between the gather that
+   built it and the next despawn, and the standing-intent slot is outside that window: it runs before
+   the gather, so it would read the previous tick's list with ids that this tick's dock pass has
+   already moved. Running last puts the whole pass inside the window, and it also means a mount fires
+   on where the ships ended the tick rather than where they began it. The order's stated reason for
+   the position — that a mount reads the posture decided this tick — is preserved either way.
+
+2. **`maxHullPoints == 0` means indestructible**, rather than the pass testing `immovable` (§2.5,
+   step 2). It is the same set of hulls today and a better-shaped rule: one column decides, it is the
+   hull's rather than the faction's, and Stations §8.5 comes out with no station special case in the
+   fire pass at all. A `static_assert` keeps the immovable rows on the right side of it.
+
+3. **The stand-off is clamped to the pursuer's current distance** (§2.6). Written as the order
+   specified, a Corvette already 30 m from its quarry — inside its own 180 m turrets — would *back
+   away* to 144 m to reach a nominal gunnery range it was already well inside, and would oscillate
+   against anything that closed. A stand-off may shorten a chase and may never turn one into a
+   withdrawal.
+
+4. **Three test rows changed, where the order said none would** (§4, "the existing suites").
+   `ProtectorTests::AProtectorPursuesItsTarget` stated the replan invariant against the route's
+   destination, which §2.6 knowingly moved away from the target — the row now asks
+   `World::PursuitAimedAt`, added for it. Two `FleetTests` rows were written when nothing could die:
+   one read "the combatant turns on the attacker" as distance closed, which a combatant already in
+   range correctly declines to do, and now reads it as the attacker losing hull points; the other
+   isolated the alert as the only bound on an engagement, which stopped being true once a roused
+   fleet could kill its threat, and now uses a fleet with nothing armed in it. None of the three
+   changed what it means, and each carries the reason in a comment.
 
 ## 5. Assumptions the implementer may make
 

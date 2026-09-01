@@ -1,9 +1,11 @@
 # Combat — mounts, gunnery, and the acts a shot states
 
 **Status: agreed with the owner on 2026-08-31 — the six decisions in §15 were put and taken the
-same day, each the recommended option.** No slice has landed. §16 lists the five and the
-dependencies between them; slice 1's work order is written
-([`Combat-slice-1.md`](Combat-slice-1.md)) and is what an implementer picks up next.
+same day, each the recommended option.** Slice 1 landed on 2026-09-01 and is in review
+([`Combat-slice-1.md`](Combat-slice-1.md),
+[ADR 0052](Decisions/0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md)); the
+world is lethal in tests and says nothing about it on the wire yet. §16 lists the four that remain
+and the dependencies between them.
 
 **One correction this document has already taken:** §8's stand-off reads the shortest range among
 a hull's *traversing* mounts rather than among all of them, so that a bow-fixed hull takes no
@@ -490,7 +492,8 @@ One agent per slice, one slice per layer at a time; each retargets the sentences
    attack order on a Vanguard station flipping the law and launching the garrison; immovable
    damage discarded while the act states. ADR due: *combat resolves deterministically, and the
    fire pass states the acts* (completing 0041/0050).
-   Work order: [`Combat-slice-1.md`](Combat-slice-1.md), written 2026-08-31.
+   Work order: [`Combat-slice-1.md`](Combat-slice-1.md). **Landed and in review 2026-09-01**, with
+   [ADR 0052](Decisions/0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md).
 2. **The combat wire** (`GameLogic` seam) — `hullFraction` in the record, the fire block,
    receiver accessors, ALPN and format bumps. Tests beside the existing snapshot suite; ADR due:
    *fire events ride the datagram lane* (ADR 0029 applied).

@@ -240,5 +240,15 @@ struct ShipState
   // Whose ship this is. Simulation state by AGENTS.md 5's own test -- a spectator would need it --
   // and it travels in the snapshot record like everything else here.
   FactionId factionId = FACTION_PLAYER;
+
+  // What this ship has left, spawned at its hull's maxHullPoints and subtracted saturating at zero
+  // by the fire pass. A hull whose maximum is zero is indestructible and this stays zero for its
+  // whole life -- the one reading under which "at zero" does not mean "dead" (HullSpec.h).
+  //
+  // An unsigned integer rather than a float, and that is a determinism result rather than a taste:
+  // every damage number in the device table is whole, so the damage path holds no float at all and
+  // is bit-exact under every summation order on every machine. A float would have been fine today
+  // and a liability the first afternoon somebody added a fractional resist.
+  std::uint32_t hullPoints = 0;
 };
 } // namespace Game

@@ -178,6 +178,7 @@
     <ClInclude Include="InterestSet.h" />
     <ClInclude Include="ShipState.h" />
     <ClInclude Include="HullSpec.h" />
+    <ClInclude Include="DeviceSpec.h" />
     <ClInclude Include="Formation.h" />
     <ClInclude Include="Patrol.h" />
     <ClInclude Include="UniverseLayout.h" />

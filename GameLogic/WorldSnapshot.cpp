@@ -98,7 +98,7 @@ constexpr std::uint32_t SHIP_RECORD_BYTES = 8 + 8 + 4 + 4 + 4 + 12 + 1 + 1 + 1 +
 // rather than a misread. The format byte is what makes a disagreement between two builds a refusal
 // too -- there is nothing to migrate from yet, and a version nobody checks is a version nobody has.
 constexpr std::uint32_t WORLD_STATE_MAGIC = 0x54535750u; // 'PWST' little-endian: Persisted World STate
-constexpr std::uint8_t WORLD_STATE_FORMAT = 5;           // 2: the fleet table. 3: its manifest. 4: its order. 5: its threat
+constexpr std::uint8_t WORLD_STATE_FORMAT = 6;           // 2: the fleet table. 3: its manifest. 4: its order. 5: its threat. 6: the guns
 
 // An EntityId is a u64, which is exactly what a {slot, generation} pair cost. So identity became
 // global for no bytes at all: the ship record stays 47, a fragment stays 23 ships, and the order cap
@@ -1008,7 +1008,7 @@ void SnapshotReceiver::Apply()
 
 namespace
 {
-// One ship's simulation state, all fifteen fields -- including the five WorldSnapshot deliberately
+// One ship's simulation state, all sixteen fields -- including the six WorldSnapshot deliberately
 // withholds, which is the whole reason this codec had to exist beside it rather than reuse it.
 void WriteShipState(ByteWriter& _out, const ShipState& _ship)
 {
@@ -1027,6 +1027,7 @@ void WriteShipState(ByteWriter& _out, const ShipState& _ship)
   _out.F32(_ship.accelSample);
   _out.U32(_ship.hullId);
   _out.U8(_ship.factionId);
+  _out.U32(_ship.hullPoints);
 }
 
 void ReadShipState(ByteReader& _in, ShipState& _outShip)
@@ -1046,6 +1047,11 @@ void ReadShipState(ByteReader& _in, ShipState& _outShip)
   _outShip.accelSample = _in.F32();
   _outShip.hullId = _in.U32();
   _outShip.factionId = _in.U8();
+  // Clamped to what this hull can hold, which is the fail-closed direction: a file claiming an
+  // invincible Interceptor is a diagnostic, and one claiming a hull point past the maximum would
+  // outlive its own table the day that table is retuned (AGENTS.md 5).
+  const std::uint32_t maxHullPoints = HullSpecOf(_outShip.hullId).maxHullPoints;
+  _outShip.hullPoints = std::min(_in.U32(), maxHullPoints);
 }
 } // namespace
 
@@ -1088,6 +1094,11 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes)
       out.Pos(route.waypoint[at]);
     out.Pos(route.destination);
     out.Pos(route.legStart);
+    // Where the target stood when a pursuit planned this route. Left out, a reloaded chase would
+    // measure its quarry's drift against a default position, re-plan on its first tick and end its
+    // orders on different ticks than the run that saved it -- blockedTicks' own argument, one
+    // mechanism along (World.h, Route::pursuitAimedAt).
+    out.Pos(route.pursuitAimedAt);
     out.F32(route.requiredClearanceMetres);
     out.U32(route.cursor);
     // Arrived with ADR 0042, after this codec's first branch: the ticks a ship has pushed against a
@@ -1121,6 +1132,20 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes)
     out.U32(duty.home);
     out.Handle(duty.target);
     out.Bool(duty.active);
+  }
+
+  // The fifth parallel table. Every entry of every ship's block is written, including the ones past
+  // its hull's own mount count: they are never read, they are held at rest, and writing them is what
+  // makes a reloaded row compare equal to the row that was saved -- the fleet row's argument rather
+  // than the route's, because this block is compared whole.
+  for (const World::ShipMounts& mounts : _world.m_mounts)
+  {
+    for (const World::MountState& mount : mounts.mount)
+    {
+      out.F32(mount.aimBearingRad);
+      out.U32(mount.cooldownTicks);
+      out.Handle(mount.target);
+    }
   }
 
   // The slot table, which is what makes every handle in the four tables above still mean something
@@ -1242,6 +1267,7 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
       route.waypoint[at] = in.Pos();
     route.destination = in.Pos();
     route.legStart = in.Pos();
+    route.pursuitAimedAt = in.Pos();
     route.requiredClearanceMetres = in.F32();
     route.cursor = in.U32();
     route.blockedTicks = in.U32();
@@ -1276,6 +1302,24 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
     duty.home = in.U32();
     duty.target = in.Handle();
     duty.active = in.Bool();
+  }
+
+  std::vector<World::ShipMounts> mounts(shipCount);
+  for (std::uint32_t id = 0; id < shipCount; ++id)
+  {
+    const HullSpec& hull = HullSpecOf(ships[id].hullId);
+    for (std::uint32_t at = 0; at < MAX_MOUNTS; ++at)
+    {
+      World::MountState& mount = mounts[id].mount[at];
+      mount.aimBearingRad = in.F32();
+      // Clamped to what the device can actually hold, for the hull points' reason: a file claiming a
+      // gun that never reloads is a diagnostic, not a crash. A mount past this hull's own count has
+      // no device to ask, and is held at rest.
+      const std::uint32_t cooldownTicks = in.U32();
+      mount.cooldownTicks =
+        (at < hull.MountCount()) ? std::min(cooldownTicks, DeviceSpecOf(hull.loadout.mount[at].device).cooldownTicks) : 0;
+      mount.target = in.Handle();
+    }
   }
   if (!in.Ok())
     return false;
@@ -1418,6 +1462,7 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
   _outWorld.m_patrols = std::move(patrols);
   _outWorld.m_dockings = std::move(dockings);
   _outWorld.m_protectors = std::move(protectors);
+  _outWorld.m_mounts = std::move(mounts);
   _outWorld.m_slots = std::move(slots);
   _outWorld.m_freeSlots = std::move(freeSlots);
   _outWorld.m_despawnLog = std::move(despawnLog);

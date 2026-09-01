@@ -361,6 +361,36 @@ static_assert(FLEET_LAUNCH_EVERY_TICKS > 0, "a launch cadence of zero would spaw
 inline constexpr float FLEET_ENGAGE_RANGE_METRES = 1000.0f;
 inline constexpr std::uint32_t FLEET_ALERT_TICKS = 600; // ten seconds
 
+// --- combat --------------------------------------------------------------------------------------
+// How close a turret's aim has to be to its target's bearing before it will fire. In the contract:
+// it decides which tick a shot lands on, and therefore which tick a ship dies on.
+//
+// It is a settle tolerance and not an arc: the arc is what a mount can bear through, authored per
+// mount, and this is how finished the slew has to be. A degree and a half is tight enough that a
+// heavy turret genuinely loses a fighter crossing at close range -- which is the tactical sentence
+// the whole resolution model rests on (Design/Combat.md 4) -- and loose enough that a turret whose
+// target is drifting does not stutter one tick on and one tick off.
+//
+// A FIXED mount never reads it. It has no slew to settle, so its arc is its whole gate; a value
+// this small applied to a bow gun would make a fighter almost never fire.
+inline constexpr float FIRE_ALIGN_RAD = 0.026f; // about 1.5 degrees
+
+// Where a pursuit stops, as a fraction of the shortest range among the hull's traversing mounts.
+// In the contract: it decides where a fight happens, and a fight's range decides who wins it.
+//
+// Short of the guns rather than at their edge, because a target that drifts a metre must not put
+// itself out of range and restart the chase -- the same reason an arrival radius is not zero. At
+// 0.8 a Corvette holds at 144 m and a Frigate at 224 m, both comfortably inside the leash a defense
+// is bounded by (FLEET_ENGAGE_RANGE_METRES) so a fleet defending itself never has to choose between
+// its guns and its ground.
+inline constexpr float ENGAGE_STANDOFF_FRACTION = 0.8f;
+
+// Slack on the gunnery half of the query radius, so a target is in the neighbour list on the tick
+// before it is in range rather than on the tick it is. SEPARATION_QUERY_MARGIN_METRES' sentence,
+// for the other consumer of the same list, and its figure: the list is rebuilt every tick and the
+// fastest closing pair in the table covers 1.14 m in one, so four metres is three ticks of warning.
+inline constexpr float GUNNERY_QUERY_MARGIN_METRES = 4.0f;
+
 // --- interest management -----------------------------------------------------------------------
 // Not in the replay contract, and that is worth saying because everything around it is: these change
 // what is *sent*, never what is *simulated*. A recording made at one radius replays identically at

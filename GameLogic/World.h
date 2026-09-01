@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Formation.h"
+#include "HullSpec.h"
 #include "Movement.h"
 #include "PathIslands.h"
 #include "Patrol.h"
@@ -151,6 +152,31 @@ public:
     StationId home = INVALID_STATION_ID;
     ShipHandle target;
     bool active = false;
+  };
+
+  // What one mount is doing: where it is pointed, when it may fire again, and what it is pointed at.
+  //
+  // The held target is avoidHeadingRad's argument at gunnery scale. Without it a mount flickers
+  // between two candidates scoring within noise of each other and restarts its traverse every time
+  // one of them edges ahead; with it, the mount keeps last tick's target for as long as that target
+  // is still live and still valid, and re-chooses the moment it is not. It is a tie-break, never a
+  // commitment (Design/Combat.md 5.2).
+  //
+  // All of it is intent, which is what the snapshot exists to withhold: the view will slew its
+  // turrets off the fire block and its own clock, and is allowed to disagree by a degree.
+  struct MountState
+  {
+    float aimBearingRad = 0.0f; // hull frame, inside the mount's authored arc
+    std::uint32_t cooldownTicks = 0;
+    ShipHandle target;
+  };
+
+  // One ship's mounts, fixed capacity, for the reason Route carries its waypoints that way: a dense
+  // array is what keeps despawn cheap and iteration order the array's. Entries past the hull's own
+  // mountCount are never read and stay at rest, so a reloaded row equals the row that was saved.
+  struct ShipMounts
+  {
+    MountState mount[MAX_MOUNTS];
   };
 
   // An index into the fleet table. A bare index with no generation, exactly as StationId is: rows
@@ -429,6 +455,19 @@ public:
   // A ship's protector duty, on the same terms.
   [[nodiscard]] const ProtectorDuty& ProtectorOf(ShipId _id) const noexcept;
 
+  // A ship's mounts, on the same terms again: an aim is intent, so it is server-side only and is
+  // exposed for the tests and for a debug overlay.
+  [[nodiscard]] const ShipMounts& MountsOf(ShipId _id) const noexcept;
+
+  // Where a pursuit last aimed: the target's position when this ship's route was planned, which is
+  // the point PURSUIT_REPLAN_METRES is measured from.
+  //
+  // It is exposed because it is the only place that quantity now lives. Until this design it was
+  // readable off the route's destination, and a test could state the replan invariant by comparing
+  // the target against RouteOf(...).back(); a stand-off put those up to 224 m apart
+  // (Route::pursuitAimedAt), so the invariant needs the number itself rather than a stand-in.
+  [[nodiscard]] const WorldPos& PursuitAimedAt(ShipId _id) const noexcept;
+
   // How many of _station's protectors are currently in space.
   //
   // Counted rather than stored, and Design/Archive/Stations.md 8.2 keeps a field for it. Storing it would
@@ -561,6 +600,7 @@ public:
     NotAStation,
     RefusedStanding,
     NoSuchTarget,
+    RefusedFriendly,
     Unsupported
   };
 
@@ -589,6 +629,10 @@ public:
   //   RefusedStanding  Dock: that station's owner holds the issuer hostile -- IssueDockOrder's own
   //                    gate, surfaced rather than restated;
   //   NoSuchTarget     Attack: the named record is not a live ship;
+  //   RefusedFriendly  Attack: the named record is the issuer's own faction's. NoSuchTarget would
+  //                    have been a lie, and the gate is here rather than on the sheet for ADR 0014's
+  //                    reason -- no mount may resolve to a friend, and neither may an order
+  //                    (Design/Combat.md 11);
   //   Unsupported      Mine, which waits for a design that gives it meaning and something to mine.
   //
   // An accepted order replaces whatever standing order was there. Stop is the one kind that leaves
@@ -600,7 +644,8 @@ public:
   //
   // Standing NPC intent is issued first, before pass 0 -- the position an adapter's incoming orders
   // occupy from outside, so an NPC order and a player order entering on the same tick are
-  // indistinguishable to every pass below (Design/Archive/Hostiles.md 5.3).
+  // indistinguishable to every pass below (Design/Archive/Hostiles.md 5.3). The fire pass is the
+  // last of them, so that what shoots this tick is what the postures decided this tick.
   //
   // Five passes over the whole array rather than one fused per-ship loop, and the reason is a
   // property rather than a preference: every read in a pass comes from a snapshot no pass is
@@ -754,6 +799,51 @@ private:
   // walking backwards, so the row brought in from the end is one this walk has already looked at.
   void StepFleets();
 
+  // The fire pass, and the last thing in the tick.
+  //
+  // It is the pass that makes this simulation lethal, and the caller ADR 0041 and ADR 0050 were both
+  // written waiting for: nothing else in the game observes a shot, so nothing else can honestly
+  // state an act.
+  //
+  // *Last*, rather than beside the other standing behaviours at the top, and the reason is the
+  // neighbour list. Opportunistic acquisition reads the list the sense pass built, and a
+  // Neighbour names a ShipId -- which is an array index that every despawn moves (ADR 0005). The
+  // list is therefore only trustworthy between the gather that built it and the next despawn, and
+  // running here is what puts the whole pass inside that window: the postures above have already
+  // decided, the gather has already run, and nothing after it can invalidate what it read. It also
+  // means a mount fires on where the ships have actually ended the tick rather than on where they
+  // began it, which is the more honest of the two readings.
+  //
+  // Gather-then-apply, the dock pass's idiom, in four steps whose order is load-bearing:
+  //
+  //   1  walk     per ship, per mount: cool down, choose a target, slew, test the gates, record a
+  //               shot. Writes only the visiting ship's own mounts, so it is free of array order.
+  //   2  damage   subtract, saturating; an indestructible hull discards its share.
+  //   3  acts     RecordHostileAct for every hit, RecordAggression where the victim was a station or
+  //               a garrison ship -- BEFORE the deaths below, because RecordHostileAct resolves its
+  //               victim and a fleet member killed outright would otherwise rouse nobody.
+  //   4  deaths   through DespawnShip, which is where the shatter, the departure runs, the fleet
+  //               prune and the protector stand-down already live (ADR 0040).
+  void StepMounts();
+
+  // Whether a mount on _shooter could shoot _target at all: live, not itself, not its own faction --
+  // ever -- and inside the device's envelope, which is measured to the target's skin.
+  //
+  // Range belongs here rather than in the firing gates because it decides *selection*: a mount whose
+  // ordered target is a kilometre away is not a mount that holds its fire, it is a mount that has
+  // nothing stated in reach and falls through to what it can see. An escort therefore defends the
+  // fleet it is flying with while the fleet flies at something else.
+  [[nodiscard]] bool MountTargetStands(ShipId _shooter, ShipId _target, const DeviceSpec& _device) const noexcept;
+
+  // What one mount will shoot at this tick, by Design/Combat.md 5.2's fixed order: the fleet's
+  // threat, the fleet's ordered target, the ship's protector duty, the target it already held, and
+  // then the nearest standing-hostile it can see. First that stands.
+  [[nodiscard]] ShipId ChooseMountTarget(ShipId _ship, const DeviceSpec& _device, const MountState& _mount) const noexcept;
+
+  // Whether _owner's faction holds _other's hostile. The gate on the one priority that is a sense
+  // rather than a statement: no radius may make anyone a criminal, and none may start a war either.
+  [[nodiscard]] bool HoldsHostile(ShipId _owner, ShipId _other) const noexcept;
+
   // Whether _ownerFaction could take _slot right now. The one gate FormFleet and ComposeFleet share:
   // both refuse a slot past the fifth and a slot already held, and neither may invent its own answer
   // to that question.
@@ -771,6 +861,11 @@ private:
 
   // Aims one ship at another and keeps it aimed: re-planned when the ship has nothing to do, or when
   // the target has walked PURSUIT_REPLAN_METRES from the point last aimed at, and never every tick.
+  //
+  // It stops short by EngageStandoffMetres, so a hull with turrets holds where they all bear instead
+  // of closing to contact and parking its guns on its quarry's hull. A hull whose mounts are all
+  // fixed keeps the old behaviour and is sent at the target itself, which is what makes it fly
+  // attack runs (Design/Combat.md 8).
   //
   // One function with two masters, which is what the design means by the fleet defense being the
   // protector's chassis: the protector duty and the fleet posture both call it, so neither can drift
@@ -864,6 +959,16 @@ private:
     std::uint32_t gridVersion = 0;
     bool reachesDestination = true; // false means the list ran out and the rest is still to plan
 
+    // Where the target was when a pursuit planned this route -- and only a pursuit writes it.
+    //
+    // Design/Archive/Fleets-slice-4.md 2.3 refused a stored aim point on the ground that the point
+    // last aimed at was already `destination`. That was true until a pursuit gained a stand-off:
+    // the destination now sits up to 224 m from the target, so measuring the target's drift against
+    // it reads a constant offset as movement, exceeds PURSUIT_REPLAN_METRES on every tick of every
+    // chase, and re-plans an A* sixty times a second -- which is the entire cost that constant
+    // exists to avoid. A premise that expired rather than a rule that was wrong (ADR 0052).
+    WorldPos pursuitAimedAt;
+
     // Consecutive ticks the blocking pass has pushed this ship away from its own steer target. Counted
     // by ApplyBlocking, reset by every plan and by every tick that is not blocked, and read by
     // AdvanceRoute: at BLOCKED_WAYPOINT_TICKS the waypoint is taken as reached, because a ship that
@@ -906,6 +1011,11 @@ private:
   // m_patrols and m_dockings are. The fourth table the despawn repair covers.
   std::vector<ProtectorDuty> m_protectors;
 
+  // A ship's mounts, and the fifth. Not a field on ShipState for the sentence that struct makes
+  // about itself: nothing in it a snapshot could not carry, and an aim is exactly the kind of intent
+  // the snapshot withholds.
+  std::vector<ShipMounts> m_mounts;
+
   // What the launch pass decided this tick, applied after it for the reason captures are.
   struct Launch
   {
@@ -916,6 +1026,21 @@ private:
     FactionId factionId = FACTION_VANGUARD;
   };
   std::vector<Launch> m_launchScratch;
+
+  // What the fire pass decided this tick, applied after its walk rather than during it -- the dock
+  // pass's argument, and the same reason: step 4 despawns, and every despawn swap-and-pops, so an
+  // id collected during the walk names a different ship by the time the shot before it has landed.
+  // Handles survive that; ids do not. Reused, so a tick in which nobody fires allocates nothing.
+  struct Shot
+  {
+    ShipHandle shooter;
+    ShipHandle victim;
+    std::uint32_t damage = 0;
+  };
+  std::vector<Shot> m_shotScratch;
+
+  // Who reached zero, collected while damage is applied and spent after the acts are stated.
+  std::vector<ShipHandle> m_deathScratch;
 
   // The stations. Indexed by StationId and *not* parallel to m_ships, which is the difference worth
   // seeing: a patrol belongs to a ship, a station is a thing a ship happens to be. Nothing removes

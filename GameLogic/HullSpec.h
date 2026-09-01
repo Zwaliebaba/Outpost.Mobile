@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DeviceSpec.h"
 #include "SimTuning.h"
 
 #include <DirectXMath.h>
@@ -31,6 +32,60 @@ enum class HullId : std::uint32_t
 };
 
 inline constexpr std::uint32_t HULL_COUNT = 10;
+
+// How many mounts one hull may carry. One more than the largest authored loadout below (the
+// Battleship's five), and a capacity rather than a behavior: raising it changes the size of the
+// mount table and no recorded outcome. The assert under the hull table is what makes exceeding it
+// a compile error instead of a silent truncation.
+inline constexpr std::uint32_t MAX_MOUNTS = 6;
+
+// Where a hull carries a device, in hull frame: 0 is dead ahead and positive is to starboard,
+// which is headingRad's own convention read from the bow rather than from north.
+struct MountSpec
+{
+  float bearingRad = 0.0f;
+  float arcHalfRad = 0.0f; // half-width of the cone this mount may bear through
+  DeviceId device = DeviceId::LightGun;
+};
+
+// A hull's whole armament, as one value, so the rows of HULL_SPECS stay readable and the mounts
+// stay in the same table as everything else about a hull. Two tables indexed by hull id is exactly
+// what the derived functions below exist to avoid: adding a hull must not be able to leave a second
+// table stale.
+struct MountLoadout
+{
+  MountSpec mount[MAX_MOUNTS]{};
+  std::uint32_t count = 0;
+};
+
+// A fixed gun points where the hull points, so its arc is narrow and the hull does the aiming; a
+// turret sweeps almost all the way round and keeps a blind spot astern, which is what makes
+// approaching from directly behind a real approach rather than a preference.
+inline constexpr float MOUNT_ARC_BOW_RAD = 0.3491f;    // +/- 20 degrees
+inline constexpr float MOUNT_ARC_CANNON_RAD = 0.1745f; // +/- 10 degrees
+inline constexpr float MOUNT_ARC_TURRET_RAD = 2.6180f; // +/- 150 degrees
+
+// The authored loadouts (Design/Combat.md 13). Named rather than written into the rows below
+// because a five-mount Battleship inside a positional aggregate is a line nobody can read, and
+// because these are the values an artist and a designer actually talk about.
+inline constexpr MountLoadout LOADOUT_NONE{};
+inline constexpr MountLoadout LOADOUT_INTERCEPTOR{{{0.0f, MOUNT_ARC_BOW_RAD, DeviceId::LightGun}}, 1};
+inline constexpr MountLoadout LOADOUT_BOMBER{{{0.0f, MOUNT_ARC_CANNON_RAD, DeviceId::StrikeCannon}}, 1};
+inline constexpr MountLoadout LOADOUT_CORVETTE{
+  {{0.0f, MOUNT_ARC_TURRET_RAD, DeviceId::LightTurret}, {3.1416f, MOUNT_ARC_TURRET_RAD, DeviceId::LightTurret}}, 2};
+inline constexpr MountLoadout LOADOUT_FRIGATE{
+  {{0.0f, MOUNT_ARC_TURRET_RAD, DeviceId::MediumTurret}, {3.1416f, MOUNT_ARC_TURRET_RAD, DeviceId::MediumTurret}}, 2};
+inline constexpr MountLoadout LOADOUT_BATTLESHIP{{{0.0f, MOUNT_ARC_TURRET_RAD, DeviceId::HeavyTurret},
+                                                  {2.0944f, MOUNT_ARC_TURRET_RAD, DeviceId::HeavyTurret},
+                                                  {-2.0944f, MOUNT_ARC_TURRET_RAD, DeviceId::HeavyTurret},
+                                                  {1.5708f, MOUNT_ARC_TURRET_RAD, DeviceId::LightTurret},
+                                                  {-1.5708f, MOUNT_ARC_TURRET_RAD, DeviceId::LightTurret}},
+                                                 5};
+inline constexpr MountLoadout LOADOUT_CARRIER{{{0.0f, MOUNT_ARC_TURRET_RAD, DeviceId::LightTurret},
+                                               {1.5708f, MOUNT_ARC_TURRET_RAD, DeviceId::LightTurret},
+                                               {3.1416f, MOUNT_ARC_TURRET_RAD, DeviceId::LightTurret},
+                                               {-1.5708f, MOUNT_ARC_TURRET_RAD, DeviceId::LightTurret}},
+                                              4};
 
 struct HullSpec
 {
@@ -73,6 +128,55 @@ struct HullSpec
   // contract like every other column here: it decides who turns.
   bool combatant = false;
 
+  // What this hull can take before it stops existing, and ZERO MEANS INDESTRUCTIBLE -- the
+  // degenerate reading this table already uses for a zero capsule half-length and an order speed cap
+  // of zero. It is how Design/Archive/Stations.md 8.5's standing rule is implemented, and it is a
+  // property of the hull rather than of the faction: "however it models damage, a Vanguard station's
+  // is discarded" is one column here, with no station special case anywhere in the fire pass.
+  std::uint32_t maxHullPoints = 0;
+
+  // What this hull shoots with, and from where. Authored beside the size and the speed for
+  // avoidanceAuthority's reason -- a hull that is armed but precious has to stay expressible -- and
+  // in the replay contract like every other column: it decides who dies.
+  MountLoadout loadout;
+
+  [[nodiscard]] constexpr std::uint32_t MountCount() const noexcept
+  {
+    return loadout.count;
+  }
+
+  // What the neighbour query has to reach for this hull's guns to have anything to shoot at, and
+  // what a mount's own envelope is measured against. Derived from the loadout rather than restated
+  // beside it, for the reason every other derived function in this file gives.
+  [[nodiscard]] constexpr float LongestMountRangeMetres() const noexcept
+  {
+    float longest = 0.0f;
+    for (std::uint32_t at = 0; at < loadout.count; ++at)
+    {
+      const float range = DeviceSpecOf(loadout.mount[at].device).rangeMetres;
+      if (range > longest)
+        longest = range;
+    }
+    return longest;
+  }
+
+  // The shortest range among the mounts that can actually traverse, which is where a pursuit holds
+  // so that every turret bears. Zero when the hull has none: a bow-fixed hull takes no stand-off at
+  // all and is sent at its target, because its aiming is done by flying (Design/Combat.md 8).
+  [[nodiscard]] constexpr float ShortestTurretRangeMetres() const noexcept
+  {
+    float shortest = 0.0f;
+    for (std::uint32_t at = 0; at < loadout.count; ++at)
+    {
+      const DeviceSpec& device = DeviceSpecOf(loadout.mount[at].device);
+      if (device.Fixed())
+        continue;
+      if (shortest == 0.0f || device.rangeMetres < shortest)
+        shortest = device.rangeMetres;
+    }
+    return shortest;
+  }
+
   [[nodiscard]] constexpr float BoundingRadiusMetres() const noexcept
   {
     return capsuleHalfLengthMetres + capsuleRadiusMetres;
@@ -111,18 +215,75 @@ struct HullSpec
 // radius, so slowing the capitals costs nothing there while giving the fleet the speed spread the
 // design asks for.
 inline constexpr HullSpec HULL_SPECS[HULL_COUNT] = {
-  // r         L        speed  accel  decel  turn rad/s  turn accel  auth   K   immov  collide  fights
-  {1.115f, 2.390f, 34.0f, 30.0f, 38.0f, 3.4907f, 12.2173f, 0.6f, 8, false, true, true},   // Interceptor
-  {8.705f, 0.000f, 30.0f, 24.0f, 30.0f, 2.0944f, 7.3304f, 1.2f, 8, false, true, true},    // Bomber
-  {8.595f, 4.515f, 30.0f, 20.0f, 26.0f, 1.2217f, 4.1888f, 1.6f, 10, false, true, true},   // Corvette
-  {11.400f, 5.800f, 24.0f, 12.0f, 16.0f, 0.7854f, 2.7053f, 2.4f, 8, false, true, false},  // Miner
-  {10.405f, 11.910f, 28.0f, 14.0f, 18.0f, 0.5236f, 1.8326f, 3.0f, 12, false, true, true}, // Frigate
-  {23.105f, 5.605f, 22.0f, 9.0f, 12.0f, 0.3840f, 1.3090f, 3.6f, 10, false, true, false},  // Hauler
-  {21.640f, 18.735f, 24.0f, 8.0f, 11.0f, 0.2094f, 0.7330f, 5.0f, 14, false, true, true},  // Battleship
-  {39.670f, 67.870f, 20.0f, 5.0f, 7.0f, 0.0873f, 0.3142f, 9.0f, 16, false, true, true},   // Carrier
-  {131.610f, 0.000f, 0.0f, 30.0f, 38.0f, 3.4907f, 12.2173f, 1.0f, 4, true, false, false}, // Stargate
-  {251.180f, 0.590f, 0.0f, 30.0f, 38.0f, 3.4907f, 12.2173f, 1.0f, 4, true, true, false},  // Structure
+  // r         L        speed  accel  decel  turn rad/s  turn accel  auth   K   immov  collide  fights  hull pts  loadout
+  {1.115f, 2.390f, 34.0f, 30.0f, 38.0f, 3.4907f, 12.2173f, 0.6f, 8, false, true, true, 60, LOADOUT_INTERCEPTOR},   // Interceptor
+  {8.705f, 0.000f, 30.0f, 24.0f, 30.0f, 2.0944f, 7.3304f, 1.2f, 8, false, true, true, 150, LOADOUT_BOMBER},        // Bomber
+  {8.595f, 4.515f, 30.0f, 20.0f, 26.0f, 1.2217f, 4.1888f, 1.6f, 10, false, true, true, 240, LOADOUT_CORVETTE},     // Corvette
+  {11.400f, 5.800f, 24.0f, 12.0f, 16.0f, 0.7854f, 2.7053f, 2.4f, 8, false, true, false, 200, LOADOUT_NONE},        // Miner
+  {10.405f, 11.910f, 28.0f, 14.0f, 18.0f, 0.5236f, 1.8326f, 3.0f, 12, false, true, true, 520, LOADOUT_FRIGATE},    // Frigate
+  {23.105f, 5.605f, 22.0f, 9.0f, 12.0f, 0.3840f, 1.3090f, 3.6f, 10, false, true, false, 420, LOADOUT_NONE},        // Hauler
+  {21.640f, 18.735f, 24.0f, 8.0f, 11.0f, 0.2094f, 0.7330f, 5.0f, 14, false, true, true, 2400, LOADOUT_BATTLESHIP}, // Battleship
+  {39.670f, 67.870f, 20.0f, 5.0f, 7.0f, 0.0873f, 0.3142f, 9.0f, 16, false, true, true, 5200, LOADOUT_CARRIER},     // Carrier
+  {131.610f, 0.000f, 0.0f, 30.0f, 38.0f, 3.4907f, 12.2173f, 1.0f, 4, true, false, false, 0, LOADOUT_NONE},         // Stargate
+  {251.180f, 0.590f, 0.0f, 30.0f, 38.0f, 3.4907f, 12.2173f, 1.0f, 4, true, true, false, 0, LOADOUT_NONE},          // Structure
 };
+
+// Two things a reader should not have to check by eye, and which a table edit can silently break.
+//
+// The Miner and the Hauler are deliberately unarmed and deliberately durable: they are what a
+// fleet's combatants are defending, and Design/Archive/Fleets.md 7.2 has them carry on flying their
+// orders through a fight rather than fleeing it. The mining design arms the Miner with tools on
+// these same mounts (Design/Combat.md 12), which is why it is a loadout of none rather than a hull
+// that cannot carry one.
+[[nodiscard]] constexpr bool EveryLoadoutFitsItsMounts() noexcept
+{
+  for (const HullSpec& spec : HULL_SPECS)
+  {
+    if (spec.loadout.count > MAX_MOUNTS)
+      return false;
+  }
+  return true;
+}
+
+// Nothing that cannot move may shoot, and nothing that cannot move may die. A station that shot
+// back is a design nobody has written, and a station that could be destroyed drags a ledger, a
+// garrison and a docked fleet's manifest behind it (Design/Combat.md 7.2, 14). Both are one column
+// each today, and this is what keeps them that way.
+[[nodiscard]] constexpr bool NoImmovableHullIsArmed() noexcept
+{
+  for (const HullSpec& spec : HULL_SPECS)
+  {
+    if (spec.immovable && spec.loadout.count != 0)
+      return false;
+  }
+  return true;
+}
+
+[[nodiscard]] constexpr bool NoImmovableHullIsDestructible() noexcept
+{
+  for (const HullSpec& spec : HULL_SPECS)
+  {
+    if (spec.immovable && spec.maxHullPoints != 0)
+      return false;
+  }
+  return true;
+}
+
+static_assert(EveryLoadoutFitsItsMounts(), "a hull carries more mounts than MAX_MOUNTS holds; raise the constant or cut the loadout");
+static_assert(NoImmovableHullIsArmed(), "an immovable hull is armed, and no pass in this simulation knows how to aim a building");
+static_assert(NoImmovableHullIsDestructible(), "an immovable hull can be destroyed, which no design has yet said what to do about");
+
+// Where a pursuit holds so that its guns bear (Design/Combat.md 8).
+//
+// Read off the shortest range among the mounts that can traverse, so a hull with several turrets
+// holds where ALL of them reach rather than where its longest one does. Zero for a hull whose
+// mounts are all fixed, and zero for a hull with no mounts at all: both are sent at the target
+// itself, the first because its aiming is done by flying and the second because shadowing at
+// contact is what it did before this design existed.
+[[nodiscard]] constexpr float EngageStandoffMetres(const HullSpec& _hull) noexcept
+{
+  return ENGAGE_STANDOFF_FRACTION * _hull.ShortestTurretRangeMetres();
+}
 
 // An unknown hull id resolves to a working ship rather than to an inert one or to memory past the
 // end of the table. Content is a diagnostic, never a crash (AGENTS.md 5).
@@ -325,7 +486,21 @@ struct NeighbourhoodExtent
   const float widest = (_extent.largestStaticRadiusMetres > _extent.largestMobileRadiusMetres) ? _extent.largestStaticRadiusMetres
                                                                                                : _extent.largestMobileRadiusMetres;
   const float separate = ownRadius + widest + SEPARATION_QUERY_MARGIN_METRES;
-  return (avoid > separate) ? avoid : separate;
+  const float reach = (avoid > separate) ? avoid : separate;
+
+  // The third term is gunnery, and it is here for the reason the second one is: the first does not
+  // cover it. A mount ranges to a target's *skin*, so finding one takes the range plus the widest
+  // skin that can be wearing it, and a target the query never returned is a target no mount can see.
+  //
+  // Against the whole hull table it never binds -- a Battleship queries 620 m and its heaviest gun
+  // reaches 528 -- which is exactly why it had to be written down rather than assumed. The maxima
+  // narrow to what is *present* (Design/Archive/MmoScalabilityReview.md U2), and a skirmish of
+  // Interceptors alone narrows this query to 137.1 m while a LightGun reaches 163.5 m: 26 m in which
+  // a fighter's guns out-range its senses, in the only kind of fight the game opens with.
+  const float gunnery = (_hull.LongestMountRangeMetres() > 0.0f)
+                          ? _hull.LongestMountRangeMetres() + _extent.largestMobileRadiusMetres + GUNNERY_QUERY_MARGIN_METRES
+                          : 0.0f;
+  return (gunnery > reach) ? gunnery : reach;
 }
 
 // The table's worst case: the Carrier's 655 m, and the floor on how wide a region's ghost zone has
@@ -362,6 +537,15 @@ struct NeighbourhoodExtent
   const float closing = (_hull.maxSpeedMetresPerSec + _other.maxSpeedMetresPerSec) * horizon;
   const float reach = closing + ownRadius + otherRadius + AVOID_MARGIN_METRES;
   const float separate = ownRadius + otherRadius + SEPARATION_QUERY_MARGIN_METRES;
-  return (reach > separate) ? reach : separate;
+  const float widest = (reach > separate) ? reach : separate;
+
+  // Gunnery, against this particular neighbour, and it is not optional tidiness. This filter is
+  // what decides whether a candidate becomes a Neighbour record at all, so a query widened for the
+  // guns without widening this one would find a target and then throw it away before any mount
+  // could see it. The gather clamps this to the query that found the pair, so widening it can only
+  // ever keep a candidate the query already returned.
+  const float gunnery =
+    (_hull.LongestMountRangeMetres() > 0.0f) ? _hull.LongestMountRangeMetres() + otherRadius + GUNNERY_QUERY_MARGIN_METRES : 0.0f;
+  return (gunnery > widest) ? gunnery : widest;
 }
 } // namespace Game
