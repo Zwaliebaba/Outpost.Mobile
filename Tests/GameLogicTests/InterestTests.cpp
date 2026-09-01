@@ -53,9 +53,9 @@ public:
   std::uint32_t bytes = 0;
 };
 
-Game::ShipId SpawnCorvetteAt(Game::World& _world, float _x, float _z)
+Game::ShipId SpawnCorvetteAt(Game::Universe& _universe, float _x, float _z)
 {
-  return _world.SpawnShip(Game::LocalPos(_x, _z), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+  return _universe.SpawnShip(Game::LocalPos(_x, _z), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
 }
 
 [[nodiscard]] bool Holds(std::span<const Game::ShipHandle> _set, Game::ShipHandle _handle)
@@ -82,44 +82,44 @@ TEST_CLASS(InterestTests)
 public:
   TEST_METHOD(TheSetIsWhatIsInsideTheRadius)
   {
-    Game::World world;
-    const Game::ShipId inRange = SpawnCorvetteAt(world, 100.0f, 0.0f);
-    const Game::ShipId outOfRange = SpawnCorvetteAt(world, 5000.0f, 0.0f);
-    world.Step();
+    Game::Universe universe;
+    const Game::ShipId inRange = SpawnCorvetteAt(universe, 100.0f, 0.0f);
+    const Game::ShipId outOfRange = SpawnCorvetteAt(universe, 5000.0f, 0.0f);
+    universe.Step();
 
     Game::InterestSet interest;
     interest.Configure(DescWith(1000.0f));
-    interest.Update(world, Game::LocalPos(0.0f, 0.0f));
+    interest.Update(universe, Game::LocalPos(0.0f, 0.0f));
 
     Assert::AreEqual(static_cast<std::size_t>(1), interest.Subscribed().size(), L"the set is not just what is in range");
-    Assert::IsTrue(Holds(interest.Subscribed(), world.HandleOf(inRange)), L"a ship in range was not subscribed");
-    Assert::IsFalse(Holds(interest.Subscribed(), world.HandleOf(outOfRange)), L"a ship out of range was subscribed");
+    Assert::IsTrue(Holds(interest.Subscribed(), universe.HandleOf(inRange)), L"a ship in range was not subscribed");
+    Assert::IsFalse(Holds(interest.Subscribed(), universe.HandleOf(outOfRange)), L"a ship out of range was subscribed");
     Assert::AreEqual(static_cast<std::size_t>(1), interest.Entered().size(), L"the first update did not report an enter");
   }
 
   TEST_METHOD(MovingInEntersAndMovingOutLeaves)
   {
-    Game::World world;
-    const Game::ShipId ship = SpawnCorvetteAt(world, 0.0f, 0.0f);
-    world.Step();
+    Game::Universe universe;
+    const Game::ShipId ship = SpawnCorvetteAt(universe, 0.0f, 0.0f);
+    universe.Step();
 
     Game::InterestSet interest;
     interest.Configure(DescWith(500.0f));
-    interest.Update(world, Game::LocalPos(0.0f, 0.0f));
+    interest.Update(universe, Game::LocalPos(0.0f, 0.0f));
     Assert::AreEqual(static_cast<std::size_t>(1), interest.Entered().size(), L"the ship did not enter");
 
     // Standing still is neither an enter nor a leave, however many updates pass.
-    interest.Update(world, Game::LocalPos(0.0f, 0.0f));
+    interest.Update(universe, Game::LocalPos(0.0f, 0.0f));
     Assert::IsTrue(interest.Entered().empty(), L"a ship that stayed entered again");
     Assert::IsTrue(interest.Left().empty(), L"a ship that stayed left");
 
     // Move the viewpoint away rather than the ship, which is the case a subscriber actually creates.
-    interest.Update(world, Game::LocalPos(4000.0f, 0.0f));
+    interest.Update(universe, Game::LocalPos(4000.0f, 0.0f));
     Assert::AreEqual(static_cast<std::size_t>(1), interest.Left().size(), L"the ship did not leave when the view moved off");
-    Assert::IsTrue(Holds(interest.Left(), world.HandleOf(ship)), L"the wrong ship left");
+    Assert::IsTrue(Holds(interest.Left(), universe.HandleOf(ship)), L"the wrong ship left");
     Assert::IsTrue(interest.Subscribed().empty(), L"the set kept a ship it had reported gone");
 
-    interest.Update(world, Game::LocalPos(0.0f, 0.0f));
+    interest.Update(universe, Game::LocalPos(0.0f, 0.0f));
     Assert::AreEqual(static_cast<std::size_t>(1), interest.Entered().size(), L"coming back was not an enter");
   }
 
@@ -129,23 +129,23 @@ public:
     // the sets must not inherit it -- which is the whole reason they are sorted rather than hashed.
     const auto run = [](bool _reversed)
     {
-      Game::World world;
+      Game::Universe universe;
       const float xs[] = {-400.0f, 200.0f, -100.0f, 350.0f, 50.0f};
       if (_reversed)
       {
         for (int at = 4; at >= 0; --at)
-          SpawnCorvetteAt(world, xs[at], 0.0f);
+          SpawnCorvetteAt(universe, xs[at], 0.0f);
       }
       else
       {
         for (const float x : xs)
-          SpawnCorvetteAt(world, x, 0.0f);
+          SpawnCorvetteAt(universe, x, 0.0f);
       }
-      world.Step();
+      universe.Step();
 
       Game::InterestSet interest;
       interest.Configure(DescWith(1000.0f));
-      interest.Update(world, Game::LocalPos(0.0f, 0.0f));
+      interest.Update(universe, Game::LocalPos(0.0f, 0.0f));
 
       std::vector<std::uint32_t> slots;
       for (const Game::ShipHandle handle : interest.Subscribed())
@@ -175,25 +175,25 @@ public:
 
   TEST_METHOD(NearRefreshesEveryUpdateAndFarDoesNot)
   {
-    // The whole of what priority buys: the near world stays smooth while the far world stays cheap.
-    Game::World world;
-    const Game::ShipId centre = SpawnCorvetteAt(world, 0.0f, 0.0f);
-    const Game::ShipId edge = SpawnCorvetteAt(world, 990.0f, 0.0f);
-    world.Step();
+    // The whole of what priority buys: the near universe stays smooth while the far universe stays cheap.
+    Game::Universe universe;
+    const Game::ShipId centre = SpawnCorvetteAt(universe, 0.0f, 0.0f);
+    const Game::ShipId edge = SpawnCorvetteAt(universe, 990.0f, 0.0f);
+    universe.Step();
 
     Game::InterestSet interest;
     Game::InterestSet::Desc desc = DescWith(1000.0f);
     desc.minWeight = 0.125f;
     interest.Configure(desc);
-    interest.Update(world, Game::LocalPos(0.0f, 0.0f)); // both enter
+    interest.Update(universe, Game::LocalPos(0.0f, 0.0f)); // both enter
 
     int centreRefreshes = 0;
     int edgeRefreshes = 0;
     for (int update = 0; update < 32; ++update)
     {
-      interest.Update(world, Game::LocalPos(0.0f, 0.0f));
-      centreRefreshes += Holds(interest.Refreshed(), world.HandleOf(centre)) ? 1 : 0;
-      edgeRefreshes += Holds(interest.Refreshed(), world.HandleOf(edge)) ? 1 : 0;
+      interest.Update(universe, Game::LocalPos(0.0f, 0.0f));
+      centreRefreshes += Holds(interest.Refreshed(), universe.HandleOf(centre)) ? 1 : 0;
+      edgeRefreshes += Holds(interest.Refreshed(), universe.HandleOf(edge)) ? 1 : 0;
     }
 
     Assert::AreEqual(32, centreRefreshes, L"a ship at the centre did not refresh on every update");
@@ -202,13 +202,13 @@ public:
 
   TEST_METHOD(AnEnteringShipIsSentOnTheUpdateItEntered)
   {
-    Game::World world;
-    SpawnCorvetteAt(world, 0.0f, 0.0f);
-    world.Step();
+    Game::Universe universe;
+    SpawnCorvetteAt(universe, 0.0f, 0.0f);
+    universe.Step();
 
     Game::InterestSet interest;
     interest.Configure(DescWith(1000.0f));
-    interest.Update(world, Game::LocalPos(0.0f, 0.0f));
+    interest.Update(universe, Game::LocalPos(0.0f, 0.0f));
 
     // Entering is the send, so it is not also queued as a refresh on the same update.
     Assert::AreEqual(static_cast<std::size_t>(1), interest.Entered().size(), L"the ship did not enter");
@@ -217,48 +217,48 @@ public:
 
   TEST_METHOD(ADespawnedShipLeavesTheSet)
   {
-    Game::World world;
-    const Game::ShipId doomed = SpawnCorvetteAt(world, 0.0f, 0.0f);
-    SpawnCorvetteAt(world, 100.0f, 0.0f);
-    const Game::ShipHandle handle = world.HandleOf(doomed);
-    world.Step();
+    Game::Universe universe;
+    const Game::ShipId doomed = SpawnCorvetteAt(universe, 0.0f, 0.0f);
+    SpawnCorvetteAt(universe, 100.0f, 0.0f);
+    const Game::ShipHandle handle = universe.HandleOf(doomed);
+    universe.Step();
 
     Game::InterestSet interest;
     interest.Configure(DescWith(1000.0f));
-    interest.Update(world, Game::LocalPos(0.0f, 0.0f));
+    interest.Update(universe, Game::LocalPos(0.0f, 0.0f));
     Assert::AreEqual(static_cast<std::size_t>(2), interest.Subscribed().size(), L"both ships should be in range");
 
-    Assert::IsTrue(world.DespawnShip(handle), L"the despawn failed");
-    world.Step();
-    interest.Update(world, Game::LocalPos(0.0f, 0.0f));
+    Assert::IsTrue(universe.DespawnShip(handle), L"the despawn failed");
+    universe.Step();
+    interest.Update(universe, Game::LocalPos(0.0f, 0.0f));
 
     Assert::IsTrue(Holds(interest.Left(), handle), L"a despawned ship did not leave the set");
     Assert::AreEqual(static_cast<std::size_t>(1), interest.Subscribed().size(), L"the set kept a dead ship");
-    Assert::AreEqual(Game::INVALID_SHIP_ID, world.Resolve(handle), L"a dead handle still resolved");
+    Assert::AreEqual(Game::INVALID_SHIP_ID, universe.Resolve(handle), L"a dead handle still resolved");
   }
 
   TEST_METHOD(AnUpdateUpsertsAndALeaveRemoves)
   {
-    Game::World world;
-    const Game::ShipId first = SpawnCorvetteAt(world, 0.0f, 0.0f);
-    const Game::ShipId second = SpawnCorvetteAt(world, 200.0f, 0.0f);
-    world.Step();
+    Game::Universe universe;
+    const Game::ShipId first = SpawnCorvetteAt(universe, 0.0f, 0.0f);
+    const Game::ShipId second = SpawnCorvetteAt(universe, 200.0f, 0.0f);
+    universe.Step();
 
     Game::SnapshotWriter writer;
     Game::SnapshotReceiver receiver;
     CaptureLink link;
 
-    const Game::ShipHandle handles[] = {world.HandleOf(first), world.HandleOf(second)};
-    Assert::IsTrue(writer.WriteInterest(world, handles, {}, {}, {}, link) > 0, L"the first update did not send");
+    const Game::ShipHandle handles[] = {universe.HandleOf(first), universe.HandleOf(second)};
+    Assert::IsTrue(writer.WriteInterest(universe, handles, {}, {}, {}, link) > 0, L"the first update did not send");
     for (const std::vector<std::uint8_t>& datagram : link.sent)
       (void)receiver.Accept(datagram);
     Assert::AreEqual(static_cast<std::size_t>(2), receiver.Latest().ships.size(), L"the client did not take both ships");
 
     // Refreshing one updates it in place rather than appending a second copy.
     link.sent.clear();
-    world.Step();
-    const Game::ShipHandle justFirst[] = {world.HandleOf(first)};
-    Assert::IsTrue(writer.WriteInterest(world, justFirst, {}, {}, {}, link) > 0, L"the refresh did not send");
+    universe.Step();
+    const Game::ShipHandle justFirst[] = {universe.HandleOf(first)};
+    Assert::IsTrue(writer.WriteInterest(universe, justFirst, {}, {}, {}, link) > 0, L"the refresh did not send");
     for (const std::vector<std::uint8_t>& datagram : link.sent)
       (void)receiver.Accept(datagram);
     Assert::AreEqual(static_cast<std::size_t>(2), receiver.Latest().ships.size(), L"a refresh appended instead of updating in place");
@@ -266,18 +266,18 @@ public:
     // A leave removes exactly that one.
     link.sent.clear();
     link.sentReliable.clear();
-    world.Step();
+    universe.Step();
     // Ids, not handles: the departure runs on the wire name ships that may already be gone, so the
     // wire's currency is identity (ADR 0047). The sent list two lines up is still handles.
-    const Game::EntityId leaving[] = {world.EntityIdOf(second)};
-    Assert::IsTrue(writer.WriteInterest(world, {}, leaving, {}, {}, link) > 0, L"the leave did not send");
+    const Game::EntityId leaving[] = {universe.EntityIdOf(second)};
+    Assert::IsTrue(writer.WriteInterest(universe, {}, leaving, {}, {}, link) > 0, L"the leave did not send");
     Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"the leave did not take the reliable lane");
     for (const std::vector<std::uint8_t>& message : link.sentReliable)
       (void)receiver.Accept(message);
     for (const std::vector<std::uint8_t>& datagram : link.sent)
       (void)receiver.Accept(datagram);
     Assert::AreEqual(static_cast<std::size_t>(1), receiver.Latest().ships.size(), L"a leave did not remove a ship");
-    Assert::IsTrue(receiver.Latest().ships[0].entity == world.EntityIdOf(first), L"a leave removed the wrong ship");
+    Assert::IsTrue(receiver.Latest().ships[0].entity == universe.EntityIdOf(first), L"a leave removed the wrong ship");
   }
 
   TEST_METHOD(AFullSnapshotStillDropsWhatIsGone)
@@ -285,36 +285,36 @@ public:
     // The regression an upserting receiver invites: a complete snapshot carries no leave list, so
     // without the complete flag it could never remove a despawned ship -- it would simply stop
     // being mentioned and stay on screen forever.
-    Game::World world;
-    const Game::ShipId doomed = SpawnCorvetteAt(world, 0.0f, 0.0f);
-    SpawnCorvetteAt(world, 200.0f, 0.0f);
-    const Game::ShipHandle handle = world.HandleOf(doomed);
-    world.Step();
+    Game::Universe universe;
+    const Game::ShipId doomed = SpawnCorvetteAt(universe, 0.0f, 0.0f);
+    SpawnCorvetteAt(universe, 200.0f, 0.0f);
+    const Game::ShipHandle handle = universe.HandleOf(doomed);
+    universe.Step();
 
     Game::SnapshotWriter writer;
     Game::SnapshotReceiver receiver;
 
     CaptureLink before;
-    Assert::IsTrue(writer.Write(world, before) > 0, L"the first snapshot did not send");
+    Assert::IsTrue(writer.Write(universe, before) > 0, L"the first snapshot did not send");
     for (const std::vector<std::uint8_t>& datagram : before.sent)
       (void)receiver.Accept(datagram);
     Assert::AreEqual(static_cast<std::size_t>(2), receiver.Latest().ships.size(), L"the client did not take both ships");
 
-    Assert::IsTrue(world.DespawnShip(handle), L"the despawn failed");
-    world.Step();
+    Assert::IsTrue(universe.DespawnShip(handle), L"the despawn failed");
+    universe.Step();
 
     CaptureLink after;
-    Assert::IsTrue(writer.Write(world, after) > 0, L"the second snapshot did not send");
+    Assert::IsTrue(writer.Write(universe, after) > 0, L"the second snapshot did not send");
     for (const std::vector<std::uint8_t>& datagram : after.sent)
       (void)receiver.Accept(datagram);
 
     Assert::AreEqual(static_cast<std::size_t>(1), receiver.Latest().ships.size(), L"a full snapshot did not drop a despawned ship");
   }
 
-  TEST_METHOD(AnIncompleteUpdateLeavesTheWorldAlone)
+  TEST_METHOD(AnIncompleteUpdateLeavesTheUniverseAlone)
   {
     // A delta stream cannot resynchronise by waiting, so a partly applied update is worse than a
-    // dropped one: the client would hold a world nothing will ever correct.
+    // dropped one: the client would hold a universe nothing will ever correct.
     //
     // Three fragments, derived from the record rather than spelled: this test wanted 40 ships when a
     // fragment held 13, and quantizing the record to 23 quietly turned it into a two-fragment test
@@ -322,19 +322,19 @@ public:
     // cannot go stale that way (Design/Archive/QuantizedWire-work-order.md 5).
     const std::uint32_t needed = Game::ShipsPerSnapshotFragment() * 2 + 1;
 
-    Game::World world;
+    Game::Universe universe;
     for (std::uint32_t at = 0; at < needed; ++at)
-      SpawnCorvetteAt(world, static_cast<float>(at) * 30.0f, 0.0f);
-    world.Step();
+      SpawnCorvetteAt(universe, static_cast<float>(at) * 30.0f, 0.0f);
+    universe.Step();
 
     std::vector<Game::ShipHandle> all;
-    for (Game::ShipId id = 0; id < world.ShipCount(); ++id)
-      all.push_back(world.HandleOf(id));
+    for (Game::ShipId id = 0; id < universe.ShipCount(); ++id)
+      all.push_back(universe.HandleOf(id));
 
     Game::SnapshotWriter writer;
     Game::SnapshotReceiver receiver;
     CaptureLink link;
-    Assert::IsTrue(writer.WriteInterest(world, all, {}, {}, {}, link) > 2, L"the ship count did not need three fragments");
+    Assert::IsTrue(writer.WriteInterest(universe, all, {}, {}, {}, link) > 2, L"the ship count did not need three fragments");
 
     for (std::size_t at = 0; at < link.sent.size(); ++at)
     {
@@ -344,10 +344,10 @@ public:
     }
 
     Assert::IsFalse(receiver.HasSnapshot(), L"an incomplete update was applied");
-    Assert::IsTrue(receiver.Latest().ships.empty(), L"an incomplete update left the world partly changed");
+    Assert::IsTrue(receiver.Latest().ships.empty(), L"an incomplete update left the universe partly changed");
   }
 
-  TEST_METHOD(InterestCostTracksTheNeighbourhoodNotTheWorld)
+  TEST_METHOD(InterestCostTracksTheNeighbourhoodNotTheUniverse)
   {
     // The claim this slice exists to make good: without interest management an update costs O(N),
     // with it O(k), and once N exceeds the neighbourhood the cost stops growing. Design/Archive/Collision.md
@@ -358,41 +358,41 @@ public:
     std::wstring report = L"\n";
     for (const int shipCount : {100, 1000, 5000})
     {
-      Game::World world;
+      Game::Universe universe;
       for (int at = 0; at < shipCount; ++at)
       {
-        // A square spiral, so density is even and the neighbourhood is a fair sample of the world.
+        // A square spiral, so density is even and the neighbourhood is a fair sample of the universe.
         const float side = std::sqrt(static_cast<float>(shipCount));
         const float x = (static_cast<float>(at % static_cast<int>(side)) - side * 0.5f) * 120.0f;
         const float z = (static_cast<float>(at / static_cast<int>(side)) - side * 0.5f) * 120.0f;
-        SpawnCorvetteAt(world, x, z);
+        SpawnCorvetteAt(universe, x, z);
       }
-      world.Step();
+      universe.Step();
 
       Game::InterestSet interest;
       interest.Configure(DescWith(1000.0f));
-      interest.Update(world, Game::LocalPos(0.0f, 0.0f));
+      interest.Update(universe, Game::LocalPos(0.0f, 0.0f));
 
       std::vector<Game::ShipHandle> sent;
       sent.insert(sent.end(), interest.Entered().begin(), interest.Entered().end());
 
       Game::SnapshotWriter scoped;
       CaptureLink scopedLink;
-      (void)scoped.WriteInterest(world, sent, {}, {}, {}, scopedLink);
+      (void)scoped.WriteInterest(universe, sent, {}, {}, {}, scopedLink);
 
       Game::SnapshotWriter whole;
       CaptureLink wholeLink;
-      (void)whole.Write(world, wholeLink);
+      (void)whole.Write(universe, wholeLink);
 
       wchar_t line[224] = {};
-      std::swprintf(line, std::size(line), L"      N=%5d   k=%4d   interest %7u B in %3zu datagram(s)   full world %8u B in %4zu\n",
+      std::swprintf(line, std::size(line), L"      N=%5d   k=%4d   interest %7u B in %3zu datagram(s)   full universe %8u B in %4zu\n",
                     shipCount, static_cast<int>(interest.Subscribed().size()), scopedLink.bytes, scopedLink.sent.size(), wholeLink.bytes,
                     wholeLink.sent.size());
       report += line;
 
-      Assert::IsTrue(scopedLink.bytes < wholeLink.bytes || shipCount <= 100, L"an interest update was not cheaper than the whole world");
+      Assert::IsTrue(scopedLink.bytes < wholeLink.bytes || shipCount <= 100, L"an interest update was not cheaper than the whole universe");
       Assert::IsTrue(interest.Subscribed().size() < static_cast<std::size_t>(shipCount) || shipCount <= 100,
-                     L"the neighbourhood was the whole world, so this measures nothing");
+                     L"the neighbourhood was the whole universe, so this measures nothing");
     }
     Logger::WriteMessage(report.c_str());
   }

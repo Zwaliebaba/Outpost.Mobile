@@ -443,7 +443,7 @@ static_assert(NoImmovableHullIsDestructible(), "an immovable hull can be destroy
 // The largest and fastest things a query could have to find.
 //
 // The hull table's own maxima are the ceiling, and that ceiling is what sizes a region's ghost zone.
-// What is actually in a world at a given moment is usually far less -- a skirmish between fighters
+// What is actually in a universe at a given moment is usually far less -- a skirmish between fighters
 // pays the Carrier's 655 m because a Carrier exists in the table, not because one is there
 // (Design/Archive/MmoScalabilityReview.md U2). A gather asks for the second; region sizing asks for the
 // first; they are the same arithmetic over different numbers, which is why there is one function.
@@ -469,7 +469,7 @@ struct NeighbourhoodExtent
 // of the two is the honest answer (Collision.md 10).
 //
 // The separation term takes the widest thing present of *either* kind. On the hull table as it
-// stands that is the Structure's 251 m and the value is unchanged, but a world with no architecture
+// stands that is the Structure's 251 m and the value is unchanged, but a universe with no architecture
 // in it must still separate its ships from each other, and reading only the static maximum there
 // would return a radius narrower than a pair of Carriers need.
 [[nodiscard]] constexpr float QueryRadiusMetres(const HullSpec& _hull, const NeighbourhoodExtent& _extent) noexcept
@@ -509,7 +509,7 @@ struct NeighbourhoodExtent
 }
 
 // The table's worst case: the Carrier's 655 m, and the floor on how wide a region's ghost zone has
-// to be. A world-layout number, not a per-tick one.
+// to be. A universe-layout number, not a per-tick one.
 [[nodiscard]] constexpr float QueryRadiusMetres(const HullSpec& _hull) noexcept
 {
   return QueryRadiusMetres(_hull, WholeHullTableExtent());

@@ -85,7 +85,7 @@ void PathIslands::Partition(std::span<const PathGrid::Obstacle> _obstacles)
   // Their order. The relation is symmetric so the components themselves do not depend on the walk --
   // but the obstacles arrive in ShipId order and ShipIds move under swap-and-pop (ADR 0005), so the
   // order they are *found* in does. Sorting by the lowest path cell any member sits in fixes that: a
-  // cell index is a world coordinate and moves for nobody (Design/Archive/RegionalPathfinding.md 3.2, 5).
+  // cell index is a universe coordinate and moves for nobody (Design/Archive/RegionalPathfinding.md 3.2, 5).
   //
   // That key is unique to its island, so the order is total rather than merely usually total. Two
   // obstacles in one cell are at most a cell's diagonal apart -- 45 m -- and the smallest
@@ -141,7 +141,7 @@ void PathIslands::Rebuild(std::span<const PathGrid::Obstacle> _obstacles)
   // the point of the exercise is not to touch the ones that are still right.
   //
   // Swapped out *before* anything clears them, which is the whole of it: clearing m_islands first
-  // and swapping after leaves nothing to claim and quietly rebuilds the world every time. The
+  // and swapping after leaves nothing to claim and quietly rebuilds the universe every time. The
   // benchmark is what caught that, which is why it is part of this slice.
   m_keptIslands.clear();
   m_keptBuilt.clear();
@@ -159,7 +159,7 @@ void PathIslands::Rebuild(std::span<const PathGrid::Obstacle> _obstacles)
     for (std::uint32_t at = m_memberStart[island]; at < m_memberStart[island + 1]; ++at)
       m_islandScratch.push_back(_obstacles[m_members[at]]);
 
-    // Matched by content, not by position: the islands are ordered by where they sit in the world,
+    // Matched by content, not by position: the islands are ordered by where they sit in the universe,
     // so building anything renumbers every island after it and the slot an island held last time
     // says nothing about which island is here now (ADR 0034).
     std::size_t kept = m_keptIslands.size();
@@ -186,7 +186,8 @@ void PathIslands::Rebuild(std::span<const PathGrid::Obstacle> _obstacles)
   }
 }
 
-bool PathIslands::FindPath(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres, std::vector<WorldPos>& _outWaypoints)
+bool PathIslands::FindPath(const UniversePos& _from, const UniversePos& _to, float _requiredClearanceMetres,
+                           std::vector<UniversePos>& _outWaypoints)
 {
   _outWaypoints.clear();
   if (m_islands.empty())
@@ -211,7 +212,7 @@ bool PathIslands::FindPath(const WorldPos& _from, const WorldPos& _to, float _re
       continue;
     ++met;
     // Strictly less, so a tie goes to the earlier island -- and the islands are already in a
-    // world-fixed order, which is what makes that a rule and not an accident.
+    // universe-fixed order, which is what makes that a rule and not an accident.
     if (blocked.first < firstAt)
     {
       nextAt = std::min(nextAt, firstAt); // the one it displaces is now the next
@@ -236,7 +237,7 @@ bool PathIslands::FindPath(const WorldPos& _from, const WorldPos& _to, float _re
 
   // More than one island in the way, and no single grid can plan the whole run: the first island
   // cannot see the second. So the first island plans a leg, and the route reports itself unfinished
-  // -- which is what makes World::AdvanceRoute come back for the rest on arrival, exactly as it
+  // -- which is what makes Universe::AdvanceRoute come back for the rest on arrival, exactly as it
   // already did for a route too long for one waypoint list (Design/Archive/RegionalPathfinding.md 3.4).
   //
   // The leg is aimed at the middle of the open water between the two: past where the first island
@@ -248,7 +249,7 @@ bool PathIslands::FindPath(const WorldPos& _from, const WorldPos& _to, float _re
   // against a 251.2 m capsule; aiming at the gap leaves 304 m.
   if (firstEndsAt < nextAt)
   {
-    const WorldPos openWater = Lerp(_from, _to, (firstEndsAt + nextAt) * 0.5f);
+    const UniversePos openWater = Lerp(_from, _to, (firstEndsAt + nextAt) * 0.5f);
     (void)m_islands[first].FindPath(_from, openWater, _requiredClearanceMetres, _outWaypoints);
     return false;
   }

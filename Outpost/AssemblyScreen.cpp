@@ -30,7 +30,7 @@ void DrawPanel(TextRenderer& _text, float _x0, float _y0, float _x1, float _y1, 
 }
 } // namespace
 
-void AssemblyScreen::Open(const Game::LedgerReply& _reply, const WorldView& _view)
+void AssemblyScreen::Open(const Game::LedgerReply& _reply, const UniverseView& _view)
 {
   m_ledger = _reply;
   for (std::uint32_t hull = 0; hull < Game::HULL_COUNT; ++hull)
@@ -39,7 +39,7 @@ void AssemblyScreen::Open(const Game::LedgerReply& _reply, const WorldView& _vie
   // The first free slot, so the common case -- one fleet at a time, into whichever button is empty
   // -- costs no press at all. None free leaves it at -1, which is what greys LAUNCH.
   m_slot = -1;
-  for (int slot = 0; slot < WorldView::FLEET_SLOTS && m_slot < 0; ++slot)
+  for (int slot = 0; slot < UniverseView::FLEET_SLOTS && m_slot < 0; ++slot)
   {
     if (!_view.IsFleetHeld(slot))
       m_slot = slot;
@@ -50,7 +50,7 @@ void AssemblyScreen::Open(const Game::LedgerReply& _reply, const WorldView& _vie
 int AssemblyScreen::HullOfRow(int _row) const noexcept
 {
   // Hull-id order, which is also the order the manifest launches in, so the screen lists a fleet in
-  // the order the player will watch it come out (World::ComposeFleet).
+  // the order the player will watch it come out (Universe::ComposeFleet).
   int seen = 0;
   for (std::uint32_t hull = 0; hull < Game::HULL_COUNT; ++hull)
   {
@@ -74,7 +74,7 @@ std::uint32_t AssemblyScreen::DraftTotal() const noexcept
   return total;
 }
 
-bool AssemblyScreen::CanLaunch(const WorldView& _view) const noexcept
+bool AssemblyScreen::CanLaunch(const UniverseView& _view) const noexcept
 {
   return DraftTotal() > 0 && m_slot >= 0 && !_view.IsFleetHeld(m_slot);
 }
@@ -122,7 +122,7 @@ AssemblyScreen::Layout AssemblyScreen::ComputeLayout(float _dpiScale, std::uint3
   const float slotPx = HUD_ASSEMBLY_SLOT_BUTTON_PX * s;
   const float slotsY = y0 + HUD_ASSEMBLY_HEADER_PX * s + rowH;
   float slotX = split + pad;
-  for (int slot = 0; slot < WorldView::FLEET_SLOTS; ++slot)
+  for (int slot = 0; slot < UniverseView::FLEET_SLOTS; ++slot)
   {
     layout.slots[slot] = {slotX, slotsY, slotX + slotPx, slotsY + slotPx};
     slotX += slotPx + 4.0f * s;
@@ -133,7 +133,7 @@ AssemblyScreen::Layout AssemblyScreen::ComputeLayout(float _dpiScale, std::uint3
   return layout;
 }
 
-void AssemblyScreen::Draw(TextRenderer& _text, const WorldView& _view, std::span<const char* const> _hullNames,
+void AssemblyScreen::Draw(TextRenderer& _text, const UniverseView& _view, std::span<const char* const> _hullNames,
                           std::span<const char* const> _factionNames, float _dpiScale, std::uint32_t _widthPx,
                           std::uint32_t _heightPx) const
 {
@@ -146,7 +146,7 @@ void AssemblyScreen::Draw(TextRenderer& _text, const WorldView& _view, std::span
   const float labelPx = _text.AdvancePx(FontId::Ui, HUD_LABEL_SCALE * s);
   const float pad = HUD_ASSEMBLY_PAD_PX * s;
 
-  // The scrim first: this is modal, and a panel over an unchanged world reads as a widget.
+  // The scrim first: this is modal, and a panel over an unchanged universe reads as a widget.
   _text.DrawScreenRect(0.0f, 0.0f, static_cast<float>(_widthPx), static_cast<float>(_heightPx), HUD_ASSEMBLY_SCRIM);
   DrawPanel(_text, layout.panel.x0, layout.panel.y0, layout.panel.x1, layout.panel.y1, HUD_PANEL_FILL, HUD_PANEL_OUTLINE, s);
 
@@ -225,7 +225,7 @@ void AssemblyScreen::Draw(TextRenderer& _text, const WorldView& _view, std::span
     _text.DrawTextLine(FontId::Ui, split, layout.panel.y0 + HUD_ASSEMBLY_HEADER_PX * s, HUD_TEXT_SCALE * s,
                        (DraftTotal() > 0) ? HUD_ACCENT_GREEN : HUD_LABEL_COLOUR, draft);
 
-    for (int slot = 0; slot < WorldView::FLEET_SLOTS; ++slot)
+    for (int slot = 0; slot < UniverseView::FLEET_SLOTS; ++slot)
     {
       const Rect& at = layout.slots[slot];
       const bool taken = _view.IsFleetHeld(slot);
@@ -267,7 +267,7 @@ void AssemblyScreen::Draw(TextRenderer& _text, const WorldView& _view, std::span
   }
 }
 
-bool AssemblyScreen::HandlePointer(const PointerEvent& _event, WorldView& _view, float _dpiScale, std::uint32_t _widthPx,
+bool AssemblyScreen::HandlePointer(const PointerEvent& _event, UniverseView& _view, float _dpiScale, std::uint32_t _widthPx,
                                    std::uint32_t _heightPx)
 {
   if (!m_open)
@@ -304,7 +304,7 @@ bool AssemblyScreen::HandlePointer(const PointerEvent& _event, WorldView& _view,
       --m_draft[hull];
   }
 
-  for (int slot = 0; slot < WorldView::FLEET_SLOTS; ++slot)
+  for (int slot = 0; slot < UniverseView::FLEET_SLOTS; ++slot)
   {
     if (layout.slots[slot].Contains(_event.xPx, _event.yPx) && !_view.IsFleetHeld(slot))
       m_slot = slot;

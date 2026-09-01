@@ -5,7 +5,7 @@
 
 #include "Formation.h"
 #include "HullSpec.h"
-#include "WorldSnapshot.h"
+#include "UniverseSnapshot.h"
 
 #include "Transport.h"
 
@@ -37,14 +37,14 @@ namespace Outpost
 //
 // It reads the snapshots that arrive over a Transport and never writes to the simulation except by
 // sending a move order back up the same wire. It cannot do otherwise: this header no longer
-// includes World.h, so the seam is structural rather than a convention (slice-2b 2.6). That one-way
+// includes Universe.h, so the seam is structural rather than a convention (slice-2b 2.6). That one-way
 // dependency is the whole design: the view can be rewritten, doubled for a second local player, or
 // replaced by a headless stub, and the simulation does not notice. This is the class that used to
-// hold a World& and now holds a snapshot buffer; the day the transport becomes a socket, nothing
+// hold a Universe& and now holds a snapshot buffer; the day the transport becomes a socket, nothing
 // here changes at all.
 //
 // It is also the PointerListener: the tracker knows how contacts behave, this knows what they mean.
-class WorldView : public Neuron::PointerListener
+class UniverseView : public Neuron::PointerListener
 {
 public:
   // Where a ship was on one tick the wire told us about, and how it was moving then. Two of these
@@ -53,7 +53,7 @@ public:
   struct MotionSample
   {
     float tick = 0.0f;
-    Game::WorldPos pos;
+    Game::UniversePos pos;
     float headingRad = 0.0f;
     float velX = 0.0f; // metres per tick
     float velZ = 0.0f;
@@ -63,15 +63,15 @@ public:
   // A position and heading as the player sees them: interpolated, not the latest record.
   struct DisplayPose
   {
-    Game::WorldPos pos;
+    Game::UniversePos pos;
     float headingRad = 0.0f;
   };
 
   // One planet or asteroid on screen. It is presentation and nothing else: it holds no simulation
   // handle, appears in no snapshot, and a ship flies straight through it (Design/Decisions/0016).
   //
-  // The centre is a Game::WorldPos and goes through ViewX/ViewZ like a ship's, so the day the camera
-  // rebase lands (WorldView.h's m_viewOrigin comment) a body moves with everything else for free.
+  // The centre is a Game::UniversePos and goes through ViewX/ViewZ like a ship's, so the day the camera
+  // rebase lands (UniverseView.h's m_viewOrigin comment) a body moves with everything else for free.
   struct BodyView
   {
     // Three grids of the same body, finest first; the level drawn is chosen per frame from the
@@ -83,7 +83,7 @@ public:
     // Drawn through BodyRenderer::DrawPlanet and given no outline pass: a smooth sphere wearing a
     // map rather than a generated height field (ViewTuning.h, BODY_PLANET_TEXTURED).
     bool textured = false;
-    Game::WorldPos centre;
+    Game::UniversePos centre;
     float centreY = 0.0f;
     DirectX::XMFLOAT3 spinAxis{0.0f, 1.0f, 0.0f};
     float spinRadPerSec = 0.0f;
@@ -195,7 +195,7 @@ public:
   // carries one (Design/Archive/Stations.md 9.3).
   struct StationMark
   {
-    Game::WorldPos posWorld;
+    Game::UniversePos posUniverse;
     Game::FactionId faction = Game::FACTION_VANGUARD;
   };
 
@@ -204,7 +204,7 @@ public:
   // on the thing and not the ground beside it (Design/Archive/Stations.md 9.2).
   struct OrderMarker
   {
-    DirectX::XMFLOAT3 posWorld{0.0f, 0.0f, 0.0f};
+    DirectX::XMFLOAT3 posUniverse{0.0f, 0.0f, 0.0f};
     float facingRad = 0.0f;
     bool hasFacing = false;
     float ageSec = 0.0f;
@@ -213,7 +213,7 @@ public:
 
   void Init(Neuron::Transport& _transport, Neuron::Camera& _camera, const Neuron::MeshLibrary& _meshes, Neuron::MeshHandle _quadMesh);
 
-  // Which mesh a hull is drawn with. The view no longer learns about a ship when the world spawns
+  // Which mesh a hull is drawn with. The view no longer learns about a ship when the universe spawns
   // one -- it learns from a snapshot, which carries a hullId and not a mesh -- so the composition
   // root registers the table up front and the view resolves against it as ships appear.
   void RegisterHullMesh(Game::HullId _hull, Neuron::MeshHandle _mesh);
@@ -231,7 +231,7 @@ public:
   // composition root, before anything reads Ships().
   void PumpNetwork();
 
-  // The world as this half is allowed to see it: the newest complete snapshot, or nothing before
+  // The universe as this half is allowed to see it: the newest complete snapshot, or nothing before
   // the first arrives. Presentation state in m_ships is kept parallel to it.
   [[nodiscard]] std::span<const Game::ShipSnapshot> Ships() const noexcept;
 
@@ -264,24 +264,24 @@ public:
   void TriggerCameraShake() noexcept;
   [[nodiscard]] int SelectedCount() const noexcept;
   // Simulation positions reach render space through these two and never by reading localX, which is
-  // an offset inside a sector and not a world coordinate. m_viewOrigin is the universe origin, so
-  // the result is a true world metre for any sector within float range. Moving the origin to follow
+  // an offset inside a sector and not a universe coordinate. m_viewOrigin is the universe origin, so
+  // the result is a true universe metre for any sector within float range. Moving the origin to follow
   // the camera is what buys precision far from it; that is a rendering slice of its own and this is
   // the seam it will change (Design/Archive/Collision-slice-8.md 2.7, 3).
-  [[nodiscard]] float ViewX(const Game::WorldPos& _pos) const noexcept
+  [[nodiscard]] float ViewX(const Game::UniversePos& _pos) const noexcept
   {
     return Game::OffsetX(m_viewOrigin, _pos);
   }
 
-  [[nodiscard]] float ViewZ(const Game::WorldPos& _pos) const noexcept
+  [[nodiscard]] float ViewZ(const Game::UniversePos& _pos) const noexcept
   {
     return Game::OffsetZ(m_viewOrigin, _pos);
   }
 
   // The inverse: a point picked in render space, back to the position the simulation will store.
-  [[nodiscard]] Game::WorldPos WorldPosAt(float _viewX, float _viewZ) const noexcept
+  [[nodiscard]] Game::UniversePos UniversePosAt(float _viewX, float _viewZ) const noexcept
   {
-    Game::WorldPos pos = m_viewOrigin;
+    Game::UniversePos pos = m_viewOrigin;
     Game::Translate(pos, _viewX, _viewZ);
     return pos;
   }
@@ -295,7 +295,7 @@ public:
   //
   // A selection is a set of SLOTS and nothing else -- five bools, not a list of ships. That is what
   // replaced the control groups, and it is a smaller thing rather than a renamed one: a group was a
-  // remembered list this half had to keep in step with a world it could not see, and a slot is a
+  // remembered list this half had to keep in step with a universe it could not see, and a slot is a
   // number the server states the membership of on every change. Nothing here can hold a stale ship.
   //
   // Sub-fleet selection does not exist, on purpose: the day a ship must leave a fleet, the fleet
@@ -341,7 +341,7 @@ public:
   // Where the server says the fleet is: the centroid of its live members, or its launch station
   // while none is out. A readout, derived at publish time and simulated by nobody (ADR 0051's
   // neighbour argument, Design/Archive/Fleets.md 8.2).
-  [[nodiscard]] Game::WorldPos FleetPosition(int _slot) const noexcept
+  [[nodiscard]] Game::UniversePos FleetPosition(int _slot) const noexcept
   {
     return IsFleetHeld(_slot) ? m_receiver.FleetStatusOf(static_cast<std::uint8_t>(_slot)).position : m_viewOrigin;
   }
@@ -375,7 +375,7 @@ public:
   void FocusFleet(int _slot);
   void UpdateFocus(float _dtSec);
 
-  // Gives the camera back. Called from the world's own gestures, and from the composition root when
+  // Gives the camera back. Called from the universe's own gestures, and from the composition root when
   // it sees the player pan -- a pan reaches Camera directly and never touches this half, so the
   // root is the only thing that can notice one (OutpostApp::Update).
   void CancelFocus() noexcept
@@ -428,7 +428,7 @@ public:
   // healthy pip for a ship it knows nothing about (Design/Combat-slice-4.md 2.3).
   [[nodiscard]] float ConditionOfMember(Game::EntityId _entity) const noexcept;
 
-  // The order a sheet button armed, waiting for the world tap that supplies its target. None until
+  // The order a sheet button armed, waiting for the universe tap that supplies its target. None until
   // one is pressed, and cleared by the next tap whether or not it landed on something the order can
   // use (Design/Archive/Fleets.md 9.3).
   enum class ArmedOrder : std::uint8_t
@@ -680,16 +680,16 @@ private:
   // client holds *now*, while it still holds them.
   void TakeTheGunfire();
 
-  Game::WorldPos m_viewOrigin;
+  Game::UniversePos m_viewOrigin;
   Game::FactionId m_ownFaction = Game::FACTION_PLAYER;
   Neuron::Transport* m_transport = nullptr;
   Game::SnapshotReceiver m_receiver;
   float m_displayTick = 0.0f; // host tick time less INTERP_DELAY_TICKS
 
   // Parallel to the snapshot's ships, and to m_ships. Identities rather than handles since ADR 0047:
-  // a handle is a reference into one World and this half has never held one.
+  // a handle is a reference into one Universe and this half has never held one.
   std::vector<Game::EntityId> m_entities;
-  std::vector<Game::WorldPos> m_orderPositions; // gathered for FormationHeading when an order is sent
+  std::vector<Game::UniversePos> m_orderPositions; // gathered for FormationHeading when an order is sent
   std::vector<ShipView> m_carryScratch;
 
   // One reliable message's worth, kept so a pump allocates nothing. Sized on first use rather than

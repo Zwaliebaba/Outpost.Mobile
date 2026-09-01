@@ -4,7 +4,7 @@
 
 namespace Game
 {
-// Simulation tuning. Everything that changes what the world *does* lives here; everything that
+// Simulation tuning. Everything that changes what the universe *does* lives here; everything that
 // changes how it *looks* lives in the view's own tuning header. The split is not cosmetic -- a
 // value on this side is part of the replay contract and cannot be changed without invalidating
 // recorded games, while a value on the other side can be tuned at any time.
@@ -13,13 +13,13 @@ namespace Game
 // route: every field of every row in that table changes a recorded outcome.
 //
 // These are compile-time constants today. When they move into loaded data they become a struct
-// World owns, read once at boot by the composition root -- never read from a file by this library.
+// Universe owns, read once at boot by the composition root -- never read from a file by this library.
 
 // --- tick rate -------------------------------------------------------------------------------
 // The simulation runs at a fixed rate and only at that rate. The render frame interpolates between
 // the last two ticks, so the tick rate is a property of the game and not of the display.
 //
-// 60 Hz is inherited from a build that ran one world on one machine for one player, and an MMO
+// 60 Hz is inherited from a build that ran one universe on one machine for one player, and an MMO
 // server is unlikely to keep it -- tick rate multiplies against entity count and region count and
 // server count. Lowering it is not a free knob: at 20 Hz an Interceptor covers 1.70 m per tick
 // against a 1.115 m capsule radius and two of them pass straight through each other. The
@@ -32,7 +32,7 @@ inline constexpr float TICK_DT = 1.0f / TICK_HZ;
 // The edge length of one sector, the unit every stored position is denominated in. In the contract
 // and near the top of it: change this and every recorded position means a different place.
 //
-// A power of two, and that is a correctness requirement rather than a preference. WorldPos::Translate
+// A power of two, and that is a correctness requirement rather than a preference. UniversePos::Translate
 // carries whole sectors out of the local offset by dividing by this value, and at 2^13 that division
 // is an exponent adjustment -- exact, on every machine, under /fp:precise. At 10000 it would round,
 // and two ships that reached the same point by different routes could end up in different sectors,
@@ -339,7 +339,7 @@ inline constexpr float PURSUIT_REPLAN_METRES = 64.0f;
 //
 // The cadence is not what keeps a launch from jamming -- 0.75 s buys a Corvette about 5.6 m from a
 // standing start, well inside its own hull, and the geometry is what actually holds the ships apart
-// (World::StepFleets). What it buys is that a launch reads as a launch: eight hulls are out in
+// (Universe::StepFleets). What it buys is that a launch reads as a launch: eight hulls are out in
 // 5.25 s, one at a time, instead of appearing at once (Design/Archive/Fleets.md 5.3).
 inline constexpr std::uint32_t FLEET_LAUNCH_EVERY_TICKS = 45;
 static_assert(FLEET_LAUNCH_EVERY_TICKS > 0, "a launch cadence of zero would spawn a whole fleet on one tick");
@@ -405,6 +405,6 @@ inline constexpr float INTEREST_RADIUS_METRES = 2000.0f;
 
 // How much less often the furthest subscribed entity refreshes than the nearest. At 0.125 a ship at
 // the edge of the radius is sent once for every eight updates a ship at the centre gets, which is
-// the whole of what "priority" buys: the near world stays smooth while the far world stays cheap.
+// the whole of what "priority" buys: the near universe stays smooth while the far universe stays cheap.
 inline constexpr float INTEREST_MIN_WEIGHT = 0.125f;
 } // namespace Game

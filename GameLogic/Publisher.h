@@ -2,8 +2,8 @@
 
 #include "InterestSet.h"
 #include "ShipState.h"
-#include "WorldPos.h"
-#include "WorldSnapshot.h"
+#include "UniversePos.h"
+#include "UniverseSnapshot.h"
 
 #include "Transport.h"
 
@@ -13,7 +13,7 @@
 
 namespace Game
 {
-class World;
+class Universe;
 
 // The server's side of the seam, for N subscribers rather than one.
 //
@@ -62,19 +62,19 @@ public:
     std::uint32_t ordersPerTick = 8;
 
     // Where it is looking, until SetCentre says otherwise.
-    WorldPos centre;
+    UniversePos centre;
 
-    // Where in the world's despawn log this subscriber starts reading. A subscriber joining a
-    // running world passes World::DespawnHead(), so it is told about deaths from now on and about
+    // Where in the universe's despawn log this subscriber starts reading. A subscriber joining a
+    // running universe passes Universe::DespawnHead(), so it is told about deaths from now on and about
     // none of the ships it never held; zero means "everything the log still holds" and is right only
     // for a subscriber present from the first tick (ADR 0027).
     //
-    // It is a field rather than something Add works out for itself, because Add has no World and
+    // It is a field rather than something Add works out for itself, because Add has no Universe and
     // giving it one to read a single number would be a dependency for a default.
     std::uint64_t openingDespawnCursor = 0;
 
-    // Where in the world's shot log this subscriber starts reading, on the same terms and for the
-    // same reason: a subscriber joining a running world passes World::ShotHead() and is told about
+    // Where in the universe's shot log this subscriber starts reading, on the same terms and for the
+    // same reason: a subscriber joining a running universe passes Universe::ShotHead() and is told about
     // gunfire from now on rather than about a battle it did not watch (ADR 0027, ADR 0053).
     std::uint64_t openingShotCursor = 0;
   };
@@ -87,23 +87,23 @@ public:
   // back on the next Publish.
   bool Remove(Handle _handle);
 
-  void SetCentre(Handle _handle, const WorldPos& _centre) noexcept;
+  void SetCentre(Handle _handle, const UniversePos& _centre) noexcept;
 
   [[nodiscard]] std::uint32_t Count() const noexcept
   {
     return static_cast<std::uint32_t>(m_subscribers.size());
   }
 
-  // Reads every subscriber's orders, under its budget, and applies them to the world. Call once per
-  // tick, before the world steps: an order that arrives this frame is meant for this tick.
-  void ApplyOrders(World& _world);
+  // Reads every subscriber's orders, under its budget, and applies them to the universe. Call once per
+  // tick, before the universe steps: an order that arrives this frame is meant for this tick.
+  void ApplyOrders(Universe& _universe);
 
   // Sends every subscriber that is due its update, then trims the despawn log to the minimum cursor
-  // across all of them. Call once per tick, after the world steps.
+  // across all of them. Call once per tick, after the universe steps.
   //
-  // Non-const because the trim is a write. Nothing else here touches the world, and a Publish that
+  // Non-const because the trim is a write. Nothing else here touches the universe, and a Publish that
   // took a const reference and cast it away would be hiding exactly the mutation that matters.
-  void Publish(World& _world);
+  void Publish(Universe& _universe);
 
   // Diagnostics, per subscriber. Both should be zero and are worth watching if they are not.
   //
@@ -129,14 +129,14 @@ private:
     std::uint64_t despawnCursor = 0;
     std::uint64_t shotCursor = 0;
     std::uint32_t throttledTicks = 0;
-    WorldPos centre;
+    UniversePos centre;
     InterestSet interest;
     SnapshotWriter writer;
 
     // What this subscriber was last told is in each of its faction's slots, so Publish can diff
     // rather than be told when a roster changed.
     //
-    // Here rather than in World, and that is the design of it: the diff is per subscriber, changes
+    // Here rather than in Universe, and that is the design of it: the diff is per subscriber, changes
     // nothing that is simulated, is outside the replay contract and is not saved. It also makes
     // join-time delivery free -- a new subscriber's lists are empty, so its first Publish finds
     // every occupied slot changed and sends the lot, which is the despawn cursor's own joining rule
@@ -161,32 +161,32 @@ private:
   [[nodiscard]] const Subscriber* Resolve(Handle _handle) const noexcept;
 
   // One subscriber's update: the interest walk, the split of what left from what died, and the two
-  // messages. Everything WorldSimulation used to do for its single subscriber, per entry.
-  void PublishOne(const World& _world, Subscriber& _subscriber);
+  // messages. Everything UniverseSimulation used to do for its single subscriber, per entry.
+  void PublishOne(const Universe& _universe, Subscriber& _subscriber);
 
   // States any of _subscriber's five slots whose membership has changed since it was last told.
   //
   // Every tick, not only on the ticks the subscriber is due: membership changes at human speed, so
   // a diff over five slots of at most eight ids is nothing, and a roster held back for a phase
   // would arrive after the status block that describes it.
-  void PublishRosters(const World& _world, Subscriber& _subscriber);
+  void PublishRosters(const Universe& _universe, Subscriber& _subscriber);
 
   // Splits _subscriber's Left() three ways: the deaths, the dockings, and the ships that merely flew
-  // out of range. The world's despawn log intersected with what this subscriber was holding -- so a
+  // out of range. The universe's despawn log intersected with what this subscriber was holding -- so a
   // departure nobody could see is told to nobody, and a ship that left the radius is reported
   // neither dead nor docked (Design/Archive/Hostiles.md 4.4, ADR 0040).
-  void SplitTheLost(const World& _world, Subscriber& _subscriber);
+  void SplitTheLost(const Universe& _universe, Subscriber& _subscriber);
 
   // Dense, because iteration order is array order and nothing here may depend on a pointer or a
   // hash (AGENTS.md 5). Removal swap-and-pops and the slot table repairs the handles, exactly as
-  // World does it for ships.
+  // Universe does it for ships.
   std::vector<Subscriber> m_subscribers;
   std::vector<std::uint32_t> m_subscriberSlot; // parallel to m_subscribers
   std::vector<Slot> m_slots;
   std::vector<std::uint32_t> m_freeSlots;
 
   // Scratch, reused so a tick allocates nothing once the subscriber list has stopped growing.
-  // Handles on the way in, ids on the way out: the interest set deals in references into this world
+  // Handles on the way in, ids on the way out: the interest set deals in references into this universe
   // and the wire deals in identities, and SplitTheLost is where the two meet (ADR 0047).
   std::vector<ShipHandle> m_sendScratch;
   std::vector<ShipHandle> m_departedScratch; // sorted handles of everything the log said left, any cause

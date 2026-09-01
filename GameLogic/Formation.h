@@ -1,6 +1,6 @@
 #pragma once
 
-#include "WorldPos.h"
+#include "UniversePos.h"
 
 #include <DirectXMath.h>
 
@@ -30,6 +30,6 @@ enum class FormationShape : std::uint8_t
 // two cannot disagree about which way an order points. Nothing is predicted here -- it is the same
 // arithmetic on the same inputs, and the client has all of them in its snapshot
 // (Design/Archive/Collision-slice-2b.md 2.5).
-[[nodiscard]] float FormationHeading(std::span<const WorldPos> _shipPositions, const WorldPos& _destination,
+[[nodiscard]] float FormationHeading(std::span<const UniversePos> _shipPositions, const UniversePos& _destination,
                                      float _fallbackHeadingRad) noexcept;
 } // namespace Game

@@ -17,7 +17,7 @@ namespace
 }
 } // namespace
 
-SystemLayout LayOutSystem(std::uint64_t _seed, const WorldPos& _starPos, const SystemDesc& _desc)
+SystemLayout LayOutSystem(std::uint64_t _seed, const UniversePos& _starPos, const SystemDesc& _desc)
 {
   SystemLayout layout;
   layout.starPos = _starPos;
@@ -60,8 +60,8 @@ SystemLayout LayOutSystem(std::uint64_t _seed, const WorldPos& _starPos, const S
     // Through Translate rather than by writing localX, because localX is an offset inside a sector
     // and a system laid out near a boundary would otherwise leave the invariant behind -- the same
     // rule PatrolRingPoint follows for the same reason.
-    site.posWorld = _starPos;
-    Translate(site.posWorld, std::sin(site.bearingRad) * orbitMetres, std::cos(site.bearingRad) * orbitMetres);
+    site.posUniverse = _starPos;
+    Translate(site.posUniverse, std::sin(site.bearingRad) * orbitMetres, std::cos(site.bearingRad) * orbitMetres);
 
     layout.planets.push_back(site);
   }

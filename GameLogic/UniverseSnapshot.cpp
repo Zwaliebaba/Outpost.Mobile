@@ -1,7 +1,7 @@
 #include "pch.h"
-#include "WorldSnapshot.h"
+#include "UniverseSnapshot.h"
 
-#include "World.h"
+#include "Universe.h"
 
 #include <DirectXMath.h>
 
@@ -95,7 +95,7 @@ constexpr std::uint32_t LEAVE_HEADER_BYTES = 1 + 8 + 4 + 4 + 4;
 // faction, flags, hullId, hullFraction.
 //
 // 48 bytes, from 83. What bought the 35 is below: positions moved onto a 0.125 m lattice, the
-// sector pair narrowed from i64 to i32 (ADR 0046), prevPos became a delta against posWorld rather
+// sector pair narrowed from i64 to i32 (ADR 0046), prevPos became a delta against posUniverse rather
 // than a second whole position, and the two angles became turns16. The record was 47 until combat
 // put a byte of hull fraction in it, which is the one place state that heals belongs
 // (Design/Combat.md 9.1) -- and the capacity below re-derived itself, which is the point of deriving
@@ -115,8 +115,8 @@ static_assert(FIRE_HEADER_BYTES + MAX_FIRE_EVENTS * FIRE_EVENT_BYTES <= Neuron::
 // never meets SnapshotReceiver::Accept, so the magic is what turns feeding it to one into a refusal
 // rather than a misread. The format byte is what makes a disagreement between two builds a refusal
 // too -- there is nothing to migrate from yet, and a version nobody checks is a version nobody has.
-constexpr std::uint32_t WORLD_STATE_MAGIC = 0x54535750u; // 'PWST' little-endian: Persisted World STate
-constexpr std::uint8_t WORLD_STATE_FORMAT = 6;           // 2: the fleet table. 3: its manifest. 4: its order. 5: its threat. 6: the guns
+constexpr std::uint32_t UNIVERSE_STATE_MAGIC = 0x54535550u; // 'PUST' little-endian: Persisted Universe STate
+constexpr std::uint8_t UNIVERSE_STATE_FORMAT = 6;           // 2: the fleet table. 3: its manifest. 4: its order. 5: its threat. 6: the guns
 
 // An EntityId is a u64, which is exactly what a {slot, generation} pair cost. So identity became
 // global for no bytes at all: the ship record stays 47, a fragment stays 23 ships, and the order cap
@@ -156,7 +156,7 @@ struct LatticePos
 
 // One axis of the encode, carrying whole sectors out of the offset the way Translate does.
 //
-// localX is in [0, SECTOR_SIZE_METRES) by WorldPos's invariant, so scaling lands in [0, 65536) and
+// localX is in [0, SECTOR_SIZE_METRES) by UniversePos's invariant, so scaling lands in [0, 65536) and
 // rounding to nearest can carry it to exactly 65536 -- which is the next sector's origin and not a
 // seventeenth bit. Carrying rather than clamping is what keeps the encode monotonic across a
 // border: a ship a millimetre short of one encodes to the border, never to the far corner of the
@@ -173,7 +173,7 @@ void ToLatticeAxis(float _local, std::int64_t& _sector, std::uint16_t& _outStep)
   _outStep = static_cast<std::uint16_t>(whole % POSITION_STEPS_PER_SECTOR);
 }
 
-[[nodiscard]] LatticePos ToLattice(const WorldPos& _pos) noexcept
+[[nodiscard]] LatticePos ToLattice(const UniversePos& _pos) noexcept
 {
   LatticePos out;
   out.sectorX = _pos.sectorX;
@@ -185,9 +185,10 @@ void ToLatticeAxis(float _local, std::int64_t& _sector, std::uint16_t& _outStep)
 
 // Back to metres, exactly: a step is a power of two, so the product is representable and decoding an
 // encoded lattice point returns the point rather than something near it.
-[[nodiscard]] WorldPos FromLattice(std::int32_t _sectorX, std::int32_t _sectorZ, std::uint16_t _stepX, std::uint16_t _stepZ) noexcept
+[[nodiscard]] UniversePos FromLattice(std::int32_t _sectorX, std::int32_t _sectorZ, std::uint16_t _stepX, std::uint16_t _stepZ) noexcept
 {
-  return WorldPos{_sectorX, _sectorZ, static_cast<float>(_stepX) * POSITION_STEP_METRES, static_cast<float>(_stepZ) * POSITION_STEP_METRES};
+  return UniversePos{_sectorX, _sectorZ, static_cast<float>(_stepX) * POSITION_STEP_METRES,
+                     static_cast<float>(_stepZ) * POSITION_STEP_METRES};
 }
 
 // The wire's sector index is 32 bits where the simulation's is 64 -- +/-1,858 light years against
@@ -201,9 +202,9 @@ void ToLatticeAxis(float _local, std::int64_t& _sector, std::uint16_t& _outStep)
   return static_cast<std::int32_t>(std::clamp(_sector, LOWEST, HIGHEST));
 }
 
-// prevPos travels as a delta from posWorld in these same steps, so the receiver reconstructs the
+// prevPos travels as a delta from posUniverse in these same steps, so the receiver reconstructs the
 // quantized prevPos exactly and its only error against the true one is that position's own
-// rounding. Quantizing the delta against the raw posWorld would stack two roundings and double the
+// rounding. Quantizing the delta against the raw posUniverse would stack two roundings and double the
 // bound, which is why both are put on the lattice first
 // (Design/Archive/QuantizedWire-work-order.md 2.3).
 //
@@ -299,7 +300,7 @@ public:
     U32(bits);
   }
 
-  void Pos(const WorldPos& _pos)
+  void Pos(const UniversePos& _pos)
   {
     I64(_pos.sectorX);
     I64(_pos.sectorZ);
@@ -317,7 +318,7 @@ public:
     U8(_value ? std::uint8_t{1} : std::uint8_t{0});
   }
 
-  // Not on the wire any more -- identity replaced it there (ADR 0047) -- but a saved world is an
+  // Not on the wire any more -- identity replaced it there (ADR 0047) -- but a saved universe is an
   // image of one process, and a handle is what that process's tables are keyed by.
   void Handle(ShipHandle _handle)
   {
@@ -407,9 +408,9 @@ public:
     return value;
   }
 
-  WorldPos Pos()
+  UniversePos Pos()
   {
-    WorldPos pos;
+    UniversePos pos;
     pos.sectorX = I64();
     pos.sectorZ = I64();
     pos.localX = F32();
@@ -462,16 +463,16 @@ std::uint32_t ShipsPerSnapshotFragment() noexcept
 
 namespace
 {
-void WriteShipRecord(ByteWriter& _out, const World& _world, ShipId _id)
+void WriteShipRecord(ByteWriter& _out, const Universe& _universe, ShipId _id)
 {
-  const ShipState& ship = _world.Ships()[_id];
+  const ShipState& ship = _universe.Ships()[_id];
 
   // Both positions go onto the lattice before either is written, because prevPos is stated as a
-  // step delta from the *quantized* posWorld and not from the one the simulation holds.
-  const LatticePos pos = ToLattice(ship.posWorld);
+  // step delta from the *quantized* posUniverse and not from the one the simulation holds.
+  const LatticePos pos = ToLattice(ship.posUniverse);
   const LatticePos prev = ToLattice(ship.prevPos);
 
-  _out.Entity(_world.EntityIdOf(_id));
+  _out.Entity(_universe.EntityIdOf(_id));
   _out.I32(ToWireSector(pos.sectorX));
   _out.I32(ToWireSector(pos.sectorZ));
   _out.U16(pos.stepX);
@@ -485,7 +486,7 @@ void WriteShipRecord(ByteWriter& _out, const World& _world, ShipId _id)
   _out.F32(ship.turnRateRadPerSec);
   _out.U8(static_cast<std::uint8_t>(ship.order));
   _out.U8(ship.factionId);
-  _out.U8(_world.IsStation(_id) ? SHIP_FLAG_STATION : std::uint8_t{0});
+  _out.U8(_universe.IsStation(_id) ? SHIP_FLAG_STATION : std::uint8_t{0});
   _out.U32(ship.hullId);
 
   // 255ths of whole, and 255 for a hull that cannot be destroyed: an indestructible thing is
@@ -503,40 +504,40 @@ void WriteShipRecord(ByteWriter& _out, const World& _world, ShipId _id)
 // Everything here is DERIVED and nothing is held. The centroid is a readout -- the publisher
 // already derives per subscriber in SplitTheLost, sits outside the replay contract, and a number
 // nobody simulates against cannot desynchronize anything (Design/Archive/Fleets.md 8.2). The check on that
-// claim is the save format: if a field of this block ever had to live on Fleet, WORLD_STATE_FORMAT
+// claim is the save format: if a field of this block ever had to live on Fleet, UNIVERSE_STATE_FORMAT
 // would have to move, and it does not.
 //
 // A slot is stated when its position can be DERIVED -- a live member, or a live launch structure.
 // A fleet with neither is the one tick between a manifest being dropped for a dead station and the
 // next tick's retire freeing the slot; clearing the bit there says the truth one tick early rather
 // than stating a position that means nothing.
-void WriteFleetBlock(ByteWriter& _out, const World& _world, FactionId _viewer)
+void WriteFleetBlock(ByteWriter& _out, const Universe& _universe, FactionId _viewer)
 {
-  WorldPos positions[FLEET_SLOTS];
+  UniversePos positions[FLEET_SLOTS];
   std::uint8_t statuses[FLEET_SLOTS] = {};
   std::uint8_t counts[FLEET_SLOTS] = {};
   std::uint8_t mask = 0;
 
   for (std::uint32_t slot = 0; slot < FLEET_SLOTS; ++slot)
   {
-    const World::FleetId id = _world.FleetInSlot(_viewer, static_cast<std::uint8_t>(slot));
-    if (id == World::INVALID_FLEET_ID)
+    const Universe::FleetId id = _universe.FleetInSlot(_viewer, static_cast<std::uint8_t>(slot));
+    if (id == Universe::INVALID_FLEET_ID)
       continue;
-    const World::Fleet& fleet = _world.FleetOf(id);
+    const Universe::Fleet& fleet = _universe.FleetOf(id);
 
     // The centroid, through OffsetX/OffsetZ from the first live member rather than by averaging the
     // fields, so it is right with a sector boundary through the middle of a fleet.
-    WorldPos centre;
+    UniversePos centre;
     bool anchored = false;
     float sumX = 0.0f;
     float sumZ = 0.0f;
     std::uint32_t live = 0;
     for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
     {
-      const ShipId member = _world.Resolve(fleet.members[at]);
+      const ShipId member = _universe.Resolve(fleet.members[at]);
       if (member == INVALID_SHIP_ID)
         continue;
-      const WorldPos& pos = _world.Ships()[member].posWorld;
+      const UniversePos& pos = _universe.Ships()[member].posUniverse;
       if (!anchored)
       {
         centre = pos;
@@ -554,17 +555,17 @@ void WriteFleetBlock(ByteWriter& _out, const World& _world, FactionId _viewer)
     else
     {
       // Nobody out yet: the fleet is where its door is, which is where its first hull will appear.
-      const ShipId structure = _world.Resolve(fleet.launchStructure);
+      const ShipId structure = _universe.Resolve(fleet.launchStructure);
       if (structure == INVALID_SHIP_ID)
         continue;
-      centre = _world.Ships()[structure].posWorld;
+      centre = _universe.Ships()[structure].posUniverse;
     }
 
     // Launching outranks the standing order in what is SHOWN, not in what is done: a fleet ordered
     // to move mid-launch is both, and the launch is the fact the player has no other way to see.
     std::uint8_t status = (fleet.manifestCount != 0) ? FLEET_STATUS_LAUNCHING : static_cast<std::uint8_t>(fleet.orderKind);
 
-    // Engaged is the threat surviving this tick's stand-down check, which World has already run --
+    // Engaged is the threat surviving this tick's stand-down check, which Universe has already run --
     // so the row holds a threat only while the alert, the leash and the target all still hold. The
     // two bits therefore differ exactly when the alert outlives the fight, which is what buying two
     // of them was for (Design/Archive/Fleets.md 7.2, 7.3).
@@ -604,13 +605,13 @@ void WriteFleetBlock(ByteWriter& _out, const World& _world, FactionId _viewer)
 }
 } // namespace
 
-std::uint32_t SnapshotWriter::Write(const World& _world, Neuron::Transport& _transport, FactionId _viewer)
+std::uint32_t SnapshotWriter::Write(const Universe& _universe, Neuron::Transport& _transport, FactionId _viewer)
 {
-  const std::span<const ShipState> ships = _world.Ships();
+  const std::span<const ShipState> ships = _universe.Ships();
   const std::uint32_t perFragment = ShipsPerSnapshotFragment();
   const std::uint32_t shipCount = static_cast<std::uint32_t>(ships.size());
 
-  // An empty world still sends one fragment. A snapshot that says "no ships" is information; the
+  // An empty universe still sends one fragment. A snapshot that says "no ships" is information; the
   // absence of a snapshot is indistinguishable from a stalled server.
   const std::uint32_t fragmentCount = (shipCount + perFragment - 1) / perFragment + (shipCount == 0 ? 1 : 0);
   const std::uint32_t snapshotId = m_nextSnapshotId++;
@@ -626,17 +627,17 @@ std::uint32_t SnapshotWriter::Write(const World& _world, Neuron::Transport& _tra
     m_scratch.clear();
     ByteWriter out(m_scratch);
     out.U8(KIND_SNAPSHOT);
-    out.U8(1); // complete: this is the whole world, so the receiver replaces rather than upserts
+    out.U8(1); // complete: this is the whole universe, so the receiver replaces rather than upserts
     out.U32(snapshotId);
     out.U32(fragment);
     out.U32(fragmentCount);
-    out.U64(_world.Tick());
+    out.U64(_universe.Tick());
     out.U32(count);
-    out.U8(_world.HostileMaskFor(_viewer));
-    WriteFleetBlock(out, _world, _viewer);
+    out.U8(_universe.HostileMaskFor(_viewer));
+    WriteFleetBlock(out, _universe, _viewer);
 
     for (std::uint32_t at = 0; at < count; ++at)
-      WriteShipRecord(out, _world, static_cast<ShipId>(first + at));
+      WriteShipRecord(out, _universe, static_cast<ShipId>(first + at));
 
     if (!_transport.Send(m_scratch.data(), static_cast<std::uint32_t>(m_scratch.size())))
       break;
@@ -707,7 +708,7 @@ bool SnapshotWriter::WriteLeaves(std::uint64_t _tick, std::span<const EntityId> 
   return _transport.SendReliable(m_leaveScratch.data(), static_cast<std::uint32_t>(m_leaveScratch.size()));
 }
 
-std::uint32_t SnapshotWriter::WriteInterest(const World& _world, std::span<const ShipHandle> _sent, std::span<const EntityId> _left,
+std::uint32_t SnapshotWriter::WriteInterest(const Universe& _universe, std::span<const ShipHandle> _sent, std::span<const EntityId> _left,
                                             std::span<const EntityId> _destroyed, std::span<const EntityId> _docked,
                                             Neuron::Transport& _transport, FactionId _viewer)
 {
@@ -722,7 +723,7 @@ std::uint32_t SnapshotWriter::WriteInterest(const World& _world, std::span<const
   // handle the receiver does not hold is a no-op -- while an upsert that overtakes its own leave
   // would put a dead ship back. The two lanes have no ordering between them, so the order that is
   // safe under either is the one to send in.
-  if (!WriteLeaves(_world.Tick(), _left, _destroyed, _docked, _transport))
+  if (!WriteLeaves(_universe.Tick(), _left, _destroyed, _docked, _transport))
   {
     // The lane refused: it is full, or not up yet. Nothing is retried and the update goes on --
     // the next one carries these handles again only if the interest set states them again, which
@@ -746,7 +747,7 @@ std::uint32_t SnapshotWriter::WriteInterest(const World& _world, std::span<const
     m_resolvedScratch.clear();
     for (std::uint32_t record = 0; record < claimed; ++record)
     {
-      const ShipId id = _world.Resolve(_sent[at + record]);
+      const ShipId id = _universe.Resolve(_sent[at + record]);
       if (id != INVALID_SHIP_ID)
         m_resolvedScratch.push_back(id);
     }
@@ -759,13 +760,13 @@ std::uint32_t SnapshotWriter::WriteInterest(const World& _world, std::span<const
     out.U32(snapshotId);
     out.U32(fragment);
     out.U32(fragmentCount);
-    out.U64(_world.Tick());
+    out.U64(_universe.Tick());
     out.U32(count);
-    out.U8(_world.HostileMaskFor(_viewer));
-    WriteFleetBlock(out, _world, _viewer);
+    out.U8(_universe.HostileMaskFor(_viewer));
+    WriteFleetBlock(out, _universe, _viewer);
 
     for (const ShipId id : m_resolvedScratch)
-      WriteShipRecord(out, _world, id);
+      WriteShipRecord(out, _universe, id);
 
     if (!_transport.Send(m_scratch.data(), static_cast<std::uint32_t>(m_scratch.size())))
       break;
@@ -831,13 +832,13 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
   if (!in.Ok() || fragmentCount == 0 || fragment >= fragmentCount)
     return false;
 
-  // Fragments of a snapshot older than the one already applied are of no use: the world has moved
+  // Fragments of a snapshot older than the one already applied are of no use: the universe has moved
   // on and applying it would step the view backwards.
   if (m_hasSnapshot && tick <= m_latest.tick)
     return false;
 
   // Taken here rather than in Apply, and the asymmetry with the upserts is the point: an incomplete
-  // update is dropped whole because half a set of records is half a world, but a mask is not coupled
+  // update is dropped whole because half a set of records is half a universe, but a mask is not coupled
   // to any record, so taking it from whatever fragment arrives is strictly more robust. Below the
   // staleness check, so a late fragment of a superseded update cannot walk it backwards.
   m_hostileMask = hostileMask;
@@ -880,13 +881,13 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
     const std::uint16_t stepZ = in.U16();
     const std::int16_t prevStepX = in.I16();
     const std::int16_t prevStepZ = in.I16();
-    ship.posWorld = FromLattice(sectorX, sectorZ, stepX, stepZ);
+    ship.posUniverse = FromLattice(sectorX, sectorZ, stepX, stepZ);
 
     // Through Translate rather than by adding to the fields, so the sector carry is the simulation's
     // own and a prevPos on the far side of a border lands in the sector it belongs to. Exact: the
     // position and the delta are both multiples of the step, their sum needs 17 bits of mantissa
     // against float's 24, and the carry divides by a power of two.
-    ship.prevPos = ship.posWorld;
+    ship.prevPos = ship.posUniverse;
     Translate(ship.prevPos, static_cast<float>(prevStepX) * POSITION_STEP_METRES, static_cast<float>(prevStepZ) * POSITION_STEP_METRES);
 
     ship.headingRad = FromTurns16(in.U16());
@@ -929,8 +930,8 @@ void SnapshotReceiver::Remove(EntityId _gone)
   {
     if (m_latest.ships[at].entity == _gone)
     {
-      // Swap-and-pop. The client's order is its own -- it is a set, not the world's array -- and
-      // WorldView carries presentation state across by handle rather than by position.
+      // Swap-and-pop. The client's order is its own -- it is a set, not the universe's array -- and
+      // UniverseView carries presentation state across by handle rather than by position.
       m_latest.ships[at] = m_latest.ships.back();
       m_latest.ships.pop_back();
       return;
@@ -1051,11 +1052,11 @@ bool SnapshotReceiver::AcceptLeaves(std::span<const std::uint8_t> _message)
   return true;
 }
 
-// Applied only once every fragment is in, never as they land: a world left half-updated by a
+// Applied only once every fragment is in, never as they land: a universe left half-updated by a
 // fragment that never arrived is exactly what "dropped whole" exists to prevent.
 void SnapshotReceiver::Apply()
 {
-  // A complete snapshot IS the world, so anything it does not carry is gone. An update carries only
+  // A complete snapshot IS the universe, so anything it does not carry is gone. An update carries only
   // what changed, so what it does not mention is untouched. Without this distinction a full snapshot
   // could never remove a despawned ship, because departures no longer travel with it at all -- they
   // are their own message on the reliable lane now (KIND_LEAVE).
@@ -1093,11 +1094,11 @@ void SnapshotReceiver::Apply()
 
 namespace
 {
-// One ship's simulation state, all sixteen fields -- including the six WorldSnapshot deliberately
+// One ship's simulation state, all sixteen fields -- including the six UniverseSnapshot deliberately
 // withholds, which is the whole reason this codec had to exist beside it rather than reuse it.
 void WriteShipState(ByteWriter& _out, const ShipState& _ship)
 {
-  _out.Pos(_ship.posWorld);
+  _out.Pos(_ship.posUniverse);
   _out.F32(_ship.headingRad);
   _out.F32(_ship.speed);
   _out.F32(_ship.turnRateRadPerSec);
@@ -1117,7 +1118,7 @@ void WriteShipState(ByteWriter& _out, const ShipState& _ship)
 
 void ReadShipState(ByteReader& _in, ShipState& _outShip)
 {
-  _outShip.posWorld = _in.Pos();
+  _outShip.posUniverse = _in.Pos();
   _outShip.headingRad = _in.F32();
   _outShip.speed = _in.F32();
   _outShip.turnRateRadPerSec = _in.F32();
@@ -1140,40 +1141,40 @@ void ReadShipState(ByteReader& _in, ShipState& _outShip)
 }
 } // namespace
 
-void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes)
+void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _outBytes)
 {
   _outBytes.clear();
   ByteWriter out(_outBytes);
-  out.U32(WORLD_STATE_MAGIC);
-  out.U8(WORLD_STATE_FORMAT);
+  out.U32(UNIVERSE_STATE_MAGIC);
+  out.U8(UNIVERSE_STATE_FORMAT);
 
-  out.U64(_world.m_tick);
-  out.U16(_world.m_shard);
-  out.U64(_world.m_nextEntitySerial);
-  out.U64(_world.m_despawnBase);
+  out.U64(_universe.m_tick);
+  out.U16(_universe.m_shard);
+  out.U64(_universe.m_nextEntitySerial);
+  out.U64(_universe.m_despawnBase);
 
   // The standings, row by row and with no count: FACTION_LIMIT is a compile-time constant on both
   // ends, and a build that disagreed about it would have failed the format byte first.
   for (std::uint32_t owner = 0; owner < FACTION_LIMIT; ++owner)
   {
     for (std::uint32_t other = 0; other < FACTION_LIMIT; ++other)
-      out.U8(static_cast<std::uint8_t>(_world.m_standings.rows[owner][other]));
+      out.U8(static_cast<std::uint8_t>(_universe.m_standings.rows[owner][other]));
   }
 
-  const std::uint32_t shipCount = static_cast<std::uint32_t>(_world.m_ships.size());
+  const std::uint32_t shipCount = static_cast<std::uint32_t>(_universe.m_ships.size());
   out.U32(shipCount);
-  for (const ShipState& ship : _world.m_ships)
+  for (const ShipState& ship : _universe.m_ships)
     WriteShipState(out, ship);
 
   // The four tables parallel to m_ships, in the same order, so none of them carries a count of its
   // own: they are the same length as m_ships by construction and a length that disagreed would be a
   // defect this format cannot express.
-  const std::uint32_t currentVersion = _world.m_pathIslands.Version();
-  for (const World::Route& route : _world.m_routes)
+  const std::uint32_t currentVersion = _universe.m_pathIslands.Version();
+  for (const Universe::Route& route : _universe.m_routes)
   {
     out.U32(route.count);
     // Only the live waypoints. Entries past `count` are whatever a longer route left behind, they
-    // are never read, and writing them would make two worlds that behave identically compare
+    // are never read, and writing them would make two universes that behave identically compare
     // unequal (work order 2.2).
     for (std::uint32_t at = 0; at < route.count; ++at)
       out.Pos(route.waypoint[at]);
@@ -1182,22 +1183,22 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes)
     // Where the target stood when a pursuit planned this route. Left out, a reloaded chase would
     // measure its quarry's drift against a default position, re-plan on its first tick and end its
     // orders on different ticks than the run that saved it -- blockedTicks' own argument, one
-    // mechanism along (World.h, Route::pursuitAimedAt).
+    // mechanism along (Universe.h, Route::pursuitAimedAt).
     out.Pos(route.pursuitAimedAt);
     out.F32(route.requiredClearanceMetres);
     out.U32(route.cursor);
     // Arrived with ADR 0042, after this codec's first branch: the ticks a ship has pushed against a
     // wall toward this route's point. Left out, a reload would reset every blocked counter and the
-    // replayed world would end orders on different ticks than the run that saved it.
+    // replayed universe would end orders on different ticks than the run that saved it.
     out.U32(route.blockedTicks);
     // Whether it was planned against the architecture as it stands -- not the number that says so.
     // A grid version is an epoch counter with no meaning outside the run that produced it, and a
-    // loaded world's islands get whatever number their rebuild produces (work order 2.1).
+    // loaded universe's islands get whatever number their rebuild produces (work order 2.1).
     out.Bool(route.gridVersion == currentVersion);
     out.Bool(route.reachesDestination);
   }
 
-  for (const World::Patrol& patrol : _world.m_patrols)
+  for (const Universe::Patrol& patrol : _universe.m_patrols)
   {
     out.Handle(patrol.anchor);
     out.F32(patrol.ringRadiusMetres);
@@ -1206,13 +1207,13 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes)
     out.Bool(patrol.active);
   }
 
-  for (const World::Docking& docking : _world.m_dockings)
+  for (const Universe::Docking& docking : _universe.m_dockings)
   {
     out.Handle(docking.station);
     out.Bool(docking.active);
   }
 
-  for (const World::ProtectorDuty& duty : _world.m_protectors)
+  for (const Universe::ProtectorDuty& duty : _universe.m_protectors)
   {
     out.U32(duty.home);
     out.Handle(duty.target);
@@ -1223,9 +1224,9 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes)
   // its hull's own mount count: they are never read, they are held at rest, and writing them is what
   // makes a reloaded row compare equal to the row that was saved -- the fleet row's argument rather
   // than the route's, because this block is compared whole.
-  for (const World::ShipMounts& mounts : _world.m_mounts)
+  for (const Universe::ShipMounts& mounts : _universe.m_mounts)
   {
-    for (const World::MountState& mount : mounts.mount)
+    for (const Universe::MountState& mount : mounts.mount)
     {
       out.F32(mount.aimBearingRad);
       out.U32(mount.cooldownTicks);
@@ -1236,8 +1237,8 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes)
   // The slot table, which is what makes every handle in the four tables above still mean something
   // after a reload. m_shipSlot and m_entityRows are both inverses of it and are rebuilt rather than
   // written, so there is one statement of this relation in the file and not three.
-  out.U32(static_cast<std::uint32_t>(_world.m_slots.size()));
-  for (const World::Slot& slot : _world.m_slots)
+  out.U32(static_cast<std::uint32_t>(_universe.m_slots.size()));
+  for (const Universe::Slot& slot : _universe.m_slots)
   {
     out.U32(slot.ship);
     out.U32(slot.generation);
@@ -1245,20 +1246,20 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes)
   }
 
   // In order: reuse is last-in-first-out and the order is the reproduction.
-  out.U32(static_cast<std::uint32_t>(_world.m_freeSlots.size()));
-  for (const std::uint32_t slot : _world.m_freeSlots)
+  out.U32(static_cast<std::uint32_t>(_universe.m_freeSlots.size()));
+  for (const std::uint32_t slot : _universe.m_freeSlots)
     out.U32(slot);
 
-  out.U32(static_cast<std::uint32_t>(_world.m_despawnLog.size()));
-  for (const DespawnRecord& record : _world.m_despawnLog)
+  out.U32(static_cast<std::uint32_t>(_universe.m_despawnLog.size()));
+  for (const DespawnRecord& record : _universe.m_despawnLog)
   {
     out.Handle(record.handle);
     out.Entity(record.entity);
     out.U8(static_cast<std::uint8_t>(record.cause));
   }
 
-  out.U32(static_cast<std::uint32_t>(_world.m_stations.size()));
-  for (const World::Station& station : _world.m_stations)
+  out.U32(static_cast<std::uint32_t>(_universe.m_stations.size()));
+  for (const Universe::Station& station : _universe.m_stations)
   {
     out.Handle(station.structure);
     out.U8(station.ownerFaction);
@@ -1271,7 +1272,7 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes)
     for (const ShipHandle target : station.targets)
       out.Handle(target);
     out.U32(static_cast<std::uint32_t>(station.docked.size()));
-    for (const World::DockedShip& docked : station.docked)
+    for (const Universe::DockedShip& docked : station.docked)
     {
       out.U32(docked.hullId);
       out.U8(docked.factionId);
@@ -1280,10 +1281,10 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes)
 
   // The fleets. Step prunes and retires them, so they are state it reads and the file carries them
   // (AGENTS.md 8). Only the live members are written, for the reason the routes above give about
-  // their waypoints: entries past the count are never read, and writing them would make two worlds
+  // their waypoints: entries past the count are never read, and writing them would make two universes
   // that behave identically compare unequal.
-  out.U32(static_cast<std::uint32_t>(_world.m_fleets.size()));
-  for (const World::Fleet& fleet : _world.m_fleets)
+  out.U32(static_cast<std::uint32_t>(_universe.m_fleets.size()));
+  for (const Universe::Fleet& fleet : _universe.m_fleets)
   {
     out.U8(fleet.ownerFaction);
     out.U8(fleet.slot);
@@ -1307,10 +1308,10 @@ void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes)
   }
 }
 
-bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
+bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUniverse)
 {
   ByteReader in(_bytes);
-  if (in.U32() != WORLD_STATE_MAGIC || in.U8() != WORLD_STATE_FORMAT)
+  if (in.U32() != UNIVERSE_STATE_MAGIC || in.U8() != UNIVERSE_STATE_FORMAT)
     return false;
 
   const std::uint64_t tick = in.U64();
@@ -1327,9 +1328,9 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
   if (!in.Ok())
     return false;
 
-  // Everything below is read into locals and moved into _outWorld only once the whole buffer has
+  // Everything below is read into locals and moved into _outUniverse only once the whole buffer has
   // been read and checked. That is what "fails closed" means here: a truncation on the last station
-  // cannot leave a world half replaced, with nothing saying which half (AGENTS.md 5).
+  // cannot leave a universe half replaced, with nothing saying which half (AGENTS.md 5).
   //
   // Every count is checked against what is actually left before it is used to size anything, so a
   // hostile or corrupt length asks for one allocation of a bounded size rather than a huge one. The
@@ -1342,8 +1343,8 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
   for (ShipState& ship : ships)
     ReadShipState(in, ship);
 
-  std::vector<World::Route> routes(shipCount);
-  for (World::Route& route : routes)
+  std::vector<Universe::Route> routes(shipCount);
+  for (Universe::Route& route : routes)
   {
     route.count = in.U32();
     if (!in.Ok() || route.count > MAX_PATH_WAYPOINTS)
@@ -1357,15 +1358,15 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
     route.cursor = in.U32();
     route.blockedTicks = in.U32();
     // Held as the relation it was written as; the number it becomes is filled in below, once the
-    // islands this world will actually route against have been rebuilt.
+    // islands this universe will actually route against have been rebuilt.
     route.gridVersion = in.Bool() ? 1u : 0u;
     route.reachesDestination = in.Bool();
     if (!in.Ok() || route.cursor > route.count)
       return false;
   }
 
-  std::vector<World::Patrol> patrols(shipCount);
-  for (World::Patrol& patrol : patrols)
+  std::vector<Universe::Patrol> patrols(shipCount);
+  for (Universe::Patrol& patrol : patrols)
   {
     patrol.anchor = in.Handle();
     patrol.ringRadiusMetres = in.F32();
@@ -1374,28 +1375,28 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
     patrol.active = in.Bool();
   }
 
-  std::vector<World::Docking> dockings(shipCount);
-  for (World::Docking& docking : dockings)
+  std::vector<Universe::Docking> dockings(shipCount);
+  for (Universe::Docking& docking : dockings)
   {
     docking.station = in.Handle();
     docking.active = in.Bool();
   }
 
-  std::vector<World::ProtectorDuty> protectors(shipCount);
-  for (World::ProtectorDuty& duty : protectors)
+  std::vector<Universe::ProtectorDuty> protectors(shipCount);
+  for (Universe::ProtectorDuty& duty : protectors)
   {
     duty.home = in.U32();
     duty.target = in.Handle();
     duty.active = in.Bool();
   }
 
-  std::vector<World::ShipMounts> mounts(shipCount);
+  std::vector<Universe::ShipMounts> mounts(shipCount);
   for (std::uint32_t id = 0; id < shipCount; ++id)
   {
     const HullSpec& hull = HullSpecOf(ships[id].hullId);
     for (std::uint32_t at = 0; at < MAX_MOUNTS; ++at)
     {
-      World::MountState& mount = mounts[id].mount[at];
+      Universe::MountState& mount = mounts[id].mount[at];
       mount.aimBearingRad = in.F32();
       // Clamped to what the device can actually hold, for the hull points' reason: a file claiming a
       // gun that never reloads is a diagnostic, not a crash. A mount past this hull's own count has
@@ -1412,8 +1413,8 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
   const std::uint32_t slotCount = in.U32();
   if (!in.Ok() || slotCount > in.Remaining())
     return false;
-  std::vector<World::Slot> slots(slotCount);
-  for (World::Slot& slot : slots)
+  std::vector<Universe::Slot> slots(slotCount);
+  for (Universe::Slot& slot : slots)
   {
     slot.ship = in.U32();
     slot.generation = in.U32();
@@ -1449,8 +1450,8 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
   const std::uint32_t stationCount = in.U32();
   if (!in.Ok() || stationCount > in.Remaining())
     return false;
-  std::vector<World::Station> stations(stationCount);
-  for (World::Station& station : stations)
+  std::vector<Universe::Station> stations(stationCount);
+  for (Universe::Station& station : stations)
   {
     station.structure = in.Handle();
     station.ownerFaction = in.U8();
@@ -1471,7 +1472,7 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
     if (!in.Ok() || dockedCount > in.Remaining())
       return false;
     station.docked.resize(dockedCount);
-    for (World::DockedShip& docked : station.docked)
+    for (Universe::DockedShip& docked : station.docked)
     {
       docked.hullId = in.U32();
       docked.factionId = in.U8();
@@ -1479,7 +1480,7 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
   }
 
   // An exact bound rather than a heuristic one: every slot of every faction is the most fleets a
-  // world can legitimately hold, so a count past it is a corrupt file and not a big world.
+  // universe can legitimately hold, so a count past it is a corrupt file and not a big universe.
   const std::uint32_t fleetCount = in.U32();
   if (!in.Ok() || fleetCount > FACTION_LIMIT * FLEET_SLOTS)
     return false;
@@ -1487,9 +1488,9 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
   // Two live fleets claiming one slot would make FleetInSlot's answer depend on which row came
   // first, which is an invariant corrupted rather than a value -- the same kind of defect as a slot
   // naming a ship that is not there, and refused for the same reason.
-  std::vector<World::Fleet> fleets(fleetCount);
+  std::vector<Universe::Fleet> fleets(fleetCount);
   bool slotTaken[FACTION_LIMIT][FLEET_SLOTS] = {};
-  for (World::Fleet& fleet : fleets)
+  for (Universe::Fleet& fleet : fleets)
   {
     fleet.ownerFaction = in.U8();
     fleet.slot = in.U8();
@@ -1502,7 +1503,7 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
     // The handles themselves are not checked against the slot table, and deliberately: Resolve
     // bounds-checks a slot and compares a generation, so a handle this file invented resolves to
     // nothing and the fleet pass prunes it on the first tick. That is the fail-closed direction
-    // already, and a second check here would only turn a self-repairing world into a refused load.
+    // already, and a second check here would only turn a self-repairing universe into a refused load.
     for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
       fleet.members[at] = in.Handle();
 
@@ -1537,48 +1538,48 @@ bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld)
     return false;
 
   // Committed, and not before. From here nothing can fail.
-  _outWorld.m_tick = tick;
-  _outWorld.m_shard = shard;
-  _outWorld.m_nextEntitySerial = nextSerial;
-  _outWorld.m_despawnBase = despawnBase;
-  _outWorld.m_standings = standings;
-  _outWorld.m_ships = std::move(ships);
-  _outWorld.m_routes = std::move(routes);
-  _outWorld.m_patrols = std::move(patrols);
-  _outWorld.m_dockings = std::move(dockings);
-  _outWorld.m_protectors = std::move(protectors);
-  _outWorld.m_mounts = std::move(mounts);
-  _outWorld.m_slots = std::move(slots);
-  _outWorld.m_freeSlots = std::move(freeSlots);
-  _outWorld.m_despawnLog = std::move(despawnLog);
-  _outWorld.m_stations = std::move(stations);
-  _outWorld.m_fleets = std::move(fleets);
+  _outUniverse.m_tick = tick;
+  _outUniverse.m_shard = shard;
+  _outUniverse.m_nextEntitySerial = nextSerial;
+  _outUniverse.m_despawnBase = despawnBase;
+  _outUniverse.m_standings = standings;
+  _outUniverse.m_ships = std::move(ships);
+  _outUniverse.m_routes = std::move(routes);
+  _outUniverse.m_patrols = std::move(patrols);
+  _outUniverse.m_dockings = std::move(dockings);
+  _outUniverse.m_protectors = std::move(protectors);
+  _outUniverse.m_mounts = std::move(mounts);
+  _outUniverse.m_slots = std::move(slots);
+  _outUniverse.m_freeSlots = std::move(freeSlots);
+  _outUniverse.m_despawnLog = std::move(despawnLog);
+  _outUniverse.m_stations = std::move(stations);
+  _outUniverse.m_fleets = std::move(fleets);
 
   // The two inverses of the slot table, rebuilt rather than read. m_entityRows is sorted by id
   // because that is the invariant its binary search rests on, and building it by walking the slots
   // in order and sorting once is cheaper and harder to get wrong than inserting one at a time.
-  _outWorld.m_shipSlot.assign(_outWorld.m_ships.size(), 0);
-  _outWorld.m_entityRows.clear();
-  for (std::uint32_t slot = 0; slot < _outWorld.m_slots.size(); ++slot)
+  _outUniverse.m_shipSlot.assign(_outUniverse.m_ships.size(), 0);
+  _outUniverse.m_entityRows.clear();
+  for (std::uint32_t slot = 0; slot < _outUniverse.m_slots.size(); ++slot)
   {
-    const World::Slot& entry = _outWorld.m_slots[slot];
+    const Universe::Slot& entry = _outUniverse.m_slots[slot];
     if (entry.ship == INVALID_SHIP_ID)
       continue;
-    _outWorld.m_shipSlot[entry.ship] = slot;
-    _outWorld.m_entityRows.push_back(World::EntityRow{entry.entity, slot});
+    _outUniverse.m_shipSlot[entry.ship] = slot;
+    _outUniverse.m_entityRows.push_back(Universe::EntityRow{entry.entity, slot});
   }
-  std::sort(_outWorld.m_entityRows.begin(), _outWorld.m_entityRows.end(),
-            [](const World::EntityRow& _a, const World::EntityRow& _b) { return _a.entity < _b.entity; });
+  std::sort(_outUniverse.m_entityRows.begin(), _outUniverse.m_entityRows.end(),
+            [](const Universe::EntityRow& _a, const Universe::EntityRow& _b) { return _a.entity < _b.entity; });
 
   // The architecture, rebuilt here rather than on the first Step. It has to be here: the routes
   // above were written as "current" or "stale" and the number that says which is whatever this
   // rebuild produces, so a rebuild that happened one tick later would bump the version under every
   // route just marked current and re-plan the lot (work order 2.1).
-  _outWorld.m_staticIndexDirty = true;
-  _outWorld.RebuildStaticIfDirty();
+  _outUniverse.m_staticIndexDirty = true;
+  _outUniverse.RebuildStaticIfDirty();
 
-  const std::uint32_t currentVersion = _outWorld.m_pathIslands.Version();
-  for (World::Route& route : _outWorld.m_routes)
+  const std::uint32_t currentVersion = _outUniverse.m_pathIslands.Version();
+  for (Universe::Route& route : _outUniverse.m_routes)
     route.gridVersion = (route.gridVersion != 0) ? currentVersion : currentVersion - 1u;
 
   return true;
@@ -1615,7 +1616,7 @@ bool ReadFleetOrder(std::span<const std::uint8_t> _datagram, FleetOrder& _outOrd
   const std::uint8_t kind = in.U8();
   const bool hasFacing = in.U8() != 0;
   const float facingRad = in.F32();
-  const WorldPos point = in.Pos();
+  const UniversePos point = in.Pos();
   const EntityId station = in.Entity();
   const EntityId target = in.Entity();
   if (!in.Ok() || slot >= FLEET_SLOTS || kind > static_cast<std::uint8_t>(FleetOrderKind::Mine))

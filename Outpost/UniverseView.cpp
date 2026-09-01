@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "WorldView.h"
+#include "UniverseView.h"
 
 #include "ViewTuning.h"
 
@@ -8,7 +8,7 @@ using namespace Neuron;
 
 namespace Outpost
 {
-void WorldView::Init(Neuron::Transport& _transport, Camera& _camera, const MeshLibrary& _meshes, MeshHandle _quadMesh)
+void UniverseView::Init(Neuron::Transport& _transport, Camera& _camera, const MeshLibrary& _meshes, MeshHandle _quadMesh)
 {
   m_transport = &_transport;
   m_camera = &_camera;
@@ -23,7 +23,7 @@ void WorldView::Init(Neuron::Transport& _transport, Camera& _camera, const MeshL
   m_fxSpriteVerts.reserve(Neuron::FxRenderer::MAX_FX_VERTS);
 }
 
-void WorldView::AddBody(const BodyView& _body)
+void UniverseView::AddBody(const BodyView& _body)
 {
   m_bodies.push_back(_body);
   // A rate is what a caller has; an orientation is what this accumulates. Forcing identity here is
@@ -32,7 +32,7 @@ void WorldView::AddBody(const BodyView& _body)
   m_bodyWorlds.reserve(m_bodies.size());
 }
 
-void WorldView::ClearBodies() noexcept
+void UniverseView::ClearBodies() noexcept
 {
   m_bodies.clear();
   m_bodyWorlds.clear();
@@ -40,19 +40,19 @@ void WorldView::ClearBodies() noexcept
   m_bodyTriangles = 0;
 }
 
-void WorldView::RegisterHullMesh(Game::HullId _hull, MeshHandle _mesh)
+void UniverseView::RegisterHullMesh(Game::HullId _hull, MeshHandle _mesh)
 {
   const std::size_t row = static_cast<std::size_t>(_hull);
   if (row < m_hullMeshes.size())
     m_hullMeshes[row] = _mesh;
 }
 
-std::span<const Game::ShipSnapshot> WorldView::Ships() const noexcept
+std::span<const Game::ShipSnapshot> UniverseView::Ships() const noexcept
 {
   return m_receiver.HasSnapshot() ? std::span<const Game::ShipSnapshot>(m_receiver.Latest().ships) : std::span<const Game::ShipSnapshot>();
 }
 
-void WorldView::PumpNetwork()
+void UniverseView::PumpNetwork()
 {
   if (m_transport == nullptr)
     return;
@@ -89,7 +89,7 @@ void WorldView::PumpNetwork()
 }
 
 // Presentation state follows the ship, not the array slot it happened to occupy last tick.
-void WorldView::ApplySnapshot()
+void UniverseView::ApplySnapshot()
 {
   const std::vector<Game::ShipSnapshot>& ships = m_receiver.Latest().ships;
   const std::uint64_t tick = m_receiver.Latest().tick;
@@ -124,8 +124,8 @@ void WorldView::ApplySnapshot()
       // and reads exactly as it did last time. Only a record that actually changed is a new sample;
       // the tick it describes is the update's, since every record in one update was written on the
       // same tick. A ship that is genuinely still gets no new sample and holds, which is right.
-      const bool changed = view.to.pos.sectorX != ship.posWorld.sectorX || view.to.pos.sectorZ != ship.posWorld.sectorZ ||
-                           view.to.pos.localX != ship.posWorld.localX || view.to.pos.localZ != ship.posWorld.localZ ||
+      const bool changed = view.to.pos.sectorX != ship.posUniverse.sectorX || view.to.pos.sectorZ != ship.posUniverse.sectorZ ||
+                           view.to.pos.localX != ship.posUniverse.localX || view.to.pos.localZ != ship.posUniverse.localZ ||
                            view.to.headingRad != ship.headingRad;
       if (changed)
       {
@@ -211,7 +211,7 @@ void WorldView::ApplySnapshot()
   ReportFleetEvents();
 }
 
-std::size_t WorldView::IndexOfEntity(Game::EntityId _entity) const noexcept
+std::size_t UniverseView::IndexOfEntity(Game::EntityId _entity) const noexcept
 {
   // m_entities is parallel to m_ships and rebuilt with it on every update, so this is the one place
   // that has to know that. Linear because an interest set is tens of records and a shot resolves two
@@ -224,7 +224,7 @@ std::size_t WorldView::IndexOfEntity(Game::EntityId _entity) const noexcept
   return m_ships.size(); // the one-past-the-end this file already uses to mean "no such ship"
 }
 
-void WorldView::TakeTheGunfire()
+void UniverseView::TakeTheGunfire()
 {
   const std::span<const Game::FireEvent> fired = m_receiver.Fire();
   for (const Game::FireEvent& event : fired)
@@ -283,7 +283,7 @@ void WorldView::TakeTheGunfire()
 // Destroyed() describes the last update the receiver applied, and PumpNetwork applies at most one
 // per tick because the composition root pumps on every tick -- which is what makes reading it here,
 // once per ApplySnapshot, the whole of what the server said since the last one.
-void WorldView::ExplodeTheLost(std::uint64_t _tick)
+void UniverseView::ExplodeTheLost(std::uint64_t _tick)
 {
   // Docked first, and through a loop of its own rather than a branch in the one below: a docked
   // hull is removed with no ceremony -- no explosion, no shake, no SHIP LOST -- and the two lists
@@ -376,25 +376,25 @@ void WorldView::ExplodeTheLost(std::uint64_t _tick)
   m_receiver.ClearDestroyed();
 }
 
-WorldView::MotionSample WorldView::SampleOf(const Game::ShipSnapshot& _ship, std::uint64_t _tick) noexcept
+UniverseView::MotionSample UniverseView::SampleOf(const Game::ShipSnapshot& _ship, std::uint64_t _tick) noexcept
 {
   MotionSample sample;
   sample.tick = static_cast<float>(_tick);
-  sample.pos = _ship.posWorld;
+  sample.pos = _ship.posUniverse;
   sample.headingRad = _ship.headingRad;
   // prevPos is the tick before, so the offset between the two is exactly one tick of travel.
-  sample.velX = Game::OffsetX(_ship.prevPos, _ship.posWorld);
-  sample.velZ = Game::OffsetZ(_ship.prevPos, _ship.posWorld);
+  sample.velX = Game::OffsetX(_ship.prevPos, _ship.posUniverse);
+  sample.velZ = Game::OffsetZ(_ship.prevPos, _ship.posUniverse);
   sample.turnRadPerTick = XMScalarModAngle(_ship.headingRad - _ship.prevHeading);
   return sample;
 }
 
-void WorldView::SetDisplayTime(float _tickTime) noexcept
+void UniverseView::SetDisplayTime(float _tickTime) noexcept
 {
   m_displayTick = _tickTime - INTERP_DELAY_TICKS;
 }
 
-WorldView::DisplayPose WorldView::DisplayedPose(std::size_t _index) const noexcept
+UniverseView::DisplayPose UniverseView::DisplayedPose(std::size_t _index) const noexcept
 {
   DisplayPose pose;
   if (_index >= m_ships.size())
@@ -429,19 +429,19 @@ WorldView::DisplayPose WorldView::DisplayedPose(std::size_t _index) const noexce
   return pose;
 }
 
-void WorldView::ClearSelection() noexcept
+void UniverseView::ClearSelection() noexcept
 {
   for (int slot = 0; slot < FLEET_SLOTS; ++slot)
     m_fleetSelected[slot] = false;
   RefreshSelection();
 }
 
-float WorldView::SimTimeSec() const noexcept
+float UniverseView::SimTimeSec() const noexcept
 {
   return static_cast<float>(m_receiver.Latest().tick) / Game::TICK_HZ;
 }
 
-void WorldView::SelectFleet(int _slot, bool _additive)
+void UniverseView::SelectFleet(int _slot, bool _additive)
 {
   if (_slot < 0 || _slot >= FLEET_SLOTS || !IsFleetHeld(_slot))
     return; // an empty slot selects nothing; the button says so instead (Design/Archive/Fleets.md 9.1)
@@ -458,7 +458,7 @@ void WorldView::SelectFleet(int _slot, bool _additive)
   RefreshSelection();
 }
 
-int WorldView::SelectedFleetCount() const noexcept
+int UniverseView::SelectedFleetCount() const noexcept
 {
   int count = 0;
   for (int slot = 0; slot < FLEET_SLOTS; ++slot)
@@ -466,7 +466,7 @@ int WorldView::SelectedFleetCount() const noexcept
   return count;
 }
 
-int WorldView::FirstSelectedFleet() const noexcept
+int UniverseView::FirstSelectedFleet() const noexcept
 {
   for (int slot = 0; slot < FLEET_SLOTS; ++slot)
   {
@@ -476,7 +476,7 @@ int WorldView::FirstSelectedFleet() const noexcept
   return -1;
 }
 
-int WorldView::FleetSlotOf(Game::EntityId _entity) const noexcept
+int UniverseView::FleetSlotOf(Game::EntityId _entity) const noexcept
 {
   if (_entity == Game::INVALID_ENTITY_ID)
     return -1;
@@ -491,7 +491,7 @@ int WorldView::FleetSlotOf(Game::EntityId _entity) const noexcept
   return -1;
 }
 
-void WorldView::RefreshSelection() noexcept
+void UniverseView::RefreshSelection() noexcept
 {
   for (std::size_t at = 0; at < m_ships.size(); ++at)
   {
@@ -501,7 +501,7 @@ void WorldView::RefreshSelection() noexcept
   }
 }
 
-const char* WorldView::FleetActivity(int _slot) const noexcept
+const char* UniverseView::FleetActivity(int _slot) const noexcept
 {
   if (!IsFleetHeld(_slot))
     return "EMPTY";
@@ -529,7 +529,7 @@ const char* WorldView::FleetActivity(int _slot) const noexcept
   }
 }
 
-WorldView::ButtonPress WorldView::PressFleetButton(int _slot, bool _longPress)
+UniverseView::ButtonPress UniverseView::PressFleetButton(int _slot, bool _longPress)
 {
   if (_slot < 0 || _slot >= FLEET_SLOTS)
     return ButtonPress::Nothing;
@@ -554,13 +554,13 @@ WorldView::ButtonPress WorldView::PressFleetButton(int _slot, bool _longPress)
   }
 
   // Selecting and attending are one gesture. A shift-held tap on a button is not a thing the bar
-  // offers -- the modifier belongs to the world, where a hull is tapped -- so this selects whole.
+  // offers -- the modifier belongs to the universe, where a hull is tapped -- so this selects whole.
   SelectFleet(_slot, false);
   FocusFleet(_slot);
   return ButtonPress::Selected;
 }
 
-void WorldView::ArmFleetOrder(ArmedOrder _kind)
+void UniverseView::ArmFleetOrder(ArmedOrder _kind)
 {
   m_armed = _kind;
   if (m_armed == ArmedOrder::None || m_log == nullptr)
@@ -570,7 +570,7 @@ void WorldView::ArmFleetOrder(ArmedOrder _kind)
   m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "%s | TAP A TARGET", verb);
 }
 
-void WorldView::IssueStopOrder()
+void UniverseView::IssueStopOrder()
 {
   Game::FleetOrder order;
   order.kind = Game::FleetOrderKind::Stop;
@@ -579,7 +579,7 @@ void WorldView::IssueStopOrder()
     m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "STOP | %d %s", static_cast<int>(sent), (sent == 1) ? "FLEET" : "FLEETS");
 }
 
-float WorldView::ConditionOfMember(Game::EntityId _entity) const noexcept
+float UniverseView::ConditionOfMember(Game::EntityId _entity) const noexcept
 {
   const std::size_t at = IndexOfEntity(_entity);
   if (at == m_ships.size())
@@ -587,7 +587,7 @@ float WorldView::ConditionOfMember(Game::EntityId _entity) const noexcept
   return static_cast<float>(m_ships[at].hullFraction) / 255.0f;
 }
 
-std::uint32_t WorldView::HullOfMember(Game::EntityId _entity) const noexcept
+std::uint32_t UniverseView::HullOfMember(Game::EntityId _entity) const noexcept
 {
   for (const KnownHull& known : m_knownHulls)
   {
@@ -597,7 +597,7 @@ std::uint32_t WorldView::HullOfMember(Game::EntityId _entity) const noexcept
   return Game::HULL_COUNT;
 }
 
-void WorldView::RefreshKnownHulls()
+void UniverseView::RefreshKnownHulls()
 {
   // Anything in a roster this update, remembered from the record if one is in view and carried over
   // from what was already known if not. Rebuilt rather than patched, so the list is exactly the
@@ -635,7 +635,7 @@ void WorldView::RefreshKnownHulls()
 // The LAST departure wins rather than any docking ever seen, which is what Design/Archive/Fleets.md 9.6's
 // "on the last capture" means: a fleet that lands one hull and then loses the rest was lost, and a
 // sticky flag would have called it docked (ADR 0040).
-void WorldView::NoteFleetDeparture(Game::EntityId _entity, bool _docked) noexcept
+void UniverseView::NoteFleetDeparture(Game::EntityId _entity, bool _docked) noexcept
 {
   for (int slot = 0; slot < FLEET_SLOTS; ++slot)
   {
@@ -651,7 +651,7 @@ void WorldView::NoteFleetDeparture(Game::EntityId _entity, bool _docked) noexcep
 // began; the other two could not, because the departure lists say whether a slot emptied by docking
 // or by dying and ExplodeTheLost clears them -- so all of Design/Archive/Fleets.md 9.6's fleet lines are
 // here rather than split across two files by which one happened to need what.
-void WorldView::ReportFleetEvents()
+void UniverseView::ReportFleetEvents()
 {
   const std::uint8_t mask = m_receiver.FleetMask();
   for (int slot = 0; slot < FLEET_SLOTS; ++slot)
@@ -698,14 +698,14 @@ void WorldView::ReportFleetEvents()
   m_lastFleetMask = mask;
 }
 
-void WorldView::FocusFleet(int _slot)
+void UniverseView::FocusFleet(int _slot)
 {
   // Held only. Focusing an empty slot would fly the camera to wherever a stale block last put it,
   // which is a worse answer than doing nothing.
   m_focusSlot = IsFleetHeld(_slot) ? _slot : -1;
 }
 
-void WorldView::UpdateFocus(float _dtSec)
+void UniverseView::UpdateFocus(float _dtSec)
 {
   if (m_focusSlot < 0 || m_camera == nullptr)
     return;
@@ -720,7 +720,7 @@ void WorldView::UpdateFocus(float _dtSec)
 
   // Re-read every frame: the fleet is flying, and a goal captured at the tap lands where it used to
   // be. The status block is stamped on every update, so this costs nothing but a read.
-  const Game::WorldPos target = FleetPosition(m_focusSlot);
+  const Game::UniversePos target = FleetPosition(m_focusSlot);
   const float x = ViewX(target);
   const float z = ViewZ(target);
   m_camera->SetGoal(x, z);
@@ -737,12 +737,12 @@ void WorldView::UpdateFocus(float _dtSec)
     m_focusSlot = -1; // arrived; the camera is the player's again
 }
 
-void WorldView::TriggerCameraShake() noexcept
+void UniverseView::TriggerCameraShake() noexcept
 {
   m_camera->Shake();
 }
 
-int WorldView::SelectedCount() const noexcept
+int UniverseView::SelectedCount() const noexcept
 {
   int count = 0;
   for (const ShipView& ship : m_ships)
@@ -750,7 +750,7 @@ int WorldView::SelectedCount() const noexcept
   return count;
 }
 
-XMMATRIX WorldView::HullMatrix(const ShipView& _view, const DisplayPose& _pose) const noexcept
+XMMATRIX UniverseView::HullMatrix(const ShipView& _view, const DisplayPose& _pose) const noexcept
 {
   // Roll about the hull's own mid-height axis, not its base, or a banked ship pivots on one
   // wingtip. SHIP_HOVER_HEIGHT is what keeps the low wing out of the ground while it does.
@@ -760,7 +760,7 @@ XMMATRIX WorldView::HullMatrix(const ShipView& _view, const DisplayPose& _pose) 
          XMMatrixRotationY(_pose.headingRad) * XMMatrixTranslation(ViewX(_pose.pos), SHIP_HOVER_HEIGHT, ViewZ(_pose.pos));
 }
 
-XMFLOAT3 WorldView::HullPointToWorld(const ShipView& _view, const DisplayPose& _pose, const XMFLOAT3& _local) const noexcept
+XMFLOAT3 UniverseView::HullPointToWorld(const ShipView& _view, const DisplayPose& _pose, const XMFLOAT3& _local) const noexcept
 {
   XMFLOAT3 world;
   XMStoreFloat3(&world, XMVector3Transform(XMLoadFloat3(&_local), HullMatrix(_view, _pose)));
@@ -768,7 +768,7 @@ XMFLOAT3 WorldView::HullPointToWorld(const ShipView& _view, const DisplayPose& _
 }
 
 // One sample per nozzle per tick, so trail length means the same thing whatever the frame rate.
-void WorldView::SampleTrails()
+void UniverseView::SampleTrails()
 {
   const std::span<const Game::ShipSnapshot> state = Ships();
   const size_t count = std::min(m_ships.size(), state.size());
@@ -791,7 +791,7 @@ void WorldView::SampleTrails()
   }
 }
 
-void WorldView::UpdateFeedback(float _dtSec)
+void UniverseView::UpdateFeedback(float _dtSec)
 {
   const float dt = std::clamp(_dtSec, 0.0f, 0.1f);
 
@@ -831,8 +831,8 @@ void WorldView::UpdateFeedback(float _dtSec)
     m_navTimeSec -= NAV_LIGHT_MAX_PERIOD_SEC;
 
   // Bodies turn on real time, like every other feedback here, so the debug keys that slow the
-  // simulation do not slow a planet: what 1/2/3 change is how fast the world is simulated, and a
-  // planet is not in the world.
+  // simulation do not slow a planet: what 1/2/3 change is how fast the universe is simulated, and a
+  // planet is not in the universe.
   for (BodyView& body : m_bodies)
   {
     body.spinRad += body.spinRadPerSec * dt;
@@ -939,7 +939,7 @@ void WorldView::UpdateFeedback(float _dtSec)
   m_camera->Update(); // everything above moved it
 }
 
-Rgba WorldView::LiveryOf(Game::FactionId _faction, bool _own, bool _hostileToMe) noexcept
+Rgba UniverseView::LiveryOf(Game::FactionId _faction, bool _own, bool _hostileToMe) noexcept
 {
   // The hostile row outranks the faction rows (Design/Archive/Stations.md 9.3): a Vanguard ship whose
   // faction holds this client hostile paints the Vandals' red, because the law turning on you is the
@@ -956,7 +956,7 @@ Rgba WorldView::LiveryOf(Game::FactionId _faction, bool _own, bool _hostileToMe)
   return LIVERY_VANDAL;
 }
 
-bool WorldView::IsOwn(std::size_t _index) const noexcept
+bool UniverseView::IsOwn(std::size_t _index) const noexcept
 {
   const std::span<const Game::ShipSnapshot> state = Ships();
   return _index < state.size() && state[_index].factionId == m_ownFaction;
@@ -964,7 +964,7 @@ bool WorldView::IsOwn(std::size_t _index) const noexcept
 
 // Ray against a hull's oriented bounding box. A sphere would be far too loose on a hull three
 // times longer than it is wide.
-float WorldView::RayHitDistance(std::size_t _index, const XMFLOAT3& _origin, const XMFLOAT3& _direction) const noexcept
+float UniverseView::RayHitDistance(std::size_t _index, const XMFLOAT3& _origin, const XMFLOAT3& _direction) const noexcept
 {
   const ShipView& view = m_ships[_index];
   // Against the hull as drawn: the latest record can be a hull-length ahead of it.
@@ -1010,7 +1010,7 @@ float WorldView::RayHitDistance(std::size_t _index, const XMFLOAT3& _origin, con
 // Somebody else's ship is not pickable at all, so no hover highlight, selection ring, tap, shift-tap
 // or double-tap can ever land on one. What a client cannot command it should not appear able to
 // (Design/Archive/Hostiles.md 7).
-int WorldView::PickShip(float _xPx, float _yPx) const
+int UniverseView::PickShip(float _xPx, float _yPx) const
 {
   XMFLOAT3 origin;
   XMFLOAT3 direction;
@@ -1033,7 +1033,7 @@ int WorldView::PickShip(float _xPx, float _yPx) const
   return best;
 }
 
-int WorldView::PickStation(float _xPx, float _yPx) const
+int UniverseView::PickStation(float _xPx, float _yPx) const
 {
   XMFLOAT3 origin;
   XMFLOAT3 direction;
@@ -1058,7 +1058,7 @@ int WorldView::PickStation(float _xPx, float _yPx) const
   return best;
 }
 
-int WorldView::PickHostile(float _xPx, float _yPx) const
+int UniverseView::PickHostile(float _xPx, float _yPx) const
 {
   XMFLOAT3 origin;
   XMFLOAT3 direction;
@@ -1087,7 +1087,7 @@ int WorldView::PickHostile(float _xPx, float _yPx) const
 // One message per selected slot, and nothing in any of them names a ship. A selection of five
 // fleets of eight is five fixed-size messages against an order budget of eight, where the ship-list
 // order this replaced would have been forty handles and a cap to check against (ADR 0049).
-std::uint32_t WorldView::SendToSelectedFleets(const Game::FleetOrder& _order)
+std::uint32_t UniverseView::SendToSelectedFleets(const Game::FleetOrder& _order)
 {
   if (m_transport == nullptr)
     return 0;
@@ -1107,7 +1107,7 @@ std::uint32_t WorldView::SendToSelectedFleets(const Game::FleetOrder& _order)
   return sent;
 }
 
-void WorldView::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float _facingRad)
+void UniverseView::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float _facingRad)
 {
   if (m_transport == nullptr || SelectedFleetCount() == 0)
     return;
@@ -1124,12 +1124,12 @@ void WorldView::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float _f
       continue;
     if (m_orderPositions.empty())
       firstHeading = state[i].headingRad;
-    m_orderPositions.push_back(state[i].posWorld);
+    m_orderPositions.push_back(state[i].posUniverse);
   }
 
   Game::FleetOrder order;
   order.kind = Game::FleetOrderKind::Move;
-  order.point = WorldPosAt(_point.x, _point.z);
+  order.point = UniversePosAt(_point.x, _point.z);
   order.facingRad = _facingRad;
   order.hasFacing = _hasFacing;
   const std::uint32_t sent = SendToSelectedFleets(order);
@@ -1149,7 +1149,7 @@ void WorldView::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float _f
   const float heading = _hasFacing ? _facingRad : Game::FormationHeading(m_orderPositions, order.point, firstHeading);
 
   OrderMarker marker;
-  marker.posWorld = XMFLOAT3(_point.x, 0.0f, _point.z);
+  marker.posUniverse = XMFLOAT3(_point.x, 0.0f, _point.z);
   marker.facingRad = heading;
   marker.hasFacing = _hasFacing;
   marker.colour = MARKER_COLOUR;
@@ -1160,7 +1160,7 @@ void WorldView::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float _f
                       (sent == 1) ? "FLEET" : "FLEETS");
 }
 
-void WorldView::IssueDockOrder(std::size_t _station)
+void UniverseView::IssueDockOrder(std::size_t _station)
 {
   const std::span<const Game::ShipSnapshot> state = Ships();
   if (m_transport == nullptr || _station >= state.size() || SelectedFleetCount() == 0)
@@ -1191,7 +1191,7 @@ void WorldView::IssueDockOrder(std::size_t _station)
   // thing and not the ground beside it. No facing: a dock order has none.
   const DisplayPose pose = DisplayedPose(_station);
   OrderMarker marker;
-  marker.posWorld = XMFLOAT3(ViewX(pose.pos), 0.0f, ViewZ(pose.pos));
+  marker.posUniverse = XMFLOAT3(ViewX(pose.pos), 0.0f, ViewZ(pose.pos));
   marker.colour = LiveryOf(owner, owner == m_ownFaction, false);
   m_markers.push_back(marker);
 
@@ -1202,7 +1202,7 @@ void WorldView::IssueDockOrder(std::size_t _station)
 // The third tap meaning, and the one this slice adds. There is no affordance to check first, unlike
 // the dock: the picker only ever offers a record the mask already says is hostile, so a tap that
 // reaches here has passed the only question there is to ask (Design/Archive/Fleets.md 9.3).
-void WorldView::IssueAttackOrder(std::size_t _target)
+void UniverseView::IssueAttackOrder(std::size_t _target)
 {
   const std::span<const Game::ShipSnapshot> state = Ships();
   if (m_transport == nullptr || _target >= state.size() || SelectedFleetCount() == 0)
@@ -1217,11 +1217,11 @@ void WorldView::IssueAttackOrder(std::size_t _target)
 
   // On the target and in ITS colour, exactly as the dock marker wears the station's. The scene is
   // an identity language and the HUD is a relation one (ViewTuning.h says so at HUD_ALERT_RED), so
-  // a marker in the world says which ship was tapped rather than how the HUD feels about it.
+  // a marker in the universe says which ship was tapped rather than how the HUD feels about it.
   const Game::FactionId owner = state[_target].factionId;
   const DisplayPose pose = DisplayedPose(_target);
   OrderMarker marker;
-  marker.posWorld = XMFLOAT3(ViewX(pose.pos), 0.0f, ViewZ(pose.pos));
+  marker.posUniverse = XMFLOAT3(ViewX(pose.pos), 0.0f, ViewZ(pose.pos));
   marker.colour = LiveryOf(owner, owner == m_ownFaction, IsHostileToMe(owner));
   m_markers.push_back(marker);
 
@@ -1232,17 +1232,17 @@ void WorldView::IssueAttackOrder(std::size_t _target)
 // --- pointer intent -----------------------------------------------------------------------------
 // With nothing selected a drag bands a box; with a selection it lays down a move order and its
 // final facing. Shift forces the box either way.
-bool WorldView::WantsBoxSelect(bool _shiftHeld)
+bool UniverseView::WantsBoxSelect(bool _shiftHeld)
 {
   return _shiftHeld || SelectedFleetCount() == 0;
 }
 
-void WorldView::OnHover(float _xPx, float _yPx)
+void UniverseView::OnHover(float _xPx, float _yPx)
 {
   m_hoverShip = PickShip(_xPx, _yPx);
 }
 
-void WorldView::OnDragUpdate(bool _boxSelect, float _x0Px, float _y0Px, float _x1Px, float _y1Px)
+void UniverseView::OnDragUpdate(bool _boxSelect, float _x0Px, float _y0Px, float _x1Px, float _y1Px)
 {
   CancelFocus(); // the player has taken the camera back
   m_boxActive = _boxSelect;
@@ -1253,13 +1253,13 @@ void WorldView::OnDragUpdate(bool _boxSelect, float _x0Px, float _y0Px, float _x
   m_boxY1Px = m_orderY1Px = _y1Px;
 }
 
-void WorldView::OnDragCancelled()
+void UniverseView::OnDragCancelled()
 {
   m_boxActive = false;
   m_orderDragActive = false;
 }
 
-void WorldView::OnBoxSelect(float _x0Px, float _y0Px, float _x1Px, float _y1Px, bool _additive)
+void UniverseView::OnBoxSelect(float _x0Px, float _y0Px, float _x1Px, float _y1Px, bool _additive)
 {
   const float left = std::min(_x0Px, _x1Px);
   const float right = std::max(_x0Px, _x1Px);
@@ -1290,7 +1290,7 @@ void WorldView::OnBoxSelect(float _x0Px, float _y0Px, float _x1Px, float _y1Px, 
   RefreshSelection();
 }
 
-void WorldView::OnOrderDrag(float _x0Px, float _y0Px, float _x1Px, float _y1Px)
+void UniverseView::OnOrderDrag(float _x0Px, float _y0Px, float _x1Px, float _y1Px)
 {
   XMFLOAT3 from;
   XMFLOAT3 to;
@@ -1307,9 +1307,9 @@ void WorldView::OnOrderDrag(float _x0Px, float _y0Px, float _x1Px, float _y1Px)
   IssueMoveOrder(from, hasFacing, hasFacing ? std::atan2(dx, dz) : 0.0f);
 }
 
-void WorldView::OnTap(float _xPx, float _yPx, bool _shiftHeld, bool _doubleTap)
+void UniverseView::OnTap(float _xPx, float _yPx, bool _shiftHeld, bool _doubleTap)
 {
-  CancelFocus(); // the player is working the world again, so the camera stops flying
+  CancelFocus(); // the player is working the universe again, so the camera stops flying
 
   // An armed command takes the tap before anything else means anything, and clears whether or not
   // the tap landed on something it can use: one prompt, one tap (Design/Archive/Fleets.md 9.3).
@@ -1414,7 +1414,7 @@ void WorldView::OnTap(float _xPx, float _yPx, bool _shiftHeld, bool _doubleTap)
 // A long press over a station asks what this client has docked there, and the answer opens the
 // assembly screen. It is the one request/reply on this seam (ADR 0051), and the one gesture
 // Design/Archive/Stations.md 14 held PointerTracker back from until there was a menu to open.
-void WorldView::OnLongPress(float _xPx, float _yPx)
+void UniverseView::OnLongPress(float _xPx, float _yPx)
 {
   CancelFocus();
 
@@ -1427,7 +1427,7 @@ void WorldView::OnLongPress(float _xPx, float _yPx)
     return;
 
   // The mask first, before the wire is touched. A port that holds this client hostile answers a
-  // ledger request with zeros by the same gate that refuses a compose there (World::LedgerFor), so
+  // ledger request with zeros by the same gate that refuses a compose there (Universe::LedgerFor), so
   // asking would spend a message to be told nothing -- and the player would read an empty station
   // rather than a closed one. The affordance tells the truth first and the gate stands behind it,
   // which is IssueDockOrder's rule applied to a read (Design/Archive/Stations.md 9.2).
@@ -1451,7 +1451,7 @@ void WorldView::OnLongPress(float _xPx, float _yPx)
   m_ledgerAskedAtCount = m_receiver.LedgerReplyCount();
 }
 
-Game::FactionId WorldView::FactionOfEntity(Game::EntityId _entity) const noexcept
+Game::FactionId UniverseView::FactionOfEntity(Game::EntityId _entity) const noexcept
 {
   const std::span<const Game::ShipSnapshot> state = Ships();
   for (const Game::ShipSnapshot& ship : state)
@@ -1462,7 +1462,7 @@ Game::FactionId WorldView::FactionOfEntity(Game::EntityId _entity) const noexcep
   return static_cast<Game::FactionId>(Game::FACTION_LIMIT);
 }
 
-bool WorldView::TakeLedgerReply(Game::LedgerReply& _outReply)
+bool UniverseView::TakeLedgerReply(Game::LedgerReply& _outReply)
 {
   if (m_ledgerAsked == Game::INVALID_ENTITY_ID || m_receiver.LedgerReplyCount() == m_ledgerAskedAtCount)
     return false;
@@ -1483,7 +1483,7 @@ bool WorldView::TakeLedgerReply(Game::LedgerReply& _outReply)
   return true;
 }
 
-void WorldView::SendComposeOrder(Game::EntityId _station, std::uint8_t _slot, std::span<const std::uint32_t> _hullCounts)
+void UniverseView::SendComposeOrder(Game::EntityId _station, std::uint8_t _slot, std::span<const std::uint32_t> _hullCounts)
 {
   if (m_transport == nullptr)
     return;
@@ -1514,7 +1514,7 @@ void WorldView::SendComposeOrder(Game::EntityId _station, std::uint8_t _slot, st
 // the two samples that bracket it, so motion is smooth however far the swapchain runs ahead of the
 // simulation rate and however far the update rate sits below it.
 
-void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& _text)
+void UniverseView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& _text)
 {
   // The sky, before everything. It neither tests nor writes depth, so the ground, the hulls and the
   // planets all draw over it whatever their distance -- which is the point: a body two kilometers out
@@ -1765,7 +1765,7 @@ void WorldView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRenderer& 
 // The overlay pass: selection and hover rings on the ground, order markers, thruster glow and
 // trail in the air. All of it is the same unit quad shaped by the decal shader.
 
-std::vector<Neuron::MeshInstance>& WorldView::Bucket(Neuron::MeshHandle _mesh)
+std::vector<Neuron::MeshInstance>& UniverseView::Bucket(Neuron::MeshHandle _mesh)
 {
   for (MeshBucket& bucket : m_meshBuckets)
   {
@@ -1776,7 +1776,7 @@ std::vector<Neuron::MeshInstance>& WorldView::Bucket(Neuron::MeshHandle _mesh)
   return m_meshBuckets.back().instances;
 }
 
-void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const SceneFrame& _frame)
+void UniverseView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const SceneFrame& _frame)
 {
   _renderer.BeginDecals(_gpu, m_camera->ViewProj(), m_camera->Eye());
 
@@ -1843,7 +1843,7 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const Sc
     const float radius = MARKER_RADIUS * eased * (1.0f + beat * MARKER_PULSE_SCALE);
     const float alpha = marker.colour.a * fade * (0.72f + beat * 0.28f);
     XMStoreFloat4x4(&world, XMMatrixScaling(radius * 2.0f, 1.0f, radius * 2.0f) *
-                              XMMatrixTranslation(marker.posWorld.x, DECAL_LIFT_Y, marker.posWorld.z));
+                              XMMatrixTranslation(marker.posUniverse.x, DECAL_LIFT_Y, marker.posUniverse.z));
     _renderer.DrawDecal(_gpu, m_quadMesh, world, Rgba{marker.colour.r, marker.colour.g, marker.colour.b, alpha}, MARKER_THICKNESS, 0.10f);
 
     // Each pulse also throws a ripple outwards, which is what makes the count readable.
@@ -1852,7 +1852,7 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const Sc
       const float withinPulse = pulseIndex - std::floor(pulseIndex);
       const float rippleRadius = radius * (1.0f + withinPulse * 1.1f);
       XMStoreFloat4x4(&world, XMMatrixScaling(rippleRadius * 2.0f, 1.0f, rippleRadius * 2.0f) *
-                                XMMatrixTranslation(marker.posWorld.x, DECAL_LIFT_Y, marker.posWorld.z));
+                                XMMatrixTranslation(marker.posUniverse.x, DECAL_LIFT_Y, marker.posUniverse.z));
       _renderer.DrawDecal(_gpu, m_quadMesh, world,
                           Rgba{marker.colour.r, marker.colour.g, marker.colour.b, alpha * (1.0f - withinPulse) * 0.7f},
                           MARKER_THICKNESS * 0.6f, 0.0f);
@@ -1862,8 +1862,8 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const Sc
     if (marker.hasFacing)
     {
       const float pip = radius * 0.28f;
-      const float outX = marker.posWorld.x + std::sin(marker.facingRad) * radius * 1.5f;
-      const float outZ = marker.posWorld.z + std::cos(marker.facingRad) * radius * 1.5f;
+      const float outX = marker.posUniverse.x + std::sin(marker.facingRad) * radius * 1.5f;
+      const float outZ = marker.posUniverse.z + std::cos(marker.facingRad) * radius * 1.5f;
       XMStoreFloat4x4(&world, XMMatrixScaling(pip * 2.0f, 1.0f, pip * 2.0f) * XMMatrixTranslation(outX, DECAL_LIFT_Y, outZ));
       _renderer.DrawDecal(_gpu, m_quadMesh, world, Rgba{marker.colour.r, marker.colour.g, marker.colour.b, alpha}, 1.0f, 1.0f);
     }

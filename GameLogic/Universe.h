@@ -7,7 +7,7 @@
 #include "Patrol.h"
 #include "ShipState.h"
 #include "SpatialIndex.h"
-#include "WorldPos.h"
+#include "UniversePos.h"
 
 #include <cstdint>
 #include <span>
@@ -32,28 +32,28 @@ struct DespawnRecord
   ShipHandle handle;
 
   // Who departed, as against which slot it was in. The three departure runs on the wire name ships
-  // that are already gone, so the publisher cannot ask the world for their ids -- and the record of
+  // that are already gone, so the publisher cannot ask the universe for their ids -- and the record of
   // a departure is the right place to keep one anyway (ADR 0047).
   EntityId entity = INVALID_ENTITY_ID;
 
   DespawnCause cause = DespawnCause::Destroyed;
 };
 
-// The authoritative world. One dense array per entity kind, indexed by id -- no maps, no pointers
+// The authoritative universe. One dense array per entity kind, indexed by id -- no maps, no pointers
 // between entities, no iteration order that is not array order, because all three are how a
 // simulation stops reproducing itself.
 //
-// Ownership: whatever thread ticks the World owns it. Nothing else writes to it, and the view
+// Ownership: whatever thread ticks the Universe owns it. Nothing else writes to it, and the view
 // reads it only between ticks. When the halves separate this class is what moves to the server and
 // the view stops holding a reference to it (AGENTS.md 2).
-class World
+class Universe
 {
   // The state codec reads and writes every field below, which is what a save and a shard handoff
   // are made of. A friendship naming two functions is a targeted, reviewable grant; the alternative
   // is thirty accessors that exist for one caller and widen this class's surface for every other
   // caller forever (Design/Archive/WorldState-work-order.md 2.3).
-  friend void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes);
-  friend bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld);
+  friend void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _outBytes);
+  friend bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUniverse);
 
 public:
   // What one ship's standing patrol is. The anchor is a handle rather than a position so that the
@@ -78,7 +78,7 @@ public:
   };
 
   // An index into the station table. Nested beside the types it names, as Patrol is: a station is
-  // World's concept, where ShipId is everybody's. Stations do not despawn this phase, so an index
+  // Universe's concept, where ShipId is everybody's. Stations do not despawn this phase, so an index
   // stays an index and needs no generation.
   using StationId = std::uint32_t;
   static constexpr StationId INVALID_STATION_ID = 0xFFFFFFFFu;
@@ -234,7 +234,7 @@ public:
     // order that outlives the station it names must stop resolving rather than name whatever ship
     // took that index.
     FleetOrderKind orderKind = FleetOrderKind::Idle;
-    WorldPos orderPoint;         // Move
+    UniversePos orderPoint;      // Move
     float orderFacingRad = 0.0f; // Move
     bool orderHasFacing = false; // Move
     ShipHandle orderStation;     // Dock
@@ -250,7 +250,7 @@ public:
     // measured from, and a second copy here would be one more thing for the codec to carry and for
     // the two to disagree about.
     ShipHandle threat;
-    WorldPos threatAnchorPos;
+    UniversePos threatAnchorPos;
     std::uint32_t alertTicks = 0;
   };
 
@@ -260,17 +260,17 @@ public:
   // The faction defaults because every existing caller -- the starting fleet, every test -- spawns
   // the player's own ships, so the default states what those call sites already mean rather than
   // papering over them. A caller that means someone else has to say so (Design/Archive/Hostiles.md 11).
-  ShipId SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint32_t _hullId, FactionId _factionId = FACTION_PLAYER);
+  ShipId SpawnShip(const UniversePos& _posUniverse, float _headingRad, std::uint32_t _hullId, FactionId _factionId = FACTION_PLAYER);
 
-  // Spawns under an identity issued somewhere else: a handoff from another shard, or a saved world
+  // Spawns under an identity issued somewhere else: a handoff from another shard, or a saved universe
   // being reloaded. Returns INVALID_SHIP_ID if the id is null or already here, because an entity
-  // existing twice in one world is the failure this whole mechanism exists to make impossible.
+  // existing twice in one universe is the failure this whole mechanism exists to make impossible.
   //
-  // It also advances this world's serial counter past any *local* id it is handed, so a reload
+  // It also advances this universe's serial counter past any *local* id it is handed, so a reload
   // cannot go on to mint an id the file already used. That is one line written for a slice that
   // does not exist yet, and it is here because it is one line now and a corruption bug later
   // (Design/Archive/EntityIdentity-work-order.md 3.4).
-  ShipId SpawnShipAs(EntityId _entity, const WorldPos& _posWorld, float _headingRad, std::uint32_t _hullId,
+  ShipId SpawnShipAs(EntityId _entity, const UniversePos& _posUniverse, float _headingRad, std::uint32_t _hullId,
                      FactionId _factionId = FACTION_PLAYER);
 
   // Removes a ship, moving the last one into its slot. False means the handle was already stale.
@@ -290,11 +290,11 @@ public:
   // radius, which is where a hostile patrol lives (Design/Archive/Hostiles.md 4.4). Step never touches it --
   // it is the publisher's, and each of its subscribers reads it at its own pace (ADR 0027).
   //
-  // Deaths are numbered for the life of the World and the numbering is never reset, so a cursor
+  // Deaths are numbered for the life of the Universe and the numbering is never reset, so a cursor
   // stays comparable across a trim and the difference between two cursors is exactly the number of
   // deaths between them.
 
-  // The sequence one past the last death logged. A subscriber joining a running world opens its
+  // The sequence one past the last death logged. A subscriber joining a running universe opens its
   // cursor here, so it is told about every death from now on and about none of the ships it never
   // held.
   [[nodiscard]] std::uint64_t DespawnHead() const noexcept
@@ -325,7 +325,7 @@ public:
   // gunfire in the game.
   //
   // Deliberately NOT in the save format. Nothing in Step reads it, so it changes no recorded
-  // outcome, and a reloaded world with no tracers pending is the correct picture of one that has
+  // outcome, and a reloaded universe with no tracers pending is the correct picture of one that has
   // just resumed. The despawn log is saved because a client that missed a death has a ghost ship for
   // the rest of the match; a client that missed a muzzle flash has nothing at all.
   [[nodiscard]] std::uint64_t ShotHead() const noexcept
@@ -347,7 +347,7 @@ public:
 
   // --- identity ------------------------------------------------------------------------------------
 
-  // Which shard this world mints ids for. Configured by the composition root before anything spawns,
+  // Which shard this universe mints ids for. Configured by the composition root before anything spawns,
   // beside ConfigureIndex and for AGENTS.md 5's reason: a library takes a plain value from the root
   // and never reads a file or an environment. Ids already issued keep the shard they were issued
   // under, so calling this after a spawn changes nothing that exists.
@@ -364,7 +364,7 @@ public:
 
   // The other direction, for the two places that hold an id rather than a handle: the publisher
   // reading an order off the wire, and the composition root's debug despawn. O(log N) over a sorted
-  // vector rather than O(1) over a map, because World holds no maps and ADR 0010 already chose this
+  // vector rather than O(1) over a map, because Universe holds no maps and ADR 0010 already chose this
   // shape for the same reason.
   // Named rather than overloaded, deliberately: ShipId is a u32 and EntityId a u64, so Resolve(id)
   // with a ShipId in hand would compile and silently mean the other thing.
@@ -392,7 +392,7 @@ public:
   //
   // A faction id at or past FACTION_LIMIT reads back Hostile. Nobody authored it, every caller of
   // this is a gate or a warning colour, and a stranger admitted as a friend is the one mistake this
-  // table must not make -- the same direction WorldView::LiveryOf takes, for the same reason.
+  // table must not make -- the same direction UniverseView::LiveryOf takes, for the same reason.
   [[nodiscard]] Standing StandingOf(FactionId _owner, FactionId _other) const noexcept;
 
   // Bit f set: faction f currently holds _viewer's faction hostile. What the wire states to each
@@ -495,7 +495,7 @@ public:
   // readable off the route's destination, and a test could state the replan invariant by comparing
   // the target against RouteOf(...).back(); a stand-off put those up to 224 m apart
   // (Route::pursuitAimedAt), so the invariant needs the number itself rather than a stand-in.
-  [[nodiscard]] const WorldPos& PursuitAimedAt(ShipId _id) const noexcept;
+  [[nodiscard]] const UniversePos& PursuitAimedAt(ShipId _id) const noexcept;
 
   // How many of _station's protectors are currently in space.
   //
@@ -638,7 +638,7 @@ public:
   struct FleetCommand
   {
     FleetOrderKind kind = FleetOrderKind::Idle;
-    WorldPos point;                   // Move
+    UniversePos point;                // Move
     float facingRad = 0.0f;           // Move
     bool hasFacing = false;           // Move
     ShipId station = INVALID_SHIP_ID; // Dock: the station's structure
@@ -692,7 +692,7 @@ public:
   //   5  resolve    separation into scratch, applied after the loop, never in place
   void Step();
 
-  // The index the world keeps. Exposed so a caller can retune it -- cell size and level count are
+  // The index the universe keeps. Exposed so a caller can retune it -- cell size and level count are
   // performance knobs, not contract values -- and so tests can reach the query directly.
   void ConfigureIndex(const SpatialIndex::Desc& _desc);
   [[nodiscard]] const SpatialIndex& Index() const noexcept
@@ -717,7 +717,7 @@ public:
     return m_queriedCandidates;
   }
 
-  // How many routes have been planned since this world began. A readout, never read by the
+  // How many routes have been planned since this universe began. A readout, never read by the
   // simulation, and here for the reason the two counters above are: a planner quietly running every
   // tick and one running only when something changed look exactly alike from the outside -- the
   // ships are in the right places either way -- until somebody counts.
@@ -739,7 +739,7 @@ public:
 
   // How many islands the architecture came to, and how many of those refused to build because a
   // single island is wider than one grid may be. A declining island keeps its neighbours routing --
-  // that is the whole gain over one grid for the world -- but it is indistinguishable from open
+  // that is the whole gain over one grid for the universe -- but it is indistinguishable from open
   // space to everything that reads it, so the count is surfaced rather than left to be inferred from
   // ships that quietly stopped avoiding things (Design/Archive/RegionalPathfinding.md 3.3).
   [[nodiscard]] std::size_t PathIslandCount() const noexcept
@@ -754,7 +754,7 @@ public:
   // The remaining waypoints of a ship's planned route, current one first. Server-side only: a path
   // is never wire data, and a client sees the resulting motion through snapshots like any other
   // (Design/Archive/Collision.md 12). Exposed for tests and for a debug overlay.
-  [[nodiscard]] std::span<const WorldPos> RouteOf(ShipId _id) const noexcept;
+  [[nodiscard]] std::span<const UniversePos> RouteOf(ShipId _id) const noexcept;
 
   // Sends the given ships to _point in formation. Returns the heading the formation was solved
   // onto, which is what the view needs to draw the order marker -- so the rule that decides it
@@ -767,7 +767,7 @@ public:
   // has no test suite and every future host, a dedicated server or a replay driver among them, would
   // otherwise have to remember the check: the simulation refusing is a property, an adapter refusing
   // is a convention (Design/Archive/Hostiles.md 4.3).
-  float IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _point, bool _hasFacing, float _facingRad,
+  float IssueMoveOrder(std::span<const ShipId> _ships, const UniversePos& _point, bool _hasFacing, float _facingRad,
                        FactionId _issuerFaction = FACTION_PLAYER);
 
   [[nodiscard]] std::span<const ShipState> Ships() const noexcept
@@ -791,7 +791,7 @@ private:
   // Standing NPC intent, issued through the same order machinery a player's click uses.
   //
   // Order-independent by construction: it runs before anything in the tick moves, so every read --
-  // the ship's own state, the anchor's posWorld -- is end-of-last-tick state whatever the array
+  // the ship's own state, the anchor's posUniverse -- is end-of-last-tick state whatever the array
   // order, and it writes only the ship it is visiting. It draws no randomness, reads no other ship,
   // and reacts to nothing; the first behavior that responds to what it sees is a different design
   // with senses and thresholds (Design/Archive/Hostiles.md 5.5, 8).
@@ -924,7 +924,7 @@ private:
   // Planning is server-side and at order time -- a pure function of the static set and the two
   // endpoints, so it is deterministic with nothing added -- and re-planning happens only when the
   // static set changes or the follower has drifted off its leg. Never per tick.
-  void PlanRoute(ShipId _id, const WorldPos& _destination, float _requiredClearanceMetres);
+  void PlanRoute(ShipId _id, const UniversePos& _destination, float _requiredClearanceMetres);
   void AdvanceRoute(ShipId _id);
 
   // The indirection that makes a handle survive swap-and-pop: the slot is stable for a ship's
@@ -942,7 +942,7 @@ private:
 
   // An id to the slot that holds it, sorted by id so that a lookup is a binary search.
   //
-  // Not a map: World.h's own rule at the top of this class, and ADR 0010's answer for interest sets.
+  // Not a map: Universe.h's own rule at the top of this class, and ADR 0010's answer for interest sets.
   // Locally minted serials increase, so a spawn appends and is O(1); only an id issued elsewhere
   // inserts in the middle. A despawn is a memmove of the tail -- 60 kB at five thousand ships, which
   // is the number to remember if churn ever makes it matter (ADR 0047).
@@ -981,9 +981,9 @@ private:
   // dense array is what keeps despawn cheap and iteration order the array's.
   struct Route
   {
-    WorldPos waypoint[MAX_PATH_WAYPOINTS];
-    WorldPos destination;
-    WorldPos legStart; // where the current leg began, for the deviation test
+    UniversePos waypoint[MAX_PATH_WAYPOINTS];
+    UniversePos destination;
+    UniversePos legStart; // where the current leg began, for the deviation test
     float requiredClearanceMetres = 0.0f;
     std::uint32_t count = 0;
     std::uint32_t cursor = 0;
@@ -998,7 +998,7 @@ private:
     // it reads a constant offset as movement, exceeds PURSUIT_REPLAN_METRES on every tick of every
     // chase, and re-plans an A* sixty times a second -- which is the entire cost that constant
     // exists to avoid. A premise that expired rather than a rule that was wrong (ADR 0052).
-    WorldPos pursuitAimedAt;
+    UniversePos pursuitAimedAt;
 
     // Consecutive ticks the blocking pass has pushed this ship away from its own steer target. Counted
     // by ApplyBlocking, reset by every plan and by every tick that is not blocked, and read by
@@ -1051,7 +1051,7 @@ private:
   struct Launch
   {
     StationId home = INVALID_STATION_ID;
-    WorldPos posWorld;
+    UniversePos posUniverse;
     float headingRad = 0.0f;
     std::uint32_t hullId = 0;
     FactionId factionId = FACTION_VANGUARD;
@@ -1095,7 +1095,7 @@ private:
   // order.
   StandingTable m_standings = DEFAULT_STANDINGS;
 
-  std::vector<WorldPos> m_routeScratch;
+  std::vector<UniversePos> m_routeScratch;
   std::vector<PathGrid::Obstacle> m_obstacleScratch;
 
   // Scratch, all of it sized by ship count and reused, so a tick allocates nothing once the fleet
@@ -1103,7 +1103,7 @@ private:
   std::vector<SpatialIndex::Entry> m_staticEntries;
   std::vector<SpatialIndex::Entry> m_dynamicEntries;
 
-  // The largest and fastest hulls actually in this world, recomputed as the index rebuilds and read
+  // The largest and fastest hulls actually in this universe, recomputed as the index rebuilds and read
   // by the gather. Not the hull table's maxima: those size a region's ghost zone and are the
   // ceiling, not the bill (Design/Archive/MmoScalabilityReview.md U2).
   NeighbourhoodExtent m_extent;
@@ -1118,7 +1118,7 @@ private:
   std::vector<std::uint32_t> m_neighbourStart; // ship count + 1 offsets into it
   std::vector<std::uint32_t> m_neighbourCount; // how much of each run is filled
   // Ship positions gathered for FormationHeading, kept so an order allocates nothing.
-  std::vector<WorldPos> m_headingScratch;
+  std::vector<UniversePos> m_headingScratch;
 
   std::vector<float> m_correctionX;
   std::vector<float> m_correctionZ;

@@ -63,10 +63,10 @@ void FeedBothLanes(Game::SnapshotReceiver& _receiver, const CaptureTransport& _l
     (void)_receiver.Accept(datagram);
 }
 
-Game::ShipId SpawnAt(Game::World& _world, float _x, float _z, Game::HullId _hull = Game::HullId::Corvette,
+Game::ShipId SpawnAt(Game::Universe& _universe, float _x, float _z, Game::HullId _hull = Game::HullId::Corvette,
                      Game::FactionId _faction = Game::FACTION_PLAYER)
 {
-  return _world.SpawnShip(Game::LocalPos(_x, _z), 0.0f, static_cast<std::uint32_t>(_hull), _faction);
+  return _universe.SpawnShip(Game::LocalPos(_x, _z), 0.0f, static_cast<std::uint32_t>(_hull), _faction);
 }
 
 // One decoded record by identity. The receiver holds a set, not a list in spawn order, so a row
@@ -92,7 +92,7 @@ Game::ShipId SpawnAt(Game::World& _world, float _x, float _z, Game::HullId _hull
   return false;
 }
 
-// Handles, for the server-side sets: an interest set is a set of references into one World, and
+// Handles, for the server-side sets: an interest set is a set of references into one Universe, and
 // only the wire deals in identities (ADR 0047).
 [[nodiscard]] bool Holds(std::span<const Game::ShipHandle> _set, Game::ShipHandle _handle)
 {
@@ -119,10 +119,10 @@ Game::ShipId SpawnAt(Game::World& _world, float _x, float _z, Game::HullId _hull
 }
 
 // Who a departed ship was, off the log. A test that plays the publisher's part needs it for the
-// same reason the publisher does: the ship is gone, so the world cannot be asked (ADR 0047).
-[[nodiscard]] Game::EntityId EntityOfDeparture(const Game::World& _world, Game::ShipHandle _handle)
+// same reason the publisher does: the ship is gone, so the universe cannot be asked (ADR 0047).
+[[nodiscard]] Game::EntityId EntityOfDeparture(const Game::Universe& _universe, Game::ShipHandle _handle)
 {
-  for (const Game::DespawnRecord& record : _world.DespawnsSince(0))
+  for (const Game::DespawnRecord& record : _universe.DespawnsSince(0))
   {
     if (record.handle == _handle)
       return record.entity;
@@ -149,7 +149,7 @@ constexpr float WIRE_POSITION_STEP_METRES = 0.125f;
 
 // Per axis, not as a distance: the quantizer rounds each axis independently, so a diagonal error of
 // 0.088 m is two axes each inside the bound and not a violation of it.
-[[nodiscard]] float WorstAxisError(const Game::WorldPos& _a, const Game::WorldPos& _b)
+[[nodiscard]] float WorstAxisError(const Game::UniversePos& _a, const Game::UniversePos& _b)
 {
   return std::max(std::fabs(Game::OffsetX(_a, _b)), std::fabs(Game::OffsetZ(_a, _b)));
 }
@@ -170,7 +170,7 @@ void FeedDatagrams(Game::SnapshotReceiver& _receiver, const CaptureTransport& _l
     (void)_receiver.Accept(datagram);
 }
 
-[[nodiscard]] const Game::ShipSnapshot* Find(const Game::WorldSnapshot& _snapshot, Game::EntityId _entity)
+[[nodiscard]] const Game::ShipSnapshot* Find(const Game::UniverseSnapshot& _snapshot, Game::EntityId _entity)
 {
   for (const Game::ShipSnapshot& ship : _snapshot.ships)
   {
@@ -212,37 +212,37 @@ public:
     // The damage is done by the fire pass rather than by a setter, because there is no setter and
     // there should not be one: hull points are the pass's to spend (ADR 0052), and a test that
     // reached past it would be asserting about a state the simulation cannot reach.
-    Game::World world;
-    const Game::ShipId station = SpawnAt(world, 900.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
-    const Game::ShipId victim = SpawnAt(world, 0.0f, 0.0f, Game::HullId::Frigate, Game::FACTION_PLAYER);
-    SpawnAt(world, 0.0f, 120.0f, Game::HullId::Frigate, Game::FACTION_VANDAL);
+    Game::Universe universe;
+    const Game::ShipId station = SpawnAt(universe, 900.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+    const Game::ShipId victim = SpawnAt(universe, 0.0f, 0.0f, Game::HullId::Frigate, Game::FACTION_PLAYER);
+    SpawnAt(universe, 0.0f, 120.0f, Game::HullId::Frigate, Game::FACTION_VANDAL);
 
     CaptureTransport link;
     Game::SnapshotWriter writer;
     Game::SnapshotReceiver receiver;
-    Assert::AreEqual(1u, writer.Write(world, link));
+    Assert::AreEqual(1u, writer.Write(universe, link));
     FeedBothLanes(receiver, link);
-    Assert::AreEqual(std::uint8_t{255}, FindShip(receiver, world.EntityIdOf(victim)).hullFraction, L"a whole hull did not read whole");
-    Assert::AreEqual(std::uint8_t{255}, FindShip(receiver, world.EntityIdOf(station)).hullFraction,
+    Assert::AreEqual(std::uint8_t{255}, FindShip(receiver, universe.EntityIdOf(victim)).hullFraction, L"a whole hull did not read whole");
+    Assert::AreEqual(std::uint8_t{255}, FindShip(receiver, universe.EntityIdOf(station)).hullFraction,
                      L"a hull that cannot be destroyed did not read whole");
 
     for (int tick = 0; tick < 300; ++tick)
-      world.Step();
+      universe.Step();
 
-    const std::uint32_t points = world.Ship(victim).hullPoints;
+    const std::uint32_t points = universe.Ship(victim).hullPoints;
     Assert::IsTrue(points > 0 && points < Game::HullSpecOf(Game::HullId::Frigate).maxHullPoints,
                    L"the victim was not hurt, or not survived");
 
     link.sent.clear();
     link.sentReliable.clear();
-    Assert::AreEqual(1u, writer.Write(world, link));
+    Assert::AreEqual(1u, writer.Write(universe, link));
     FeedBothLanes(receiver, link);
 
     // The encoding is what this row is about: 255ths of whole, computed the way the writer does it.
     const std::uint32_t expected = (points * 255u) / Game::HullSpecOf(Game::HullId::Frigate).maxHullPoints;
-    Assert::AreEqual(static_cast<std::uint8_t>(expected), FindShip(receiver, world.EntityIdOf(victim)).hullFraction,
+    Assert::AreEqual(static_cast<std::uint8_t>(expected), FindShip(receiver, universe.EntityIdOf(victim)).hullFraction,
                      L"the fraction on the wire is not what the hull points say");
-    Assert::AreEqual(std::uint8_t{255}, FindShip(receiver, world.EntityIdOf(station)).hullFraction,
+    Assert::AreEqual(std::uint8_t{255}, FindShip(receiver, universe.EntityIdOf(station)).hullFraction,
                      L"the station lost hull points it does not have");
   }
 
@@ -305,34 +305,34 @@ public:
   {
     // Spawned hostile so that every field is compared against a value that is not its default: a
     // faction that round-trips only because both ends default to zero proves nothing.
-    Game::World world;
-    const Game::ShipId ship = SpawnAt(world, 120.0f, -340.0f, Game::HullId::Frigate, Game::FACTION_VANDAL);
+    Game::Universe universe;
+    const Game::ShipId ship = SpawnAt(universe, 120.0f, -340.0f, Game::HullId::Frigate, Game::FACTION_VANDAL);
     const Game::ShipId order[] = {ship};
-    world.IssueMoveOrder(order, Game::LocalPos(0.0f, 600.0f), false, 0.0f);
+    universe.IssueMoveOrder(order, Game::LocalPos(0.0f, 600.0f), false, 0.0f);
     for (int tick = 0; tick < 30; ++tick)
-      world.Step();
+      universe.Step();
 
     CaptureTransport transport;
     Game::SnapshotWriter writer;
-    Assert::AreEqual(1u, writer.Write(world, transport), L"one ship did not fit in one fragment");
+    Assert::AreEqual(1u, writer.Write(universe, transport), L"one ship did not fit in one fragment");
 
     Game::SnapshotReceiver receiver;
     Assert::IsTrue(receiver.Accept(transport.sent[0]), L"a single-fragment snapshot did not complete");
 
-    const Game::WorldSnapshot& got = receiver.Latest();
-    Assert::AreEqual(world.Tick(), got.tick, L"the snapshot carries the wrong tick");
+    const Game::UniverseSnapshot& got = receiver.Latest();
+    Assert::AreEqual(universe.Tick(), got.tick, L"the snapshot carries the wrong tick");
     Assert::AreEqual(static_cast<std::size_t>(1), got.ships.size(), L"the wrong number of ships came back");
 
-    const Game::ShipState& source = world.Ship(ship);
+    const Game::ShipState& source = universe.Ship(ship);
     const Game::ShipSnapshot& copy = got.ships[0];
-    Assert::IsTrue(copy.entity == world.EntityIdOf(ship), L"the handle did not survive");
+    Assert::IsTrue(copy.entity == universe.EntityIdOf(ship), L"the handle did not survive");
 
     // Four fields are quantized and seven are not, and both halves are asserted here: a bound where
     // the wire rounds, and bit equality where it does not. A record whose fields got out of step
     // between the writer and the reader shows up as the exact ones failing, which is why they are
     // still compared against zero (Design/Archive/QuantizedWire-work-order.md 1).
-    Assert::IsTrue(WorstAxisError(source.posWorld, copy.posWorld) <= WIRE_POSITION_BOUND_METRES,
-                   L"posWorld came back further than half a lattice step");
+    Assert::IsTrue(WorstAxisError(source.posUniverse, copy.posUniverse) <= WIRE_POSITION_BOUND_METRES,
+                   L"posUniverse came back further than half a lattice step");
     Assert::IsTrue(WorstAxisError(source.prevPos, copy.prevPos) <= WIRE_POSITION_BOUND_METRES,
                    L"prevPos came back further than half a lattice step");
     Assert::IsTrue(AngleError(source.headingRad, copy.headingRad) <= WIRE_ANGLE_BOUND_RAD,
@@ -356,7 +356,7 @@ public:
     const float LOCALS[] = {0.0f, 0.0624f, 0.0625f, 0.0626f, 1.0f, 4096.0f, 8191.874f, 8191.9f, 8191.999f};
     const float SECTORS[] = {0.0f, Game::SECTOR_SIZE_METRES, -Game::SECTOR_SIZE_METRES * 3.0f};
 
-    Game::World world;
+    Game::Universe universe;
     std::vector<Game::ShipId> ships;
     for (const float sector : SECTORS)
     {
@@ -364,13 +364,13 @@ public:
       {
         for (const float localZ : LOCALS)
           ships.push_back(
-            world.SpawnShip(Game::LocalPos(sector + localX, sector + localZ), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette)));
+            universe.SpawnShip(Game::LocalPos(sector + localX, sector + localZ), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette)));
       }
     }
 
     CaptureTransport transport;
     Game::SnapshotWriter writer;
-    Assert::IsTrue(writer.Write(world, transport) > 1u, L"the sweep did not fragment, so it is not testing the writer");
+    Assert::IsTrue(writer.Write(universe, transport) > 1u, L"the sweep did not fragment, so it is not testing the writer");
 
     Game::SnapshotReceiver receiver;
     FeedDatagrams(receiver, transport);
@@ -378,9 +378,9 @@ public:
 
     for (const Game::ShipId id : ships)
     {
-      const Game::ShipSnapshot* copy = Find(receiver.Latest(), world.EntityIdOf(id));
+      const Game::ShipSnapshot* copy = Find(receiver.Latest(), universe.EntityIdOf(id));
       Assert::IsTrue(copy != nullptr, L"a swept position went missing");
-      Assert::IsTrue(WorstAxisError(world.Ship(id).posWorld, copy->posWorld) <= WIRE_POSITION_BOUND_METRES,
+      Assert::IsTrue(WorstAxisError(universe.Ship(id).posUniverse, copy->posUniverse) <= WIRE_POSITION_BOUND_METRES,
                      L"a swept position came back further than half a lattice step");
     }
   }
@@ -407,30 +407,30 @@ public:
                               9.5873799e-5f,
                               -9.5873799e-5f};
 
-    Game::World world;
+    Game::Universe universe;
     std::vector<Game::ShipId> ships;
     for (const float heading : HEADINGS)
     {
-      ships.push_back(world.SpawnShip(Game::LocalPos(static_cast<float>(ships.size()) * 400.0f, 0.0f), heading,
-                                      static_cast<std::uint32_t>(Game::HullId::Corvette)));
+      ships.push_back(universe.SpawnShip(Game::LocalPos(static_cast<float>(ships.size()) * 400.0f, 0.0f), heading,
+                                         static_cast<std::uint32_t>(Game::HullId::Corvette)));
     }
 
     CaptureTransport transport;
     Game::SnapshotWriter writer;
-    Assert::IsTrue(writer.Write(world, transport) > 0u, L"nothing was sent");
+    Assert::IsTrue(writer.Write(universe, transport) > 0u, L"nothing was sent");
 
     Game::SnapshotReceiver receiver;
     FeedDatagrams(receiver, transport);
 
     for (const Game::ShipId id : ships)
     {
-      const Game::ShipSnapshot* copy = Find(receiver.Latest(), world.EntityIdOf(id));
+      const Game::ShipSnapshot* copy = Find(receiver.Latest(), universe.EntityIdOf(id));
       Assert::IsTrue(copy != nullptr, L"a swept heading went missing");
-      Assert::IsTrue(AngleError(world.Ship(id).headingRad, copy->headingRad) <= WIRE_ANGLE_BOUND_RAD,
+      Assert::IsTrue(AngleError(universe.Ship(id).headingRad, copy->headingRad) <= WIRE_ANGLE_BOUND_RAD,
                      L"a swept heading came back further than half a turns16 step");
       // Spawn sets prevHeading to the same value, so this pins the second angle field as well --
       // the two are written by the same call and would drift together if either were mis-sized.
-      Assert::IsTrue(AngleError(world.Ship(id).prevHeading, copy->prevHeading) <= WIRE_ANGLE_BOUND_RAD,
+      Assert::IsTrue(AngleError(universe.Ship(id).prevHeading, copy->prevHeading) <= WIRE_ANGLE_BOUND_RAD,
                      L"a swept prevHeading came back further than half a turns16 step");
       Assert::IsTrue(copy->headingRad > -DirectX::XM_PI - WIRE_ANGLE_BOUND_RAD && copy->headingRad <= DirectX::XM_PI + WIRE_ANGLE_BOUND_RAD,
                      L"a decoded heading left the range the decode promises");
@@ -439,42 +439,42 @@ public:
 
   TEST_METHOD(APrevPosArrivesAsAWholeNumberOfStepsFromItsOwnPosition)
   {
-    // prevPos is not a second position on the wire: it is an integer step delta from posWorld, which
+    // prevPos is not a second position on the wire: it is an integer step delta from posUniverse, which
     // is what makes the pair four bytes instead of twelve and what keeps the reconstruction exact
     // rather than doubly rounded (Design/Archive/QuantizedWire-work-order.md 2.3). Two things follow, and
     // both are asserted: the offset between the decoded pair is a whole number of steps, and it is
     // within one step of the offset the simulation holds. The view divides that offset by one tick
     // to get velocity, so it is the number this field exists for.
-    Game::World world;
-    const Game::ShipId ship = SpawnAt(world, 0.0f, 0.0f, Game::HullId::Interceptor);
+    Game::Universe universe;
+    const Game::ShipId ship = SpawnAt(universe, 0.0f, 0.0f, Game::HullId::Interceptor);
     const Game::ShipId order[] = {ship};
-    world.IssueMoveOrder(order, Game::LocalPos(3000.0f, 1500.0f), false, 0.0f);
+    universe.IssueMoveOrder(order, Game::LocalPos(3000.0f, 1500.0f), false, 0.0f);
 
     float worstDelta = 0.0f;
     float longestTravel = 0.0f;
     for (int tick = 0; tick < 120; ++tick)
     {
-      world.Step();
+      universe.Step();
 
       CaptureTransport transport;
       Game::SnapshotWriter writer;
-      Assert::AreEqual(1u, writer.Write(world, transport), L"one ship did not fit in one fragment");
+      Assert::AreEqual(1u, writer.Write(universe, transport), L"one ship did not fit in one fragment");
       Game::SnapshotReceiver receiver;
       FeedDatagrams(receiver, transport);
       Assert::AreEqual(static_cast<std::size_t>(1), receiver.Latest().ships.size(), L"the ship did not arrive");
 
-      const Game::ShipState& source = world.Ship(ship);
+      const Game::ShipState& source = universe.Ship(ship);
       const Game::ShipSnapshot& copy = receiver.Latest().ships[0];
 
-      const float wireX = Game::OffsetX(copy.prevPos, copy.posWorld);
-      const float wireZ = Game::OffsetZ(copy.prevPos, copy.posWorld);
+      const float wireX = Game::OffsetX(copy.prevPos, copy.posUniverse);
+      const float wireZ = Game::OffsetZ(copy.prevPos, copy.posUniverse);
       Assert::AreEqual(std::round(wireX / WIRE_POSITION_STEP_METRES), wireX / WIRE_POSITION_STEP_METRES, 0.0f,
-                       L"the decoded prevPos was not a whole number of steps from posWorld");
+                       L"the decoded prevPos was not a whole number of steps from posUniverse");
       Assert::AreEqual(std::round(wireZ / WIRE_POSITION_STEP_METRES), wireZ / WIRE_POSITION_STEP_METRES, 0.0f,
-                       L"the decoded prevPos was not a whole number of steps from posWorld");
+                       L"the decoded prevPos was not a whole number of steps from posUniverse");
 
-      const float trueX = Game::OffsetX(source.prevPos, source.posWorld);
-      const float trueZ = Game::OffsetZ(source.prevPos, source.posWorld);
+      const float trueX = Game::OffsetX(source.prevPos, source.posUniverse);
+      const float trueZ = Game::OffsetZ(source.prevPos, source.posUniverse);
       worstDelta = std::max(worstDelta, std::max(std::fabs(wireX - trueX), std::fabs(wireZ - trueZ)));
       longestTravel = std::max(longestTravel, std::max(std::fabs(trueX), std::fabs(trueZ)));
 
@@ -490,39 +490,39 @@ public:
 
   TEST_METHOD(ASectorBorderIsCrossedWithoutAJump)
   {
-    // The decode rebuilds prevPos by translating the decoded posWorld, so the sector carry is the
+    // The decode rebuilds prevPos by translating the decoded posUniverse, so the sector carry is the
     // simulation's own. If it were not, a ship crossing a border would decode into the sector it had
     // just left and the view would see it jump a sector's width and come back.
-    Game::World world;
-    const Game::ShipId ship =
-      world.SpawnShip(Game::LocalPos(Game::SECTOR_SIZE_METRES - 60.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor));
+    Game::Universe universe;
+    const Game::ShipId ship = universe.SpawnShip(Game::LocalPos(Game::SECTOR_SIZE_METRES - 60.0f, 0.0f), 0.0f,
+                                                 static_cast<std::uint32_t>(Game::HullId::Interceptor));
     const Game::ShipId order[] = {ship};
-    world.IssueMoveOrder(order, Game::LocalPos(Game::SECTOR_SIZE_METRES + 400.0f, 0.0f), false, 0.0f);
+    universe.IssueMoveOrder(order, Game::LocalPos(Game::SECTOR_SIZE_METRES + 400.0f, 0.0f), false, 0.0f);
 
-    Game::WorldPos previous;
+    Game::UniversePos previous;
     bool havePrevious = false;
     bool crossed = false;
     float worstStep = 0.0f;
     for (int tick = 0; tick < 400; ++tick)
     {
-      world.Step();
+      universe.Step();
 
       CaptureTransport transport;
       Game::SnapshotWriter writer;
-      Assert::AreEqual(1u, writer.Write(world, transport), L"one ship did not fit in one fragment");
+      Assert::AreEqual(1u, writer.Write(universe, transport), L"one ship did not fit in one fragment");
       Game::SnapshotReceiver receiver;
       FeedDatagrams(receiver, transport);
       Assert::AreEqual(static_cast<std::size_t>(1), receiver.Latest().ships.size(), L"the ship did not arrive");
       const Game::ShipSnapshot& copy = receiver.Latest().ships[0];
 
       if (havePrevious)
-        worstStep = std::max(worstStep, Game::Distance(previous, copy.posWorld));
-      previous = copy.posWorld;
+        worstStep = std::max(worstStep, Game::Distance(previous, copy.posUniverse));
+      previous = copy.posUniverse;
       havePrevious = true;
-      crossed = crossed || copy.posWorld.sectorX == 1;
+      crossed = crossed || copy.posUniverse.sectorX == 1;
 
-      Assert::IsTrue(Game::Distance(copy.prevPos, copy.posWorld) < 1.0f,
-                     L"a record's prevPos was more than a tick of travel from its posWorld");
+      Assert::IsTrue(Game::Distance(copy.prevPos, copy.posUniverse) < 1.0f,
+                     L"a record's prevPos was more than a tick of travel from its posUniverse");
     }
 
     Assert::IsTrue(crossed, L"the ship never crossed the border, so nothing was tested");
@@ -537,23 +537,23 @@ public:
     // this one. Carrying rather than clamping is what keeps the encode monotonic across a border: a
     // quantizer that clamped would put a ship a millimetre from the border 0.124 m back inside it,
     // and the sign of the error would flip at the boundary.
-    Game::World world;
-    const Game::ShipId ship =
-      world.SpawnShip(Game::LocalPos(Game::SECTOR_SIZE_METRES - 0.001f, 0.001f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+    Game::Universe universe;
+    const Game::ShipId ship = universe.SpawnShip(Game::LocalPos(Game::SECTOR_SIZE_METRES - 0.001f, 0.001f), 0.0f,
+                                                 static_cast<std::uint32_t>(Game::HullId::Corvette));
 
     CaptureTransport transport;
     Game::SnapshotWriter writer;
-    Assert::AreEqual(1u, writer.Write(world, transport), L"one ship did not fit in one fragment");
+    Assert::AreEqual(1u, writer.Write(universe, transport), L"one ship did not fit in one fragment");
     Game::SnapshotReceiver receiver;
     FeedDatagrams(receiver, transport);
 
     const Game::ShipSnapshot& copy = receiver.Latest().ships[0];
-    Assert::IsTrue(world.Ship(ship).posWorld.sectorX == 0, L"the spawn was not where this test needs it");
-    Assert::IsTrue(copy.posWorld.sectorX == 1, L"the encode did not carry into the next sector");
-    Assert::AreEqual(0.0f, copy.posWorld.localX, 0.0f, L"the carried offset is not the new sector's origin");
-    Assert::IsTrue(copy.posWorld.sectorZ == 0, L"a millimetre north changed sector");
-    Assert::AreEqual(0.0f, copy.posWorld.localZ, 0.0f, L"a millimetre did not round to the origin");
-    Assert::IsTrue(WorstAxisError(world.Ship(ship).posWorld, copy.posWorld) <= WIRE_POSITION_BOUND_METRES,
+    Assert::IsTrue(universe.Ship(ship).posUniverse.sectorX == 0, L"the spawn was not where this test needs it");
+    Assert::IsTrue(copy.posUniverse.sectorX == 1, L"the encode did not carry into the next sector");
+    Assert::AreEqual(0.0f, copy.posUniverse.localX, 0.0f, L"the carried offset is not the new sector's origin");
+    Assert::IsTrue(copy.posUniverse.sectorZ == 0, L"a millimetre north changed sector");
+    Assert::AreEqual(0.0f, copy.posUniverse.localZ, 0.0f, L"a millimetre did not round to the origin");
+    Assert::IsTrue(WorstAxisError(universe.Ship(ship).posUniverse, copy.posUniverse) <= WIRE_POSITION_BOUND_METRES,
                    L"the carry moved the ship further than half a step");
   }
 
@@ -561,17 +561,17 @@ public:
   {
     // Both shapes of send, because they are the two the game uses and only one of them is exercised
     // by the round-trip test above.
-    Game::World world;
-    const Game::ShipId ours = SpawnAt(world, 0.0f, 0.0f, Game::HullId::Corvette, Game::FACTION_PLAYER);
-    const Game::ShipId theirs = SpawnAt(world, 200.0f, 0.0f, Game::HullId::Interceptor, Game::FACTION_VANDAL);
-    world.Step();
+    Game::Universe universe;
+    const Game::ShipId ours = SpawnAt(universe, 0.0f, 0.0f, Game::HullId::Corvette, Game::FACTION_PLAYER);
+    const Game::ShipId theirs = SpawnAt(universe, 200.0f, 0.0f, Game::HullId::Interceptor, Game::FACTION_VANDAL);
+    universe.Step();
 
-    const Game::EntityId ourEntity = world.EntityIdOf(ours);
-    const Game::EntityId theirEntity = world.EntityIdOf(theirs);
+    const Game::EntityId ourEntity = universe.EntityIdOf(ours);
+    const Game::EntityId theirEntity = universe.EntityIdOf(theirs);
 
     CaptureTransport whole;
     Game::SnapshotWriter writer;
-    Assert::IsTrue(writer.Write(world, whole) > 0, L"the full snapshot did not send");
+    Assert::IsTrue(writer.Write(universe, whole) > 0, L"the full snapshot did not send");
     Game::SnapshotReceiver fromWhole;
     for (const std::vector<std::uint8_t>& datagram : whole.sent)
       (void)fromWhole.Accept(datagram);
@@ -581,12 +581,12 @@ public:
     Assert::AreEqual(Faction(Game::FACTION_VANDAL), Faction(Find(fromWhole.Latest(), theirEntity)->factionId),
                      L"the hostile faction did not survive Write");
 
-    world.Step();
+    universe.Step();
     CaptureTransport update;
-    // Handles, not ids: the sent list is resolved against this world to build records, which is the
+    // Handles, not ids: the sent list is resolved against this universe to build records, which is the
     // one list on this call that is still server-side currency (ADR 0047).
-    const Game::ShipHandle both[] = {world.HandleOf(ours), world.HandleOf(theirs)};
-    Assert::IsTrue(writer.WriteInterest(world, both, {}, {}, {}, update) > 0, L"the interest update did not send");
+    const Game::ShipHandle both[] = {universe.HandleOf(ours), universe.HandleOf(theirs)};
+    Assert::IsTrue(writer.WriteInterest(universe, both, {}, {}, {}, update) > 0, L"the interest update did not send");
     Game::SnapshotReceiver fromUpdate;
     for (const std::vector<std::uint8_t>& datagram : update.sent)
       (void)fromUpdate.Accept(datagram);
@@ -601,25 +601,25 @@ public:
   // design forbids (Design/Archive/Stations.md 6.2).
   TEST_METHOD(TheStationFlagSurvivesTheWire)
   {
-    Game::World world;
-    const Game::ShipId ship = SpawnAt(world, 0.0f, 0.0f, Game::HullId::Corvette, Game::FACTION_PLAYER);
-    const Game::ShipId scenery = SpawnAt(world, 400.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
-    const Game::ShipId post = SpawnAt(world, 800.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+    Game::Universe universe;
+    const Game::ShipId ship = SpawnAt(universe, 0.0f, 0.0f, Game::HullId::Corvette, Game::FACTION_PLAYER);
+    const Game::ShipId scenery = SpawnAt(universe, 400.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+    const Game::ShipId post = SpawnAt(universe, 800.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
 
-    Game::World::StationDesc desc;
+    Game::Universe::StationDesc desc;
     desc.ownerFaction = Game::FACTION_VANGUARD;
-    Assert::AreNotEqual(Game::World::INVALID_STATION_ID, world.MakeStation(post, desc), L"the station was not made");
-    world.Step();
+    Assert::AreNotEqual(Game::Universe::INVALID_STATION_ID, universe.MakeStation(post, desc), L"the station was not made");
+    universe.Step();
 
-    const Game::EntityId shipEntity = world.EntityIdOf(ship);
-    const Game::EntityId sceneryEntity = world.EntityIdOf(scenery);
-    const Game::EntityId postEntity = world.EntityIdOf(post);
+    const Game::EntityId shipEntity = universe.EntityIdOf(ship);
+    const Game::EntityId sceneryEntity = universe.EntityIdOf(scenery);
+    const Game::EntityId postEntity = universe.EntityIdOf(post);
 
     // Both shapes of send: the flag is written by one record writer, but only one of the two paths
     // would be exercised by a round-trip test, and a header read in the wrong place breaks the other.
     CaptureTransport whole;
     Game::SnapshotWriter writer;
-    Assert::IsTrue(writer.Write(world, whole) > 0, L"the full snapshot did not send");
+    Assert::IsTrue(writer.Write(universe, whole) > 0, L"the full snapshot did not send");
     Game::SnapshotReceiver fromWhole;
     for (const std::vector<std::uint8_t>& datagram : whole.sent)
       (void)fromWhole.Accept(datagram);
@@ -631,10 +631,10 @@ public:
     Assert::AreEqual(static_cast<std::uint32_t>(0), static_cast<std::uint32_t>(Find(fromWhole.Latest(), shipEntity)->flags),
                      L"a plain ship came back flagged as a station");
 
-    world.Step();
+    universe.Step();
     CaptureTransport update;
-    const Game::ShipHandle all[] = {world.HandleOf(ship), world.HandleOf(scenery), world.HandleOf(post)};
-    Assert::IsTrue(writer.WriteInterest(world, all, {}, {}, {}, update) > 0, L"the interest update did not send");
+    const Game::ShipHandle all[] = {universe.HandleOf(ship), universe.HandleOf(scenery), universe.HandleOf(post)};
+    Assert::IsTrue(writer.WriteInterest(universe, all, {}, {}, {}, update) > 0, L"the interest update did not send");
     Game::SnapshotReceiver fromUpdate;
     for (const std::vector<std::uint8_t>& datagram : update.sent)
       (void)fromUpdate.Accept(datagram);
@@ -651,23 +651,23 @@ public:
   // (Design/Archive/Stations.md 4.3).
   TEST_METHOD(StandingSurvivesTheWire)
   {
-    Game::World world;
-    const Game::ShipId raider = SpawnAt(world, 0.0f, 0.0f, Game::HullId::Bomber, Game::FACTION_PLAYER);
-    const Game::ShipId post = SpawnAt(world, 900.0f, 900.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+    Game::Universe universe;
+    const Game::ShipId raider = SpawnAt(universe, 0.0f, 0.0f, Game::HullId::Bomber, Game::FACTION_PLAYER);
+    const Game::ShipId post = SpawnAt(universe, 900.0f, 900.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
 
-    Game::World::StationDesc desc;
+    Game::Universe::StationDesc desc;
     desc.ownerFaction = Game::FACTION_VANGUARD;
-    const Game::World::StationId station = world.MakeStation(post, desc);
-    world.Step();
+    const Game::Universe::StationId station = universe.MakeStation(post, desc);
+    universe.Step();
 
-    const Game::ShipHandle held[] = {world.HandleOf(raider), world.HandleOf(post)};
+    const Game::ShipHandle held[] = {universe.HandleOf(raider), universe.HandleOf(post)};
     Game::SnapshotWriter writer;
 
     // The full-snapshot path first. Both writers stamp KIND_SNAPSHOT and one reader parses both, so
     // a mask written by one and not the other desynchronises the reader on the first full snapshot
     // -- and nothing else in this file would notice, because every other test here uses one path.
     CaptureTransport whole;
-    Assert::IsTrue(writer.Write(world, whole, Game::FACTION_PLAYER) > 0, L"the full snapshot did not send");
+    Assert::IsTrue(writer.Write(universe, whole, Game::FACTION_PLAYER) > 0, L"the full snapshot did not send");
     Game::SnapshotReceiver fromWhole;
     for (const std::vector<std::uint8_t>& datagram : whole.sent)
       (void)fromWhole.Accept(datagram);
@@ -675,7 +675,7 @@ public:
     Assert::IsFalse(fromWhole.IsHostileToMe(Game::FACTION_VANGUARD), L"Write reported the Vanguard hostile before it was");
 
     CaptureTransport atBoot;
-    Assert::IsTrue(writer.WriteInterest(world, held, {}, {}, {}, atBoot, Game::FACTION_PLAYER) > 0, L"the update did not send");
+    Assert::IsTrue(writer.WriteInterest(universe, held, {}, {}, {}, atBoot, Game::FACTION_PLAYER) > 0, L"the update did not send");
     Game::SnapshotReceiver player;
     for (const std::vector<std::uint8_t>& datagram : atBoot.sent)
       (void)player.Accept(datagram);
@@ -683,20 +683,22 @@ public:
     Assert::IsTrue(player.IsHostileToMe(Game::FACTION_VANDAL), L"the client was not told the Vandals are hostile to it");
     Assert::IsFalse(player.IsHostileToMe(Game::FACTION_VANGUARD), L"the client was told the Vanguard is hostile before it was");
 
-    world.RecordAggression(world.HandleOf(raider), station);
-    world.Step();
+    universe.RecordAggression(universe.HandleOf(raider), station);
+    universe.Step();
 
     CaptureTransport afterwards;
-    Assert::IsTrue(writer.WriteInterest(world, held, {}, {}, {}, afterwards, Game::FACTION_PLAYER) > 0, L"the second update did not send");
+    Assert::IsTrue(writer.WriteInterest(universe, held, {}, {}, {}, afterwards, Game::FACTION_PLAYER) > 0,
+                   L"the second update did not send");
     for (const std::vector<std::uint8_t>& datagram : afterwards.sent)
       (void)player.Accept(datagram);
     Assert::IsTrue(player.IsHostileToMe(Game::FACTION_VANGUARD), L"the client was never told the law had turned on it");
 
     // Directional, and stated per subscriber rather than broadcast: a Vandal-faction client is told
     // about the player, not about itself. One row of the table, never the table.
-    world.Step();
+    universe.Step();
     CaptureTransport vandalLink;
-    Assert::IsTrue(writer.WriteInterest(world, held, {}, {}, {}, vandalLink, Game::FACTION_VANDAL) > 0, L"the Vandal update did not send");
+    Assert::IsTrue(writer.WriteInterest(universe, held, {}, {}, {}, vandalLink, Game::FACTION_VANDAL) > 0,
+                   L"the Vandal update did not send");
     Game::SnapshotReceiver vandal;
     for (const std::vector<std::uint8_t>& datagram : vandalLink.sent)
       (void)vandal.Accept(datagram);
@@ -709,23 +711,23 @@ public:
   // hangs on the difference (ADR 0040).
   TEST_METHOD(ADockAndADeathDifferOnTheWire)
   {
-    Game::World world;
-    const Game::ShipId post = SpawnAt(world, 900.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
-    Game::World::StationDesc desc;
+    Game::Universe universe;
+    const Game::ShipId post = SpawnAt(universe, 900.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+    Game::Universe::StationDesc desc;
     desc.ownerFaction = Game::FACTION_VANGUARD;
-    (void)world.MakeStation(post, desc);
+    (void)universe.MakeStation(post, desc);
 
-    const Game::ShipId doomed = SpawnAt(world, 0.0f, 0.0f);
-    const Game::ShipId visitor = SpawnAt(world, 20.0f, 0.0f);
-    const Game::ShipId leaver = SpawnAt(world, 40.0f, 0.0f);
-    world.Step();
+    const Game::ShipId doomed = SpawnAt(universe, 0.0f, 0.0f);
+    const Game::ShipId visitor = SpawnAt(universe, 20.0f, 0.0f);
+    const Game::ShipId leaver = SpawnAt(universe, 40.0f, 0.0f);
+    universe.Step();
 
-    const Game::EntityId doomedEntity = world.EntityIdOf(doomed);
-    const Game::EntityId visitorEntity = world.EntityIdOf(visitor);
-    const Game::EntityId leaverEntity = world.EntityIdOf(leaver);
+    const Game::EntityId doomedEntity = universe.EntityIdOf(doomed);
+    const Game::EntityId visitorEntity = universe.EntityIdOf(visitor);
+    const Game::EntityId leaverEntity = universe.EntityIdOf(leaver);
 
-    Assert::IsTrue(world.DespawnShip(world.HandleOf(doomed)), L"the despawn failed");
-    Assert::IsTrue(world.DespawnShip(world.HandleOf(visitor), Game::DespawnCause::Docked), L"the docking despawn failed");
+    Assert::IsTrue(universe.DespawnShip(universe.HandleOf(doomed)), L"the despawn failed");
+    Assert::IsTrue(universe.DespawnShip(universe.HandleOf(visitor), Game::DespawnCause::Docked), L"the docking despawn failed");
 
     // The publisher's split is what the writer is handed; here the test plays that part, so the
     // format is what is under test rather than the split.
@@ -735,7 +737,7 @@ public:
 
     CaptureTransport link;
     Game::SnapshotWriter writer;
-    Assert::IsTrue(writer.WriteInterest(world, {}, left, destroyed, docked, link) > 0, L"the update did not send");
+    Assert::IsTrue(writer.WriteInterest(universe, {}, left, destroyed, docked, link) > 0, L"the update did not send");
 
     Game::SnapshotReceiver receiver;
     FeedBothLanes(receiver, link);
@@ -768,8 +770,8 @@ public:
 
   TEST_METHOD(AFleetOrderRoundTrips)
   {
-    Game::World world;
-    const Game::ShipId post = SpawnAt(world, 900.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+    Game::Universe universe;
+    const Game::ShipId post = SpawnAt(universe, 900.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
 
     // One fixed-size message whatever the fleet's size: there is no ship list in it at all, which is
     // what makes an order stop scaling with the group it moves (ADR 0049).
@@ -779,8 +781,8 @@ public:
     sent.point = Game::LocalPos(1200.0f, -640.0f);
     sent.facingRad = 0.75f;
     sent.hasFacing = true;
-    sent.station = world.EntityIdOf(post);
-    sent.target = world.EntityIdOf(SpawnAt(world, -400.0f, 0.0f, Game::HullId::Interceptor, Game::FACTION_VANDAL));
+    sent.station = universe.EntityIdOf(post);
+    sent.target = universe.EntityIdOf(SpawnAt(universe, -400.0f, 0.0f, Game::HullId::Interceptor, Game::FACTION_VANDAL));
 
     CaptureTransport link;
     Assert::IsTrue(Game::WriteFleetOrder(sent, link), L"the fleet order did not send");
@@ -832,11 +834,11 @@ public:
 
   TEST_METHOD(AFleetRosterRoundTrips)
   {
-    Game::World world;
+    Game::Universe universe;
     Game::FleetRoster sent;
     sent.slot = 4;
     for (int at = 0; at < static_cast<int>(Game::MAX_FLEET_SHIPS); ++at)
-      sent.members.push_back(world.EntityIdOf(SpawnAt(world, static_cast<float>(at) * 40.0f, 0.0f)));
+      sent.members.push_back(universe.EntityIdOf(SpawnAt(universe, static_cast<float>(at) * 40.0f, 0.0f)));
 
     CaptureTransport link;
     Assert::IsTrue(Game::WriteFleetRoster(sent, link), L"the roster did not send");
@@ -892,11 +894,11 @@ public:
 
   TEST_METHOD(ALedgerExchangeRoundTrips)
   {
-    Game::World world;
-    const Game::ShipId post = SpawnAt(world, 900.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+    Game::Universe universe;
+    const Game::ShipId post = SpawnAt(universe, 900.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
 
     Game::LedgerRequest asked;
-    asked.station = world.EntityIdOf(post);
+    asked.station = universe.EntityIdOf(post);
 
     CaptureTransport up;
     Assert::IsTrue(Game::WriteLedgerRequest(asked, up), L"the request did not send");
@@ -939,11 +941,11 @@ public:
 
   TEST_METHOD(AComposeOrderRoundTrips)
   {
-    Game::World world;
-    const Game::ShipId post = SpawnAt(world, 900.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+    Game::Universe universe;
+    const Game::ShipId post = SpawnAt(universe, 900.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
 
     Game::ComposeOrder sent;
-    sent.station = world.EntityIdOf(post);
+    sent.station = universe.EntityIdOf(post);
     sent.slot = 1;
     sent.hullCounts[static_cast<std::size_t>(Game::HullId::Corvette)] = 3;
     sent.hullCounts[static_cast<std::size_t>(Game::HullId::Miner)] = 2;
@@ -989,7 +991,7 @@ public:
     // The format's own regression test: records decode with a block in front of them, at both ends
     // of what the block can be. A header that grew without the reader agreeing would put the cursor
     // inside the first record, and every field after it would be garbage that still parsed.
-    Game::World empty;
+    Game::Universe empty;
     for (int at = 0; at < 4; ++at)
       (void)SpawnAt(empty, static_cast<float>(at) * 60.0f, 0.0f);
 
@@ -999,17 +1001,17 @@ public:
     Game::SnapshotReceiver receiver;
     FeedBothLanes(receiver, noFleets);
     Assert::AreEqual(static_cast<std::size_t>(4), receiver.Latest().ships.size(), L"the records did not decode with no fleets");
-    Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetMask()), L"a world with no fleets stated one");
+    Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetMask()), L"a universe with no fleets stated one");
 
     // Five fleets: the widest the block ever is, and the case ShipsPerSnapshotFragment is sized for.
-    Game::World full;
+    Game::Universe full;
     std::vector<Game::ShipId> members;
     for (std::uint8_t slot = 0; slot < Game::FLEET_SLOTS; ++slot)
     {
       const Game::ShipId ship = SpawnAt(full, static_cast<float>(slot) * 200.0f, 0.0f);
       members.push_back(ship);
       const Game::ShipId one[] = {ship};
-      Assert::AreNotEqual(Game::World::INVALID_FLEET_ID, full.FormFleet(Game::FACTION_PLAYER, slot, one), L"a fleet was refused");
+      Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID, full.FormFleet(Game::FACTION_PLAYER, slot, one), L"a fleet was refused");
     }
 
     CaptureTransport fiveFleets;
@@ -1022,7 +1024,7 @@ public:
     Assert::AreEqual(0x1Fu, static_cast<std::uint32_t>(fullReceiver.FleetMask()), L"five fleets did not all reach the mask");
     for (std::uint8_t slot = 0; slot < Game::FLEET_SLOTS; ++slot)
     {
-      Assert::IsTrue(Distance(fullReceiver.FleetStatusOf(slot).position, full.Ship(members[slot]).posWorld) < 0.1f,
+      Assert::IsTrue(Distance(fullReceiver.FleetStatusOf(slot).position, full.Ship(members[slot]).posUniverse) < 0.1f,
                      L"a fleet's stated position is not where its one member is");
     }
   }
@@ -1033,24 +1035,24 @@ public:
     // patrol crossing the edge of the interest radius detonated on screen while it was alive and
     // well (Design/Archive/Hostiles.md 4.4).
     //
-    // The split is WorldSimulation's, which lives in the executable and has no suite, so the rule is
-    // restated here against the same two inputs: the world's despawn log, and the interest set's
+    // The split is UniverseSimulation's, which lives in the executable and has no suite, so the rule is
+    // restated here against the same two inputs: the universe's despawn log, and the interest set's
     // leaves.
-    Game::World world;
-    const Game::ShipId doomed = SpawnAt(world, 0.0f, 0.0f);
-    const Game::ShipId departing = SpawnAt(world, 100.0f, 0.0f);
-    const Game::EntityId doomedEntity = world.EntityIdOf(doomed);
-    const Game::EntityId departingEntity = world.EntityIdOf(departing);
-    world.Step();
+    Game::Universe universe;
+    const Game::ShipId doomed = SpawnAt(universe, 0.0f, 0.0f);
+    const Game::ShipId departing = SpawnAt(universe, 100.0f, 0.0f);
+    const Game::EntityId doomedEntity = universe.EntityIdOf(doomed);
+    const Game::EntityId departingEntity = universe.EntityIdOf(departing);
+    universe.Step();
 
     Game::InterestSet interest;
-    interest.Update(world, Game::LocalPos(0.0f, 0.0f));
+    interest.Update(universe, Game::LocalPos(0.0f, 0.0f));
 
     Game::SnapshotWriter writer;
     Game::SnapshotReceiver receiver;
     CaptureTransport link;
-    const Game::ShipHandle both[] = {world.HandleOf(doomed), world.HandleOf(departing)};
-    Assert::IsTrue(writer.WriteInterest(world, both, {}, {}, {}, link) > 0, L"the first update did not send");
+    const Game::ShipHandle both[] = {universe.HandleOf(doomed), universe.HandleOf(departing)};
+    Assert::IsTrue(writer.WriteInterest(universe, both, {}, {}, {}, link) > 0, L"the first update did not send");
     FeedBothLanes(receiver, link);
     Assert::AreEqual(static_cast<std::size_t>(2), receiver.Latest().ships.size(), L"the client did not take both ships");
     Assert::IsTrue(receiver.Destroyed().empty(), L"an update that killed nothing reported a death");
@@ -1058,28 +1060,28 @@ public:
     // One dies; the other is left alive but carried out of range by moving the viewpoint, which is
     // the case a subscriber actually creates. Both drop out on the same update, which is the point:
     // they arrive in one Left() list and only the log tells them apart.
-    Assert::IsTrue(world.DespawnShip(world.HandleOf(doomed)), L"the despawn failed");
-    world.Step();
-    interest.Update(world, Game::LocalPos(Game::INTEREST_RADIUS_METRES * 3.0f, 0.0f));
+    Assert::IsTrue(universe.DespawnShip(universe.HandleOf(doomed)), L"the despawn failed");
+    universe.Step();
+    interest.Update(universe, Game::LocalPos(Game::INTEREST_RADIUS_METRES * 3.0f, 0.0f));
     Assert::AreEqual(static_cast<std::size_t>(2), interest.Left().size(), L"both ships should have dropped out on one update");
 
     // The split the publisher does, done by hand: handles in, ids out. A dead ship's id comes off
-    // the despawn log, because the world can no longer be asked who a handle was (ADR 0047).
+    // the despawn log, because the universe can no longer be asked who a handle was (ADR 0047).
     std::vector<Game::EntityId> destroyed;
     std::vector<Game::EntityId> left;
     for (const Game::ShipHandle handle : interest.Left())
     {
-      if (Holds(world.DespawnsSince(0), handle))
-        destroyed.push_back(EntityOfDeparture(world, handle));
+      if (Holds(universe.DespawnsSince(0), handle))
+        destroyed.push_back(EntityOfDeparture(universe, handle));
       else
-        left.push_back(world.EntityIdOf(handle));
+        left.push_back(universe.EntityIdOf(handle));
     }
     Assert::AreEqual(static_cast<std::size_t>(1), destroyed.size(), L"exactly one of the two died");
     Assert::AreEqual(static_cast<std::size_t>(1), left.size(), L"exactly one of the two merely departed");
 
     link.sent.clear();
     link.sentReliable.clear();
-    Assert::IsTrue(writer.WriteInterest(world, {}, left, destroyed, {}, link) > 0, L"the second update did not send");
+    Assert::IsTrue(writer.WriteInterest(universe, {}, left, destroyed, {}, link) > 0, L"the second update did not send");
     Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"the departures did not take the reliable lane");
     FeedBothLanes(receiver, link);
 
@@ -1089,19 +1091,19 @@ public:
     Assert::IsFalse(Holds(receiver.Destroyed(), departingEntity), L"a ship that only left the radius was reported destroyed");
   }
 
-  TEST_METHOD(AWorldTooBigForOneDatagramFragmentsAndReassembles)
+  TEST_METHOD(AUniverseTooBigForOneDatagramFragmentsAndReassembles)
   {
     // 200 ships against 23 per fragment. The point is not the number but that the count and the
-    // order come back exactly, because a snapshot that reassembles out of order is a world where
+    // order come back exactly, because a snapshot that reassembles out of order is a universe where
     // ships have swapped places.
-    Game::World world;
+    Game::Universe universe;
     for (int at = 0; at < 200; ++at)
-      SpawnAt(world, static_cast<float>(at) * 40.0f, 0.0f);
-    world.Step();
+      SpawnAt(universe, static_cast<float>(at) * 40.0f, 0.0f);
+    universe.Step();
 
     CaptureTransport transport;
     Game::SnapshotWriter writer;
-    const std::uint32_t fragments = writer.Write(world, transport);
+    const std::uint32_t fragments = writer.Write(universe, transport);
     Assert::IsTrue(fragments > 1, L"200 ships did not fragment");
 
     Game::SnapshotReceiver receiver;
@@ -1112,20 +1114,20 @@ public:
     Assert::IsTrue(complete, L"the last fragment did not complete the snapshot");
     Assert::AreEqual(static_cast<std::size_t>(200), receiver.Latest().ships.size(), L"ships went missing across fragments");
     for (Game::ShipId id = 0; id < 200; ++id)
-      Assert::IsTrue(receiver.Latest().ships[id].entity == world.EntityIdOf(id), L"ships came back in a different order");
+      Assert::IsTrue(receiver.Latest().ships[id].entity == universe.EntityIdOf(id), L"ships came back in a different order");
   }
 
   TEST_METHOD(ASnapshotMissingAFragmentIsDroppedWhole)
   {
-    // Half a world is worse than a stale one: stale reads as lag, partial reads as ships vanishing.
-    Game::World world;
+    // Half a universe is worse than a stale one: stale reads as lag, partial reads as ships vanishing.
+    Game::Universe universe;
     for (int at = 0; at < 60; ++at)
-      SpawnAt(world, static_cast<float>(at) * 40.0f, 0.0f);
-    world.Step();
+      SpawnAt(universe, static_cast<float>(at) * 40.0f, 0.0f);
+    universe.Step();
 
     CaptureTransport transport;
     Game::SnapshotWriter writer;
-    Assert::IsTrue(writer.Write(world, transport) > 2, L"60 ships did not need three fragments");
+    Assert::IsTrue(writer.Write(universe, transport) > 2, L"60 ships did not need three fragments");
 
     Game::SnapshotReceiver receiver;
     bool complete = false;
@@ -1143,21 +1145,21 @@ public:
   TEST_METHOD(AStaleSnapshotIsIgnored)
   {
     // Latency makes out-of-order arrival real, and applying an older snapshot steps the view back.
-    Game::World world;
-    SpawnAt(world, 0.0f, 0.0f);
+    Game::Universe universe;
+    SpawnAt(universe, 0.0f, 0.0f);
     const Game::ShipId order[] = {0};
-    world.IssueMoveOrder(order, Game::LocalPos(0.0f, 900.0f), false, 0.0f);
+    universe.IssueMoveOrder(order, Game::LocalPos(0.0f, 900.0f), false, 0.0f);
 
     CaptureTransport early;
     Game::SnapshotWriter writer;
     for (int tick = 0; tick < 10; ++tick)
-      world.Step();
-    Assert::AreEqual(1u, writer.Write(world, early), L"the early snapshot did not send");
+      universe.Step();
+    Assert::AreEqual(1u, writer.Write(universe, early), L"the early snapshot did not send");
 
     CaptureTransport late;
     for (int tick = 0; tick < 10; ++tick)
-      world.Step();
-    Assert::AreEqual(1u, writer.Write(world, late), L"the later snapshot did not send");
+      universe.Step();
+    Assert::AreEqual(1u, writer.Write(universe, late), L"the later snapshot did not send");
 
     Game::SnapshotReceiver receiver;
     Assert::IsTrue(receiver.Accept(late.sent[0]), L"the later snapshot did not apply");
@@ -1169,13 +1171,13 @@ public:
 
   TEST_METHOD(AMalformedDatagramIsRefusedRatherThanRead)
   {
-    Game::World world;
-    SpawnAt(world, 0.0f, 0.0f);
-    world.Step();
+    Game::Universe universe;
+    SpawnAt(universe, 0.0f, 0.0f);
+    universe.Step();
 
     CaptureTransport transport;
     Game::SnapshotWriter writer;
-    (void)writer.Write(world, transport);
+    (void)writer.Write(universe, transport);
 
     Game::SnapshotReceiver receiver;
     // Truncated part-way through the ship record.
@@ -1193,28 +1195,28 @@ public:
   {
     // A refusal part-way through is not retried: the receiver drops the incomplete snapshot whole
     // and the next tick brings another.
-    Game::World world;
+    Game::Universe universe;
     for (int at = 0; at < 60; ++at)
-      SpawnAt(world, static_cast<float>(at) * 40.0f, 0.0f);
-    world.Step();
+      SpawnAt(universe, static_cast<float>(at) * 40.0f, 0.0f);
+    universe.Step();
 
     CaptureTransport transport;
     transport.refuseFrom = 2;
     Game::SnapshotWriter writer;
-    Assert::AreEqual(2u, writer.Write(world, transport), L"the writer did not stop at the first refusal");
+    Assert::AreEqual(2u, writer.Write(universe, transport), L"the writer did not stop at the first refusal");
   }
 
-  TEST_METHOD(AnEmptyWorldStillSendsASnapshot)
+  TEST_METHOD(AnEmptyUniverseStillSendsASnapshot)
   {
     // "No ships" is information. No snapshot at all is indistinguishable from a stalled server.
-    Game::World world;
+    Game::Universe universe;
     CaptureTransport transport;
     Game::SnapshotWriter writer;
-    Assert::AreEqual(1u, writer.Write(world, transport), L"an empty world sent nothing");
+    Assert::AreEqual(1u, writer.Write(universe, transport), L"an empty universe sent nothing");
 
     Game::SnapshotReceiver receiver;
     Assert::IsTrue(receiver.Accept(transport.sent[0]), L"an empty snapshot did not complete");
-    Assert::IsTrue(receiver.Latest().ships.empty(), L"an empty world produced ships");
+    Assert::IsTrue(receiver.Latest().ships.empty(), L"an empty universe produced ships");
   }
 
   TEST_METHOD(AnOrderForADespawnedShipResolvesToNothing)
@@ -1222,16 +1224,16 @@ public:
     // The reason an order carries neither a ShipId nor an index. Between the click and the order
     // arriving, a ship can die and swap-and-pop can move a stranger into its array index (ADR 0005).
     // What an order carries is an entity id, which is stronger again: a handle is a reference into
-    // one World and an id names the ship itself (ADR 0047).
+    // one Universe and an id names the ship itself (ADR 0047).
     //
     // An order names a fleet now, so the ids that can go stale between the click and the tick are
     // the ones a kind carries -- a Dock's station and an Attack's target. The property is the same
     // and the surface is smaller, which is what ADR 0049 bought.
-    Game::World world;
-    const Game::ShipId doomed = SpawnAt(world, 0.0f, 0.0f, Game::HullId::Interceptor, Game::FACTION_VANDAL);
-    const Game::ShipId other = SpawnAt(world, 100.0f, 0.0f, Game::HullId::Interceptor, Game::FACTION_VANDAL);
-    const Game::EntityId doomedEntity = world.EntityIdOf(doomed);
-    const Game::EntityId otherEntity = world.EntityIdOf(other);
+    Game::Universe universe;
+    const Game::ShipId doomed = SpawnAt(universe, 0.0f, 0.0f, Game::HullId::Interceptor, Game::FACTION_VANDAL);
+    const Game::ShipId other = SpawnAt(universe, 100.0f, 0.0f, Game::HullId::Interceptor, Game::FACTION_VANDAL);
+    const Game::EntityId doomedEntity = universe.EntityIdOf(doomed);
+    const Game::EntityId otherEntity = universe.EntityIdOf(other);
 
     Game::FleetOrder sent;
     sent.slot = 1;
@@ -1240,21 +1242,21 @@ public:
 
     CaptureTransport transport;
     Assert::IsTrue(Game::WriteFleetOrder(sent, transport), L"the order did not send");
-    Assert::IsTrue(world.DespawnShip(world.HandleOf(doomed)), L"the despawn failed");
+    Assert::IsTrue(universe.DespawnShip(universe.HandleOf(doomed)), L"the despawn failed");
 
     Game::FleetOrder got;
     Assert::AreEqual(static_cast<std::size_t>(1), transport.sentReliable.size(), L"the order did not take the reliable lane");
     Assert::IsTrue(transport.sent.empty(), L"the order also went out as a datagram");
     Assert::IsTrue(Game::ReadFleetOrder(transport.sentReliable[0], got), L"the order did not decode");
-    Assert::AreEqual(Game::INVALID_SHIP_ID, world.ResolveEntity(got.target), L"a dead ship's id resolved to something");
+    Assert::AreEqual(Game::INVALID_SHIP_ID, universe.ResolveEntity(got.target), L"a dead ship's id resolved to something");
 
     // The survivor is still there, but swap-and-pop moved it into the freed slot, so its ShipId is
     // not the one it had when the order was written -- and its id is. That is ADR 0005 and ADR 0047
     // in one assertion: the identity follows the ship, the array index does not.
-    const Game::ShipId resolved = world.ResolveEntity(otherEntity);
+    const Game::ShipId resolved = universe.ResolveEntity(otherEntity);
     Assert::AreNotEqual(Game::INVALID_SHIP_ID, resolved, L"the surviving ship's id stopped resolving");
     Assert::AreNotEqual(other, resolved, L"the survivor's index did not move, so this test proves nothing");
-    Assert::IsTrue(world.EntityIdOf(resolved) == otherEntity, L"the id resolved to a stranger");
+    Assert::IsTrue(universe.EntityIdOf(resolved) == otherEntity, L"the id resolved to a stranger");
   }
 
   TEST_METHOD(EveryDepartureSurvivesEveryDatagramBeingLost)
@@ -1270,11 +1272,11 @@ public:
     desc.dropOneInN = 1; // no datagram survives
     Neuron::LoopbackTransport::Connect(server, client, desc);
 
-    Game::World world;
-    const Game::ShipId leaving = SpawnAt(world, 0.0f, 0.0f);
-    const Game::ShipId dying = SpawnAt(world, 50.0f, 0.0f);
-    const Game::EntityId leavingEntity = world.EntityIdOf(leaving);
-    const Game::EntityId dyingEntity = world.EntityIdOf(dying);
+    Game::Universe universe;
+    const Game::ShipId leaving = SpawnAt(universe, 0.0f, 0.0f);
+    const Game::ShipId dying = SpawnAt(universe, 50.0f, 0.0f);
+    const Game::EntityId leavingEntity = universe.EntityIdOf(leaving);
+    const Game::EntityId dyingEntity = universe.EntityIdOf(dying);
 
     server.AdvanceTo(0);
     client.AdvanceTo(0);
@@ -1282,7 +1284,7 @@ public:
     Game::SnapshotWriter writer;
     const std::array<Game::EntityId, 1> left{leavingEntity};
     const std::array<Game::EntityId, 1> destroyed{dyingEntity};
-    (void)writer.WriteInterest(world, {}, left, destroyed, {}, server);
+    (void)writer.WriteInterest(universe, {}, left, destroyed, {}, server);
     Assert::AreEqual(0u, writer.RefusedLeaveCount(), L"the lane refused the departure message");
 
     server.Poll();
@@ -1340,14 +1342,14 @@ public:
     // The two lanes have no ordering between them, so a departure can overtake the update that would
     // have introduced the ship. Removing a handle the receiver does not hold is a no-op, which is
     // what makes either order safe -- and this is the test that says so rather than the comment.
-    Game::World world;
-    const Game::ShipId ship = SpawnAt(world, 0.0f, 0.0f);
-    const Game::EntityId handle = world.EntityIdOf(ship);
+    Game::Universe universe;
+    const Game::ShipId ship = SpawnAt(universe, 0.0f, 0.0f);
+    const Game::EntityId handle = universe.EntityIdOf(ship);
 
     CaptureTransport link;
     Game::SnapshotWriter writer;
     const std::array<Game::EntityId, 1> left{handle};
-    (void)writer.WriteInterest(world, {}, left, {}, {}, link);
+    (void)writer.WriteInterest(universe, {}, left, {}, {}, link);
     Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"the departure did not go on the reliable lane");
 
     Game::SnapshotReceiver receiver;
@@ -1359,19 +1361,19 @@ public:
   {
     // The structural half of the change: nothing about a leave is on the datagram lane, so a
     // fragment's size no longer depends on how many ships left this update.
-    Game::World world;
+    Game::Universe universe;
     for (int at = 0; at < 3; ++at)
-      (void)SpawnAt(world, static_cast<float>(at) * 40.0f, 0.0f);
-    const Game::EntityId gone = world.EntityIdOf(0);
+      (void)SpawnAt(universe, static_cast<float>(at) * 40.0f, 0.0f);
+    const Game::EntityId gone = universe.EntityIdOf(0);
 
     CaptureTransport withDepartures;
     Game::SnapshotWriter a;
     const std::array<Game::EntityId, 1> left{gone};
-    (void)a.WriteInterest(world, {}, left, {}, {}, withDepartures);
+    (void)a.WriteInterest(universe, {}, left, {}, {}, withDepartures);
 
     CaptureTransport withNone;
     Game::SnapshotWriter b;
-    (void)b.WriteInterest(world, {}, {}, {}, {}, withNone);
+    (void)b.WriteInterest(universe, {}, {}, {}, {}, withNone);
 
     Assert::AreEqual(withNone.sent.size(), withDepartures.sent.size(), L"a departure changed how many datagrams an update took");
     Assert::AreEqual(withNone.sent[0].size(), withDepartures.sent[0].size(), L"a departure changed the size of a snapshot fragment");
@@ -1383,16 +1385,16 @@ public:
   {
     // Nothing repeats a refused leave, so the gap has to be visible. A number that should be zero
     // is worth more than a comment saying it should be.
-    Game::World world;
-    const Game::ShipId ship = SpawnAt(world, 0.0f, 0.0f);
-    const Game::EntityId handle = world.EntityIdOf(ship);
+    Game::Universe universe;
+    const Game::ShipId ship = SpawnAt(universe, 0.0f, 0.0f);
+    const Game::EntityId handle = universe.EntityIdOf(ship);
 
     CaptureTransport link;
     link.refuseReliable = true;
 
     Game::SnapshotWriter writer;
     const std::array<Game::EntityId, 1> left{handle};
-    (void)writer.WriteInterest(world, {}, left, {}, {}, link);
+    (void)writer.WriteInterest(universe, {}, left, {}, {}, link);
     Assert::AreEqual(1u, writer.RefusedLeaveCount(), L"a refused departure was not counted");
     Assert::IsTrue(link.sentReliable.empty(), L"a refused lane still captured a message");
   }

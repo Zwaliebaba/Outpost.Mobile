@@ -15,13 +15,13 @@
 //   * no pointers as keys, and no iteration order that is not dense-array order;
 //   * no presentation state -- ring fades, camera lag and thruster glow live in the view.
 //
-// The step from "runs on one machine" to "runs on a server" is then a matter of moving World, not
+// The step from "runs on one machine" to "runs on a server" is then a matter of moving Universe, not
 // of untangling it.
 
 #include "NeuronCore.h"
 
 #include "SimTuning.h"
-#include "WorldPos.h"
+#include "UniversePos.h"
 #include "ShipState.h"
 #include "DeviceSpec.h"
 #include "HullSpec.h"
@@ -34,6 +34,6 @@
 #include "Patrol.h"
 #include "UniverseLayout.h"
 #include "Movement.h"
-#include "World.h"
-#include "WorldSnapshot.h"
+#include "Universe.h"
+#include "UniverseSnapshot.h"
 #include "Publisher.h"

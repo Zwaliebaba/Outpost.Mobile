@@ -37,7 +37,7 @@ five fleets, and everything below follows from that. You can:
   holds you hostile refuses before the order is even sent.
 - **Read a fleet** by holding its button: a sheet over the bar names the fleet, what it is doing,
   the hulls in it, and its four commands — `MOVE`, `ATTACK`, `DOCK`, `STOP`. The first three arm the
-  next world tap, which is how the verbs get names a tap alone could never teach.
+  next universe tap, which is how the verbs get names a tap alone could never teach.
 - **Compose a fleet** by holding a station you are docked at: the assembly screen lists what you
   have inside, you draft up to eight hulls out of it into a free slot, and `LAUNCH` pours them out
   of the dock one at a time and forms them up outside. Docking a fleet dismantles it back into the
@@ -52,7 +52,7 @@ five fleets, and everything below follows from that. You can:
   turret genuinely loses a fighter crossing close aboard and holds one at three hundred metres.
   Muzzle flashes and tracers in the shooter's own colours say who fired at whom, the fleet sheet's
   condition pips say how much is left, and a hull at zero shatters. Nothing rolls dice.
-- **Read the world** through the HUD: minimap with the sector pair, your fleets' digits on it
+- **Read the universe** through the HUD: minimap with the sector pair, your fleets' digits on it
   wherever they are, contact count, event log, and a function rail whose screens are not built yet.
 
 A second faction lives 1.2 km northeast: a Vandal station with three Interceptors walking a ring
@@ -117,13 +117,13 @@ processes, nothing has to be rewritten to make it work.
 | Project | What it is |
 |---|---|
 | `NeuronCore/` | Engine primitives, headless and with zero game semantics: diagnostics, file IO, the frame clock, a seeded PCG32, and the `Transport` seam with its MsQuic implementation |
-| `GameLogic/` | The deterministic simulation, namespace `Game`: world, movement, collision, formation, pathfinding islands, gunnery, the wire format and the publisher |
+| `GameLogic/` | The deterministic simulation, namespace `Game`: universe, movement, collision, formation, pathfinding islands, gunnery, the wire format and the publisher |
 | `NeuronClient/` | Everything that names a graphics type: D3D12 device, scene and text renderers, the planet and star-field pipelines, the explosion FX, the content readers |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives |
 | `Outpost/` | The executable: composition root, presentation state, HUD, the fleet sheet and the station assembly screen, and `Outpost/Assets/` |
 
 The simulation ticks at a fixed rate, is bit-identical across two runs of the same seed, and depends
-on nothing but `NeuronCore`. The client sees the world only as snapshots that arrived over the wire,
+on nothing but `NeuronCore`. The client sees the universe only as snapshots that arrived over the wire,
 filtered to what one subscriber can see, and sends orders back up the same wire. The engine
 libraries never name the game; `Outpost.exe` injects the game through interfaces the engine
 declares. `Build/CheckProjectFiles.py` checks the parts of that a build can check.

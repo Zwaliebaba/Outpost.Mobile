@@ -17,7 +17,7 @@ namespace Outpost
 //
 // Nothing here is ever read by GameLogic. The starting-scene block below is the one part of this
 // file a tick can be affected by, and only at one remove: it is boot content, which the composition
-// root reads and passes into the world as spawn positions and patrol numbers. That is the only route
+// root reads and passes into the universe as spawn positions and patrol numbers. That is the only route
 // any of this has into a tick, and a value on this side still changes no recorded game -- it changes
 // which game gets recorded.
 
@@ -174,7 +174,7 @@ inline constexpr float CULL_BODY_RADIUS_SCALE = 1.05f;
 
 // --- snapshot interpolation --------------------------------------------------------------------
 // The server publishes at 1/INTEREST_UPDATE_EVERY_TICKS of the tick rate, so the view cannot draw
-// the latest record and stay smooth: it draws the world as it stood INTERP_DELAY_TICKS ago, which
+// the latest record and stay smooth: it draws the universe as it stood INTERP_DELAY_TICKS ago, which
 // is far enough back that the two samples either side of that moment have both arrived. One update
 // interval is the minimum that holds for a ship refreshed on every update; a real wire adds its
 // jitter to this.
@@ -363,7 +363,7 @@ inline constexpr std::uint64_t BODY_START_SEED = 0x4F75747031ull; // "Outp1"
 //
 // A depth is metres, not radii: what is being aimed at is an angle on the screen, and the seeded
 // radius must not be able to move it. Both sit high on the screen while being far below the fleet in
-// the world, which is the whole point -- the outpost is flying over them.
+// the universe, which is the whole point -- the outpost is flying over them.
 inline constexpr float BODY_START_PLANET_BEARING_DEG = -23.0f;
 inline constexpr float BODY_START_PLANET_DISTANCE_METRES = 3500.0f;
 inline constexpr float BODY_START_PLANET_DEPTH_METRES = 3300.0f; // below the fleet's plane
@@ -380,7 +380,7 @@ inline constexpr int BODY_START_ASTEROIDS = 6;
 //
 // Its own seed beside BODY_START_SEED, because F5 must not reach it: a reroll changes what the
 // worlds look like and never where they are, since a station stands on every site and a debug key
-// that moved simulation content would be a debug key changing the world.
+// that moved simulation content would be a debug key changing the universe.
 inline constexpr std::uint64_t UNIVERSE_LAYOUT_SEED = 0x53797331ull; // "Sys1"
 inline constexpr Game::SystemDesc STARTING_SYSTEM{.pinFirstPlanet = true,
                                                   .firstPlanetBearingRad = BODY_START_PLANET_BEARING_DEG * (DirectX::XM_PI / 180.0f),
@@ -602,7 +602,7 @@ inline constexpr float HUD_ASSEMBLY_LAUNCH_H_PX = 34.0f;
 // The right-hand column: draft, slots, LAUNCH. A fraction of the panel rather than a width, so the
 // two columns keep their proportion at any DPI.
 inline constexpr float HUD_ASSEMBLY_LEFT_FRACTION = 0.52f;
-// The scrim over the world behind it. Dark enough that the screen is unambiguously in front, light
+// The scrim over the universe behind it. Dark enough that the screen is unambiguously in front, light
 // enough that the station it belongs to is still visible behind it.
 inline constexpr Neuron::Rgba HUD_ASSEMBLY_SCRIM{0.0f, 0.0f, 0.0f, 0.55f};
 inline constexpr float HUD_ASSEMBLY_DISABLED_ALPHA = 0.35f;

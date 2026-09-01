@@ -7,17 +7,17 @@ namespace GameLogicTests
 {
 namespace
 {
-[[nodiscard]] float HullOverlap(const Game::World& _world, Game::ShipId _a, Game::ShipId _b)
+[[nodiscard]] float HullOverlap(const Game::Universe& _universe, Game::ShipId _a, Game::ShipId _b)
 {
-  const Game::ShipState& first = _world.Ship(_a);
-  const Game::ShipState& second = _world.Ship(_b);
+  const Game::ShipState& first = _universe.Ship(_a);
+  const Game::ShipState& second = _universe.Ship(_b);
   const Game::HullSpec& firstHull = Game::HullSpecOf(first.hullId);
   const Game::HullSpec& secondHull = Game::HullSpecOf(second.hullId);
 
   const Game::Capsule self{
     0.0f, 0.0f, std::sin(first.headingRad), std::cos(first.headingRad), firstHull.capsuleHalfLengthMetres, firstHull.capsuleRadiusMetres};
-  const Game::Capsule against{Game::OffsetX(first.posWorld, second.posWorld),
-                              Game::OffsetZ(first.posWorld, second.posWorld),
+  const Game::Capsule against{Game::OffsetX(first.posUniverse, second.posUniverse),
+                              Game::OffsetZ(first.posUniverse, second.posUniverse),
                               std::sin(second.headingRad),
                               std::cos(second.headingRad),
                               secondHull.capsuleHalfLengthMetres,
@@ -67,24 +67,24 @@ public:
     // a minute later. The rule is what makes it read as seamanship (Design/Archive/Collision.md 9).
     for (const Game::HullId hull : {Game::HullId::Interceptor, Game::HullId::Corvette, Game::HullId::Frigate})
     {
-      Game::World world;
-      const Game::ShipId north = world.SpawnShip(Game::LocalPos(0.0f, -600.0f), 0.0f, static_cast<std::uint32_t>(hull));
-      const Game::ShipId south = world.SpawnShip(Game::LocalPos(0.0f, 600.0f), XM_PI, static_cast<std::uint32_t>(hull));
+      Game::Universe universe;
+      const Game::ShipId north = universe.SpawnShip(Game::LocalPos(0.0f, -600.0f), 0.0f, static_cast<std::uint32_t>(hull));
+      const Game::ShipId south = universe.SpawnShip(Game::LocalPos(0.0f, 600.0f), XM_PI, static_cast<std::uint32_t>(hull));
 
       const Game::ShipId northOrder[] = {north};
       const Game::ShipId southOrder[] = {south};
-      world.IssueMoveOrder(northOrder, Game::LocalPos(0.0f, 600.0f), false, 0.0f);
-      world.IssueMoveOrder(southOrder, Game::LocalPos(0.0f, -600.0f), false, 0.0f);
+      universe.IssueMoveOrder(northOrder, Game::LocalPos(0.0f, 600.0f), false, 0.0f);
+      universe.IssueMoveOrder(southOrder, Game::LocalPos(0.0f, -600.0f), false, 0.0f);
 
       float northMaxX = 0.0f;
       float southMinX = 0.0f;
       float worstOverlap = 0.0f;
       for (int tick = 0; tick < 4000; ++tick)
       {
-        world.Step();
-        northMaxX = std::max(northMaxX, WorldX(world.Ship(north).posWorld));
-        southMinX = std::min(southMinX, WorldX(world.Ship(south).posWorld));
-        worstOverlap = std::max(worstOverlap, HullOverlap(world, north, south));
+        universe.Step();
+        northMaxX = std::max(northMaxX, UniverseX(universe.Ship(north).posUniverse));
+        southMinX = std::min(southMinX, UniverseX(universe.Ship(south).posUniverse));
+        worstOverlap = std::max(worstOverlap, HullOverlap(universe, north, south));
       }
 
       const std::wstring name(HullName(hull));
@@ -94,7 +94,7 @@ public:
       Assert::IsTrue(northMaxX > 1.0f, (name + L": the northbound ship did not break to starboard").c_str());
       Assert::IsTrue(southMinX < -1.0f, (name + L": the southbound ship did not break to starboard").c_str());
       Assert::AreEqual(0.0f, worstOverlap, 1e-3f, (name + L": a head-on pair passed through each other").c_str());
-      Assert::IsTrue(WorldZ(world.Ship(north).posWorld) > 400.0f, (name + L": the northbound ship never got past").c_str());
+      Assert::IsTrue(UniverseZ(universe.Ship(north).posUniverse) > 400.0f, (name + L": the northbound ship never got past").c_str());
     }
   }
 
@@ -110,20 +110,20 @@ public:
     {
       for (const Game::HullId southHull : FLEET)
       {
-        Game::World world;
-        const Game::ShipId north = world.SpawnShip(Game::LocalPos(0.0f, -900.0f), 0.0f, static_cast<std::uint32_t>(northHull));
-        const Game::ShipId south = world.SpawnShip(Game::LocalPos(0.0f, 900.0f), XM_PI, static_cast<std::uint32_t>(southHull));
+        Game::Universe universe;
+        const Game::ShipId north = universe.SpawnShip(Game::LocalPos(0.0f, -900.0f), 0.0f, static_cast<std::uint32_t>(northHull));
+        const Game::ShipId south = universe.SpawnShip(Game::LocalPos(0.0f, 900.0f), XM_PI, static_cast<std::uint32_t>(southHull));
 
         const Game::ShipId northOrder[] = {north};
         const Game::ShipId southOrder[] = {south};
-        world.IssueMoveOrder(northOrder, Game::LocalPos(0.0f, 900.0f), false, 0.0f);
-        world.IssueMoveOrder(southOrder, Game::LocalPos(0.0f, -900.0f), false, 0.0f);
+        universe.IssueMoveOrder(northOrder, Game::LocalPos(0.0f, 900.0f), false, 0.0f);
+        universe.IssueMoveOrder(southOrder, Game::LocalPos(0.0f, -900.0f), false, 0.0f);
 
         float worstOverlap = 0.0f;
         for (int tick = 0; tick < 6000; ++tick)
         {
-          world.Step();
-          worstOverlap = std::max(worstOverlap, HullOverlap(world, north, south));
+          universe.Step();
+          worstOverlap = std::max(worstOverlap, HullOverlap(universe, north, south));
         }
 
         // As a fraction of what the pair would have to interpenetrate to be concentric, so a
@@ -159,21 +159,21 @@ public:
     for (const Game::HullId hull :
          {Game::HullId::Interceptor, Game::HullId::Corvette, Game::HullId::Frigate, Game::HullId::Battleship, Game::HullId::Carrier})
     {
-      Game::World world;
-      const Game::ShipId north = world.SpawnShip(Game::LocalPos(0.0f, -600.0f), 0.0f, static_cast<std::uint32_t>(hull));
-      const Game::ShipId south = world.SpawnShip(Game::LocalPos(0.0f, 600.0f), XM_PI, static_cast<std::uint32_t>(hull));
+      Game::Universe universe;
+      const Game::ShipId north = universe.SpawnShip(Game::LocalPos(0.0f, -600.0f), 0.0f, static_cast<std::uint32_t>(hull));
+      const Game::ShipId south = universe.SpawnShip(Game::LocalPos(0.0f, 600.0f), XM_PI, static_cast<std::uint32_t>(hull));
 
       const Game::ShipId northOrder[] = {north};
       const Game::ShipId southOrder[] = {south};
-      world.IssueMoveOrder(northOrder, Game::LocalPos(0.0f, 600.0f), false, 0.0f);
-      world.IssueMoveOrder(southOrder, Game::LocalPos(0.0f, -600.0f), false, 0.0f);
+      universe.IssueMoveOrder(northOrder, Game::LocalPos(0.0f, 600.0f), false, 0.0f);
+      universe.IssueMoveOrder(southOrder, Game::LocalPos(0.0f, -600.0f), false, 0.0f);
 
       std::vector<int> reversalAt;
       int previousSide = 0;
       for (int tick = 0; tick < 5000; ++tick)
       {
-        world.Step();
-        const int side = SteeringSide(world.Ship(north));
+        universe.Step();
+        const int side = SteeringSide(universe.Ship(north));
         if (side != 0)
         {
           if (previousSide != 0 && side != previousSide)
@@ -205,25 +205,25 @@ public:
     // bow; the capital should barely notice.
     // Started so that the two actually meet: a Carrier accelerating at 5 m/s^2 to 20 m/s covers
     // 320 m in about the seventeen seconds an Interceptor takes over 500 m at 34 m/s.
-    Game::World world;
-    const Game::ShipId carrier = world.SpawnShip(Game::LocalPos(0.0f, -320.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Carrier));
+    Game::Universe universe;
+    const Game::ShipId carrier = universe.SpawnShip(Game::LocalPos(0.0f, -320.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Carrier));
     const Game::ShipId fighter =
-      world.SpawnShip(Game::LocalPos(-500.0f, 0.0f), XM_PIDIV2, static_cast<std::uint32_t>(Game::HullId::Interceptor));
+      universe.SpawnShip(Game::LocalPos(-500.0f, 0.0f), XM_PIDIV2, static_cast<std::uint32_t>(Game::HullId::Interceptor));
 
     const Game::ShipId carrierOrder[] = {carrier};
     const Game::ShipId fighterOrder[] = {fighter};
-    world.IssueMoveOrder(carrierOrder, Game::LocalPos(0.0f, 600.0f), false, 0.0f);
-    world.IssueMoveOrder(fighterOrder, Game::LocalPos(500.0f, 0.0f), false, 0.0f);
+    universe.IssueMoveOrder(carrierOrder, Game::LocalPos(0.0f, 600.0f), false, 0.0f);
+    universe.IssueMoveOrder(fighterOrder, Game::LocalPos(500.0f, 0.0f), false, 0.0f);
 
     float carrierMaxOffTrack = 0.0f;
     float fighterMaxOffTrack = 0.0f;
     float worstOverlap = 0.0f;
     for (int tick = 0; tick < 4000; ++tick)
     {
-      world.Step();
-      carrierMaxOffTrack = std::max(carrierMaxOffTrack, std::fabs(WorldX(world.Ship(carrier).posWorld)));
-      fighterMaxOffTrack = std::max(fighterMaxOffTrack, std::fabs(WorldZ(world.Ship(fighter).posWorld)));
-      worstOverlap = std::max(worstOverlap, HullOverlap(world, carrier, fighter));
+      universe.Step();
+      carrierMaxOffTrack = std::max(carrierMaxOffTrack, std::fabs(UniverseX(universe.Ship(carrier).posUniverse)));
+      fighterMaxOffTrack = std::max(fighterMaxOffTrack, std::fabs(UniverseZ(universe.Ship(fighter).posUniverse)));
+      worstOverlap = std::max(worstOverlap, HullOverlap(universe, carrier, fighter));
     }
 
     // Not zero, and asserting zero would be asserting something this design does not claim. Local
@@ -256,32 +256,33 @@ public:
     // is not an edge case: it is a formation flying in company, which is what a fleet does for its
     // entire journey. Getting it wrong produces a NaN in the most ordinary situation the game has
     // (Design/Archive/Collision.md 10, 16).
-    Game::World world;
+    Game::Universe universe;
     std::vector<Game::ShipId> wing;
     for (int i = 0; i < 6; ++i)
     {
-      wing.push_back(world.SpawnShip(Game::LocalPos(static_cast<float>(i) * 40.0f - 100.0f, 0.0f), 0.0f,
-                                     static_cast<std::uint32_t>(Game::HullId::Corvette)));
+      wing.push_back(universe.SpawnShip(Game::LocalPos(static_cast<float>(i) * 40.0f - 100.0f, 0.0f), 0.0f,
+                                        static_cast<std::uint32_t>(Game::HullId::Corvette)));
     }
-    world.IssueMoveOrder(wing, Game::LocalPos(0.0f, 900.0f), false, 0.0f);
+    universe.IssueMoveOrder(wing, Game::LocalPos(0.0f, 900.0f), false, 0.0f);
 
     for (int tick = 0; tick < 3000; ++tick)
     {
-      world.Step();
+      universe.Step();
       for (const Game::ShipId id : wing)
       {
-        const Game::ShipState& ship = world.Ship(id);
-        Assert::IsTrue(std::isfinite(WorldX(ship.posWorld)) && std::isfinite(WorldZ(ship.posWorld)) && std::isfinite(ship.headingRad),
+        const Game::ShipState& ship = universe.Ship(id);
+        Assert::IsTrue(std::isfinite(UniverseX(ship.posUniverse)) && std::isfinite(UniverseZ(ship.posUniverse)) &&
+                         std::isfinite(ship.headingRad),
                        L"a ship flying in company produced a NaN");
       }
     }
 
     for (const Game::ShipId id : wing)
-      Assert::AreEqual(Game::OrderState::Idle, world.Ship(id).order, L"a ship in formation never arrived");
+      Assert::AreEqual(Game::OrderState::Idle, universe.Ship(id).order, L"a ship in formation never arrived");
     for (size_t a = 0; a < wing.size(); ++a)
     {
       for (size_t b = a + 1; b < wing.size(); ++b)
-        Assert::AreEqual(0.0f, HullOverlap(world, wing[a], wing[b]), 1e-2f, L"a formation arrived inside itself");
+        Assert::AreEqual(0.0f, HullOverlap(universe, wing[a], wing[b]), 1e-2f, L"a formation arrived inside itself");
     }
   }
 
@@ -290,32 +291,32 @@ public:
     // Formation drift under traffic is not a separate problem; it is the authority split with a
     // different number, plus traffic that steers around rather than through. An idle ship holds its
     // station harder than one under way (Design/Archive/Collision.md 9).
-    Game::World world;
+    Game::Universe universe;
     std::vector<Game::ShipId> parked;
     for (int i = 0; i < 5; ++i)
     {
-      parked.push_back(world.SpawnShip(Game::LocalPos(static_cast<float>(i) * 40.0f - 80.0f, 0.0f), 0.0f,
-                                       static_cast<std::uint32_t>(Game::HullId::Corvette)));
+      parked.push_back(universe.SpawnShip(Game::LocalPos(static_cast<float>(i) * 40.0f - 80.0f, 0.0f), 0.0f,
+                                          static_cast<std::uint32_t>(Game::HullId::Corvette)));
     }
 
     std::vector<Game::ShipId> traffic;
     for (int i = 0; i < 5; ++i)
     {
-      traffic.push_back(world.SpawnShip(Game::LocalPos(static_cast<float>(i) * 40.0f - 80.0f, -600.0f), 0.0f,
-                                        static_cast<std::uint32_t>(Game::HullId::Corvette)));
+      traffic.push_back(universe.SpawnShip(Game::LocalPos(static_cast<float>(i) * 40.0f - 80.0f, -600.0f), 0.0f,
+                                           static_cast<std::uint32_t>(Game::HullId::Corvette)));
     }
-    world.IssueMoveOrder(traffic, Game::LocalPos(0.0f, 600.0f), false, 0.0f);
+    universe.IssueMoveOrder(traffic, Game::LocalPos(0.0f, 600.0f), false, 0.0f);
 
-    std::vector<Game::WorldPos> station;
+    std::vector<Game::UniversePos> station;
     for (const Game::ShipId id : parked)
-      station.push_back(world.Ship(id).posWorld);
+      station.push_back(universe.Ship(id).posUniverse);
 
     for (int tick = 0; tick < 2400; ++tick)
-      world.Step();
+      universe.Step();
 
     float worstDrift = 0.0f;
     for (size_t i = 0; i < parked.size(); ++i)
-      worstDrift = std::max(worstDrift, Game::Distance(station[i], world.Ship(parked[i]).posWorld));
+      worstDrift = std::max(worstDrift, Game::Distance(station[i], universe.Ship(parked[i]).posUniverse));
 
     // A hull's own bounding radius is the honest scale for "did not drift": nudged aside is fine,
     // shoved off station is not.
@@ -328,7 +329,7 @@ public:
 
   TEST_METHOD(AClearSkyChangesNothing)
   {
-    // Every phase before this one was verified against a world with no avoidance in it. If a ship
+    // Every phase before this one was verified against a universe with no avoidance in it. If a ship
     // with nothing converging on it steers even slightly, none of those verifications mean anything
     // any more -- so a neighbourhood that holds no threat must return the order's intent untouched.
     const Game::HullSpec& hull = Game::HullSpecOf(Game::HullId::Corvette);

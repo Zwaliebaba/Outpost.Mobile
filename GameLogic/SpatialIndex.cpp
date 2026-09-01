@@ -29,12 +29,12 @@ namespace
   return static_cast<std::int32_t>(_sector * cellsPerSector + local);
 }
 
-[[nodiscard]] std::int32_t CellX(const WorldPos& _pos, float _cellSizeMetres) noexcept
+[[nodiscard]] std::int32_t CellX(const UniversePos& _pos, float _cellSizeMetres) noexcept
 {
   return CellOfAxis(_pos.sectorX, _pos.localX, _cellSizeMetres);
 }
 
-[[nodiscard]] std::int32_t CellZ(const WorldPos& _pos, float _cellSizeMetres) noexcept
+[[nodiscard]] std::int32_t CellZ(const UniversePos& _pos, float _cellSizeMetres) noexcept
 {
   return CellOfAxis(_pos.sectorZ, _pos.localZ, _cellSizeMetres);
 }
@@ -150,7 +150,7 @@ void SpatialIndex::RebuildDynamic(std::span<const Entry> _entries)
   }
 }
 
-void SpatialIndex::Gather(const Grid& _grid, const WorldPos& _centre, float _radiusMetres, std::vector<ShipId>& _out)
+void SpatialIndex::Gather(const Grid& _grid, const UniversePos& _centre, float _radiusMetres, std::vector<ShipId>& _out)
 {
   if (_grid.cells.empty())
     return;
@@ -185,7 +185,7 @@ void SpatialIndex::Gather(const Grid& _grid, const WorldPos& _centre, float _rad
   }
 }
 
-void SpatialIndex::QueryCircle(const WorldPos& _centre, float _radiusMetres, std::vector<ShipId>& _out) const
+void SpatialIndex::QueryCircle(const UniversePos& _centre, float _radiusMetres, std::vector<ShipId>& _out) const
 {
   _out.clear();
   Gather(m_static, _centre, _radiusMetres, _out);

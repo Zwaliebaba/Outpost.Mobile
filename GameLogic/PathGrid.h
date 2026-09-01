@@ -1,6 +1,6 @@
 #pragma once
 
-#include "WorldPos.h"
+#include "UniversePos.h"
 
 #include <cstdint>
 #include <span>
@@ -8,7 +8,7 @@
 
 namespace Game
 {
-// The path lattice: where the cells are, as a property of the world rather than of any grid.
+// The path lattice: where the cells are, as a property of the universe rather than of any grid.
 //
 // A cell's index is a pure function of the position and of nothing else -- not of the obstacle set,
 // not of which grid is asking. That is what stops the same architecture producing a different route
@@ -17,14 +17,14 @@ namespace Game
 //
 // Exact, because PATH_CELLS_PER_SECTOR is exact and the local offset is inside one sector by the
 // type's invariant. The index is a sector multiplied by 256, so it covers a factor of 256 less of
-// the universe than a WorldPos does -- 2^55 sectors, about 3x10^20 m, thirty thousand light years.
+// the universe than a UniversePos does -- 2^55 sectors, about 3x10^20 m, thirty thousand light years.
 // Past that it overflows, which is why this says so rather than claiming the whole range.
-[[nodiscard]] std::int64_t PathCellX(const WorldPos& _pos) noexcept;
-[[nodiscard]] std::int64_t PathCellZ(const WorldPos& _pos) noexcept;
+[[nodiscard]] std::int64_t PathCellX(const UniversePos& _pos) noexcept;
+[[nodiscard]] std::int64_t PathCellZ(const UniversePos& _pos) noexcept;
 
 // The centre of a lattice cell: the point a clearance is measured at, and the point A* searches.
 // The inverse of the pair above over that range: PathCellX(PathCellCentre(x, z)) == x.
-[[nodiscard]] WorldPos PathCellCentre(std::int64_t _cellX, std::int64_t _cellZ) noexcept;
+[[nodiscard]] UniversePos PathCellCentre(std::int64_t _cellX, std::int64_t _cellZ) noexcept;
 
 // Routes around architecture. Local avoidance is not pathfinding, and large static structures are
 // what makes the difference matter: a ship steering locally around a 503 m Structure will hug it,
@@ -46,7 +46,7 @@ class PathGrid
 public:
   struct Obstacle
   {
-    WorldPos pos;
+    UniversePos pos;
     float radiusMetres = 0.0f;
   };
 
@@ -65,11 +65,11 @@ public:
   // Computed exactly, as the minimum over obstacles, rather than as a chamfer transform over a
   // rasterised occupancy. It is the same field and it is simpler; the approximation only starts
   // paying when obstacle counts are large, and it can replace this behind the same accessor.
-  [[nodiscard]] float ClearanceAt(const WorldPos& _pos) const noexcept;
+  [[nodiscard]] float ClearanceAt(const UniversePos& _pos) const noexcept;
 
   // Whether a straight run between two points keeps the required clearance the whole way. This is
   // both the fast path -- most orders need no plan at all -- and what the string-pull is built on.
-  [[nodiscard]] bool IsClearBetween(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres) const;
+  [[nodiscard]] bool IsClearBetween(const UniversePos& _from, const UniversePos& _to, float _requiredClearanceMetres) const;
 
   // Where along that run this grid blocks it, as fractions of the run: the first sample that fails
   // the clearance and the last one that does. Both greater than one when it never blocks, so a clear
@@ -83,7 +83,7 @@ public:
     float first = 0.0f;
     float last = 0.0f;
   };
-  [[nodiscard]] BlockedSpan BlockedAlong(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres) const;
+  [[nodiscard]] BlockedSpan BlockedAlong(const UniversePos& _from, const UniversePos& _to, float _requiredClearanceMetres) const;
 
   // A route as a short waypoint list. True when the last waypoint is _to itself; false when the
   // route ran out of list before it got there, in which case the last waypoint is the furthest safe
@@ -92,8 +92,8 @@ public:
   // Deterministic with nothing added, because it is a pure function of the static set and the two
   // endpoints -- provided the A* tie-break is total, which is why it is (f, g, cellIndex) for the
   // same reason every other ordering in this simulation is total.
-  [[nodiscard]] bool FindPath(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres,
-                              std::vector<WorldPos>& _outWaypoints);
+  [[nodiscard]] bool FindPath(const UniversePos& _from, const UniversePos& _to, float _requiredClearanceMetres,
+                              std::vector<UniversePos>& _outWaypoints);
 
   // Bumped on every rebuild. A follower that planned against an older one re-plans.
   [[nodiscard]] std::uint32_t Version() const noexcept
@@ -115,22 +115,22 @@ private:
   // The cell a position falls in, pulled into the window and flattened. Clamped rather than
   // rejected because a route may start or end outside the grid entirely, and the nearest edge cell
   // is the honest answer for both.
-  [[nodiscard]] std::uint32_t ClampedCell(const WorldPos& _pos) const noexcept;
-  [[nodiscard]] WorldPos CentreOf(std::uint32_t _cell) const noexcept;
+  [[nodiscard]] std::uint32_t ClampedCell(const UniversePos& _pos) const noexcept;
+  [[nodiscard]] UniversePos CentreOf(std::uint32_t _cell) const noexcept;
 
   std::vector<float> m_clearance; // metres to the nearest obstacle surface, per cell
   std::uint32_t m_width = 0;
   std::uint32_t m_height = 0;
   bool m_declined = false;
-  // Which cells of the world lattice this grid holds, as the index of its south-west one. A grid
-  // chooses its window, never where the cells are: store a WorldPos origin instead and the lattice
+  // Which cells of the universe lattice this grid holds, as the index of its south-west one. A grid
+  // chooses its window, never where the cells are: store a UniversePos origin instead and the lattice
   // becomes a function of the obstacles, which is the defect this shape exists to remove.
   std::int64_t m_originCellX = 0;
   std::int64_t m_originCellZ = 0;
   std::uint32_t m_version = 0;
 
   // What the last build was built from, so a rebuild with an unchanged obstacle set can leave the
-  // version alone. The version is what makes every routed ship re-plan (World::AdvanceRoute), so
+  // version alone. The version is what makes every routed ship re-plan (Universe::AdvanceRoute), so
   // bumping it for a rebuild that changed nothing is a universe-wide replan for no reason.
   std::vector<Obstacle> m_built;
 
@@ -160,6 +160,6 @@ private:
 // equal, and the question here is "did this change" rather than "is this close".
 //
 // Public because both PathGrid and PathIslands gate a rebuild on it, at their own level: the outer
-// one decides whether the world changed at all, the inner whether this island did.
+// one decides whether the universe changed at all, the inner whether this island did.
 [[nodiscard]] bool SameObstacles(std::span<const PathGrid::Obstacle> _a, std::span<const PathGrid::Obstacle> _b) noexcept;
 } // namespace Game

@@ -12,7 +12,7 @@ namespace Game
 // integrator's stability into the replay contract (Design/Archive/Collision.md 8).
 
 // A capsule in the ground plane, in whatever local frame the caller is working in. Both ends of a
-// pair are expressed in the same frame and the frame is always local -- never absolute world
+// pair are expressed in the same frame and the frame is always local -- never absolute universe
 // coordinates -- so this stays correct the day a sector boundary can sit between two hulls.
 struct Capsule
 {
@@ -35,7 +35,7 @@ struct Contact
 // Closest approach between two capsules. The ids are not used for the geometry -- they are the
 // tie-break for the one degenerate case, concentric hulls, where the closest points coincide and
 // there is no normal to compute. That case has to produce the same direction on a rerun, and the
-// two sides of the pair have to produce exactly opposite directions, or the gather in World's
+// two sides of the pair have to produce exactly opposite directions, or the gather in Universe's
 // separation pass would push both ships the same way.
 [[nodiscard]] Contact CapsuleContact(const Capsule& _a, const Capsule& _b, ShipId _idA, ShipId _idB) noexcept;
 

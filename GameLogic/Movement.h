@@ -77,7 +77,7 @@ struct MotionIntent
 // The turn-rate and acceleration limiter, unchanged from the day it was written, plus the two
 // writes the solving halves deferred to it.
 //
-// prevPos and prevHeading are World's pass 0, not this function's: they are the start-of-tick
+// prevPos and prevHeading are Universe's pass 0, not this function's: they are the start-of-tick
 // snapshot every neighbour read in the tick depends on, so writing them here would make them depend
 // on where in the array this ship sits.
 void IntegrateShip(ShipState& _ship, const HullSpec& _hull, const MotionIntent& _intent) noexcept;

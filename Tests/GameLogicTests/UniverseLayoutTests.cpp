@@ -15,9 +15,9 @@ constexpr std::uint64_t LAYOUT_SEED = 0x53746174696F6Eull; // "Station"
 
 [[nodiscard]] bool SameSite(const Game::PlanetSite& _a, const Game::PlanetSite& _b) noexcept
 {
-  return _a.posWorld.sectorX == _b.posWorld.sectorX && _a.posWorld.sectorZ == _b.posWorld.sectorZ &&
-         _a.posWorld.localX == _b.posWorld.localX && _a.posWorld.localZ == _b.posWorld.localZ && _a.radiusMetres == _b.radiusMetres &&
-         _a.bearingRad == _b.bearingRad && _a.bodySeed == _b.bodySeed;
+  return _a.posUniverse.sectorX == _b.posUniverse.sectorX && _a.posUniverse.sectorZ == _b.posUniverse.sectorZ &&
+         _a.posUniverse.localX == _b.posUniverse.localX && _a.posUniverse.localZ == _b.posUniverse.localZ &&
+         _a.radiusMetres == _b.radiusMetres && _a.bearingRad == _b.bearingRad && _a.bodySeed == _b.bodySeed;
 }
 } // namespace
 
@@ -29,7 +29,7 @@ public:
   TEST_METHOD(TheLayoutIsAFunctionOfItsSeed)
   {
     const Game::SystemDesc desc;
-    const Game::WorldPos star = Game::LocalPos(0.0f, 0.0f);
+    const Game::UniversePos star = Game::LocalPos(0.0f, 0.0f);
 
     const Game::SystemLayout first = Game::LayOutSystem(LAYOUT_SEED, star, desc);
     const Game::SystemLayout second = Game::LayOutSystem(LAYOUT_SEED, star, desc);
@@ -52,7 +52,7 @@ public:
   // it would take another planet's stream and one seed would mean two systems depending on a bool.
   TEST_METHOD(PinningTheFirstPlanetLeavesTheRestAlone)
   {
-    const Game::WorldPos star = Game::LocalPos(0.0f, 0.0f);
+    const Game::UniversePos star = Game::LocalPos(0.0f, 0.0f);
     const Game::SystemDesc loose;
 
     Game::SystemDesc pinned;
@@ -68,7 +68,7 @@ public:
       Assert::IsTrue(SameSite(free.planets[at], held.planets[at]), L"pinning planet 0 moved a planet that was not pinned");
 
     Assert::AreEqual(pinned.firstPlanetBearingRad, held.planets[0].bearingRad, 1e-6f, L"the pinned planet did not take its bearing");
-    Assert::AreEqual(pinned.firstPlanetOrbitMetres, Game::Distance(star, held.planets[0].posWorld), 0.5f,
+    Assert::AreEqual(pinned.firstPlanetOrbitMetres, Game::Distance(star, held.planets[0].posUniverse), 0.5f,
                      L"the pinned planet did not take its orbit");
     Assert::AreEqual(free.planets[0].radiusMetres, held.planets[0].radiusMetres, 0.0f,
                      L"pinning consumed a draw: the pinned planet's radius came from a different one");
@@ -97,7 +97,7 @@ public:
   TEST_METHOD(PlanetsKeepTheirDistance)
   {
     const Game::SystemDesc desc;
-    const Game::WorldPos star = Game::LocalPos(0.0f, 0.0f);
+    const Game::UniversePos star = Game::LocalPos(0.0f, 0.0f);
 
     // Chord of the guaranteed half-slot at the innermost orbit. At the shipped numbers -- three
     // planets, 2 500 m -- that is 2 500 m, which is Design/Archive/Stations.md 5.3's "closest two stations".
@@ -108,7 +108,7 @@ public:
       const Game::SystemLayout layout = Game::LayOutSystem(LAYOUT_SEED + seed, star, desc);
       for (std::size_t a = 0; a < layout.planets.size(); ++a)
       {
-        const float orbit = Game::Distance(star, layout.planets[a].posWorld);
+        const float orbit = Game::Distance(star, layout.planets[a].posUniverse);
         Assert::IsTrue(orbit >= desc.minOrbitMetres - 0.5f && orbit <= desc.maxOrbitMetres + 0.5f,
                        L"a planet was laid outside its orbit band");
         Assert::IsTrue(layout.planets[a].radiusMetres >= desc.minRadiusMetres && layout.planets[a].radiusMetres <= desc.maxRadiusMetres,
@@ -116,26 +116,26 @@ public:
 
         for (std::size_t b = a + 1; b < layout.planets.size(); ++b)
         {
-          const float apart = Game::Distance(layout.planets[a].posWorld, layout.planets[b].posWorld);
+          const float apart = Game::Distance(layout.planets[a].posUniverse, layout.planets[b].posUniverse);
           Assert::IsTrue(apart >= minSeparationMetres - 0.5f, L"two planets came closer than the bearing slots allow");
         }
       }
     }
   }
 
-  // Every position the simulation stores satisfies WorldPos's invariant, and a system anchored one
+  // Every position the simulation stores satisfies UniversePos's invariant, and a system anchored one
   // metre inside a sector's far corner is where a layout that wrote localX directly would break it.
   TEST_METHOD(ALayoutHoldsTheSectorInvariant)
   {
     const Game::SystemDesc desc;
-    const Game::WorldPos star = Game::LocalPos(Game::SECTOR_SIZE_METRES - 1.0f, Game::SECTOR_SIZE_METRES - 1.0f);
+    const Game::UniversePos star = Game::LocalPos(Game::SECTOR_SIZE_METRES - 1.0f, Game::SECTOR_SIZE_METRES - 1.0f);
     const Game::SystemLayout layout = Game::LayOutSystem(LAYOUT_SEED, star, desc);
 
     for (const Game::PlanetSite& site : layout.planets)
     {
-      Assert::IsTrue(site.posWorld.localX >= 0.0f && site.posWorld.localX < Game::SECTOR_SIZE_METRES,
+      Assert::IsTrue(site.posUniverse.localX >= 0.0f && site.posUniverse.localX < Game::SECTOR_SIZE_METRES,
                      L"a planet's local X is outside its sector");
-      Assert::IsTrue(site.posWorld.localZ >= 0.0f && site.posWorld.localZ < Game::SECTOR_SIZE_METRES,
+      Assert::IsTrue(site.posUniverse.localZ >= 0.0f && site.posUniverse.localZ < Game::SECTOR_SIZE_METRES,
                      L"a planet's local Z is outside its sector");
     }
 
@@ -144,8 +144,8 @@ public:
     const Game::SystemLayout atOrigin = Game::LayOutSystem(LAYOUT_SEED, Game::LocalPos(0.0f, 0.0f), desc);
     for (std::size_t at = 0; at < layout.planets.size(); ++at)
     {
-      const float here = Game::Distance(star, layout.planets[at].posWorld);
-      const float there = Game::Distance(Game::LocalPos(0.0f, 0.0f), atOrigin.planets[at].posWorld);
+      const float here = Game::Distance(star, layout.planets[at].posUniverse);
+      const float there = Game::Distance(Game::LocalPos(0.0f, 0.0f), atOrigin.planets[at].posUniverse);
       Assert::AreEqual(there, here, 0.5f, L"a system laid out near a sector boundary is a different shape");
     }
   }
@@ -157,7 +157,7 @@ public:
     Game::SystemDesc desc;
     desc.planetCount = 0;
 
-    const Game::WorldPos star = Game::LocalPos(120.0f, -340.0f);
+    const Game::UniversePos star = Game::LocalPos(120.0f, -340.0f);
     const Game::SystemLayout layout = Game::LayOutSystem(LAYOUT_SEED, star, desc);
 
     Assert::IsTrue(layout.planets.empty(), L"a system asked for no planets produced some");

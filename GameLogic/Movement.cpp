@@ -66,8 +66,8 @@ MotionIntent SolveOrder(const ShipState& _ship, const HullSpec& _hull) noexcept
 
   if (_ship.order == OrderState::Moving)
   {
-    const float dx = OffsetX(_ship.posWorld, _ship.steerTargetPos);
-    const float dz = OffsetZ(_ship.posWorld, _ship.steerTargetPos);
+    const float dx = OffsetX(_ship.posUniverse, _ship.steerTargetPos);
+    const float dz = OffsetZ(_ship.posUniverse, _ship.steerTargetPos);
     const float distance = std::sqrt(dx * dx + dz * dz);
     const float arrival = ArrivalRadiusMetres(_hull);
     if (distance <= arrival)
@@ -81,7 +81,7 @@ MotionIntent SolveOrder(const ShipState& _ship, const HullSpec& _hull) noexcept
       // And never faster than the order asked for. The one place the cap is applied: AvoidNeighbours
       // only ever sheds speed and IntegrateShip only chases the intent, so it holds through both
       // without either learning of it. A zero cap is arithmetic this line already performed, which
-      // is what keeps an uncapped world bit-identical (Design/Archive/Hostiles.md 5.4).
+      // is what keeps an uncapped universe bit-identical (Design/Archive/Hostiles.md 5.4).
       if (_ship.orderSpeedCapMetresPerSec > 0.0f)
         intent.desiredSpeedMetresPerSec = std::min(intent.desiredSpeedMetresPerSec, _ship.orderSpeedCapMetresPerSec);
     }
@@ -227,7 +227,7 @@ void IntegrateShip(ShipState& _ship, const HullSpec& _hull, const MotionIntent& 
       _ship.speed = 0.0f;
   }
 
-  Translate(_ship.posWorld, std::sin(_ship.headingRad) * _ship.speed * TICK_DT, std::cos(_ship.headingRad) * _ship.speed * TICK_DT);
+  Translate(_ship.posUniverse, std::sin(_ship.headingRad) * _ship.speed * TICK_DT, std::cos(_ship.headingRad) * _ship.speed * TICK_DT);
 
   // What the view's thruster glow and trail are driven by.
   _ship.accelSample = (_ship.speed - speedBefore) / TICK_DT;

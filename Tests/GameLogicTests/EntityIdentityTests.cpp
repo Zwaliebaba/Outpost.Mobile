@@ -8,10 +8,10 @@ namespace
 {
 // Its own copy rather than a shared one: every suite in this folder keeps its helpers in an
 // anonymous namespace, which is what the tree does instead of a test-support header nobody owns.
-Game::ShipId SpawnAt(Game::World& _world, float _x, float _z, Game::HullId _hull = Game::HullId::Corvette,
+Game::ShipId SpawnAt(Game::Universe& _universe, float _x, float _z, Game::HullId _hull = Game::HullId::Corvette,
                      Game::FactionId _faction = Game::FACTION_PLAYER)
 {
-  return _world.SpawnShip(Game::LocalPos(_x, _z), 0.0f, static_cast<std::uint32_t>(_hull), _faction);
+  return _universe.SpawnShip(Game::LocalPos(_x, _z), 0.0f, static_cast<std::uint32_t>(_hull), _faction);
 }
 
 class CaptureLink final : public Neuron::Transport
@@ -63,7 +63,7 @@ void FeedBothLanes(Game::SnapshotReceiver& _receiver, const CaptureLink& _link)
     (void)_receiver.Accept(datagram);
 }
 
-[[nodiscard]] const Game::ShipSnapshot* Find(const Game::WorldSnapshot& _snapshot, Game::EntityId _entity)
+[[nodiscard]] const Game::ShipSnapshot* Find(const Game::UniverseSnapshot& _snapshot, Game::EntityId _entity)
 {
   for (const Game::ShipSnapshot& ship : _snapshot.ships)
   {
@@ -104,13 +104,13 @@ public:
 
   TEST_METHOD(EveryShipGetsItsOwnIdAndNoneIsReused)
   {
-    Game::World world;
-    world.ConfigureShard(4);
+    Game::Universe universe;
+    universe.ConfigureShard(4);
 
-    const Game::ShipId first = SpawnAt(world, 0.0f, 0.0f);
-    const Game::ShipId second = SpawnAt(world, 100.0f, 0.0f);
-    const Game::EntityId firstEntity = world.EntityIdOf(first);
-    const Game::EntityId secondEntity = world.EntityIdOf(second);
+    const Game::ShipId first = SpawnAt(universe, 0.0f, 0.0f);
+    const Game::ShipId second = SpawnAt(universe, 100.0f, 0.0f);
+    const Game::EntityId firstEntity = universe.EntityIdOf(first);
+    const Game::EntityId secondEntity = universe.EntityIdOf(second);
 
     Assert::IsTrue(firstEntity != secondEntity, L"two ships share an id");
     Assert::AreEqual(Shard(4), Shard(Game::EntityShardOf(firstEntity)), L"the configured shard is not in the id");
@@ -118,42 +118,42 @@ public:
 
     // A slot is reused; an id is not. This is the whole difference between a reference and an
     // identity, and it is what a 48-bit serial buys over a generation that wraps (ADR 0047).
-    const Game::ShipHandle firstHandle = world.HandleOf(first);
-    Assert::IsTrue(world.DespawnShip(firstHandle), L"the despawn failed");
-    const Game::ShipId third = SpawnAt(world, 200.0f, 0.0f);
-    Assert::AreEqual(firstHandle.slot, world.HandleOf(third).slot, L"the slot was not reused, so this proves nothing");
+    const Game::ShipHandle firstHandle = universe.HandleOf(first);
+    Assert::IsTrue(universe.DespawnShip(firstHandle), L"the despawn failed");
+    const Game::ShipId third = SpawnAt(universe, 200.0f, 0.0f);
+    Assert::AreEqual(firstHandle.slot, universe.HandleOf(third).slot, L"the slot was not reused, so this proves nothing");
 
-    const Game::EntityId thirdEntity = world.EntityIdOf(third);
+    const Game::EntityId thirdEntity = universe.EntityIdOf(third);
     Assert::IsTrue(thirdEntity != firstEntity, L"a reused slot reissued the dead ship's id");
-    Assert::AreEqual(Game::INVALID_SHIP_ID, world.ResolveEntity(firstEntity), L"a dead entity still resolves");
-    Assert::IsTrue(world.ResolveEntity(thirdEntity) == third, L"the new entity does not resolve to the new ship");
+    Assert::AreEqual(Game::INVALID_SHIP_ID, universe.ResolveEntity(firstEntity), L"a dead entity still resolves");
+    Assert::IsTrue(universe.ResolveEntity(thirdEntity) == third, L"the new entity does not resolve to the new ship");
   }
 
   TEST_METHOD(AHandleAndAnIdAnswerDifferentQuestions)
   {
     // A despawned handle names nothing and a despawned id names nothing, which is the same answer
     // for two different reasons: the handle's generation moved on, and the id was retired.
-    Game::World world;
-    const Game::ShipId ship = SpawnAt(world, 0.0f, 0.0f);
-    const Game::ShipHandle handle = world.HandleOf(ship);
-    const Game::EntityId entity = world.EntityIdOf(ship);
+    Game::Universe universe;
+    const Game::ShipId ship = SpawnAt(universe, 0.0f, 0.0f);
+    const Game::ShipHandle handle = universe.HandleOf(ship);
+    const Game::EntityId entity = universe.EntityIdOf(ship);
 
-    Assert::IsTrue(world.EntityIdOf(handle) == entity, L"a handle and its ship disagree about the id");
-    Assert::IsTrue(world.HandleOfEntity(entity) == handle, L"an id and its ship disagree about the handle");
+    Assert::IsTrue(universe.EntityIdOf(handle) == entity, L"a handle and its ship disagree about the id");
+    Assert::IsTrue(universe.HandleOfEntity(entity) == handle, L"an id and its ship disagree about the handle");
 
-    Assert::IsTrue(world.DespawnShip(handle), L"the despawn failed");
-    Assert::AreEqual(Game::INVALID_SHIP_ID, world.Resolve(handle), L"a dead handle still resolves");
-    Assert::AreEqual(Game::INVALID_SHIP_ID, world.ResolveEntity(entity), L"a dead id still resolves");
-    Assert::IsTrue(world.EntityIdOf(handle) == Game::INVALID_ENTITY_ID, L"a dead handle still names an entity");
-    Assert::IsTrue(world.HandleOfEntity(entity) == Game::ShipHandle{}, L"a dead id still names a handle");
+    Assert::IsTrue(universe.DespawnShip(handle), L"the despawn failed");
+    Assert::AreEqual(Game::INVALID_SHIP_ID, universe.Resolve(handle), L"a dead handle still resolves");
+    Assert::AreEqual(Game::INVALID_SHIP_ID, universe.ResolveEntity(entity), L"a dead id still resolves");
+    Assert::IsTrue(universe.EntityIdOf(handle) == Game::INVALID_ENTITY_ID, L"a dead handle still names an entity");
+    Assert::IsTrue(universe.HandleOfEntity(entity) == Game::ShipHandle{}, L"a dead id still names a handle");
   }
 
-  TEST_METHOD(TheSameEntityInTwoWorldsHasTwoHandlesAndOneId)
+  TEST_METHOD(TheSameEntityInTwoUniversesHasTwoHandlesAndOneId)
   {
     // The sentence this whole slice exists to make true (Design/Archive/EntityIdentity-work-order.md 6).
-    Game::World alpha;
+    Game::Universe alpha;
     alpha.ConfigureShard(1);
-    Game::World beta;
+    Game::Universe beta;
     beta.ConfigureShard(2);
 
     // Beta is given some ships of its own first, so that the handed-over entity cannot land in the
@@ -171,8 +171,8 @@ public:
     Assert::AreNotEqual(Game::INVALID_SHIP_ID, inBeta, L"the handoff was refused");
 
     const Game::ShipHandle betaHandle = beta.HandleOf(inBeta);
-    Assert::IsTrue(beta.EntityIdOf(inBeta) == entity, L"the entity did not keep its id across worlds");
-    Assert::IsFalse(alphaHandle == betaHandle, L"the two worlds happened to issue the same handle, so this proves nothing");
+    Assert::IsTrue(beta.EntityIdOf(inBeta) == entity, L"the entity did not keep its id across universes");
+    Assert::IsFalse(alphaHandle == betaHandle, L"the two universes happened to issue the same handle, so this proves nothing");
     Assert::AreEqual(Shard(1), Shard(Game::EntityShardOf(beta.EntityIdOf(inBeta))), L"the id was reminted under the receiving shard");
   }
 
@@ -181,9 +181,9 @@ public:
     // The failure U3 names: a client keyed on handles sees the handle it held disappear and an
     // unfamiliar one arrive. Keyed on ids it sees one record, updated in place -- which is what
     // "same ship, new region" has to look like on the wire.
-    Game::World alpha;
+    Game::Universe alpha;
     alpha.ConfigureShard(1);
-    Game::World beta;
+    Game::Universe beta;
     beta.ConfigureShard(2);
     (void)SpawnAt(beta, -900.0f, 0.0f); // so beta's slots do not line up with alpha's
 
@@ -191,7 +191,7 @@ public:
     const Game::EntityId entity = alpha.EntityIdOf(inAlpha);
     alpha.Step();
 
-    // The client is told about it by the first world.
+    // The client is told about it by the first universe.
     Game::SnapshotReceiver client;
     {
       CaptureLink link;
@@ -229,9 +229,9 @@ public:
 
   TEST_METHOD(AForeignIdResolvesOnlyWhereItWasHandedIn)
   {
-    Game::World here;
+    Game::Universe here;
     here.ConfigureShard(9);
-    Game::World elsewhere;
+    Game::Universe elsewhere;
     elsewhere.ConfigureShard(9); // the same shard number, to prove the answer is not "not mine"
 
     const Game::EntityId foreign = Game::MakeEntityId(77, 12345);
@@ -239,12 +239,12 @@ public:
       here.SpawnShipAs(foreign, Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
     Assert::AreNotEqual(Game::INVALID_SHIP_ID, landed, L"a foreign id was refused");
     Assert::IsTrue(here.ResolveEntity(foreign) == landed, L"a foreign id did not resolve where it was handed in");
-    Assert::AreEqual(Game::INVALID_SHIP_ID, elsewhere.ResolveEntity(foreign), L"a foreign id resolved in a world that never saw it");
+    Assert::AreEqual(Game::INVALID_SHIP_ID, elsewhere.ResolveEntity(foreign), L"a foreign id resolved in a universe that never saw it");
 
-    // And it stays foreign: a world does not adopt an id into its own numbering.
-    Assert::AreEqual(Shard(77), Shard(Game::EntityShardOf(here.EntityIdOf(landed))), L"the receiving world reminted the id");
+    // And it stays foreign: a universe does not adopt an id into its own numbering.
+    Assert::AreEqual(Shard(77), Shard(Game::EntityShardOf(here.EntityIdOf(landed))), L"the receiving universe reminted the id");
 
-    // The same id twice in one world is refused rather than resolved to whichever copy is found
+    // The same id twice in one universe is refused rather than resolved to whichever copy is found
     // first, because an entity existing twice is what identity exists to make impossible.
     Assert::AreEqual(Game::INVALID_SHIP_ID,
                      here.SpawnShipAs(foreign, Game::LocalPos(50.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette)),
@@ -257,24 +257,24 @@ public:
 
   TEST_METHOD(ALocalIdHandedInMovesTheCounterPastItself)
   {
-    // What stops a reloaded world minting an id its own file already used. A foreign id says nothing
+    // What stops a reloaded universe minting an id its own file already used. A foreign id says nothing
     // about this shard's numbering and must move the counter not at all.
-    Game::World world;
-    world.ConfigureShard(5);
-
-    Assert::AreNotEqual(
-      Game::INVALID_SHIP_ID,
-      world.SpawnShipAs(Game::MakeEntityId(5, 900), Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette)),
-      L"a local id was refused");
-    const Game::ShipId next = SpawnAt(world, 100.0f, 0.0f);
-    Assert::IsTrue(Game::EntitySerialOf(world.EntityIdOf(next)) > 900, L"the counter did not move past a local id handed in");
+    Game::Universe universe;
+    universe.ConfigureShard(5);
 
     Assert::AreNotEqual(Game::INVALID_SHIP_ID,
-                        world.SpawnShipAs(Game::MakeEntityId(6, 100000), Game::LocalPos(200.0f, 0.0f), 0.0f,
-                                          static_cast<std::uint32_t>(Game::HullId::Corvette)),
+                        universe.SpawnShipAs(Game::MakeEntityId(5, 900), Game::LocalPos(0.0f, 0.0f), 0.0f,
+                                             static_cast<std::uint32_t>(Game::HullId::Corvette)),
+                        L"a local id was refused");
+    const Game::ShipId next = SpawnAt(universe, 100.0f, 0.0f);
+    Assert::IsTrue(Game::EntitySerialOf(universe.EntityIdOf(next)) > 900, L"the counter did not move past a local id handed in");
+
+    Assert::AreNotEqual(Game::INVALID_SHIP_ID,
+                        universe.SpawnShipAs(Game::MakeEntityId(6, 100000), Game::LocalPos(200.0f, 0.0f), 0.0f,
+                                             static_cast<std::uint32_t>(Game::HullId::Corvette)),
                         L"a foreign id was refused");
-    const Game::ShipId after = SpawnAt(world, 300.0f, 0.0f);
-    Assert::IsTrue(Game::EntitySerialOf(world.EntityIdOf(after)) < 100000, L"a foreign id moved this shard's counter");
+    const Game::ShipId after = SpawnAt(universe, 300.0f, 0.0f);
+    Assert::IsTrue(Game::EntitySerialOf(universe.EntityIdOf(after)) < 100000, L"a foreign id moved this shard's counter");
   }
 
   TEST_METHOD(TheIndexSurvivesEveryOrderOfSpawnAndDespawn)
@@ -285,35 +285,35 @@ public:
     // shows up as one entity resolving to another and nothing else.
     for (int order = 0; order < 6; ++order)
     {
-      Game::World world;
-      world.ConfigureShard(2);
+      Game::Universe universe;
+      universe.ConfigureShard(2);
 
       std::vector<Game::EntityId> entities;
       std::vector<Game::ShipId> ships;
       for (int at = 0; at < 6; ++at)
       {
         // Alternating: local ids ascend and append, foreign ones land wherever they sort.
-        const Game::ShipId id = (at % 2 == 0) ? SpawnAt(world, static_cast<float>(at) * 60.0f, 0.0f)
-                                              : world.SpawnShipAs(Game::MakeEntityId(1, static_cast<std::uint64_t>(20 - at)),
-                                                                  Game::LocalPos(static_cast<float>(at) * 60.0f, 0.0f), 0.0f,
-                                                                  static_cast<std::uint32_t>(Game::HullId::Corvette));
+        const Game::ShipId id = (at % 2 == 0) ? SpawnAt(universe, static_cast<float>(at) * 60.0f, 0.0f)
+                                              : universe.SpawnShipAs(Game::MakeEntityId(1, static_cast<std::uint64_t>(20 - at)),
+                                                                     Game::LocalPos(static_cast<float>(at) * 60.0f, 0.0f), 0.0f,
+                                                                     static_cast<std::uint32_t>(Game::HullId::Corvette));
         Assert::AreNotEqual(Game::INVALID_SHIP_ID, id, L"a spawn was refused");
         ships.push_back(id);
-        entities.push_back(world.EntityIdOf(id));
+        entities.push_back(universe.EntityIdOf(id));
       }
 
       // Retire one, chosen by the loop, and then check that every survivor still names itself.
       const Game::EntityId retired = entities[static_cast<std::size_t>(order)];
-      Assert::IsTrue(world.DespawnShip(world.HandleOfEntity(retired)), L"the despawn failed");
-      Assert::AreEqual(Game::INVALID_SHIP_ID, world.ResolveEntity(retired), L"a retired entity still resolves");
+      Assert::IsTrue(universe.DespawnShip(universe.HandleOfEntity(retired)), L"the despawn failed");
+      Assert::AreEqual(Game::INVALID_SHIP_ID, universe.ResolveEntity(retired), L"a retired entity still resolves");
 
       for (const Game::EntityId entity : entities)
       {
         if (entity == retired)
           continue;
-        const Game::ShipId resolved = world.ResolveEntity(entity);
+        const Game::ShipId resolved = universe.ResolveEntity(entity);
         Assert::AreNotEqual(Game::INVALID_SHIP_ID, resolved, L"a survivor stopped resolving after a despawn");
-        Assert::IsTrue(world.EntityIdOf(resolved) == entity, L"an entity resolved to a different ship");
+        Assert::IsTrue(universe.EntityIdOf(resolved) == entity, L"an entity resolved to a different ship");
       }
     }
   }
@@ -322,12 +322,12 @@ public:
   {
     // The publisher's resolve loop, end to end: a client that only ever saw ids orders by id, and an
     // id minted somewhere else buys nothing -- which is what stops a client ordering a ship this
-    // world does not own.
-    Game::World world;
-    world.ConfigureShard(3);
-    const Game::ShipId first = SpawnAt(world, 0.0f, 0.0f);
-    const Game::ShipId second = SpawnAt(world, 80.0f, 0.0f);
-    world.Step();
+    // universe does not own.
+    Game::Universe universe;
+    universe.ConfigureShard(3);
+    const Game::ShipId first = SpawnAt(universe, 0.0f, 0.0f);
+    const Game::ShipId second = SpawnAt(universe, 80.0f, 0.0f);
+    universe.Step();
 
     // Through the two ids a fleet order carries -- a Dock's station and an Attack's target -- since
     // an order stopped carrying a ship list at all (ADR 0049). One live id, one nobody minted, and
@@ -335,7 +335,7 @@ public:
     Game::FleetOrder sent;
     sent.slot = 0;
     sent.kind = Game::FleetOrderKind::Dock;
-    sent.station = world.EntityIdOf(first);
+    sent.station = universe.EntityIdOf(first);
     sent.target = Game::MakeEntityId(3, 999999);
 
     CaptureLink link;
@@ -346,9 +346,9 @@ public:
     Assert::IsTrue(got.station == sent.station, L"the station id did not survive the wire");
     Assert::IsTrue(got.target == sent.target, L"the target id did not survive the wire");
 
-    Assert::IsTrue(world.ResolveEntity(got.station) == first, L"the station id named the wrong ship");
-    Assert::AreEqual(Game::INVALID_SHIP_ID, world.ResolveEntity(got.target), L"an id nobody minted resolved");
-    Assert::IsTrue(world.ResolveEntity(world.EntityIdOf(second)) == second, L"a live id stopped naming its ship");
+    Assert::IsTrue(universe.ResolveEntity(got.station) == first, L"the station id named the wrong ship");
+    Assert::AreEqual(Game::INVALID_SHIP_ID, universe.ResolveEntity(got.target), L"an id nobody minted resolved");
+    Assert::IsTrue(universe.ResolveEntity(universe.EntityIdOf(second)) == second, L"a live id stopped naming its ship");
   }
 };
 } // namespace GameLogicTests

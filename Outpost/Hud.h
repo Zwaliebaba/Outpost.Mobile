@@ -1,7 +1,7 @@
 #pragma once
 
 #include "EventLog.h"
-#include "WorldView.h"
+#include "UniverseView.h"
 
 #include "Camera.h"
 #include "PointerEvent.h"
@@ -18,8 +18,8 @@ namespace Outpost
 // plus the debug readout it grew out of. Separate on purpose: it is the thing that grows every
 // week, and it should grow somewhere that is not the frame loop.
 //
-// It reads the snapshot the client half received and WorldView, and writes to neither except
-// through WorldView's own selection calls, so nothing here can feed back into a tick. Everything is laid out from
+// It reads the snapshot the client half received and UniverseView, and writes to neither except
+// through UniverseView's own selection calls, so nothing here can feed back into a tick. Everything is laid out from
 // ViewTuning.h constants, anchored to the corners and edges and scaled by DPI, and the draw path
 // allocates nothing: every string goes through a fixed buffer.
 class Hud
@@ -51,7 +51,7 @@ public:
     std::uint32_t culledCount = 0;
     // The router (Design/Archive/RegionalPathfinding.md 3.3). An island that refused to build is the one
     // failure here that looks exactly like success: every route through it is a straight line and
-    // every ship crossing it steers locally, which is what the world looked like before there was a
+    // every ship crossing it steers locally, which is what the universe looked like before there was a
     // planner at all. DECLINED above zero is the only thing that says so.
     std::uint32_t pathIslandCount = 0;
     std::uint32_t pathIslandsDeclined = 0;
@@ -68,7 +68,7 @@ public:
   };
   static constexpr int RAIL_BUTTONS = 4;
 
-  // What the composition root knows and the HUD does not. The economy has no home in the world
+  // What the composition root knows and the HUD does not. The economy has no home in the universe
   // yet, so its numbers arrive from here; the defaults are the mock's so the panel reads right
   // until it does. The same goes for hull and shield, which have no damage model to read.
   //
@@ -86,7 +86,7 @@ public:
     int creditsPerMin = 42;
     int alloy = 3215;
     int alloyPerMin = 8;
-    Game::WorldPos sector;
+    Game::UniversePos sector;
     int contacts = 0;
     Game::FactionId ownFaction = Game::FACTION_PLAYER;
     float hullFraction = 1.0f;
@@ -97,14 +97,15 @@ public:
     std::span<const char* const> factionNames;
   };
 
-  void Draw(Neuron::TextRenderer& _text, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view, const Neuron::Camera& _camera,
-            const EventLog& _log, const Frame& _frame, float _dpiScale, std::uint32_t _widthPx, std::uint32_t _heightPx);
+  void Draw(Neuron::TextRenderer& _text, std::span<const Game::ShipSnapshot> _ships, const UniverseView& _view,
+            const Neuron::Camera& _camera, const EventLog& _log, const Frame& _frame, float _dpiScale, std::uint32_t _widthPx,
+            std::uint32_t _heightPx);
 
   // The alert pulse's clock. Called once a frame by the composition root, before Draw, because the
   // HUD never reads a clock itself and this is the one piece of it that has to advance whether or
   // not anything was redrawn.
   //
-  // The log line the rising edge earns is WorldView's now: two of Design/Archive/Fleets.md 9.6's other lines
+  // The log line the rising edge earns is UniverseView's now: two of Design/Archive/Fleets.md 9.6's other lines
   // turn on a departure's stated cause, which only that half sees, and splitting one section's log
   // across two files by which line happened to need what is the shape to avoid
   // (Design/Archive/Fleets-slice-8.md 2.1).
@@ -116,13 +117,13 @@ public:
   // _outOpenSheet is set to the slot a long press asked to read, or left alone. Reported rather
   // than acted on, because a panel is the composition root's to own and this class's job ends at
   // saying where a contact landed.
-  [[nodiscard]] bool HandlePointer(const Neuron::PointerEvent& _event, WorldView& _view, int& _outOpenSheet, float _dpiScale,
+  [[nodiscard]] bool HandlePointer(const Neuron::PointerEvent& _event, UniverseView& _view, int& _outOpenSheet, float _dpiScale,
                                    std::uint32_t _widthPx, std::uint32_t _heightPx);
 
   // Drops a capture this class is holding, for PointerTracker::CancelContacts's reason: a contact
   // that went down on a panel and lifts after something modal has taken the pointer away never
   // reaches the release below, so the capture would stand for ever -- and a stuck capture makes
-  // every later press on the bar fall through to the world as an order.
+  // every later press on the bar fall through to the universe as an order.
   void CancelCapture() noexcept
   {
     m_captured = false;
@@ -159,7 +160,7 @@ private:
     Rect rail[RAIL_BUTTONS];
     Rect log;
     Rect bar;
-    Rect fleets[WorldView::FLEET_SLOTS];
+    Rect fleets[UniverseView::FLEET_SLOTS];
   };
 
   [[nodiscard]] Layout ComputeLayout(float _dpiScale, std::uint32_t _widthPx, std::uint32_t _heightPx) const noexcept;
@@ -173,12 +174,13 @@ private:
   void DrawScanlines(Neuron::TextRenderer& _text, const Rect& _rect, float _scale) const;
   void DrawResources(Neuron::TextRenderer& _text, const Layout& _layout, const Frame& _frame) const;
   void DrawDebug(Neuron::TextRenderer& _text, const Layout& _layout, const Frame& _frame, std::uint32_t _widthPx) const;
-  void DrawMinimap(Neuron::TextRenderer& _text, const Layout& _layout, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view,
-                   const Neuron::Camera& _camera, const Frame& _frame, std::uint32_t _widthPx, std::uint32_t _heightPx) const;
+  void DrawMinimap(Neuron::TextRenderer& _text, const Layout& _layout, std::span<const Game::ShipSnapshot> _ships,
+                   const UniverseView& _view, const Neuron::Camera& _camera, const Frame& _frame, std::uint32_t _widthPx,
+                   std::uint32_t _heightPx) const;
   void DrawRail(Neuron::TextRenderer& _text, const Layout& _layout) const;
   void DrawEventLog(Neuron::TextRenderer& _text, const Layout& _layout, const EventLog& _log) const;
-  void DrawBottomBar(Neuron::TextRenderer& _text, const Layout& _layout, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view,
-                     const Frame& _frame) const;
+  void DrawBottomBar(Neuron::TextRenderer& _text, const Layout& _layout, std::span<const Game::ShipSnapshot> _ships,
+                     const UniverseView& _view, const Frame& _frame) const;
 
   float m_cellPx = 16.0f; // the UI atlas cell, remembered from the last draw so a hit test can size the panels the same way
 

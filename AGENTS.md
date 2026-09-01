@@ -42,9 +42,9 @@ not offer one. The government is here too: the starting solar system is laid out
 Command, azure in the scene and a hollow diamond on the minimap from the first frame — the nearest
 inside the 4 km half-range, a farther one clamped to the map's edge, because a mark is static
 content and not a record. A
-station is a Structure with a row in `World`'s station table (ADR 0038); the Vandal base is a row
+station is a Structure with a row in `Universe`'s station table (ADR 0038); the Vandal base is a row
 in the same table. Tap a station with a fleet selected and it flies in and docks — the ships leave
-the world, the fleet is dismantled into the station's ledger, and the log says so. Hold a station
+the universe, the fleet is dismantled into the station's ledger, and the log says so. Hold a station
 and its ledger comes back as a *reply* to a request (ADR 0051) on the assembly screen, where a draft
 of up to eight hulls becomes a fleet in a free slot and launches. That is the only way out of a
 ledger: undocking as such still does not exist, and the rest of the station management menu — trade,
@@ -91,8 +91,8 @@ purpose.
 
 **Deliberately not here yet**, so nobody goes looking for it: no audio, no economy, no shields or
 armour classes past the one hull number, no turret that turns -- a hull's guns fire and its geometry
-holds still -- and no save *file* — a `World` can be written out, read back and replayed to byte
-equality (`WorldStateTests`), but the codec is bytes in memory and no format versions it. The
+holds still -- and no save *file* — a `Universe` can be written out, read back and replayed to byte
+equality (`UniverseStateTests`), but the codec is bytes in memory and no format versions it. The
 content pipeline is still NMO and DDS, with `Tools/DdsBake.py` baking the DDS half's mips and BC
 compression offline. Tuning is `constexpr` in `SimTuning.h`, `HullSpec.h`, `DeviceSpec.h` and
 `ViewTuning.h` (§5); what a *deployment* may change without a rebuild — the port, the backlog, one
@@ -115,7 +115,7 @@ than one: `Game::Publisher` holds a table of them, each with its own interest se
 phase, order budget, despawn cursor and last-sent fleet rosters (ADR 0030). What remains missing is the far end — this executable adds exactly one entry,
 there is no second machine to be on the other side of it, and no decided way to tell a headless
 build what to be.
-The client sees the world through the seam, filtered to what one subscriber can see (§2).
+The client sees the universe through the seam, filtered to what one subscriber can see (§2).
 Where the HUD shows a number the simulation does not yet have, it is a placeholder supplied by the
 composition root, and it says so at the definition.
 
@@ -322,7 +322,7 @@ does not have.
 | Path | What it is |
 |---|---|
 | `NeuronCore/` | Engine primitives shared by every layer — zero game semantics, no graphics API, headless (below). Diagnostics, file IO, framerate-independent easing, the frame clock, the seeded `Pcg32` (ADR 0012), and the seam: `Transport`, with `LoopbackTransport` behind it for the tests and the MsQuic implementation the game runs on — `QuicApi`, `QuicTransport`, `QuicListener` and the self-signed `DevCertificate` (ADRs 0021, 0023). No content readers: those live with their consumer (below). |
-| `GameLogic/` | The deterministic simulation, namespace `Game`. `World`, `ShipState`, `WorldPos`, `HullSpec`, `DeviceSpec` (what a gun is; `HullSpec` says where a hull carries one), `Movement`, `Collision`, `SpatialIndex`, `PathGrid`, `Formation`, `Patrol`, `SimTuning`, `InterestSet`, `PathIslands` (the architecture partitioned into islands, one `PathGrid` over each, ADR 0033), `UniverseLayout` (a solar system's star and planet sites from a seed — static content both halves read, ADR 0037, and the library's only randomness), `WorldSnapshot` (the wire format, ADR 0008) and `Publisher` (the fan-out to N subscribers, ADR 0030). Depends on NeuronCore only. |
+| `GameLogic/` | The deterministic simulation, namespace `Game`. `Universe`, `ShipState`, `UniversePos`, `HullSpec`, `DeviceSpec` (what a gun is; `HullSpec` says where a hull carries one), `Movement`, `Collision`, `SpatialIndex`, `PathGrid`, `Formation`, `Patrol`, `SimTuning`, `InterestSet`, `PathIslands` (the architecture partitioned into islands, one `PathGrid` over each, ADR 0033), `UniverseLayout` (a solar system's star and planet sites from a seed — static content both halves read, ADR 0037, and the library's only randomness), `UniverseSnapshot` (the wire format, ADR 0008) and `Publisher` (the fan-out to N subscribers, ADR 0030). Depends on NeuronCore only. |
 | `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, the explosion's `FxRenderer`/`MeshShatter`/`SpriteParticles` and the `GlowBillboards` the thruster plume is built with, `ViewCulling` (the camera's frustum and the sphere test everything drawn is gated on), the planet pipeline (`CubeSphere`, `Noise3`, `BodyDesc`/`BodyParams`/`BodyField`, `BodyMeshBuilder`, `BodyRenderer`, `ColourRamp` — see [`Design/Archive/PlanetRenderer.md`](Design/Archive/PlanetRenderer.md)), the star field (`SkyField`, `SkyRenderer`, `SkyVertex` — [`Design/Archive/Skybox.md`](Design/Archive/Skybox.md)), and the content readers `DdsImage`, `NmoFile`/`NmoReader`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
 | `Outpost/` | The executable: composition root, presentation state, the HUD and its event log, the modal `AssemblyScreen` a station long-press opens, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |
@@ -364,7 +364,7 @@ The dependency rules are hard, and each of them is one thing this structure buys
   it is expensive to find.
 - **The engine libraries never reference GameLogic.** `Neuron*` is a shared engine; the game is
   reached through engine-declared interfaces that `Outpost.exe` injects. `NeuronServer` declares
-  `Simulation`; `Outpost/WorldSimulation.h` implements it over `Game::World`. The moment an engine
+  `Simulation`; `Outpost/UniverseSimulation.h` implements it over `Game::Universe`. The moment an engine
   project names a game type it stops being an engine.
 - **Nothing depends on the executable.**
 - **NeuronCore and NeuronServer are headless.** The server will one day run in a container with
@@ -384,8 +384,8 @@ either one, because the alternatives were considered and the records say why the
 ### Where the client/server seam stands today
 
 `Outpost.exe` runs both halves in one process, and it stays one process. What is no longer shared
-is memory: `WorldView` reads a snapshot that arrived over a `Transport` and sends move orders back
-up the same wire, and its header does not include `World.h`, so the seam is structural rather than
+is memory: `UniverseView` reads a snapshot that arrived over a `Transport` and sends move orders back
+up the same wire, and its header does not include `Universe.h`, so the seam is structural rather than
 a convention. Nor is the wire pretend any more — the two halves talk over QUIC across `127.0.0.1`,
 so the process boundary is the only one left to cross.
 
@@ -400,7 +400,7 @@ datagram on purpose. What remains is a second process, and it is not
 scheduled: the code boundary is the part that had to land early, because it is what
 stops the two halves growing into each other. Do not
 shortcut it: if you find yourself wanting the simulation to call into the renderer, or the renderer
-to reach into the world, that is the seam telling you the change belongs somewhere else.
+to reach into the universe, that is the seam telling you the change belongs somewhere else.
 
 ---
 
@@ -529,12 +529,12 @@ macro of that shape appears.
   floating-point mode that differs between two projects makes the same tick produce two answers.
   `GameLogicTests` runs the same order twice and compares every tick; that suite is the gate.
 - **Presentation state does not live in the simulation.** Ring fades, camera lag, thruster glow
-  and trail sampling belong to `WorldView`. A value that would have to be sent over a wire to a
-  spectator belongs to `World`; a value that would not, does not.
+  and trail sampling belong to `UniverseView`. A value that would have to be sent over a wire to a
+  spectator belongs to `Universe`; a value that would not, does not.
 - **No argv, no environment variables.** Configuration is loaded by the composition root only;
   libraries receive plain config structs (`Camera::Desc`, `ServerHost::Desc`,
   `PointerTracker::Desc`) and never read files or the registry themselves.
-- **Single-writer state.** The authoritative world belongs to whichever thread ticks it, render
+- **Single-writer state.** The authoritative universe belongs to whichever thread ticks it, render
   state to the main thread. Today both are the same thread, which is why this rule is easy to break
   without noticing: when a transport's workers or an audio callback arrive, they enqueue to a ring
   and touch nothing else.
@@ -765,11 +765,11 @@ configurations you built.
       NeuronCore or NeuronServer.
 - [ ] No `argv`, no environment reads, no `XMVECTOR` stored in a struct or container, no `RH` call.
 - [ ] GameLogic touched? Both replay gates in `GameLogicTests` still pass — the four same-process
-      rerun rows (`TheSameOrderProducesTheSameRun` and its siblings) and `WorldStateTests`, which
-      saves a world, reloads it into a fresh one and replays both to byte equality — and nothing you
+      rerun rows (`TheSameOrderProducesTheSameRun` and its siblings) and `UniverseStateTests`, which
+      saves a universe, reloads it into a fresh one and replays both to byte equality — and nothing you
       added reads a clock, draws unseeded randomness, or keys on a pointer.
-- [ ] Added a field to `World` that `Step` reads? `WriteWorldState` carries it, or `ReadWorldState`
-      rebuilds it. `WorldStateTests::ASavedWorldReplaysToTheSameRun` compares two whole states and
+- [ ] Added a field to `Universe` that `Step` reads? `WriteUniverseState` carries it, or `ReadUniverseState`
+      rebuilds it. `UniverseStateTests::ASavedUniverseReplaysToTheSameRun` compares two whole states and
       goes red if neither happened.
 - [ ] New engine setting? It is MSVC-native (§6) — literal, per `Configuration|Platform`, no
       custom MSBuild — and it went into all nine `.vcxproj` files identically, for every

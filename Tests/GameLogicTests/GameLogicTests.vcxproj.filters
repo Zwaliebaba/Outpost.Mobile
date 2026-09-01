@@ -83,10 +83,10 @@
     <ClCompile Include="SpatialIndexTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
-    <ClCompile Include="WorldStateTests.cpp">
+    <ClCompile Include="UniverseStateTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
-    <ClCompile Include="WorldTests.cpp">
+    <ClCompile Include="UniverseTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
   </ItemGroup>

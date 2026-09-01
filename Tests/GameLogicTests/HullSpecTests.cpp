@@ -110,7 +110,7 @@ public:
 
   TEST_METHOD(NoQueryRadiusForcesAnUnreasonableGhostZone)
   {
-    // A world-layout constraint arriving out of a collision table: sharding by space needs a ghost
+    // A universe-layout constraint arriving out of a collision table: sharding by space needs a ghost
     // zone at least as wide as the widest query, so this number is the floor on region size and it
     // is far cheaper to know now than after a map exists (Design/Archive/Collision.md 10).
     constexpr float REGION_GHOST_BUDGET_METRES = 700.0f;
@@ -146,7 +146,7 @@ public:
     // because the hull table's worst case buys slack that a localised radius takes away.
     //
     // Checked over every subset of the hull table, because the query's numbers are maxima over what
-    // is *present* and the worst case is whichever world makes those maxima smallest.
+    // is *present* and the worst case is whichever universe makes those maxima smallest.
     constexpr std::uint32_t SUBSETS = 1u << Game::HULL_COUNT;
     for (std::uint32_t mask = 1; mask < SUBSETS; ++mask)
     {
@@ -198,7 +198,7 @@ public:
     }
   }
 
-  TEST_METHOD(AWorldOfFightersDoesNotPayForACarrier)
+  TEST_METHOD(AUniverseOfFightersDoesNotPayForACarrier)
   {
     // What the localisation buys. The table's worst case sizes a region's ghost zone and is not
     // going anywhere; what a tick pays is the neighbourhood actually around it
@@ -211,7 +211,7 @@ public:
 
     const float whole = Game::QueryRadiusMetres(fighter);
     const float local = Game::QueryRadiusMetres(fighter, fightersOnly);
-    Assert::IsTrue(local < whole, L"a world with nothing but fighters in it still paid the whole table's radius");
+    Assert::IsTrue(local < whole, L"a universe with nothing but fighters in it still paid the whole table's radius");
     Logger::WriteMessage(std::format(L"fighters-only query radius: {:.0f} m against the table's {:.0f} m ({:.0f}% of the area)\n", local,
                                      whole, 100.0f * (local * local) / (whole * whole))
                            .c_str());

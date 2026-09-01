@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "World.h"
+#include "Universe.h"
 
 #include "Collision.h"
 #include "HullSpec.h"
@@ -12,23 +12,24 @@ using namespace DirectX;
 
 namespace Game
 {
-ShipId World::SpawnShip(const WorldPos& _posWorld, float _headingRad, std::uint32_t _hullId, FactionId _factionId)
+ShipId Universe::SpawnShip(const UniversePos& _posUniverse, float _headingRad, std::uint32_t _hullId, FactionId _factionId)
 {
   // The serial is taken here rather than inside SpawnShipAs so that there is exactly one place that
   // mints, and it is the one place that can be sure the id is not already here.
-  return SpawnShipAs(MakeEntityId(m_shard, m_nextEntitySerial), _posWorld, _headingRad, _hullId, _factionId);
+  return SpawnShipAs(MakeEntityId(m_shard, m_nextEntitySerial), _posUniverse, _headingRad, _hullId, _factionId);
 }
 
-ShipId World::SpawnShipAs(EntityId _entity, const WorldPos& _posWorld, float _headingRad, std::uint32_t _hullId, FactionId _factionId)
+ShipId Universe::SpawnShipAs(EntityId _entity, const UniversePos& _posUniverse, float _headingRad, std::uint32_t _hullId,
+                             FactionId _factionId)
 {
-  // An entity existing twice in one world is the failure the whole mechanism exists to make
+  // An entity existing twice in one universe is the failure the whole mechanism exists to make
   // impossible, so a duplicate is refused rather than resolved to whichever copy is found first.
   if (_entity == INVALID_ENTITY_ID || ResolveEntity(_entity) != INVALID_SHIP_ID)
     return INVALID_SHIP_ID;
 
   ShipState ship;
-  ship.posWorld = _posWorld;
-  ship.prevPos = _posWorld;
+  ship.posUniverse = _posUniverse;
+  ship.prevPos = _posUniverse;
   ship.headingRad = _headingRad;
   ship.prevHeading = _headingRad;
   ship.hullId = _hullId;
@@ -58,7 +59,7 @@ ShipId World::SpawnShipAs(EntityId _entity, const WorldPos& _posWorld, float _he
   m_slots[slot].entity = _entity;
   InsertEntityRow(_entity, slot);
 
-  // Past any local id handed in, so a reloaded world cannot go on to mint one its own file already
+  // Past any local id handed in, so a reloaded universe cannot go on to mint one its own file already
   // used. A foreign id says nothing about this shard's counter and moves it not at all.
   if (EntityShardOf(_entity) == m_shard && EntitySerialOf(_entity) >= m_nextEntitySerial)
     m_nextEntitySerial = EntitySerialOf(_entity) + 1;
@@ -87,7 +88,7 @@ ShipId World::SpawnShipAs(EntityId _entity, const WorldPos& _posWorld, float _he
   return id;
 }
 
-bool World::DespawnShip(ShipHandle _handle, DespawnCause _cause)
+bool Universe::DespawnShip(ShipHandle _handle, DespawnCause _cause)
 {
   const ShipId id = Resolve(_handle);
   if (id == INVALID_SHIP_ID)
@@ -143,7 +144,7 @@ bool World::DespawnShip(ShipHandle _handle, DespawnCause _cause)
   return true;
 }
 
-Standing World::StandingOf(FactionId _owner, FactionId _other) const noexcept
+Standing Universe::StandingOf(FactionId _owner, FactionId _other) const noexcept
 {
   // Out of range is Hostile, not Neutral. Nobody authored that faction, every caller here is a gate
   // or a warning colour, and the failure directions are not symmetric: a stranger refused a dock is
@@ -153,7 +154,7 @@ Standing World::StandingOf(FactionId _owner, FactionId _other) const noexcept
   return m_standings.rows[_owner][_other];
 }
 
-std::uint8_t World::HostileMaskFor(FactionId _viewer) const noexcept
+std::uint8_t Universe::HostileMaskFor(FactionId _viewer) const noexcept
 {
   std::uint8_t mask = 0;
   for (std::uint32_t faction = 0; faction < FACTION_LIMIT; ++faction)
@@ -166,7 +167,7 @@ std::uint8_t World::HostileMaskFor(FactionId _viewer) const noexcept
   return mask;
 }
 
-void World::RecordAggression(ShipHandle _attacker, StationId _station)
+void Universe::RecordAggression(ShipHandle _attacker, StationId _station)
 {
   const ShipId attacker = Resolve(_attacker);
   if (attacker == INVALID_SHIP_ID || _station >= m_stations.size())
@@ -198,7 +199,7 @@ void World::RecordAggression(ShipHandle _attacker, StationId _station)
     station.targets.push_back(_attacker);
 }
 
-void World::PursueTarget(ShipId _ship, ShipId _target)
+void Universe::PursueTarget(ShipId _ship, ShipId _target)
 {
   // Re-aimed when the ship has nothing to do, or when the target has walked far enough from the
   // point last aimed at to be worth a new plan -- never every tick, which would cost everything and
@@ -206,10 +207,10 @@ void World::PursueTarget(ShipId _ship, ShipId _target)
   // is sent at the target itself rather than at a slot around it: eight ships aimed at one point all
   // answer this test the same way on the same tick.
   ShipState& ship = m_ships[_ship];
-  const WorldPos& targetPos = m_ships[_target].posWorld;
+  const UniversePos& targetPos = m_ships[_target].posUniverse;
   // Measured against where the target was when this route was planned, and NOT against the route's
   // destination: with a stand-off those are different points, and the difference is a constant that
-  // the old test read as drift on every tick of every chase (World.h, Route::pursuitAimedAt).
+  // the old test read as drift on every tick of every chase (Universe.h, Route::pursuitAimedAt).
   const bool drifted = Distance(m_routes[_ship].pursuitAimedAt, targetPos) > PURSUIT_REPLAN_METRES;
   if (ship.order != OrderState::Idle && !drifted)
     return;
@@ -226,12 +227,12 @@ void World::PursueTarget(ShipId _ship, ShipId _target)
   // the pursuer, so a gunship holds where its guns bear. Zero for a hull with no traversing mount,
   // which is what sends a fighter at its quarry and makes the pass a pass (Design/Combat.md 8).
   const HullSpec& hull = HullSpecOf(ship.hullId);
-  WorldPos aimPoint = targetPos;
+  UniversePos aimPoint = targetPos;
   const float standoff = EngageStandoffMetres(hull);
   if (standoff > 0.0f)
   {
-    const float toPursuerX = OffsetX(targetPos, ship.posWorld);
-    const float toPursuerZ = OffsetZ(targetPos, ship.posWorld);
+    const float toPursuerX = OffsetX(targetPos, ship.posUniverse);
+    const float toPursuerZ = OffsetZ(targetPos, ship.posUniverse);
     const float span = std::sqrt(toPursuerX * toPursuerX + toPursuerZ * toPursuerZ);
     // Clamped to where the pursuer already is, so a stand-off only ever stops a chase short and
     // never turns one into a withdrawal. A hull already inside its own gunnery range is a hull whose
@@ -248,7 +249,7 @@ void World::PursueTarget(ShipId _ship, ShipId _target)
   PlanRoute(_ship, aimPoint, hull.BoundingRadiusMetres() + PATH_CLEARANCE_MARGIN_METRES);
 }
 
-void World::RecordHostileAct(ShipHandle _attacker, ShipHandle _victim)
+void Universe::RecordHostileAct(ShipHandle _attacker, ShipHandle _victim)
 {
   const ShipId victim = Resolve(_victim);
   if (victim == INVALID_SHIP_ID)
@@ -262,26 +263,26 @@ void World::RecordHostileAct(ShipHandle _attacker, ShipHandle _victim)
   // posture is one judgment and the wire is one bit (Design/Archive/Fleets.md 13).
   Fleet& row = m_fleets[fleet];
   row.threat = _attacker;
-  row.threatAnchorPos = m_ships[victim].posWorld;
+  row.threatAnchorPos = m_ships[victim].posUniverse;
   row.alertTicks = FLEET_ALERT_TICKS;
 }
 
-const World::ProtectorDuty& World::ProtectorOf(ShipId _id) const noexcept
+const Universe::ProtectorDuty& Universe::ProtectorOf(ShipId _id) const noexcept
 {
   return m_protectors[_id];
 }
 
-const World::ShipMounts& World::MountsOf(ShipId _id) const noexcept
+const Universe::ShipMounts& Universe::MountsOf(ShipId _id) const noexcept
 {
   return m_mounts[_id];
 }
 
-const WorldPos& World::PursuitAimedAt(ShipId _id) const noexcept
+const UniversePos& Universe::PursuitAimedAt(ShipId _id) const noexcept
 {
   return m_routes[_id].pursuitAimedAt;
 }
 
-std::uint32_t World::LaunchedProtectorCount(StationId _station) const noexcept
+std::uint32_t Universe::LaunchedProtectorCount(StationId _station) const noexcept
 {
   std::uint32_t launched = 0;
   for (const ProtectorDuty& duty : m_protectors)
@@ -289,7 +290,7 @@ std::uint32_t World::LaunchedProtectorCount(StationId _station) const noexcept
   return launched;
 }
 
-World::StationId World::MakeStation(ShipId _structure, const StationDesc& _desc)
+Universe::StationId Universe::MakeStation(ShipId _structure, const StationDesc& _desc)
 {
   if (_structure >= m_ships.size())
     return INVALID_STATION_ID;
@@ -307,7 +308,7 @@ World::StationId World::MakeStation(ShipId _structure, const StationDesc& _desc)
   return id;
 }
 
-World::StationId World::StationAt(ShipId _id) const noexcept
+Universe::StationId Universe::StationAt(ShipId _id) const noexcept
 {
   if (_id >= m_ships.size())
     return INVALID_STATION_ID;
@@ -322,17 +323,17 @@ World::StationId World::StationAt(ShipId _id) const noexcept
   return INVALID_STATION_ID;
 }
 
-const World::Station& World::StationOf(StationId _id) const noexcept
+const Universe::Station& Universe::StationOf(StationId _id) const noexcept
 {
   return m_stations[_id];
 }
 
-bool World::CanTakeSlot(FactionId _ownerFaction, std::uint8_t _slot) const noexcept
+bool Universe::CanTakeSlot(FactionId _ownerFaction, std::uint8_t _slot) const noexcept
 {
   return _slot < FLEET_SLOTS && _ownerFaction < FACTION_LIMIT && FleetInSlot(_ownerFaction, _slot) == INVALID_FLEET_ID;
 }
 
-World::FleetId World::FormFleet(FactionId _ownerFaction, std::uint8_t _slot, std::span<const ShipId> _ships)
+Universe::FleetId Universe::FormFleet(FactionId _ownerFaction, std::uint8_t _slot, std::span<const ShipId> _ships)
 {
   // In the order the header lists them. Which one refuses is not observable -- every refusal is the
   // same invalid id and the same untouched table -- so the order is for the reader.
@@ -371,7 +372,7 @@ World::FleetId World::FormFleet(FactionId _ownerFaction, std::uint8_t _slot, std
   return id;
 }
 
-World::FleetId World::FleetInSlot(FactionId _ownerFaction, std::uint8_t _slot) const noexcept
+Universe::FleetId Universe::FleetInSlot(FactionId _ownerFaction, std::uint8_t _slot) const noexcept
 {
   for (std::size_t at = 0; at < m_fleets.size(); ++at)
   {
@@ -381,7 +382,7 @@ World::FleetId World::FleetInSlot(FactionId _ownerFaction, std::uint8_t _slot) c
   return INVALID_FLEET_ID;
 }
 
-World::FleetId World::FleetAt(ShipId _id) const noexcept
+Universe::FleetId Universe::FleetAt(ShipId _id) const noexcept
 {
   if (_id >= m_ships.size())
     return INVALID_FLEET_ID;
@@ -398,13 +399,13 @@ World::FleetId World::FleetAt(ShipId _id) const noexcept
   return INVALID_FLEET_ID;
 }
 
-const World::Fleet& World::FleetOf(FleetId _id) const noexcept
+const Universe::Fleet& Universe::FleetOf(FleetId _id) const noexcept
 {
   static constexpr Fleet NONE;
   return (_id < m_fleets.size()) ? m_fleets[_id] : NONE;
 }
 
-void World::LedgerFor(StationId _station, FactionId _asker, std::span<std::uint32_t> _outCounts) const noexcept
+void Universe::LedgerFor(StationId _station, FactionId _asker, std::span<std::uint32_t> _outCounts) const noexcept
 {
   const std::size_t stated = (_outCounts.size() < HULL_COUNT) ? _outCounts.size() : std::size_t{HULL_COUNT};
   for (std::size_t hull = 0; hull < stated; ++hull)
@@ -430,8 +431,8 @@ void World::LedgerFor(StationId _station, FactionId _asker, std::span<std::uint3
   }
 }
 
-World::ComposeResult World::ComposeFleet(StationId _station, std::uint8_t _slot, std::span<const std::uint32_t> _hullCounts,
-                                         FactionId _issuerFaction)
+Universe::ComposeResult Universe::ComposeFleet(StationId _station, std::uint8_t _slot, std::span<const std::uint32_t> _hullCounts,
+                                               FactionId _issuerFaction)
 {
   if (_station >= m_stations.size())
     return ComposeResult::NotAStation;
@@ -513,7 +514,7 @@ World::ComposeResult World::ComposeFleet(StationId _station, std::uint8_t _slot,
   return ComposeResult::Composed;
 }
 
-float World::FleetCruiseSpeedMetresPerSec(const Fleet& _fleet) const noexcept
+float Universe::FleetCruiseSpeedMetresPerSec(const Fleet& _fleet) const noexcept
 {
   float slowest = 0.0f;
   for (std::uint32_t at = 0; at < _fleet.memberCount; ++at)
@@ -528,7 +529,7 @@ float World::FleetCruiseSpeedMetresPerSec(const Fleet& _fleet) const noexcept
   return slowest;
 }
 
-void World::LowerFleetOrder(Fleet& _fleet)
+void Universe::LowerFleetOrder(Fleet& _fleet)
 {
   m_fleetShipScratch.clear();
   for (std::uint32_t at = 0; at < _fleet.memberCount; ++at)
@@ -572,7 +573,7 @@ void World::LowerFleetOrder(Fleet& _fleet)
   }
 }
 
-World::FleetOrderResult World::IssueFleetOrder(FactionId _issuerFaction, std::uint8_t _slot, const FleetCommand& _command)
+Universe::FleetOrderResult Universe::IssueFleetOrder(FactionId _issuerFaction, std::uint8_t _slot, const FleetCommand& _command)
 {
   // The whole authority gate, and the whole of what naming a fleet buys here: one comparison where
   // a ship-list order needs a filter over every id it carries (ADR 0049, ADR 0014).
@@ -608,7 +609,7 @@ World::FleetOrderResult World::IssueFleetOrder(FactionId _issuerFaction, std::ui
   }
   else if (_command.kind == FleetOrderKind::Mine)
   {
-    // Known to the wire, and refused until there is a mining design and something in the world to
+    // Known to the wire, and refused until there is a mining design and something in the universe to
     // mine. The byte is spent either way, which is the point of reserving it (ShipState.h).
     return FleetOrderResult::Unsupported;
   }
@@ -651,7 +652,7 @@ World::FleetOrderResult World::IssueFleetOrder(FactionId _issuerFaction, std::ui
   return FleetOrderResult::Ordered;
 }
 
-std::span<const DespawnRecord> World::DespawnsSince(std::uint64_t _cursor) const noexcept
+std::span<const DespawnRecord> Universe::DespawnsSince(std::uint64_t _cursor) const noexcept
 {
   if (_cursor <= m_despawnBase)
     return m_despawnLog;
@@ -661,7 +662,7 @@ std::span<const DespawnRecord> World::DespawnsSince(std::uint64_t _cursor) const
   return std::span<const DespawnRecord>(m_despawnLog).subspan(static_cast<std::size_t>(offset));
 }
 
-void World::TrimDespawnsBefore(std::uint64_t _cursor) noexcept
+void Universe::TrimDespawnsBefore(std::uint64_t _cursor) noexcept
 {
   if (_cursor <= m_despawnBase)
     return;
@@ -678,7 +679,7 @@ void World::TrimDespawnsBefore(std::uint64_t _cursor) noexcept
   m_despawnBase = _cursor;
 }
 
-std::span<const ShotRecord> World::ShotsSince(std::uint64_t _cursor) const noexcept
+std::span<const ShotRecord> Universe::ShotsSince(std::uint64_t _cursor) const noexcept
 {
   // DespawnsSince' rule, and its reason: a cursor older than what the log still holds returns
   // everything held rather than reporting the gap. Over-reporting is the safe direction here too --
@@ -692,7 +693,7 @@ std::span<const ShotRecord> World::ShotsSince(std::uint64_t _cursor) const noexc
   return std::span<const ShotRecord>(m_shotLog).subspan(static_cast<std::size_t>(offset));
 }
 
-void World::TrimShotsBefore(std::uint64_t _cursor) noexcept
+void Universe::TrimShotsBefore(std::uint64_t _cursor) noexcept
 {
   if (_cursor <= m_shotBase)
     return;
@@ -701,7 +702,7 @@ void World::TrimShotsBefore(std::uint64_t _cursor) noexcept
   m_shotBase += drop;
 }
 
-ShipHandle World::HandleOf(ShipId _id) const noexcept
+ShipHandle Universe::HandleOf(ShipId _id) const noexcept
 {
   if (_id >= m_ships.size())
     return {};
@@ -709,7 +710,7 @@ ShipHandle World::HandleOf(ShipId _id) const noexcept
   return ShipHandle{slot, m_slots[slot].generation};
 }
 
-ShipId World::Resolve(ShipHandle _handle) const noexcept
+ShipId Universe::Resolve(ShipHandle _handle) const noexcept
 {
   if (_handle.generation == 0 || _handle.slot >= m_slots.size())
     return INVALID_SHIP_ID;
@@ -717,17 +718,17 @@ ShipId World::Resolve(ShipHandle _handle) const noexcept
   return (slot.generation == _handle.generation) ? slot.ship : INVALID_SHIP_ID;
 }
 
-void World::ConfigureShard(ShardId _shard) noexcept
+void Universe::ConfigureShard(ShardId _shard) noexcept
 {
   m_shard = _shard;
 }
 
-EntityId World::EntityIdOf(ShipId _id) const noexcept
+EntityId Universe::EntityIdOf(ShipId _id) const noexcept
 {
   return (_id < m_ships.size()) ? m_slots[m_shipSlot[_id]].entity : INVALID_ENTITY_ID;
 }
 
-EntityId World::EntityIdOf(ShipHandle _handle) const noexcept
+EntityId Universe::EntityIdOf(ShipHandle _handle) const noexcept
 {
   if (_handle.generation == 0 || _handle.slot >= m_slots.size())
     return INVALID_ENTITY_ID;
@@ -738,16 +739,16 @@ EntityId World::EntityIdOf(ShipHandle _handle) const noexcept
 // The index is sorted by id, so this is a binary search returning the row that holds _entity, or
 // m_entityRows.size() when nothing does. One function for all three operations below, because a
 // lookup and an insertion point are the same question asked twice.
-std::uint32_t World::FindEntityRow(EntityId _entity) const noexcept
+std::uint32_t Universe::FindEntityRow(EntityId _entity) const noexcept
 {
   const auto at = std::lower_bound(m_entityRows.begin(), m_entityRows.end(), _entity,
                                    [](const EntityRow& _row, EntityId _key) { return _row.entity < _key; });
   return static_cast<std::uint32_t>(at - m_entityRows.begin());
 }
 
-void World::InsertEntityRow(EntityId _entity, std::uint32_t _slot)
+void Universe::InsertEntityRow(EntityId _entity, std::uint32_t _slot)
 {
-  // Append when it belongs at the end, which is every spawn this world mints for itself: serials
+  // Append when it belongs at the end, which is every spawn this universe mints for itself: serials
   // increase, so the new id is greater than every id already here. Only an id issued elsewhere --
   // a handoff, or a reload out of order -- pays for the insert.
   if (m_entityRows.empty() || m_entityRows.back().entity < _entity)
@@ -758,14 +759,14 @@ void World::InsertEntityRow(EntityId _entity, std::uint32_t _slot)
   m_entityRows.insert(m_entityRows.begin() + FindEntityRow(_entity), EntityRow{_entity, _slot});
 }
 
-void World::EraseEntityRow(EntityId _entity) noexcept
+void Universe::EraseEntityRow(EntityId _entity) noexcept
 {
   const std::uint32_t at = FindEntityRow(_entity);
   if (at < m_entityRows.size() && m_entityRows[at].entity == _entity)
     m_entityRows.erase(m_entityRows.begin() + at);
 }
 
-ShipId World::ResolveEntity(EntityId _entity) const noexcept
+ShipId Universe::ResolveEntity(EntityId _entity) const noexcept
 {
   if (_entity == INVALID_ENTITY_ID)
     return INVALID_SHIP_ID;
@@ -775,34 +776,34 @@ ShipId World::ResolveEntity(EntityId _entity) const noexcept
   return m_slots[m_entityRows[at].slot].ship;
 }
 
-ShipHandle World::HandleOfEntity(EntityId _entity) const noexcept
+ShipHandle Universe::HandleOfEntity(EntityId _entity) const noexcept
 {
   const ShipId id = ResolveEntity(_entity);
   return (id != INVALID_SHIP_ID) ? HandleOf(id) : ShipHandle{};
 }
 
-void World::ConfigureIndex(const SpatialIndex::Desc& _desc)
+void Universe::ConfigureIndex(const SpatialIndex::Desc& _desc)
 {
   m_index.Configure(_desc);
   m_staticIndexDirty = true;
 }
 
-std::span<const Neighbour> World::NeighboursOf(ShipId _id) const noexcept
+std::span<const Neighbour> Universe::NeighboursOf(ShipId _id) const noexcept
 {
   if (_id >= m_neighbourCount.size())
     return {};
   return std::span<const Neighbour>(m_neighbours).subspan(m_neighbourStart[_id], m_neighbourCount[_id]);
 }
 
-std::span<const WorldPos> World::RouteOf(ShipId _id) const noexcept
+std::span<const UniversePos> Universe::RouteOf(ShipId _id) const noexcept
 {
   if (_id >= m_routes.size())
     return {};
   const Route& route = m_routes[_id];
-  return std::span<const WorldPos>(route.waypoint, route.count).subspan(route.cursor);
+  return std::span<const UniversePos>(route.waypoint, route.count).subspan(route.cursor);
 }
 
-void World::AssignPatrol(ShipId _ship, ShipId _anchorStation, float _ringRadiusMetres, float _cruiseSpeedMetresPerSec)
+void Universe::AssignPatrol(ShipId _ship, ShipId _anchorStation, float _ringRadiusMetres, float _cruiseSpeedMetresPerSec)
 {
   if (_ship >= m_ships.size() || _anchorStation >= m_ships.size() || _ship == _anchorStation)
     return;
@@ -813,12 +814,12 @@ void World::AssignPatrol(ShipId _ship, ShipId _anchorStation, float _ringRadiusM
   patrol.cruiseSpeedMetresPerSec = _cruiseSpeedMetresPerSec;
   // The nearest point *minus one*, because the pass issues waypointIndex + 1: the first leg then
   // goes to the point the ship is already nearest, rather than back round the ring to zero.
-  const std::uint32_t nearest = NearestPatrolRingIndex(m_ships[_anchorStation].posWorld, m_ships[_ship].posWorld);
+  const std::uint32_t nearest = NearestPatrolRingIndex(m_ships[_anchorStation].posUniverse, m_ships[_ship].posUniverse);
   patrol.waypointIndex = (nearest + PATROL_RING_WAYPOINTS - 1) % PATROL_RING_WAYPOINTS;
   patrol.active = true;
 }
 
-const World::Patrol& World::PatrolOf(ShipId _id) const noexcept
+const Universe::Patrol& Universe::PatrolOf(ShipId _id) const noexcept
 {
   static constexpr Patrol NONE;
   return (_id < m_patrols.size()) ? m_patrols[_id] : NONE;
@@ -834,13 +835,13 @@ namespace
 // without ceremony, is what docking is until stations have an inside (Design/Archive/Stations.md 14). Its
 // *own* range rather than a shared one, so a Carrier is not asked to fly to an Interceptor's
 // doorstep and shove its way there against the separation pass.
-[[nodiscard]] WorldPos DockApproachPoint(const WorldPos& _station, const WorldPos& _ship, float _dockRangeMetres) noexcept
+[[nodiscard]] UniversePos DockApproachPoint(const UniversePos& _station, const UniversePos& _ship, float _dockRangeMetres) noexcept
 {
   const float dx = OffsetX(_station, _ship);
   const float dz = OffsetZ(_station, _ship);
   const float distance = std::sqrt(dx * dx + dz * dz);
 
-  WorldPos point = _station;
+  UniversePos point = _station;
   if (distance <= 0.0001f)
   {
     // Concentric with the station, which cannot happen with a hull in the way but is not worth a
@@ -859,19 +860,19 @@ namespace
 // -- 0 points along +Z and forward is (sin h, 0, cos h) -- and PatrolRingPoint reads a bearing the
 // same way. XMScalarModAngle is the tree's wrap and Movement.cpp's headingError already uses it;
 // a second one written here would be a second thing to get wrong.
-[[nodiscard]] float BearingInHullFrame(const ShipState& _ship, const WorldPos& _targetPos) noexcept
+[[nodiscard]] float BearingInHullFrame(const ShipState& _ship, const UniversePos& _targetPos) noexcept
 {
-  const float worldBearingRad = std::atan2(OffsetX(_ship.posWorld, _targetPos), OffsetZ(_ship.posWorld, _targetPos));
-  return XMScalarModAngle(worldBearingRad - _ship.headingRad);
+  const float universeBearingRad = std::atan2(OffsetX(_ship.posUniverse, _targetPos), OffsetZ(_ship.posUniverse, _targetPos));
+  return XMScalarModAngle(universeBearingRad - _ship.headingRad);
 }
 } // namespace
 
-const World::Docking& World::DockingOf(ShipId _id) const noexcept
+const Universe::Docking& Universe::DockingOf(ShipId _id) const noexcept
 {
   return m_dockings[_id];
 }
 
-World::DockOrderResult World::IssueDockOrder(std::span<const ShipId> _ships, ShipId _station, FactionId _issuerFaction)
+Universe::DockOrderResult Universe::IssueDockOrder(std::span<const ShipId> _ships, ShipId _station, FactionId _issuerFaction)
 {
   const StationId station = StationAt(_station);
   if (station == INVALID_STATION_ID)
@@ -911,13 +912,13 @@ World::DockOrderResult World::IssueDockOrder(std::span<const ShipId> _ships, Shi
     ship.orderSpeedCapMetresPerSec = 0.0f;
 
     const float approachRange = DockApproachRangeMetres(stationHull, HullSpecOf(ship.hullId));
-    const WorldPos approach = DockApproachPoint(m_ships[_station].posWorld, ship.posWorld, approachRange);
+    const UniversePos approach = DockApproachPoint(m_ships[_station].posUniverse, ship.posUniverse, approachRange);
     PlanRoute(id, approach, HullSpecOf(ship.hullId).BoundingRadiusMetres() + PATH_CLEARANCE_MARGIN_METRES);
   }
   return DockOrderResult::Ordered;
 }
 
-void World::StepDockings()
+void Universe::StepDockings()
 {
   RebuildStaticIfDirty();
 
@@ -939,7 +940,7 @@ void World::StepDockings()
     ShipState& ship = m_ships[id];
     const HullSpec& stationHull = HullSpecOf(m_ships[structure].hullId);
     const HullSpec& shipHull = HullSpecOf(ship.hullId);
-    if (Distance(m_ships[structure].posWorld, ship.posWorld) <= DockRangeMetres(stationHull, shipHull))
+    if (Distance(m_ships[structure].posUniverse, ship.posUniverse) <= DockRangeMetres(stationHull, shipHull))
     {
       // Checked again here, and not only at order time. This closes the window between an accepted
       // order and an aggression recorded during the flight: the door is guarded, not just the
@@ -968,7 +969,8 @@ void World::StepDockings()
     ship.order = OrderState::Moving;
     ship.orderHasFacing = false;
     ship.orderSpeedCapMetresPerSec = 0.0f;
-    const WorldPos approach = DockApproachPoint(m_ships[structure].posWorld, ship.posWorld, DockApproachRangeMetres(stationHull, shipHull));
+    const UniversePos approach =
+      DockApproachPoint(m_ships[structure].posUniverse, ship.posUniverse, DockApproachRangeMetres(stationHull, shipHull));
     PlanRoute(id, approach, shipHull.BoundingRadiusMetres() + PATH_CLEARANCE_MARGIN_METRES);
   }
 
@@ -984,7 +986,7 @@ void World::StepDockings()
   m_captureScratch.clear();
 }
 
-void World::StepPatrols()
+void Universe::StepPatrols()
 {
   // A patrol issues an order, and an order plans a route, so the islands have to be current here for
   // the same reason IssueMoveOrder rebuilds them: the first leg is planned on the tick after the
@@ -1012,12 +1014,12 @@ void World::StepPatrols()
     ship.order = OrderState::Moving;
     ship.orderHasFacing = false;
     ship.orderSpeedCapMetresPerSec = patrol.cruiseSpeedMetresPerSec;
-    const WorldPos waypoint = PatrolRingPoint(m_ships[anchor].posWorld, patrol.waypointIndex, patrol.ringRadiusMetres);
+    const UniversePos waypoint = PatrolRingPoint(m_ships[anchor].posUniverse, patrol.waypointIndex, patrol.ringRadiusMetres);
     PlanRoute(id, waypoint, HullSpecOf(ship.hullId).BoundingRadiusMetres() + PATH_CLEARANCE_MARGIN_METRES);
   }
 }
 
-void World::StepProtectors()
+void Universe::StepProtectors()
 {
   // A launch spawns a ship and a pursuit issues an order, and both plan routes, so the islands have
   // to be current here for the reason StepPatrols rebuilds them.
@@ -1116,26 +1118,26 @@ void World::StepProtectors()
     // At the skin, on the bearing toward the first live target, heading outward. Clear of the
     // station by AVOID_MARGIN_METRES so a protector does not appear inside its own home's
     // separation band and spend its first seconds being shoved out of it.
-    const float dx = OffsetX(m_ships[structure].posWorld, m_ships[target].posWorld);
-    const float dz = OffsetZ(m_ships[structure].posWorld, m_ships[target].posWorld);
+    const float dx = OffsetX(m_ships[structure].posUniverse, m_ships[target].posUniverse);
+    const float dz = OffsetZ(m_ships[structure].posUniverse, m_ships[target].posUniverse);
     const float distance = std::sqrt(dx * dx + dz * dz);
     const float bearingRad = (distance > 0.0001f) ? std::atan2(dx, dz) : 0.0f;
 
     const float standoff = HullSpecOf(m_ships[structure].hullId).BoundingRadiusMetres() +
                            HullSpecOf(home.protectorHullId).BoundingRadiusMetres() + AVOID_MARGIN_METRES;
-    WorldPos posWorld = m_ships[structure].posWorld;
-    Translate(posWorld, std::sin(bearingRad) * standoff, std::cos(bearingRad) * standoff);
+    UniversePos posUniverse = m_ships[structure].posUniverse;
+    Translate(posUniverse, std::sin(bearingRad) * standoff, std::cos(bearingRad) * standoff);
 
-    m_launchScratch.push_back(Launch{station, posWorld, bearingRad, home.protectorHullId, home.ownerFaction});
+    m_launchScratch.push_back(Launch{station, posUniverse, bearingRad, home.protectorHullId, home.ownerFaction});
     home.launchCooldownTicks = home.launchEveryTicks;
   }
 
   // 3. Apply. After the passes, because a spawn appends to the very tables they walk -- and a ship
-  // spawned here enters pass 0 with prevPos == posWorld and participates from its first tick,
+  // spawned here enters pass 0 with prevPos == posUniverse and participates from its first tick,
   // exactly as a boot spawn does (Design/Archive/Stations.md 10).
   for (const Launch& launch : m_launchScratch)
   {
-    const ShipId id = SpawnShip(launch.posWorld, launch.headingRad, launch.hullId, launch.factionId);
+    const ShipId id = SpawnShip(launch.posUniverse, launch.headingRad, launch.hullId, launch.factionId);
     m_protectors[id].home = launch.home;
     m_protectors[id].target = m_stations[launch.home].targets.empty() ? ShipHandle{} : m_stations[launch.home].targets.front();
     m_protectors[id].active = true;
@@ -1143,7 +1145,7 @@ void World::StepProtectors()
   m_launchScratch.clear();
 }
 
-void World::StepFleets()
+void Universe::StepFleets()
 {
   // Prune. In array order, compacting in place, which is the idiom StepProtectors uses on a
   // station's target list: the survivors keep their relative order, and that order is the one the
@@ -1228,11 +1230,11 @@ void World::StepFleets()
     // Taken by value, and that is not a style choice: SpawnShip below appends to m_ships, which may
     // reallocate it, and a reference into that vector would be dangling by the time the rally point
     // is worked out. It reads correct for as long as the vector happens to have spare capacity,
-    // which is why the test that caught it is the one that reloads a world -- a world out of a file
+    // which is why the test that caught it is the one that reloads a universe -- a universe out of a file
     // has exactly as much capacity as it has ships.
-    const WorldPos stationPos = m_ships[structure].posWorld;
+    const UniversePos stationPos = m_ships[structure].posUniverse;
     // The station's own heading is which way is out. Design/Archive/Fleets.md 5.3 says the outward bearing
-    // from the system's star, and World has no star and must not learn about one -- the layout is
+    // from the system's star, and Universe has no star and must not learn about one -- the layout is
     // content the composition root reads (ADR 0037). A station's facing is already simulation state
     // and already authored by whoever spawned it, which makes it the honest place for a door.
     const float outwardRad = m_ships[structure].headingRad;
@@ -1261,7 +1263,7 @@ void World::StepFleets()
     const float laneStepRad = spacing / standoff;
     const float bearingRad = outwardRad + static_cast<float>(slot) * laneStepRad;
 
-    WorldPos spawnPos = stationPos;
+    UniversePos spawnPos = stationPos;
     Translate(spawnPos, std::sin(bearingRad) * standoff, std::cos(bearingRad) * standoff);
 
     // Off the front of the manifest, so the launch order is the ascending hull id ComposeFleet
@@ -1278,7 +1280,7 @@ void World::StepFleets()
     // Where the fleet forms up: outward, one slot spacing clear of the dock approach lane, so a
     // fleet assembling is not standing in the doorway. Through DockApproachRangeMetres rather than
     // its sum restated, so the launch and the dock cannot disagree about where a station's door is.
-    WorldPos rallyPos = stationPos;
+    UniversePos rallyPos = stationPos;
     const float rallyRange = DockApproachRangeMetres(stationHull, HullSpecOf(largestHullId)) + spacing;
     Translate(rallyPos, std::sin(outwardRad) * rallyRange, std::cos(outwardRad) * rallyRange);
 
@@ -1342,14 +1344,14 @@ void World::StepFleets()
     {
       const ShipId threat = Resolve(fleet.threat);
       engaged = fleet.alertTicks > 0 && threat != INVALID_SHIP_ID &&
-                Distance(m_ships[threat].posWorld, fleet.threatAnchorPos) <= FLEET_ENGAGE_RANGE_METRES;
+                Distance(m_ships[threat].posUniverse, fleet.threatAnchorPos) <= FLEET_ENGAGE_RANGE_METRES;
       if (!engaged)
       {
         // Stood down, once: the threat is dead, docked, past the leash, or the alert has burned out.
         // The anchor goes with it -- what is stale is not left lying in the row for the codec to
         // carry and a later reader to wonder about.
         fleet.threat = ShipHandle{};
-        fleet.threatAnchorPos = WorldPos{};
+        fleet.threatAnchorPos = UniversePos{};
 
         // Back to the standing order, and NOT by leaving it to patience: pursuit overwrote each
         // combatant's route destination with the target's position, so patience would send it back
@@ -1461,7 +1463,7 @@ void World::StepFleets()
       // at the top of Step and put back to Idle before the end of it.
       const Route& route = m_routes[member];
       const HullSpec& hull = HullSpecOf(ship.hullId);
-      if (Distance(ship.posWorld, route.destination) <= ArrivalRadiusMetres(hull))
+      if (Distance(ship.posUniverse, route.destination) <= ArrivalRadiusMetres(hull))
         continue; // arrived, or standing as close to its slot as it is ever going to get
 
       ship.order = OrderState::Moving;
@@ -1470,12 +1472,12 @@ void World::StepFleets()
   }
 }
 
-bool World::HoldsHostile(ShipId _owner, ShipId _other) const noexcept
+bool Universe::HoldsHostile(ShipId _owner, ShipId _other) const noexcept
 {
   return StandingOf(m_ships[_owner].factionId, m_ships[_other].factionId) == Standing::Hostile;
 }
 
-bool World::MountTargetStands(ShipId _shooter, ShipId _target, const DeviceSpec& _device) const noexcept
+bool Universe::MountTargetStands(ShipId _shooter, ShipId _target, const DeviceSpec& _device) const noexcept
 {
   if (_target == INVALID_SHIP_ID || _target >= m_ships.size() || _target == _shooter)
     return false;
@@ -1490,11 +1492,11 @@ bool World::MountTargetStands(ShipId _shooter, ShipId _target, const DeviceSpec&
   if (target.factionId == shooter.factionId)
     return false;
 
-  const float toSkin = Distance(shooter.posWorld, target.posWorld) - HullSpecOf(target.hullId).BoundingRadiusMetres();
+  const float toSkin = Distance(shooter.posUniverse, target.posUniverse) - HullSpecOf(target.hullId).BoundingRadiusMetres();
   return toSkin <= _device.rangeMetres;
 }
 
-ShipId World::ChooseMountTarget(ShipId _ship, const DeviceSpec& _device, const MountState& _mount) const noexcept
+ShipId Universe::ChooseMountTarget(ShipId _ship, const DeviceSpec& _device, const MountState& _mount) const noexcept
 {
   // 1 and 2 are the fleet's: the threat it took, then the attack it was ordered to make. A stated
   // target is shot whatever the standing table says, because an ordered attack on a neutral is the
@@ -1548,7 +1550,7 @@ ShipId World::ChooseMountTarget(ShipId _ship, const DeviceSpec& _device, const M
   return INVALID_SHIP_ID;
 }
 
-void World::StepMounts()
+void Universe::StepMounts()
 {
   m_shotScratch.clear();
   m_deathScratch.clear();
@@ -1581,7 +1583,7 @@ void World::StepMounts()
 
       // Recomputed from where the ships are, never from the neighbour record's cached offsets: that
       // list is a candidate set built before this tick's motion, and the ships have moved since.
-      const float bearingRad = BearingInHullFrame(shooter, m_ships[target].posWorld);
+      const float bearingRad = BearingInHullFrame(shooter, m_ships[target].posUniverse);
       const float offBoreRad = XMScalarModAngle(bearingRad - spec.bearingRad);
       const bool bears = std::fabs(offBoreRad) <= spec.arcHalfRad;
 
@@ -1598,7 +1600,7 @@ void World::StepMounts()
         aimed = std::fabs(XMScalarModAngle(bearingRad - mount.aimBearingRad)) <= FIRE_ALIGN_RAD;
       }
 
-      // Range was spent in the selection above, which is where it belongs (World.h,
+      // Range was spent in the selection above, which is where it belongs (Universe.h,
       // MountTargetStands). What is left is arc, aim and the cooldown.
       if (!bears || !aimed || mount.cooldownTicks > 0)
         continue;
@@ -1666,20 +1668,20 @@ void World::StepMounts()
     (void)DespawnShip(dead, DespawnCause::Destroyed);
 }
 
-void World::PlanRoute(ShipId _id, const WorldPos& _destination, float _requiredClearanceMetres)
+void Universe::PlanRoute(ShipId _id, const UniversePos& _destination, float _requiredClearanceMetres)
 {
   ShipState& ship = m_ships[_id];
   Route& route = m_routes[_id];
 
   ++m_routePlans;
-  const bool complete = m_pathIslands.FindPath(ship.posWorld, _destination, _requiredClearanceMetres, m_routeScratch);
+  const bool complete = m_pathIslands.FindPath(ship.posUniverse, _destination, _requiredClearanceMetres, m_routeScratch);
   route.destination = _destination;
   route.requiredClearanceMetres = _requiredClearanceMetres;
   route.count = std::min<std::uint32_t>(MAX_PATH_WAYPOINTS, static_cast<std::uint32_t>(m_routeScratch.size()));
   for (std::uint32_t at = 0; at < route.count; ++at)
     route.waypoint[at] = m_routeScratch[at];
   route.cursor = 0;
-  route.legStart = ship.posWorld;
+  route.legStart = ship.posUniverse;
   route.gridVersion = m_pathIslands.Version();
   route.reachesDestination = complete;
   route.blockedTicks = 0;
@@ -1689,7 +1691,7 @@ void World::PlanRoute(ShipId _id, const WorldPos& _destination, float _requiredC
   ship.steerTargetPos = (route.count > 0) ? route.waypoint[0] : _destination;
 }
 
-void World::AdvanceRoute(ShipId _id)
+void Universe::AdvanceRoute(ShipId _id)
 {
   ShipState& ship = m_ships[_id];
   Route& route = m_routes[_id];
@@ -1711,23 +1713,23 @@ void World::AdvanceRoute(ShipId _id)
     if (route.cursor + 1 < route.count)
     {
       ++route.cursor;
-      route.legStart = ship.posWorld;
+      route.legStart = ship.posUniverse;
       ship.steerTargetPos = route.waypoint[route.cursor];
     }
     else
     {
-      route.destination = ship.posWorld;
+      route.destination = ship.posUniverse;
       route.reachesDestination = true;
-      ship.steerTargetPos = ship.posWorld;
+      ship.steerTargetPos = ship.posUniverse;
     }
     return;
   }
 
-  const bool arrived = Distance(ship.posWorld, ship.steerTargetPos) <= ArrivalRadiusMetres(hull);
+  const bool arrived = Distance(ship.posUniverse, ship.steerTargetPos) <= ArrivalRadiusMetres(hull);
   if (arrived && route.cursor + 1 < route.count)
   {
     ++route.cursor;
-    route.legStart = ship.posWorld;
+    route.legStart = ship.posUniverse;
     ship.steerTargetPos = route.waypoint[route.cursor];
     return;
   }
@@ -1753,8 +1755,8 @@ void World::AdvanceRoute(ShipId _id)
     const float legLengthSquared = legX * legX + legZ * legZ;
     if (legLengthSquared > 1e-4f)
     {
-      const float alongX = OffsetX(route.legStart, ship.posWorld);
-      const float alongZ = OffsetZ(route.legStart, ship.posWorld);
+      const float alongX = OffsetX(route.legStart, ship.posUniverse);
+      const float alongZ = OffsetZ(route.legStart, ship.posUniverse);
       const float along = std::clamp((alongX * legX + alongZ * legZ) / legLengthSquared, 0.0f, 1.0f);
       const float offX = alongX - legX * along;
       const float offZ = alongZ - legZ * along;
@@ -1764,25 +1766,25 @@ void World::AdvanceRoute(ShipId _id)
   }
 }
 
-float World::AuthorityOf(ShipId _id) const noexcept
+float Universe::AuthorityOf(ShipId _id) const noexcept
 {
   return AvoidanceAuthorityOf(HullSpecOf(m_ships[_id].hullId), m_ships[_id].order);
 }
 
-void World::SnapshotPreviousTick() noexcept
+void Universe::SnapshotPreviousTick() noexcept
 {
   // Two lines, hoisted out of StepShip into a pass of their own, and that hoist is the whole of
   // the order-independence property. prevPos was already written here for the view to interpolate
   // between ticks; making it a whole pass turns it into the authoritative start-of-tick state that
-  // every neighbour read below sees, so ship 0 and ship 500 see the same world.
+  // every neighbour read below sees, so ship 0 and ship 500 see the same universe.
   for (ShipState& ship : m_ships)
   {
-    ship.prevPos = ship.posWorld;
+    ship.prevPos = ship.posUniverse;
     ship.prevHeading = ship.headingRad;
   }
 }
 
-void World::RebuildStaticIfDirty()
+void Universe::RebuildStaticIfDirty()
 {
   if (!m_staticIndexDirty)
     return;
@@ -1792,7 +1794,7 @@ void World::RebuildStaticIfDirty()
     {
       const HullSpec& hull = HullSpecOf(m_ships[id].hullId);
       if (hull.immovable && hull.collidable)
-        m_staticEntries.push_back({id, m_ships[id].posWorld, hull.BoundingRadiusMetres()});
+        m_staticEntries.push_back({id, m_ships[id].posUniverse, hull.BoundingRadiusMetres()});
     }
     m_index.RebuildStatic(m_staticEntries);
 
@@ -1806,7 +1808,7 @@ void World::RebuildStaticIfDirty()
   }
 }
 
-void World::RebuildIndex()
+void Universe::RebuildIndex()
 {
   RebuildStaticIfDirty();
 
@@ -1836,7 +1838,7 @@ void World::RebuildIndex()
   m_index.RebuildDynamic(m_dynamicEntries);
 }
 
-void World::GatherNeighbours()
+void Universe::GatherNeighbours()
 {
   const std::uint32_t count = ShipCount();
   m_neighbourStart.assign(static_cast<std::size_t>(count) + 1, 0);
@@ -1919,7 +1921,7 @@ namespace
 }
 } // namespace
 
-void World::ApplySeparation()
+void Universe::ApplySeparation()
 {
   const std::uint32_t count = ShipCount();
   m_appliedX.assign(count, 0.0f);
@@ -1954,7 +1956,8 @@ void World::ApplySeparation()
         if (!otherHull.collidable || otherHull.immovable)
           continue; // architecture is pass 5b's, after this one and without the clamp
 
-        const Capsule against = CapsuleAt(other, otherHull, OffsetX(ship.posWorld, other.posWorld), OffsetZ(ship.posWorld, other.posWorld));
+        const Capsule against =
+          CapsuleAt(other, otherHull, OffsetX(ship.posUniverse, other.posUniverse), OffsetZ(ship.posUniverse, other.posUniverse));
         const Contact contact = CapsuleContact(self, against, id, neighbour.id);
         if (!contact.touching)
           continue;
@@ -1989,7 +1992,7 @@ void World::ApplySeparation()
 
     for (ShipId id = 0; id < count; ++id)
     {
-      Translate(m_ships[id].posWorld, m_correctionX[id], m_correctionZ[id]);
+      Translate(m_ships[id].posUniverse, m_correctionX[id], m_correctionZ[id]);
       m_appliedX[id] += m_correctionX[id];
       m_appliedZ[id] += m_correctionZ[id];
     }
@@ -2001,7 +2004,7 @@ void World::ApplySeparation()
   }
 }
 
-void World::ApplyBlocking()
+void Universe::ApplyBlocking()
 {
   const std::uint32_t count = ShipCount();
   m_correctionX.assign(count, 0.0f);
@@ -2022,7 +2025,8 @@ void World::ApplyBlocking()
       if (!otherHull.collidable || !otherHull.immovable)
         continue;
 
-      const Capsule against = CapsuleAt(other, otherHull, OffsetX(ship.posWorld, other.posWorld), OffsetZ(ship.posWorld, other.posWorld));
+      const Capsule against =
+        CapsuleAt(other, otherHull, OffsetX(ship.posUniverse, other.posUniverse), OffsetZ(ship.posUniverse, other.posUniverse));
       const Contact contact = CapsuleContact(self, against, id, neighbour.id);
       if (!contact.touching)
         continue;
@@ -2037,21 +2041,21 @@ void World::ApplyBlocking()
 
   for (ShipId id = 0; id < count; ++id)
   {
-    Translate(m_ships[id].posWorld, m_correctionX[id], m_correctionZ[id]);
+    Translate(m_ships[id].posUniverse, m_correctionX[id], m_correctionZ[id]);
 
     // Pushed away from the point it is steering at, or not blocked at all. A correction that does
     // not oppose the ship's own leg -- a hull shouldered sideways while it rounds a station -- does
     // not count, because that ship is still gaining on its point and the route is still right.
     Route& route = m_routes[id];
     const ShipState& ship = m_ships[id];
-    const float toTargetX = OffsetX(ship.posWorld, ship.steerTargetPos);
-    const float toTargetZ = OffsetZ(ship.posWorld, ship.steerTargetPos);
+    const float toTargetX = OffsetX(ship.posUniverse, ship.steerTargetPos);
+    const float toTargetZ = OffsetZ(ship.posUniverse, ship.steerTargetPos);
     const bool opposed = ship.order == OrderState::Moving && (m_correctionX[id] * toTargetX + m_correctionZ[id] * toTargetZ) < 0.0f;
     route.blockedTicks = opposed ? route.blockedTicks + 1 : 0;
   }
 }
 
-void World::Step()
+void Universe::Step()
 {
   StepDockings();
   StepPatrols();
@@ -2081,13 +2085,13 @@ void World::Step()
   ApplyBlocking();
 
   // The guns go last, once every ship has finished moving and while the neighbour list the sense
-  // pass built is still addressed by the ids it was built with (World.h, StepMounts).
+  // pass built is still addressed by the ids it was built with (Universe.h, StepMounts).
   StepMounts();
   ++m_tick;
 }
 
-float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _point, bool _hasFacing, float _facingRad,
-                            FactionId _issuerFaction)
+float Universe::IssueMoveOrder(std::span<const ShipId> _ships, const UniversePos& _point, bool _hasFacing, float _facingRad,
+                               FactionId _issuerFaction)
 {
   // An order can arrive before the first tick, so the islands a route is planned against have to be
   // current here rather than only at the top of Step.
@@ -2117,7 +2121,7 @@ float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _poi
     m_headingScratch.clear();
     m_headingScratch.reserve(chosen.size());
     for (const ShipId id : chosen)
-      m_headingScratch.push_back(m_ships[id].posWorld);
+      m_headingScratch.push_back(m_ships[id].posUniverse);
     heading = FormationHeading(m_headingScratch, _point, m_ships[chosen[0]].headingRad);
   }
 
@@ -2126,7 +2130,7 @@ float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _poi
   const float rightX = std::cos(heading);
   const float rightZ = -std::sin(heading);
   const auto acrossFormation = [&](ShipId _id)
-  { return OffsetX(_point, m_ships[_id].posWorld) * rightX + OffsetZ(_point, m_ships[_id].posWorld) * rightZ; };
+  { return OffsetX(_point, m_ships[_id].posUniverse) * rightX + OffsetZ(_point, m_ships[_id].posUniverse) * rightZ; };
   std::sort(chosen.begin(), chosen.end(), [&](ShipId _a, ShipId _b) { return acrossFormation(_a) < acrossFormation(_b); });
 
   // Sized by the largest hull in the group, so a mixed order spaces itself for the Carrier in it
@@ -2165,7 +2169,7 @@ float World::IssueMoveOrder(std::span<const ShipId> _ships, const WorldPos& _poi
     // (Design/Archive/Stations.md 7.1).
     m_dockings[id].active = false;
 
-    WorldPos destination = _point;
+    UniversePos destination = _point;
     Translate(destination, local.x * cosH + local.y * sinH, -local.x * sinH + local.y * cosH);
     PlanRoute(id, destination, groupClearance);
   }

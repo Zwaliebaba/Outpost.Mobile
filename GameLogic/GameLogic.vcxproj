@@ -173,8 +173,8 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="GameLogic.h" />
     <ClInclude Include="SimTuning.h" />
-    <ClInclude Include="WorldPos.h" />
-    <ClInclude Include="WorldSnapshot.h" />
+    <ClInclude Include="UniversePos.h" />
+    <ClInclude Include="UniverseSnapshot.h" />
     <ClInclude Include="InterestSet.h" />
     <ClInclude Include="ShipState.h" />
     <ClInclude Include="HullSpec.h" />
@@ -188,7 +188,7 @@
     <ClInclude Include="PathIslands.h" />
     <ClInclude Include="Publisher.h" />
     <ClInclude Include="SpatialIndex.h" />
-    <ClInclude Include="World.h" />
+    <ClInclude Include="Universe.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -201,10 +201,10 @@
     <ClCompile Include="PathIslands.cpp" />
     <ClCompile Include="Publisher.cpp" />
     <ClCompile Include="SpatialIndex.cpp" />
-    <ClCompile Include="WorldSnapshot.cpp" />
+    <ClCompile Include="UniverseSnapshot.cpp" />
     <ClCompile Include="InterestSet.cpp" />
     <ClCompile Include="UniverseLayout.cpp" />
-    <ClCompile Include="World.cpp" />
+    <ClCompile Include="Universe.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

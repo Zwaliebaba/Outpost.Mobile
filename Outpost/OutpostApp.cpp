@@ -148,7 +148,7 @@ void OutpostApp::Init(HINSTANCE _instance)
   hostDesc.tickHz = Game::TICK_HZ;
   m_host.Init(hostDesc, m_simulation);
 
-  // Before the link opens and before the world is configured, because both read out of it. Nothing
+  // Before the link opens and before the universe is configured, because both read out of it. Nothing
   // above this line is allowed to depend on a configured value, which is the whole reason it is one
   // call at one place rather than a read wherever a value is wanted.
   LoadServerConfig();
@@ -191,7 +191,7 @@ void OutpostApp::Init(HINSTANCE _instance)
   // spawn input: the station spawns, the body placements and the minimap's marks all read m_layout
   // and none of them re-rolls it (Design/Archive/Stations.md 5.3). The fleet keeps the ids it has by being
   // spawned first; the stations follow, then the base.
-  m_layout = Game::LayOutSystem(UNIVERSE_LAYOUT_SEED, Game::WorldPos{}, STARTING_SYSTEM);
+  m_layout = Game::LayOutSystem(UNIVERSE_LAYOUT_SEED, Game::UniversePos{}, STARTING_SYSTEM);
   SpawnStartingFleet();
   SpawnVanguardStations();
   SpawnHostileBase();
@@ -236,7 +236,7 @@ void OutpostApp::Init(HINSTANCE _instance)
   m_log.PushFormat(EventLog::Severity::Friendly, 0.0f, "FLEET ONLINE | %u SHIPS", OwnShipCount());
   // Every station row, the Vandal base included: the line says the grid spawned what the layout
   // described, and the base is a row in the same table (Design/Archive/Stations.md 6.1, 9.4).
-  m_log.PushFormat(EventLog::Severity::Info, 0.0f, "STATIONS ONLINE | %u", m_world.StationCount());
+  m_log.PushFormat(EventLog::Severity::Info, 0.0f, "STATIONS ONLINE | %u", m_universe.StationCount());
 
   m_window.Show();
 }
@@ -373,9 +373,9 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
     // clamped at the field's floor. The level drawn is the view's per-frame choice
     // (Design/Archive/BodyLod-work-order.md 2.1). Lowering gridPower re-samples the same seeded noise more
     // coarsely, which is the source design's own three-LOD scheme.
-    WorldView::BodyView view;
+    UniverseView::BodyView view;
     BodyBuildStats stats;
-    for (std::uint32_t level = 0; level < WorldView::BodyView::LOD_COUNT; ++level)
+    for (std::uint32_t level = 0; level < UniverseView::BodyView::LOD_COUNT; ++level)
     {
       BodyDesc levelDesc = desc;
       const std::uint32_t basePower = _textured ? BODY_PLANET_SPHERE_GRID_POWER : desc.gridPower;
@@ -463,10 +463,10 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
   // The worlds, one per site, wearing the one picture there is (Design/Archive/Stations.md 14). The class
   // is the only one left and it is not read on this path anyway -- a textured body takes none of
   // the ramp, the tiles or the craters a class describes. The depth is still the framing device it
-  // was: a world sits high on the screen by being far below the fleet in the world.
+  // was: a world sits high on the screen by being far below the fleet in the universe.
   for (const Game::PlanetSite& site : m_layout.planets)
   {
-    place(BodyClass::Asteroid, site.bodySeed, site.radiusMetres, site.bearingRad, Game::Distance(m_layout.starPos, site.posWorld),
+    place(BodyClass::Asteroid, site.bodySeed, site.radiusMetres, site.bearingRad, Game::Distance(m_layout.starPos, site.posUniverse),
           -BODY_START_PLANET_DEPTH_METRES, false, BODY_PLANET_TEXTURED);
   }
 
@@ -514,7 +514,7 @@ void OutpostApp::BuildSky(std::uint64_t _seed)
 // neighborhood and the sky is the far half of it. A second key for it would be a second thing to
 // remember for no second question it answers. What it does not reroll is the layout: the worlds
 // are rebuilt from m_layout and stay where the stations are, because a debug key that moved
-// simulation content would be a debug key changing the world (Design/Archive/Stations.md 5.3).
+// simulation content would be a debug key changing the universe (Design/Archive/Stations.md 5.3).
 void OutpostApp::ReseedBodies()
 {
   m_view.ClearBodies();
@@ -542,11 +542,11 @@ void OutpostApp::ReseedBodies()
 
 void OutpostApp::SpawnStartingFleet()
 {
-  // Which shard this world mints identities for, told to it by the composition root before anything
+  // Which shard this universe mints identities for, told to it by the composition root before anything
   // spawns -- AGENTS.md 5's rule, and the same shape as ConfigureIndex. Zero because there is one
-  // world and one process; a dedicated server would read its own out of the configuration file
+  // universe and one process; a dedicated server would read its own out of the configuration file
   // slice 24 cuts, and nothing else in the tree would change (ADR 0047).
-  m_world.ConfigureShard(0);
+  m_universe.ConfigureShard(0);
 
   constexpr int hullCount = static_cast<int>(std::size(STARTING_FLEET));
   std::vector<Game::ShipId> ships;
@@ -554,17 +554,18 @@ void OutpostApp::SpawnStartingFleet()
   for (int i = 0; i < hullCount; ++i)
   {
     const float x = (static_cast<float>(i) - static_cast<float>(hullCount - 1) * 0.5f) * START_SPACING;
-    ships.push_back(m_world.SpawnShip(Game::LocalPos(x, 0.0f), 0.0f, static_cast<std::uint32_t>(STARTING_FLEET[i]), Game::FACTION_PLAYER));
+    ships.push_back(
+      m_universe.SpawnShip(Game::LocalPos(x, 0.0f), 0.0f, static_cast<std::uint32_t>(STARTING_FLEET[i]), Game::FACTION_PLAYER));
   }
 
   // Into slot 1, and this is not a convenience. Selection is fleet-grain since the bar was rebound
   // (ADR 0049), so a starting hull in no fleet is a hull the player cannot take hold of -- the
-  // fleet-only model reaching the composition root, which is where a world is authored
+  // fleet-only model reaching the composition root, which is where a universe is authored
   // (Design/Archive/Fleets.md 15, decision 1).
   //
   // FormFleet rather than ComposeFleet: these ships are already in space. Composing is what draws
   // hulls out of a station's ledger, and there is no ledger at boot.
-  (void)m_world.FormFleet(Game::FACTION_PLAYER, 0, ships);
+  (void)m_universe.FormFleet(Game::FACTION_PLAYER, 0, ships);
 }
 
 // The government's presence: a station at every planet of the starting system, in the Vanguard's
@@ -577,7 +578,7 @@ void OutpostApp::SpawnStartingFleet()
 // (Design/Archive/Stations.md 9.3). The mark is handed to the view here, beside the spawn it stands for.
 void OutpostApp::SpawnVanguardStations()
 {
-  Game::World::StationDesc desc;
+  Game::Universe::StationDesc desc;
   desc.ownerFaction = Game::FACTION_VANGUARD;
   desc.protectorHullId = static_cast<std::uint32_t>(VANGUARD_PROTECTOR_HULL);
   desc.protectorComplement = VANGUARD_PROTECTOR_COMPLEMENT;
@@ -587,9 +588,9 @@ void OutpostApp::SpawnVanguardStations()
   for (const Game::PlanetSite& site : m_layout.planets)
   {
     const Game::ShipId structure =
-      m_world.SpawnShip(site.posWorld, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
-    m_world.MakeStation(structure, desc);
-    m_view.AddStationMark({site.posWorld, Game::FACTION_VANGUARD});
+      m_universe.SpawnShip(site.posUniverse, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+    m_universe.MakeStation(structure, desc);
+    m_view.AddStationMark({site.posUniverse, Game::FACTION_VANGUARD});
   }
 }
 
@@ -605,34 +606,34 @@ void OutpostApp::SpawnVanguardStations()
 // by standing rather than by a special case (Design/Archive/Stations.md 6.1, 15 decision 4).
 void OutpostApp::SpawnHostileBase()
 {
-  const Game::ShipId station = m_world.SpawnShip(Game::LocalPos(HOSTILE_BASE_EAST_METRES, HOSTILE_BASE_NORTH_METRES), 0.0f,
-                                                 static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANDAL);
-  Game::World::StationDesc base;
+  const Game::ShipId station = m_universe.SpawnShip(Game::LocalPos(HOSTILE_BASE_EAST_METRES, HOSTILE_BASE_NORTH_METRES), 0.0f,
+                                                    static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANDAL);
+  Game::Universe::StationDesc base;
   base.ownerFaction = Game::FACTION_VANDAL;
   base.protectorComplement = 0;
-  m_world.MakeStation(station, base);
-  const Game::WorldPos anchor = Game::LocalPos(HOSTILE_BASE_EAST_METRES, HOSTILE_BASE_NORTH_METRES);
+  m_universe.MakeStation(station, base);
+  const Game::UniversePos anchor = Game::LocalPos(HOSTILE_BASE_EAST_METRES, HOSTILE_BASE_NORTH_METRES);
 
   for (int at = 0; at < HOSTILE_PATROL_COUNT; ++at)
   {
     // Spread evenly over the ring -- 0, 4, 8 of twelve -- and headed along it, so the first leg does
-    // not begin with a turn. The geometry is Patrol.h's, because the world steers by the same
+    // not begin with a turn. The geometry is Patrol.h's, because the universe steers by the same
     // function and a root doing its own arithmetic would put them somewhere it then walks away from.
     const std::uint32_t index =
       static_cast<std::uint32_t>(at) * Game::PATROL_RING_WAYPOINTS / static_cast<std::uint32_t>(HOSTILE_PATROL_COUNT);
     const Game::ShipId ship =
-      m_world.SpawnShip(Game::PatrolRingPoint(anchor, index, HOSTILE_PATROL_RING_METRES), Game::PatrolRingHeadingRad(index),
-                        static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
-    m_world.AssignPatrol(ship, station, HOSTILE_PATROL_RING_METRES, HOSTILE_PATROL_CRUISE_MPS);
+      m_universe.SpawnShip(Game::PatrolRingPoint(anchor, index, HOSTILE_PATROL_RING_METRES), Game::PatrolRingHeadingRad(index),
+                           static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
+    m_universe.AssignPatrol(ship, station, HOSTILE_PATROL_RING_METRES, HOSTILE_PATROL_CRUISE_MPS);
   }
 }
 
-// The player's own ships, not every ship in the world. Without this the game would greet the player
+// The player's own ships, not every ship in the universe. Without this the game would greet the player
 // with FLEET ONLINE | 7 SHIPS, four of them the enemy's.
 std::uint32_t OutpostApp::OwnShipCount() const noexcept
 {
   std::uint32_t count = 0;
-  for (const Game::ShipState& ship : m_world.Ships())
+  for (const Game::ShipState& ship : m_universe.Ships())
     count += (ship.factionId == m_ownFaction) ? 1u : 0u;
   return count;
 }
@@ -671,14 +672,14 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
   {
     // Debug hook, beside F3's. Nothing in the game can destroy a ship -- there is no health, no
     // damage and no order for it -- and the explosion needs something to consume, so the
-    // composition root calls World directly. It is the one place allowed to, and this design must
+    // composition root calls Universe directly. It is the one place allowed to, and this design must
     // not invent a despawn order on the wire for a tuning aid (Design/Archive/SpaceshipExplosion.md 9).
     //
     // The ids are collected before the first despawn: Ships() is a span over the last snapshot
-    // rather than over the world, so the walk itself is safe, and taking the ids first keeps it
+    // rather than over the universe, so the walk itself is safe, and taking the ids first keeps it
     // that way if it ever stops being.
     //
-    // The snapshot names entities and World despawns handles, so this is the one place in the
+    // The snapshot names entities and Universe despawns handles, so this is the one place in the
     // executable that crosses back the way the publisher crosses forward -- which the composition
     // root is entitled to do, being the only thing that holds both halves (ADR 0047).
     std::vector<Game::EntityId> doomed;
@@ -689,7 +690,7 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
         doomed.push_back(ships[i].entity);
     }
     for (const Game::EntityId entity : doomed)
-      m_world.DespawnShip(m_world.HandleOfEntity(entity));
+      m_universe.DespawnShip(m_universe.HandleOfEntity(entity));
     break;
   }
   case VK_F5:
@@ -706,7 +707,7 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
   // Vanguard asset IS F6, and any landed hit IS F7 -- so a hook that stated an act the simulation
   // never saw would be the one thing ADR 0041 forbids, wearing a keyboard shortcut.
   //
-  // World::RecordAggression and World::RecordHostileAct stay exactly as they are. They are the
+  // Universe::RecordAggression and Universe::RecordHostileAct stay exactly as they are. They are the
   // simulation's own entry points, they still have no client message and never will, and the tests
   // still drive them directly (Design/Combat-slice-4.md 2.6).
   case '1':
@@ -733,7 +734,7 @@ void OutpostApp::Update()
 
   for (const PointerEvent& event : m_pendingEvents)
   {
-    // The modal screen first, then the HUD, then the world. The assembly view consumes everything
+    // The modal screen first, then the HUD, then the universe. The assembly view consumes everything
     // while it is up, and the HUD consumes what lands on a panel -- so a tap on the bottom bar can
     // never reach the tracker as an order.
     if (m_assembly.HandlePointer(event, m_view, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx()))
@@ -754,7 +755,7 @@ void OutpostApp::Update()
 
   // A pan gives the camera back to the player, and this is the only place that can see one: pan,
   // orbit and zoom reach Camera straight out of PointerTracker and never touch the listener, so
-  // WorldView cannot know a gesture happened. The composition root holds both and can compare.
+  // UniverseView cannot know a gesture happened. The composition root holds both and can compare.
   //
   // The TARGET, specifically, and not the whole camera: a pan is what moves it, and orbit and zoom
   // do not. That asymmetry is the right rule rather than an accident of what is easy to detect --
@@ -768,7 +769,7 @@ void OutpostApp::Update()
 
   // A ledger reply for the station the player long-pressed opens the assembly view over it. Taken
   // rather than read: one ask gets one screen, and a reply nobody is waiting for opens nothing
-  // (WorldView::TakeLedgerReply, ADR 0051).
+  // (UniverseView::TakeLedgerReply, ADR 0051).
   Game::LedgerReply ledger;
   if (m_view.TakeLedgerReply(ledger))
   {
@@ -785,8 +786,8 @@ void OutpostApp::Update()
 
   // Where the player is looking becomes what the server sends. The composition root is the only
   // thing holding both halves, so it is the only thing that can say so; a dedicated server reads it
-  // off the session instead (WorldSimulation::SetViewCentre).
-  m_simulation.SetViewCentre(m_view.WorldPosAt(m_camera.Target().x, m_camera.Target().z));
+  // off the session instead (UniverseSimulation::SetViewCentre).
+  m_simulation.SetViewCentre(m_view.UniversePosAt(m_camera.Target().x, m_camera.Target().z));
 }
 
 void OutpostApp::Render()
@@ -801,7 +802,7 @@ void OutpostApp::Render()
   frame.stats.frameMs = m_clock.FrameMs();
   frame.stats.tick = m_host.Tick();
   frame.stats.selectedCount = m_view.SelectedCount();
-  frame.stats.shipCount = m_world.ShipCount();
+  frame.stats.shipCount = m_universe.ShipCount();
   frame.stats.timeScale = m_timeScale;
   frame.stats.explosionCount = m_view.ExplosionCount();
   frame.stats.particleCount = m_view.Particles().Count();
@@ -814,14 +815,14 @@ void OutpostApp::Render()
   // is the frame whose cost the numbers beside it describe.
   frame.stats.submittedCount = m_view.SubmittedCount();
   frame.stats.culledCount = m_view.CulledCount();
-  frame.stats.pathIslandCount = static_cast<std::uint32_t>(m_world.PathIslandCount());
-  frame.stats.pathIslandsDeclined = static_cast<std::uint32_t>(m_world.DeclinedPathIslandCount());
+  frame.stats.pathIslandCount = static_cast<std::uint32_t>(m_universe.PathIslandCount());
+  frame.stats.pathIslandsDeclined = static_cast<std::uint32_t>(m_universe.DeclinedPathIslandCount());
   frame.showDebug = m_showDebug;
-  frame.sector = m_view.WorldPosAt(m_camera.Target().x, m_camera.Target().z);
+  frame.sector = m_view.UniversePosAt(m_camera.Target().x, m_camera.Target().z);
   frame.hullNames = HULL_NAMES;
   frame.factionNames = FACTION_NAMES;
   frame.ownFaction = m_ownFaction;
-  // What this client currently knows about, counted off the snapshot rather than off the world: a
+  // What this client currently knows about, counted off the snapshot rather than off the universe: a
   // contact is a hostile *record*, which is the only reading that stays honest over a real wire. The
   // station counts, so the base reads as four. Hostile by the header's mask, not by "not mine": a
   // Vanguard station in view is not a contact until the law turns on the player, and then every
