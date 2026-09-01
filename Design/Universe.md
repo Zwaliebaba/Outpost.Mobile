@@ -5,9 +5,11 @@ same day, each the recommended option, in an interactive session run against a l
 shipped layout algorithm with its knobs exposed, and a working prototype of the galaxy lattice and
 all four candidate gate graphs.**
 
-**Slices 1, 2 and 3 have landed.** The galaxy exists, it is crossable, and the game now boots into
-it: 54 systems, 164 Vanguard stations and 136 gates, with home exactly where it always was. Slice 4
-— the client half, where a player can actually order a jump — is ready to be ordered.
+**Slices 1 to 4 have landed.** The galaxy exists, the game boots into it — 54 systems, 164 Vanguard
+stations and 136 gates, with home exactly where it always was — and a player can select a fleet,
+press `JUMP`, tap a gate and cross it, camera and all. What is left is **slice 4b** (the scenery
+follows the camera: after a crossing the records are right and the worlds and marks are still the
+old system's), then **5** (the save file) and **6** (the island-scoped replan).
 
 Four sections changed on contact and say so where they stand: §3.4's separation arithmetic (a
 disc's, where the jitter is a square), §10's gate radius (a circle inside the structure, which
@@ -19,6 +21,8 @@ slice 4 deliberately did not finish.
 carries the two decisions it took.
 **Slice 2**: gates, the `Jump` order, `StepJumps`, `JumpedOut` and the wire's fourth departure run
 are in, with [ADR 0056](Decisions/0056-a-jump-is-a-despawn-and-a-spawn-under-one-identity.md).
+**Slice 3**: genesis builds the galaxy at boot. **Slice 4**: the sheet's fifth command, the gate
+pick, the silent removal and the camera that crosses with the fleet.
 This document is amended in place as its slices land (ADR 0054).
 
 The player-facing sentence: **the frontier stops being one system.** Today the universe is three
