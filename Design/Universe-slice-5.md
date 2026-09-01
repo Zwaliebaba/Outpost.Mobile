@@ -61,8 +61,14 @@ The universe stops dying with the process.
   file and an appended one are each refused and change nothing.
 - The whole `GameLogicTests` suite green, both standing replay gates included.
 - `CheckProjectFiles.py`, `CheckFormat.py`, clang-tidy over the changed `GameLogic` sources.
-- **A reviewer on Windows: play, quit, relaunch, and find the universe where it was left.** Owed and
-  not supplied — see §8.
+- **A reviewer on Windows: play, quit, relaunch, and find the universe where it was left.**
+  **Waived — see below.**
+
+> **Waived by the owner on 2026-09-01.** This check was never run: CI-green was accepted in its
+> place. Recorded rather than deleted, because a check that quietly stops existing is
+> indistinguishable from one that passed — and the gate-ring bug (`Universe.md` §10) is exactly what
+> that looks like when it goes wrong.
+
 
 ## 6. Assumptions
 

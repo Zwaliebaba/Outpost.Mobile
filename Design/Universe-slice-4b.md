@@ -69,8 +69,13 @@ between them, and the minimap's station marks. This slice closes that.
   `ATieKeepsTheLowerSystem`, `AnEmptyGalaxyAnswersZero`.
 - The whole `GameLogicTests` suite green.
 - `CheckProjectFiles.py`, `CheckFormat.py`, clang-tidy over the changed `GameLogic` sources.
-- **A screenshot on each side of a crossing, showing different worlds. Owed and not supplied —
-  see §8.**
+- **A screenshot on each side of a crossing, showing different worlds. Waived — see below.**
+
+> **Waived by the owner on 2026-09-01.** This check was never run: CI-green was accepted in its
+> place. Recorded rather than deleted, because a check that quietly stops existing is
+> indistinguishable from one that passed — and the gate-ring bug (`Universe.md` §10) is exactly what
+> that looks like when it goes wrong.
+
 
 ## 6. Assumptions
 

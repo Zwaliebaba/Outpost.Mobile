@@ -63,7 +63,13 @@ A universe is authored by a tool, and the game runs what it finds.
 - The whole `GameLogicTests` suite green, both standing replay gates included.
 - `CheckProjectFiles.py` — which now has a tenth project to check — `CheckFormat.py`, clang-tidy.
 - **A reviewer on Windows: build, run `UniverseGen`, run the game, and find the universe it wrote.**
-  Owed and not supplied — see §8.
+  **Waived — see below.**
+
+> **Waived by the owner on 2026-09-01.** This check was never run: CI-green was accepted in its
+> place. Recorded rather than deleted, because a check that quietly stops existing is
+> indistinguishable from one that passed — and the gate-ring bug (`Universe.md` §10) is exactly what
+> that looks like when it goes wrong.
+
 
 ## 6. Assumptions
 

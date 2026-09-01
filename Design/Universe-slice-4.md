@@ -54,7 +54,13 @@ A player can order a jump, watch it happen, and still know where they are afterw
   carries only `SHIP_FLAG_STATION`; scenery carries nothing.
 - The whole `GameLogicTests` suite green.
 - **Screenshots at two window sizes**, one showing the `JUMP` prompt armed and one on the far side
-  of a crossing. **Owed and not supplied — see §8.**
+  of a crossing. **Waived — see below.**
+
+> **Waived by the owner on 2026-09-01.** This check was never run: CI-green was accepted in its
+> place. Recorded rather than deleted, because a check that quietly stops existing is
+> indistinguishable from one that passed — and the gate-ring bug (`Universe.md` §10) is exactly what
+> that looks like when it goes wrong.
+
 - `CheckProjectFiles.py`, `CheckFormat.py`, clang-tidy over GameLogic.
 
 ## 6. Assumptions

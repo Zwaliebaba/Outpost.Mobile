@@ -6,15 +6,20 @@ namespace GameLogicTests
 {
 namespace
 {
-// The scene of Design/Archive/Hostiles.md 6, which is also what slice 3's ViewTuning.h constants spell. The
-// two must agree: these are the numbers the patrol was argued against -- 400 m clears the station's
-// 251.77 m skin by 148 m, and the chords clear its center by 386 m against the 263 m an Interceptor
-// needs -- so a test run at different ones would prove something about a scene nobody plays.
-constexpr float STATION_EAST_METRES = 850.0f;
-constexpr float STATION_NORTH_METRES = 850.0f;
-constexpr float RING_METRES = 400.0f;
-constexpr float CRUISE_MPS = 10.0f;
-constexpr int PATROL_COUNT = 3;
+// The scene of Design/Archive/Hostiles.md 6 -- read from the shipped constants rather than spelled
+// again beside them.
+//
+// It used to be five literals under a comment saying "the two must agree", and nothing made them.
+// Measured: moving the base from 850 m to 9 000 m was a content change that no row in this suite
+// noticed, because every row was testing its own copy of the scene rather than the one the game
+// ships (Design/Universe-slice-5b.md 8, mutation 7). The copies could not be deleted while the
+// constants lived in a client header this project cannot see; slice 5b moved them into GameLogic,
+// which is what makes this possible now.
+constexpr float STATION_EAST_METRES = Game::HOSTILE_BASE_EAST_METRES;
+constexpr float STATION_NORTH_METRES = Game::HOSTILE_BASE_NORTH_METRES;
+constexpr float RING_METRES = Game::HOSTILE_PATROL_RING_METRES;
+constexpr float CRUISE_MPS = Game::HOSTILE_PATROL_CRUISE_MPS;
+constexpr int PATROL_COUNT = static_cast<int>(Game::HOSTILE_PATROL_COUNT);
 
 // One lap is twelve 207 m chords at 10 m/s: about 249 s, so 16,000 ticks is a lap with room to
 // spare. Spelled once because four tests below need it and none of them should guess.
@@ -305,6 +310,41 @@ public:
     // And a station cannot be given a patrol around itself.
     universe.AssignPatrol(station, station, RING_METRES, CRUISE_MPS);
     Assert::IsFalse(universe.PatrolOf(station).active, L"a station was assigned to patrol itself");
+  }
+
+  // The scene's own arguments, pinned.
+  //
+  // Reading the shipped constants stops this suite from testing a scene nobody plays, but it does
+  // not stop the scene itself from being moved somewhere the design's reasoning no longer holds: a
+  // base at 9 km still patrols correctly, it is just no longer the base Hostiles.md argued for.
+  // These are the four claims in that argument, each against the value it was argued from rather
+  // than a number repeated here (Design/Universe-slice-5b.md 8).
+  TEST_METHOD(TheHostileBaseSitsWhereItsDesignArguedFor)
+  {
+    const float outMetres = std::sqrt(Game::HOSTILE_BASE_EAST_METRES * Game::HOSTILE_BASE_EAST_METRES +
+                                      Game::HOSTILE_BASE_NORTH_METRES * Game::HOSTILE_BASE_NORTH_METRES);
+
+    // Inside the interest radius, so the base is subscribed from the first update and the overview
+    // shows red immediately -- which is what makes the rival visible at all without flying to it.
+    Assert::IsTrue(outMetres < Game::INTEREST_RADIUS_METRES,
+                   L"the hostile base is outside the interest radius: it would not be sent to a client at the origin");
+
+    // And so is its patrol, at its farthest.
+    Assert::IsTrue(outMetres + Game::HOSTILE_PATROL_RING_METRES < Game::INTEREST_RADIUS_METRES,
+                   L"the farthest patrol point is outside the interest radius");
+
+    // The ring clears the station's own skin, or the patrol flies through the thing it is guarding.
+    const float skin = Game::HullSpecOf(Game::HullId::Structure).BoundingRadiusMetres();
+    Assert::IsTrue(Game::HOSTILE_PATROL_RING_METRES > skin, L"the patrol ring is inside the station's skin");
+
+    // The chords clear the station's centre by more than an Interceptor needs, so the legs plan
+    // straight and the station never even scores as a threat. A ring of PATROL_RING_WAYPOINTS
+    // points has chords at radius * cos(pi / n) from the centre.
+    const float chordClearance =
+      Game::HOSTILE_PATROL_RING_METRES * std::cos(DirectX::XM_PI / static_cast<float>(Game::PATROL_RING_WAYPOINTS));
+    const float needed = Game::HullSpecOf(Game::HullId::Interceptor).BoundingRadiusMetres() + Game::PATH_CLEARANCE_MARGIN_METRES;
+    Assert::IsTrue(chordClearance > needed,
+                   L"a patrol chord passes closer to the station than an Interceptor needs -- the legs would not plan straight");
   }
 };
 } // namespace GameLogicTests

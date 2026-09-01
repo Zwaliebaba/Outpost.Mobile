@@ -510,3 +510,7 @@ they used to be a thing you checked by launching the game — and proved the mov
 code it replaced over 900 ticks; and slice 6 proves exactly what this line asked it to — a static
 spawn in one system re-plans no route in another — measured through `RoutePlanCount` rather than
 asserted, with the mutation that restores ADR 0034's behaviour turning that row red.
+
+**The screenshots slices 4 and 4b owed, and the play-quit-relaunch pass slice 5 owed, were waived by
+the owner on 2026-09-01** rather than run. Each work order records the waiver where the check stood,
+because a check that quietly stops existing looks exactly like one that passed.
