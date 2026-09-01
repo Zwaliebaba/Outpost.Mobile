@@ -66,7 +66,6 @@ private:
   void OpenQuicLink();
 
   void LoadHullMeshes();
-  void SpawnStartingFleet();
 
   // Generates, uploads and places the starting bodies from one seed. Called at boot and again on
   // every F5; the caller brackets it with BeginUploads and ExecuteAndWait, because every body's
@@ -89,7 +88,6 @@ private:
   // vertices are a copy recorded into one command list, and the scene being replaced has to be
   // released or every crossing leaks the system it left (ADR 0044).
   void RebuildLocalSystemScenery();
-  void SpawnHostileBase();
 
   // What the boot found where the universe should be.
   //
@@ -115,22 +113,11 @@ private:
   // taken mid-Step would be a universe that never existed (Design/Universe.md 8).
   void SaveUniverse();
 
-  // The local system's planets, as minimap marks. Called by SpawnVanguardStations on a first boot,
-  // beside the stations it is marking, and on its own by a restored boot -- where the stations are
-  // already in the file and only the marks are missing (Design/Universe-slice-5.md 4).
+  // The local system's planets, as minimap marks. The stations they stand for are in the save file;
+  // the marks are not, because a mark is a picture rather than a record. Rebuilt at boot and again
+  // whenever the camera changes systems (Design/Universe-slice-4b.md 4).
   void MarkLocalStations();
 
-  // One Vanguard station at every planet site of every system in the galaxy: the structure ship,
-  // then the row that makes it a station (Design/Archive/Stations.md 5.3, 6.1). The government is
-  // everywhere, which is what makes a gate worth flying through.
-  void SpawnVanguardStations();
-
-  // A gate at each end of every link in the galaxy's graph, each naming the other by identity.
-  //
-  // Two passes, and it has to be two: a gate names its far side by EntityId, and the far side does
-  // not exist until it is spawned. So every structure is spawned first and the rows are made after,
-  // when both ends can be named (Design/Universe-slice-3.md 4).
-  void SpawnGates();
   [[nodiscard]] std::uint32_t OwnShipCount() const noexcept;
   void Update();
   void Render();
@@ -190,11 +177,11 @@ private:
   // change (Design/Universe.md 9).
   std::uint32_t m_localSystem = 0;
 
-  // The seed the galaxy on screen was laid out from: the compiled one on a first boot, and the
-  // SAVED one on a restored boot. They are the same today and the distinction is the point -- a
-  // binary whose GALAXY_SEED has moved on still boots the universe its file holds, instead of
-  // spawning a saved fleet into a galaxy that has quietly rearranged itself around it.
-  std::uint64_t m_galaxySeed = GALAXY_SEED;
+  // The seed the galaxy on screen was laid out from, taken from the save header at boot. The
+  // initialiser is what a default-constructed app would use and is never what runs: RestoreUniverse
+  // overwrites it before anything reads it, and a boot that could not read a file does not get this
+  // far. A binary whose own idea of the seed had moved on still draws the galaxy its file holds.
+  std::uint64_t m_galaxySeed = Game::STARTING_GALAXY_SEED;
 
   // The tick the last save was taken at, so the cadence is a distance rather than a modulo -- see
   // the call site in Run.

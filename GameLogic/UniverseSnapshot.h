@@ -543,6 +543,19 @@ inline constexpr std::uint8_t SAVE_FILE_FORMAT = 1;
 // magic 4 + format 1 + galaxy seed 8 + shard 2 + state length 8.
 inline constexpr std::size_t SAVE_HEADER_BYTES = 23;
 
+// What the file is called.
+//
+// Beside the magic rather than in whichever program opens one, because it is the same kind of fact:
+// two programs that disagree about a save file's NAME fail exactly as completely as two that
+// disagree about its format, and now there are two -- the tool that writes a universe and the game
+// that runs it (ADR 0058). GameLogic still opens nothing; it only says what the thing is called.
+//
+// A bare name, so FileSys::ResolvePath puts it under <exe>\Assets\. That is wrong for a real
+// install -- a read-only program directory cannot be saved into -- and it is deliberately one
+// constant, so the day there is a writable data directory this line moves and nothing else does
+// (Design/Universe-slice-5.md 6).
+inline constexpr const wchar_t* UNIVERSE_SAVE_FILE = L"Universe.sav";
+
 // The state codec given a file.
 //
 // The length is written even though the state is self-delimiting, and it is what makes "torn"

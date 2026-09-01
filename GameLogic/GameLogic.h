@@ -34,6 +34,7 @@
 #include "Patrol.h"
 #include "UniverseLayout.h"
 #include "GalaxyLayout.h"
+#include "StartingUniverse.h"
 #include "Movement.h"
 #include "Universe.h"
 #include "UniverseSnapshot.h"

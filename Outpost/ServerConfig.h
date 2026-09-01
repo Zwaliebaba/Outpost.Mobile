@@ -58,15 +58,6 @@ struct ServerConfig
 // way every mesh and font does (FileSys::ResolvePath).
 inline constexpr const wchar_t* SERVER_CONFIG_FILE = L"Server.cfg";
 
-// The universe on disk, resolved the same way and for the same reason: the composition root is the
-// only thing in this tree that names a file, so the two names it knows live together.
-//
-// Under Assets\ because that is where ResolvePath puts a relative name and there is nowhere else
-// yet. That is wrong for a real install -- a read-only program directory cannot be saved into -- and
-// it is deliberately one constant, so the day there is a writable data directory this line moves and
-// nothing else does (Design/Universe-slice-5.md 6).
-inline constexpr const wchar_t* UNIVERSE_SAVE_FILE = L"Universe.sav";
-
 // Reads `key = value` lines into _outConfig. `#` begins a comment; blank lines are ignored; both
 // sides of the `=` are trimmed.
 //

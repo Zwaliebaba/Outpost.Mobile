@@ -5,11 +5,11 @@ same day, each the recommended option, in an interactive session run against a l
 shipped layout algorithm with its knobs exposed, and a working prototype of the galaxy lattice and
 all four candidate gate graphs.**
 
-**Slices 1 to 5 have landed.** The galaxy exists, the game boots into it — 54 systems, 164 Vanguard
-stations and 136 gates, with home exactly where it always was — a player can select a fleet, press
-`JUMP`, tap a gate and cross it, camera and all, the worlds, rocks and minimap marks on the far side
-are the far side's, and the universe no longer dies with the process. What is left is **5b** (genesis
-moves into a tool, so the game only ever loads) and **6** (the island-scoped replan).
+**Slices 1 to 5b have landed.** The galaxy exists — 54 systems, 164 Vanguard stations and 136 gates,
+with home exactly where it always was — a player can select a fleet, press `JUMP`, tap a gate and
+cross it, camera and all, the worlds, rocks and minimap marks on the far side are the far side's, and
+the universe no longer dies with the process. It is also no longer *made* by the process: `UniverseGen`
+writes one and `Outpost` runs it. What is left is **6** (the island-scoped replan).
 
 Five sections changed on contact and say so where they stand: §3.4's separation arithmetic (a
 disc's, where the jitter is a square), §10's gate radius (a circle inside the structure, which
@@ -27,6 +27,8 @@ pick, the silent removal and the camera that crosses with the fleet. **Slice 4b*
 answers which system a point is in, and the client rebuilds its worlds, rocks and marks when the
 camera's answer changes.
 **Slice 5**: the save file, with [ADR 0057](Decisions/0057-the-save-is-a-versioned-file-and-a-refused-one-stops-the-boot.md).
+**Slice 5b**: genesis leaves the game for `Tools/UniverseGen`, with
+[ADR 0058](Decisions/0058-a-universe-is-authored-by-a-tool-not-by-the-program-that-runs-it.md).
 This document is amended in place as its slices land (ADR 0054).
 
 The player-facing sentence: **the frontier stops being one system.** Today the universe is three
@@ -322,9 +324,10 @@ The save is the state codec given a file:
   cadence is exactly what a deployment may change without a rebuild (ADR 0043) — and once at
   clean shutdown. Always between ticks, never inside one; the codec's contract is a universe at
   rest.
-- **A boot that fails closed**: file absent means first boot, and genesis runs `LayOutGalaxy`
-  from the seed — until slice 5b, after which an absent file means there is nothing to run and the
-  tool makes one. A file *present but refused* — wrong version, torn, inconsistent — **stops the
+- **A boot that fails closed**: an absent file means there is nothing to run, and the boot stops
+  naming the tool that writes one. It meant "first boot, and genesis runs" until slice 5b took
+  genesis out of the game (ADR 0058); the fallback went with it, because two things that can author
+  a universe is one more than the number that can be right. A file *present but refused* — wrong version, torn, inconsistent — **stops the
   boot naming what refused**, exactly as a boot that cannot open the wire does (ADR 0028). It
   never falls through to genesis: a refused save quietly replaced by a fresh universe is the one
   mistake this file must not make, and "diagnostics, not crashes" (AGENTS.md §5) means the
@@ -476,7 +479,7 @@ library where a suite could reach it (`Universe-slice-4b.md` §7).
 | 4 | [The client crosses](Universe-slice-4.md): `JUMP` on the sheet, gate pick, silent removal, camera follow | `NeuronClient`+`Outpost` | M | 3 | — **landed** |
 | 4b | [The scenery follows the camera](Universe-slice-4b.md): `Game::SystemAt`, per-system bodies and marks | `GameLogic`+`Outpost` | S | 4 | — **landed** |
 | 5 | [The save file](Universe-slice-5.md): header, atomic write, cadence in `Server.cfg`, restore-or-stop boot | `GameLogic`+`NeuronCore`+`Outpost` | M | 2 (3 in practice) | [ADR 0057](Decisions/0057-the-save-is-a-versioned-file-and-a-refused-one-stops-the-boot.md) — **landed** |
-| 5b | Genesis moves into a tool: the game only ever loads a universe, and the starting content leaves the client header | new tool + `Outpost` | M | 5 | ADR: a universe is authored by a tool, not by the program that runs it |
+| 5b | [Genesis moves into a tool](Universe-slice-5b.md): `UniverseGen` writes a universe, the game only loads one, and the starting content leaves the client header | `GameLogic`+`Tools/UniverseGen`+`Outpost` | M | 5 | [ADR 0058](Decisions/0058-a-universe-is-authored-by-a-tool-not-by-the-program-that-runs-it.md) — **landed** |
 | 6 | The replan scoped to its island | `GameLogic` | M | 2 | ADR: supersedes 0034 |
 
 **Acceptance texture, seeded now for the orders to expand**: slice 1 proved determinism (one
@@ -496,4 +499,8 @@ a restored universe replays to byte equality, and a wrong magic, an unknown form
 disagrees with the file, an appended byte and a header that contradicts its own body are each
 refused and change nothing — while the disk half (the atomic write, the cadence, the boot that
 stops) is compiled by CI and demonstrated by nobody, which `Universe-slice-5.md` §8 states rather
-than implies; slice 6 proves a static spawn in one system re-plans no route in another.
+than implies; slice 5b made genesis provable at all — the census, the gate graph's integrity, the
+determinism and the round trip through the save file are seven rows in `StartingUniverseTests` where
+they used to be a thing you checked by launching the game — and proved the move byte-identical to the
+code it replaced over 900 ticks; slice 6 proves a static spawn in one system re-plans no route in
+another.

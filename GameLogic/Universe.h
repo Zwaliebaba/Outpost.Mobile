@@ -393,6 +393,22 @@ public:
   // under, so calling this after a spawn changes nothing that exists.
   void ConfigureShard(ShardId _shard) noexcept;
 
+  // Brings the derived state -- the static index and the path islands -- up to date now, rather than
+  // on the next Step that needs it.
+  //
+  // A universe that has spawned something since its last tick is not yet at rest, and the state
+  // codec's contract is a universe at rest (Design/Universe.md 8). The distinction is invisible in
+  // the bytes and decisive afterwards: a route's currency is written as a RELATION to the island
+  // version, not as the version itself, so a universe whose islands have not been built yet writes
+  // "current" for routes that its own next tick is about to invalidate. Read back, those routes are
+  // current against islands that HAVE been built, and the two universes re-plan on different ticks.
+  //
+  // So: anything that spawns into a universe and then writes it must call this in between. Genesis
+  // does (BuildStartingUniverse); a running game never needs to, because Step settles as it goes.
+  // Found by StartingUniverseTests::AGeneratedUniverseSurvivesTheSaveFile, which is the only caller
+  // in the tree that ever saved at tick zero (Design/Universe-slice-5b.md 7).
+  void SettleDerivedState();
+
   [[nodiscard]] ShardId Shard() const noexcept
   {
     return m_shard;

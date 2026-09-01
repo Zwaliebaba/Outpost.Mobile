@@ -54,6 +54,9 @@
     <ClInclude Include="GalaxyLayout.h">
       <Filter>Universe</Filter>
     </ClInclude>
+    <ClInclude Include="StartingUniverse.h">
+      <Filter>Universe</Filter>
+    </ClInclude>
     <ClInclude Include="Movement.h">
       <Filter>Motion</Filter>
     </ClInclude>
@@ -111,6 +114,9 @@
       <Filter>Universe</Filter>
     </ClCompile>
     <ClCompile Include="GalaxyLayout.cpp">
+      <Filter>Universe</Filter>
+    </ClCompile>
+    <ClCompile Include="StartingUniverse.cpp">
       <Filter>Universe</Filter>
     </ClCompile>
     <ClCompile Include="Universe.cpp">

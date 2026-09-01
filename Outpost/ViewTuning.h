@@ -362,43 +362,26 @@ inline constexpr std::uint64_t BODY_START_SEED = 0x4F75747031ull; // "Outp1"
 // kilometres of headroom under CAMERA_FAR_PLANE.
 //
 // A depth is metres, not radii: what is being aimed at is an angle on the screen, and the seeded
-// radius must not be able to move it. Both sit high on the screen while being far below the fleet in
-// the universe, which is the whole point -- the outpost is flying over them.
-inline constexpr float BODY_START_PLANET_BEARING_DEG = -23.0f;
-inline constexpr float BODY_START_PLANET_DISTANCE_METRES = 3500.0f;
+// radius must not be able to move it. The world sits high on the screen while being far below the
+// fleet in the universe, which is the whole point -- the outpost is flying over it.
+//
+// The bearing and the range that put it there are NOT here any more: they are the pinned first
+// planet's, and a planet's position is the universe's rather than the view's, so they moved to
+// GameLogic/StartingUniverse.h with everything else the file is built from (ADR 0058). This depth
+// stayed, because how far below the plane a world is drawn is a picture and nothing in the
+// simulation can see it.
 inline constexpr float BODY_START_PLANET_DEPTH_METRES = 3300.0f; // below the fleet's plane
 inline constexpr int BODY_START_ASTEROIDS = 6;
 
-// **Where the worlds sit is the layout's now, not this file's.** The two numbers above are still
-// the framing they always were, and they reach the scene as the pin on the starting system's first
-// planet: LayOutSystem draws the other sites, and planet 0 takes this bearing and orbit verbatim so
-// the worked camera framing survives as content instead of being superseded by a die roll
-// (Design/Archive/Stations.md 5.3). Every other SystemDesc field keeps its default on purpose -- the
-// defaults are the shipped numbers, and GameLogicTests proves the grid-ceiling bound against them,
-// so a root that overrode the orbit band would be running a system the test never saw
-// (UniverseLayout.h). The star anchor is the universe origin; nothing draws a star.
+// **Where the worlds sit is not this file's at all any more.** The starting system's layout, the
+// galaxy's, and everything that stands in them moved to GameLogic/StartingUniverse.h in slice 5b:
+// they are the universe's content, and the universe is authored by UniverseGen rather than by this
+// executable (ADR 0058). What is left here is what a CLIENT decides -- how the scene is framed, lit
+// and drawn.
 //
-// Its own seed beside BODY_START_SEED, because F5 must not reach it: a reroll changes what the
-// worlds look like and never where they are, since a station stands on every site and a debug key
-// that moved simulation content would be a debug key changing the universe.
-inline constexpr std::uint64_t UNIVERSE_LAYOUT_SEED = 0x53797331ull; // "Sys1"
-inline constexpr Game::SystemDesc STARTING_SYSTEM{.pinFirstPlanet = true,
-                                                  .firstPlanetBearingRad = BODY_START_PLANET_BEARING_DEG * (DirectX::XM_PI / 180.0f),
-                                                  .firstPlanetOrbitMetres = BODY_START_PLANET_DISTANCE_METRES};
-
-// --- the galaxy ---------------------------------------------------------------------------------
-
-// Where every other system is, from one seed (Game::LayOutGalaxy, ADR 0055). Its own seed beside
-// UNIVERSE_LAYOUT_SEED for that constant's reason: F5 must not reach it, and a debug key that moved
-// a star would be a debug key changing the universe.
-inline constexpr std::uint64_t GALAXY_SEED = 0x46726F6E74696572ull; // "Frontier"
-inline constexpr Game::GalaxyDesc STARTING_GALAXY{};
-
-// The one authored place in the galaxy: the starting system, at the lattice origin, laid out from
-// the seed and the description the game has always booted on. The galaxy grows around the scene the
-// player already knows; nothing about home changes but the map it sits on (Design/Universe.md 3.2).
-inline constexpr Game::SystemPin HOME_PIN{.cellQ = 0, .cellR = 0, .systemSeed = UNIVERSE_LAYOUT_SEED, .desc = STARTING_SYSTEM};
-inline constexpr Game::SystemPin GALAXY_PINS[]{HOME_PIN};
+// The view still lays the local system out for itself, from Game::STARTING_GALAXY and
+// Game::GALAXY_PINS, because its scenery has to stand where the file's stations do and the only way
+// to be sure of that is to derive both from the same description (Design/Archive/Stations.md 5.3).
 
 // **The world wears a picture rather than a generated surface.** BodyMeshBuilder::BuildSphere makes
 // a smooth sphere and PlanetPS samples Terrain\Planet1.dds off the direction, so neither the height
@@ -426,33 +409,6 @@ inline constexpr float BODY_LOD2_BELOW_PX = 90.0f;
 inline constexpr float BODY_CULL_BELOW_PX = 1.5f;
 inline constexpr float BODY_START_ASTEROID_RING_MIN_METRES = 150.0f;
 inline constexpr float BODY_START_ASTEROID_RING_MAX_METRES = 400.0f;
-
-// --- starting scene ----------------------------------------------------------------------------
-inline constexpr float START_SPACING = 55.0f;
-
-// The hostile base and its patrol (Design/Archive/Hostiles.md 6). The station sits 1,202 m out on the
-// diagonal: inside the 2,000 m interest radius, so the base is subscribed from the first update and
-// the overview shows red immediately, and well inside the minimap's half-range, so it has an edge
-// to be seen against. The farthest patrol point is 1,602 m out, still inside both.
-//
-// The ring clears the station's 251.77 m skin by 148 m, and its chords clear the station's center by
-// 386 m against the 263 m an Interceptor needs -- so the legs plan straight and the station never
-// even scores as a threat. PatrolTests spells these same five numbers, and the two must agree.
-inline constexpr float HOSTILE_BASE_EAST_METRES = 850.0f;
-inline constexpr float HOSTILE_BASE_NORTH_METRES = 850.0f;
-inline constexpr float HOSTILE_PATROL_RING_METRES = 400.0f;
-inline constexpr float HOSTILE_PATROL_CRUISE_MPS = 10.0f; // 29 % of an Interceptor's maximum: a lap in about 4.2 minutes
-inline constexpr int HOSTILE_PATROL_COUNT = 3;
-
-// The Vanguard's garrison: what every station of the starting system launches when it is attacked,
-// and how (Design/Archive/Stations.md 8.2). Content, passed to MakeStation by the composition root the way
-// the patrol numbers above are passed to AssignPatrol -- not a tuning constant, because what the
-// root spawns is content. Nothing in the running game attacks a station until slice 6's debug key,
-// so these are exercised by GameLogicTests and by nothing else yet.
-inline constexpr Game::HullId VANGUARD_PROTECTOR_HULL = Game::HullId::Corvette;
-inline constexpr std::uint32_t VANGUARD_PROTECTOR_COMPLEMENT = 3;
-inline constexpr std::uint32_t VANGUARD_LAUNCH_EVERY_TICKS = 90;
-inline constexpr std::uint32_t VANGUARD_TARGET_CAP = 4;
 
 // --- fleet focus -------------------------------------------------------------------------------
 // Tapping a fleet button flies the camera to that fleet: one gesture, because under the design's

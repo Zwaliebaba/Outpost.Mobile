@@ -89,6 +89,9 @@
     <ClCompile Include="SpatialIndexTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="StartingUniverseTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="UniverseStateTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

@@ -208,6 +208,7 @@
     <ClCompile Include="SectorTests.cpp" />
     <ClCompile Include="SnapshotTests.cpp" />
     <ClCompile Include="SpatialIndexTests.cpp" />
+    <ClCompile Include="StartingUniverseTests.cpp" />
     <ClCompile Include="UniverseStateTests.cpp" />
     <ClCompile Include="UniverseTests.cpp" />
   </ItemGroup>

@@ -19,4 +19,7 @@
   <Project Path="Outpost/Outpost.vcxproj" Id="e901e26f-65e6-494a-aad7-e58e089a729c">
     <Deploy />
   </Project>
+  <Folder Name="/Tools/">
+    <Project Path="Tools/UniverseGen/UniverseGen.vcxproj" Id="a7f3c1d8-9e42-4b06-8c5f-2d1e7b93a460" />
+  </Folder>
 </Solution>

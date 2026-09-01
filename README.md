@@ -99,6 +99,13 @@ without a rebuild lives in `Outpost/Assets/Server.cfg`. The networking is real Q
 stack, and it is still one client in one process on `127.0.0.1` with a self-signed certificate the
 client does not validate.
 
+**The universe is authored, not discovered.** `Tools/UniverseGen` writes a `Universe.sav` and
+`Outpost` runs what it finds beside itself; a first checkout has to run the tool once before the game
+will start, and the game says so if you forget. The two are separate executables in separate output
+directories, so give the tool the game's path — `UniverseGen 0 "…\Outpost\Assets\Universe.sav"` —
+and `UniverseGen --help` spells it out. A different first argument writes a different galaxy from the
+same code (ADR 0058).
+
 ---
 
 ## How it is put together

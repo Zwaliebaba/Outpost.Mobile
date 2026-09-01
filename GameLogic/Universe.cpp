@@ -1989,6 +1989,11 @@ void Universe::SnapshotPreviousTick() noexcept
   }
 }
 
+void Universe::SettleDerivedState()
+{
+  RebuildStaticIfDirty();
+}
+
 void Universe::RebuildStaticIfDirty()
 {
   if (!m_staticIndexDirty)
