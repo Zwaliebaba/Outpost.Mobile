@@ -1,11 +1,20 @@
 # Combat — mounts, gunnery, and the acts a shot states
 
 **Status: agreed with the owner on 2026-08-31 — the six decisions in §15 were put and taken the
-same day, each the recommended option.** Slices 1 and 2 landed on 2026-09-01 and are in review
+same day, each the recommended option.** Slices 1, 2 and 3 landed on 2026-09-01 and are in review
 ([`Combat-slice-1.md`](Combat-slice-1.md),
 [ADR 0052](Decisions/0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md)); the
-world is lethal and now says so on the wire; what is left is a client that draws it. §16 lists the
-three that remain and the dependencies between them.
+world is lethal, says so on the wire, and its hulls are addressable a part at a time; what is left is
+a client that draws the fight. §16 lists the two that remain and the dependencies between them.
+
+**A factual correction, taken on 2026-09-01:** §3.1 and §10.1 describe the shipped Battleship as
+carrying "three turret submeshes with barrel bones" and plan for `MeshData` to grow bones and clips.
+**The bones are not there.** Every hull in the game is named rigid submeshes with no skeleton, no
+clip and no skin buffer; the only file in the tree with a rig is the golden fixture. The turrets are
+real and so are the barrels — they are separate named submeshes — so a turret still turns, about its
+own bind-pose centre rather than about a bone. `Combat-slice-3.md` §2.6 has the table and the
+consequence, and the sections below keep their argument unamended, which is what this file does with
+a claim a slice overtakes.
 
 **One correction this document has already taken:** §8's stand-off reads the shortest range among
 a hull's *traversing* mounts rather than among all of them, so that a bow-fixed hull takes no
@@ -502,6 +511,9 @@ One agent per slice, one slice per layer at a time; each retargets the sentences
 3. **The rig** (`NeuronClient`) — `MeshData` grows submeshes, bones, clips and marker
    `parentBone`; the per-submesh pose shortcut; reader tests against the golden fixture, whose
    turret has been waiting for exactly this slice. Parallel-safe with slice 4 by layer.
+   Work order: [`Combat-slice-3.md`](Combat-slice-3.md). **Landed and in review 2026-09-01**, and
+   narrower than this line reads: submeshes and marker `parentBone` landed, bones and clips did not,
+   because no shipped hull has one to pose (§2.6 there, and the correction at the top of this file).
 4. **The look and the readouts** (`Outpost`) — muzzle, tracer, impact off the fire block; turret
    slew; pips and the target bar; the completion edge in the log; F6/F7 retire per decision 6.
    Screenshots at two sizes, a fight and a quiet frame.

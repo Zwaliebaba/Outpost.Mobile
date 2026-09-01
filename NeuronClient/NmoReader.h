@@ -16,10 +16,15 @@ namespace Neuron
 // content errors are diagnostics, never crashes, so nothing here repairs, asserts or throws
 // (AGENTS.md 5).
 //
-// What it consumes: geometry, material base colours and the RaceTinted flag, mesh extents, and
-// markers. What it validates and then deliberately skips: normals, UVs, emissive, skin buffers,
-// bone tables and clips -- nothing in this engine poses a bone yet, and a file carrying a rig this
-// reader ignored is better than one it refused.
+// What it consumes: geometry, material base colours and the RaceTinted flag, mesh extents, the
+// named submeshes the geometry is made of with their own extents and marker runs, and markers with
+// the bone each one is bound to.
+//
+// What it validates and then deliberately skips: normals, UVs, emissive, skin buffers, bone tables
+// and clips -- nothing in this engine poses a bone yet, and no hull in the game has one to pose:
+// every shipped mesh is named rigid submeshes with no skeleton at all
+// (Design/Combat-slice-3.md 2.6). A file carrying a rig this reader ignored is better than one it
+// refused, and the day a rigged hull is authored the bytes are already proved.
 class NmoReader
 {
 public:
