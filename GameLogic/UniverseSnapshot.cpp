@@ -1637,6 +1637,69 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
   return true;
 }
 
+void WriteSaveFile(const Universe& _universe, const SaveHeader& _header, std::vector<std::uint8_t>& _outBytes)
+{
+  // The state first, into a scratch, because the header carries its length and the length is not
+  // known until it exists. One copy of the state, not two: the header is emitted into _outBytes and
+  // the state appended to it.
+  std::vector<std::uint8_t> state;
+  WriteUniverseState(_universe, state);
+
+  _outBytes.clear();
+  _outBytes.reserve(SAVE_HEADER_BYTES + state.size());
+  ByteWriter out(_outBytes);
+  out.U32(SAVE_FILE_MAGIC);
+  out.U8(SAVE_FILE_FORMAT);
+  out.U64(_header.galaxySeed);
+  out.U16(static_cast<std::uint16_t>(_header.shard));
+  out.U64(static_cast<std::uint64_t>(state.size()));
+  // The header is exactly as long as the constant says. A field added above without moving the
+  // constant would put the state at an offset the reader does not look at, and the reader's own
+  // arithmetic would then be measured against the wrong place -- so it is asserted here, at compile
+  // time, rather than discovered in a file somebody cannot load.
+  static_assert(SAVE_HEADER_BYTES == 4u + 1u + 8u + 2u + 8u, "the save header's length has drifted from its fields");
+
+  _outBytes.insert(_outBytes.end(), state.begin(), state.end());
+}
+
+bool ReadSaveFile(std::span<const std::uint8_t> _bytes, SaveHeader& _outHeader, Universe& _outUniverse)
+{
+  ByteReader in(_bytes);
+  if (in.U32() != SAVE_FILE_MAGIC || in.U8() != SAVE_FILE_FORMAT)
+    return false;
+
+  SaveHeader header;
+  header.galaxySeed = in.U64();
+  header.shard = static_cast<ShardId>(in.U16());
+  const std::uint64_t stateBytes = in.U64();
+  if (!in.Ok())
+    return false;
+
+  // The length must account for the file exactly. Short is a torn write; long is a file with
+  // something appended, which the state codec would not notice because it stops at the end of the
+  // state. Compared against the buffer rather than trusted, and computed in uint64 so a length near
+  // the top of the range cannot wrap the addition into a small number that happens to match.
+  if (stateBytes != static_cast<std::uint64_t>(_bytes.size()) - static_cast<std::uint64_t>(SAVE_HEADER_BYTES))
+    return false;
+
+  // Into a local universe, not the caller's, for ReadUniverseState's own reason one level up: a
+  // refusal at the LAST check below -- the shard cross-check -- must leave the caller holding the
+  // universe it had, and a read straight into _outUniverse could not offer that.
+  Universe loaded;
+  if (!ReadUniverseState(_bytes.subspan(SAVE_HEADER_BYTES), loaded))
+    return false;
+
+  // The one thing the header claims that the body can contradict. A file that disagrees with itself
+  // is refused rather than reconciled: picking either answer would mean shipping the shard that was
+  // not saved, and there is no way to tell which of the two is the mistake.
+  if (loaded.Shard() != header.shard)
+    return false;
+
+  _outHeader = header;
+  _outUniverse = std::move(loaded);
+  return true;
+}
+
 // kind, orderId, station handle, handleCount -- 17 bytes, against the move order's 38.
 bool WriteFleetOrder(const FleetOrder& _order, Neuron::Transport& _transport)
 {

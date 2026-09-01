@@ -40,11 +40,32 @@ struct ServerConfig
   float interestRadiusMetres = Game::InterestSet::Desc{}.radiusMetres;
   std::uint32_t interestUpdateEveryTicks = Game::InterestSet::Desc{}.updateEveryTicks;
   std::uint32_t ordersPerTick = Game::Publisher::Desc{}.ordersPerTick;
+
+  // How often the universe is written to disk, in ticks. 1800 is thirty seconds at 60 Hz.
+  //
+  // It is here rather than compiled in for ADR 0043's reason exactly: how much progress a deployment
+  // is willing to lose to a power cut is a property of the deployment, and nothing about the game
+  // changes when it moves. It has no library Desc to default from -- the save is the composition
+  // root's, because nothing in GameLogic or NeuronCore opens a file -- so, like the port, this is
+  // where the number lives.
+  //
+  // 0 disables the PERIODIC save; the save at clean shutdown still happens. A period of zero has no
+  // other sensible reading, and "never save at all" is a missing file rather than a setting.
+  std::uint32_t saveEveryTicks = 1800;
 };
 
 // The file the root reads, relative to the home directory -- so it resolves under <exe>\Assets\ the
 // way every mesh and font does (FileSys::ResolvePath).
 inline constexpr const wchar_t* SERVER_CONFIG_FILE = L"Server.cfg";
+
+// The universe on disk, resolved the same way and for the same reason: the composition root is the
+// only thing in this tree that names a file, so the two names it knows live together.
+//
+// Under Assets\ because that is where ResolvePath puts a relative name and there is nowhere else
+// yet. That is wrong for a real install -- a read-only program directory cannot be saved into -- and
+// it is deliberately one constant, so the day there is a writable data directory this line moves and
+// nothing else does (Design/Universe-slice-5.md 6).
+inline constexpr const wchar_t* UNIVERSE_SAVE_FILE = L"Universe.sav";
 
 // Reads `key = value` lines into _outConfig. `#` begins a comment; blank lines are ignored; both
 // sides of the `=` are trimmed.

@@ -91,3 +91,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0054](0054-a-design-is-amended-in-place-as-its-slices-land.md) | A design is amended in place as its slices land | accepted |
 | [0055](0055-the-galaxy-is-one-seed-and-its-gates-are-the-relative-neighborhood-graph.md) | The galaxy is one seed and a pin table, and its gates are the relative neighborhood graph | accepted |
 | [0056](0056-a-jump-is-a-despawn-and-a-spawn-under-one-identity.md) | A jump is a despawn and a spawn under one identity, and a fleet crosses whole | accepted |
+| [0057](0057-the-save-is-a-versioned-file-and-a-refused-one-stops-the-boot.md) | The save is a versioned file, and a refused one stops the boot | accepted |

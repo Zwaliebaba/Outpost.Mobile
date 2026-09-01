@@ -517,6 +517,47 @@ private:
 void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _outBytes);
 [[nodiscard]] bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUniverse);
 
+// What a save file carries in front of the state.
+//
+// The seed is here because the client-visible galaxy derives from it: a binary whose compiled
+// GALAXY_SEED has moved on still boots the universe the file holds, laid out from this seed, and a
+// shard and its clients never disagree about where anything is (Design/Universe.md 8).
+//
+// The shard is here as well as in the state, and that duplication is deliberate: a header exists to
+// be readable WITHOUT decoding the body, so a launcher can ask which shard a file belongs to for
+// the price of fifteen bytes. The reader cross-checks the two and refuses a file where they
+// disagree, which is what stops a second source of truth becoming a second answer
+// (Design/Universe-slice-5.md 7).
+struct SaveHeader
+{
+  std::uint64_t galaxySeed = 0;
+  ShardId shard = 0;
+};
+
+// 'VASU' little-endian: Universe SAVe. Distinct from UNIVERSE_STATE_MAGIC because these are two
+// formats and not one: this byte says how to find the state, the state's own says how to read it,
+// and bumping either need not bump the other.
+inline constexpr std::uint32_t SAVE_FILE_MAGIC = 0x55534156u;
+inline constexpr std::uint8_t SAVE_FILE_FORMAT = 1;
+
+// magic 4 + format 1 + galaxy seed 8 + shard 2 + state length 8.
+inline constexpr std::size_t SAVE_HEADER_BYTES = 23;
+
+// The state codec given a file.
+//
+// The length is written even though the state is self-delimiting, and it is what makes "torn"
+// checkable in BOTH directions. ReadUniverseState stops at the end of the state and never looks
+// past it, so a file with rubbish appended would otherwise load and be believed; and a file cut
+// short is caught here, before the body parser allocates anything at all.
+//
+// Read refuses -- and changes NEITHER out-parameter -- on a buffer too short for the header, the
+// wrong magic, a format byte this build does not know, a length that disagrees with the buffer, a
+// state the state codec refuses, or a header shard that disagrees with the state's. It never throws
+// and never asserts, which is AGENTS.md 5's rule for anything parsing content: what a refusal MEANS
+// is the caller's business, and for the composition root it means the boot stops (ADR 0057).
+void WriteSaveFile(const Universe& _universe, const SaveHeader& _header, std::vector<std::uint8_t>& _outBytes);
+[[nodiscard]] bool ReadSaveFile(std::span<const std::uint8_t> _bytes, SaveHeader& _outHeader, Universe& _outUniverse);
+
 // Orders travel the other way. Written by the client half, read and applied by the server half.
 //
 // There is exactly one kind of them that moves ships, and it names a fleet (ADR 0049). The

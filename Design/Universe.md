@@ -5,15 +5,17 @@ same day, each the recommended option, in an interactive session run against a l
 shipped layout algorithm with its knobs exposed, and a working prototype of the galaxy lattice and
 all four candidate gate graphs.**
 
-**Slices 1 to 4b have landed.** The galaxy exists, the game boots into it — 54 systems, 164 Vanguard
+**Slices 1 to 5 have landed.** The galaxy exists, the game boots into it — 54 systems, 164 Vanguard
 stations and 136 gates, with home exactly where it always was — a player can select a fleet, press
-`JUMP`, tap a gate and cross it, camera and all, and the worlds, rocks and minimap marks on the far
-side are the far side's. What is left is **5** (the save file) and **6** (the island-scoped replan).
+`JUMP`, tap a gate and cross it, camera and all, the worlds, rocks and minimap marks on the far side
+are the far side's, and the universe no longer dies with the process. What is left is **5b** (genesis
+moves into a tool, so the game only ever loads) and **6** (the island-scoped replan).
 
-Four sections changed on contact and say so where they stand: §3.4's separation arithmetic (a
+Five sections changed on contact and say so where they stand: §3.4's separation arithmetic (a
 disc's, where the jitter is a square), §10's gate radius (a circle inside the structure, which
-nothing could ever enter), §10's gate ring (past the path grid's ceiling), and §9's scenery, which
-slice 4 deliberately did not finish and 4b did.
+nothing could ever enter), §10's gate ring (past the path grid's ceiling), §9's scenery, which
+slice 4 deliberately did not finish and 4b did, and §8's header, which was a byte short of being
+able to tell a torn file from a whole one.
 
 **Slice 1**: `LayOutGalaxy` is in `GameLogic` with its twelve-row suite, and
 [ADR 0055](Decisions/0055-the-galaxy-is-one-seed-and-its-gates-are-the-relative-neighborhood-graph.md)
@@ -24,6 +26,7 @@ are in, with [ADR 0056](Decisions/0056-a-jump-is-a-despawn-and-a-spawn-under-one
 pick, the silent removal and the camera that crosses with the fleet. **Slice 4b**: `Game::SystemAt`
 answers which system a point is in, and the client rebuilds its worlds, rocks and marks when the
 camera's answer changes.
+**Slice 5**: the save file, with [ADR 0057](Decisions/0057-the-save-is-a-versioned-file-and-a-refused-one-stops-the-boot.md).
 This document is amended in place as its slices land (ADR 0054).
 
 The player-facing sentence: **the frontier stops being one system.** Today the universe is three
@@ -301,11 +304,18 @@ Two honest consequences, named rather than discovered:
 
 The save is the state codec given a file:
 
-- **A header the codec does not own**: a format version byte, the shard id, and the galaxy seed
-  — then the `WriteUniverseState` bytes as they are. The seed rides in the file because the
-  client-visible galaxy derives from it: a binary whose compiled seed has moved on still boots
-  the universe the file holds, laid out from the header's seed, and a shard and its clients
-  never disagree about where everything is.
+- **A header the codec does not own**: a format version byte, the shard id, the galaxy seed, and
+  **the length of the state** — then the `WriteUniverseState` bytes as they are. The seed rides in
+  the file because the client-visible galaxy derives from it: a binary whose compiled seed has
+  moved on still boots the universe the file holds, laid out from the header's seed, and a shard
+  and its clients never disagree about where everything is.
+
+  The length was not in this design and slice 5 added it, because "torn" turned out not to be
+  checkable without it: `ReadUniverseState` stops at the end of the state and never looks past it,
+  so a file with rubbish appended loads and is believed. Eight bytes at the front catch that *and*
+  catch a truncation before the body parser allocates anything. The shard is then in the file twice,
+  header and state; the reader cross-checks them and refuses a file that disagrees with itself,
+  which is what keeps a header readable without the body from becoming a second answer.
 - **An atomic write**: written to a sibling temporary and renamed over the last save, so a crash
   mid-write leaves the previous good universe instead of half of a new one.
 - **A cadence**: every `saveEveryTicks` — a `Server.cfg` value beside the port, because a save
@@ -313,11 +323,18 @@ The save is the state codec given a file:
   clean shutdown. Always between ticks, never inside one; the codec's contract is a universe at
   rest.
 - **A boot that fails closed**: file absent means first boot, and genesis runs `LayOutGalaxy`
-  from the seed. A file *present but refused* — wrong version, torn, inconsistent — **stops the
+  from the seed — until slice 5b, after which an absent file means there is nothing to run and the
+  tool makes one. A file *present but refused* — wrong version, torn, inconsistent — **stops the
   boot naming what refused**, exactly as a boot that cannot open the wire does (ADR 0028). It
   never falls through to genesis: a refused save quietly replaced by a fresh universe is the one
   mistake this file must not make, and "diagnostics, not crashes" (AGENTS.md §5) means the
   message names the byte, not that the universe gets discarded.
+
+  Slice 5 found that this is not expressible with the file reader the tree had: `ReadFile` answers
+  "no such file" and "I could not read the file" with the same empty buffer, which is right for a
+  texture and catastrophic here — the second would have read as a first boot, and the next periodic
+  save would have landed on top of the file nobody could read. `Neuron::FileSys::Exists` exists for
+  that one distinction (ADR 0057).
 
 The shot log stays out of the file, as it already is by design: a reloaded universe with no
 tracers pending is the correct picture of one that has just resumed.
@@ -443,7 +460,10 @@ Put and taken 2026-09-01, in two rounds against the live workbench; each with wh
 
 One slice, one branch, one pull request; work orders are cut from here one at a time, when a
 slice is actually next. Slices 1, 2 and 6 share the GameLogic layer and are serial among
-themselves, as 3 and 5 are in `Outpost`; 4 rides `NeuronClient` + `Outpost`. Slice 4b was cut from
+themselves, as 3 and 5 are in `Outpost`; 4 rides `NeuronClient` + `Outpost`. Slice 5 spread wider
+than that on contact — the file's format is `GameLogic`'s, beside the state codec it fronts, and the
+atomic write is `NeuronCore`'s, because "replace a file without ever being able to lose both
+versions" has nothing game-shaped about it. Slice 4b was cut from
 4 on contact rather than planned, and it crossed a layer while being built: written as client work,
 landed as `GameLogic`+`Outpost`, because its one piece of real logic belonged in the simulation
 library where a suite could reach it (`Universe-slice-4b.md` §7).
@@ -455,7 +475,8 @@ library where a suite could reach it (`Universe-slice-4b.md` §7).
 | 3 | [Genesis composes the galaxy](Universe-slice-3.md): root lays out, spawns stations and gates, boot log | `Outpost` | S | 1, 2 | — **landed** |
 | 4 | [The client crosses](Universe-slice-4.md): `JUMP` on the sheet, gate pick, silent removal, camera follow | `NeuronClient`+`Outpost` | M | 3 | — **landed** |
 | 4b | [The scenery follows the camera](Universe-slice-4b.md): `Game::SystemAt`, per-system bodies and marks | `GameLogic`+`Outpost` | S | 4 | — **landed** |
-| 5 | The save file: header, atomic write, cadence in `Server.cfg`, restore-or-stop boot | `Outpost` | M | 2 (3 in practice) | ADR: the save is a versioned file, and a refused one stops the boot |
+| 5 | [The save file](Universe-slice-5.md): header, atomic write, cadence in `Server.cfg`, restore-or-stop boot | `GameLogic`+`NeuronCore`+`Outpost` | M | 2 (3 in practice) | [ADR 0057](Decisions/0057-the-save-is-a-versioned-file-and-a-refused-one-stops-the-boot.md) — **landed** |
+| 5b | Genesis moves into a tool: the game only ever loads a universe, and the starting content leaves the client header | new tool + `Outpost` | M | 5 | ADR: a universe is authored by a tool, not by the program that runs it |
 | 6 | The replan scoped to its island | `GameLogic` | M | 2 | ADR: supersedes 0034 |
 
 **Acceptance texture, seeded now for the orders to expand**: slice 1 proved determinism (one
@@ -470,6 +491,9 @@ as *jumped* rather than as *destroyed*; slice 3's boot log states the galaxy
 screenshots at two window sizes, on both sides of a jump; slice 4b added the four rows that pin
 `SystemAt` — every system owns its own star, every planet and gate of a system resolves to it, a tie
 keeps the lower index, an empty galaxy answers zero — the second of which is what now bounds
-`gateRingMetres` against the lattice pitch from a second direction; slice 5 saves, kills the process,
-restores, and replays to byte equality — and a truncated file stops the boot naming the reason;
-slice 6 proves a static spawn in one system re-plans no route in another.
+`gateRingMetres` against the lattice pitch from a second direction; slice 5 proved the codec half —
+a restored universe replays to byte equality, and a wrong magic, an unknown format, a length that
+disagrees with the file, an appended byte and a header that contradicts its own body are each
+refused and change nothing — while the disk half (the atomic write, the cadence, the boot that
+stops) is compiled by CI and demonstrated by nobody, which `Universe-slice-5.md` §8 states rather
+than implies; slice 6 proves a static spawn in one system re-plans no route in another.

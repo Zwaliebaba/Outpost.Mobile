@@ -42,7 +42,7 @@ ByteBuffer ReadAllBytes(const std::wstring& _fullName)
   return data;
 }
 
-bool WriteAllBytes(const std::wstring& _fullName, const void* _data, std::size_t _size)
+bool WriteAllBytes(const std::wstring& _fullName, const void* _data, std::size_t _size, bool _flush = false)
 {
   ScopedHandle file(SafeHandle(CreateFile2(_fullName.c_str(), GENERIC_WRITE, FILE_SHARE_READ, CREATE_ALWAYS, nullptr)));
   if (!file)
@@ -52,7 +52,14 @@ bool WriteAllBytes(const std::wstring& _fullName, const void* _data, std::size_t
   if (!::WriteFile(file.get(), _data, static_cast<DWORD>(_size), &bytesWritten, nullptr))
     return false;
 
-  return bytesWritten == static_cast<DWORD>(_size);
+  if (bytesWritten != static_cast<DWORD>(_size))
+    return false;
+
+  // Only the atomic path asks for this, and it is the half of "atomic" that the rename cannot
+  // provide: a rename orders the DIRECTORY entry, not the file's contents, so without this a crash
+  // just after the rename can leave the new name pointing at a file whose bytes never reached the
+  // disk -- which is precisely the half-written save the temporary was there to prevent.
+  return !_flush || ::FlushFileBuffers(file.get()) != FALSE;
 }
 
 std::wstring Utf8ToWide(std::string_view _text)
@@ -104,6 +111,41 @@ ByteBuffer BinaryFile::ReadFile(const std::wstring& _fileName)
 bool BinaryFile::WriteFile(const std::wstring& _fileName, const ByteBuffer& _data)
 {
   return WriteAllBytes(ResolvePath(_fileName), _data.data(), _data.size());
+}
+
+bool FileSys::Exists(const std::wstring& _fileName)
+{
+  // The attributes rather than an open, so a file somebody else holds open still answers yes: the
+  // question is whether the name is taken, not whether this process may read it this instant.
+  return ::GetFileAttributesW(ResolvePath(_fileName).c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+
+bool BinaryFile::WriteFileAtomic(const std::wstring& _fileName, const ByteBuffer& _data)
+{
+  const std::wstring target = ResolvePath(_fileName);
+
+  // A sibling, so the rename below is within one volume -- MoveFileEx is only atomic there, and a
+  // temporary in the system temp directory would silently become a copy-then-delete across volumes.
+  const std::wstring temporary = target + L".tmp";
+
+  if (!WriteAllBytes(temporary, _data.data(), _data.size(), true))
+  {
+    // A temporary nobody will ever finish is rubbish beside the real file, and the next attempt
+    // overwrites it anyway; removing it keeps a failed write from looking like a pending one.
+    ::DeleteFileW(temporary.c_str());
+    return false;
+  }
+
+  // The one step that makes this worth doing: the target either names the old file or the new one,
+  // and never a partial one, because a rename over an existing name is a single directory
+  // operation. WRITE_THROUGH holds the call until that operation itself is on the disk.
+  if (::MoveFileExW(temporary.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == FALSE)
+  {
+    ::DeleteFileW(temporary.c_str());
+    return false;
+  }
+
+  return true;
 }
 
 std::wstring TextFile::ReadFile(const std::wstring& _fileName)

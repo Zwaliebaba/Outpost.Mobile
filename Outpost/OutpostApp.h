@@ -91,6 +91,35 @@ private:
   void RebuildLocalSystemScenery();
   void SpawnHostileBase();
 
+  // What the boot found where the universe should be.
+  //
+  // Three answers and not two, because "there is no file" and "there is a file I cannot read" must
+  // lead to opposite places: the first is a first boot and the second stops the program. Collapsing
+  // them is the one mistake this file must not make -- a refused save quietly replaced by a fresh
+  // universe is a player's game deleted by a bug in reading it (Design/Universe.md 8, ADR 0057).
+  enum class RestoreResult
+  {
+    Absent,   // no file: this is a first boot and genesis runs
+    Restored, // the universe came out of the file
+    Refused,  // there is a file and it is not one this build can use
+  };
+
+  // Reads Universe.sav into m_universe, and the galaxy seed it was laid out from into m_galaxySeed.
+  // Touches neither on anything but Restored.
+  [[nodiscard]] RestoreResult RestoreUniverse();
+
+  // Writes the universe to Universe.sav, atomically. Logs and carries on if the disk refuses: a
+  // running game should not end because a save did, and the previous save is still there.
+  //
+  // Only ever called between ticks. The state codec's contract is a universe at rest, and a save
+  // taken mid-Step would be a universe that never existed (Design/Universe.md 8).
+  void SaveUniverse();
+
+  // The local system's planets, as minimap marks. Called by SpawnVanguardStations on a first boot,
+  // beside the stations it is marking, and on its own by a restored boot -- where the stations are
+  // already in the file and only the marks are missing (Design/Universe-slice-5.md 4).
+  void MarkLocalStations();
+
   // One Vanguard station at every planet site of every system in the galaxy: the structure ship,
   // then the row that makes it a station (Design/Archive/Stations.md 5.3, 6.1). The government is
   // everywhere, which is what makes a gate worth flying through.
@@ -160,6 +189,20 @@ private:
   // it which system they are placing, and answering "home" in two places would be two places to
   // change (Design/Universe.md 9).
   std::uint32_t m_localSystem = 0;
+
+  // The seed the galaxy on screen was laid out from: the compiled one on a first boot, and the
+  // SAVED one on a restored boot. They are the same today and the distinction is the point -- a
+  // binary whose GALAXY_SEED has moved on still boots the universe its file holds, instead of
+  // spawning a saved fleet into a galaxy that has quietly rearranged itself around it.
+  std::uint64_t m_galaxySeed = GALAXY_SEED;
+
+  // The tick the last save was taken at, so the cadence is a distance rather than a modulo -- see
+  // the call site in Run.
+  std::uint64_t m_lastSaveTick = 0;
+
+  // Reused across saves rather than allocated per save: at 300 ships this is tens of kilobytes and
+  // the save runs inside a frame.
+  std::vector<std::uint8_t> m_saveScratch;
 
   // Which faction this client is. Session identity, which nothing below the composition root can
   // know: it decides what the overview colors green, what may be selected, and what counts as a
