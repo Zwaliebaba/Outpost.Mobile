@@ -3,8 +3,36 @@
 **Status: agreed with the owner on 2026-09-01 — the eight decisions in §12 were put and taken the
 same day, each the recommended option, in an interactive session run against a live workbench: the
 shipped layout algorithm with its knobs exposed, and a working prototype of the galaxy lattice and
-all four candidate gate graphs.** No slice has landed; slice 1 is ready to be ordered. This
-document is amended in place as its slices land (ADR 0054).
+all four candidate gate graphs.**
+
+**Slices 1 to 5b have landed.** The galaxy exists — 54 systems, 164 Vanguard stations and 136 gates,
+with home exactly where it always was — a player can select a fleet, press `JUMP`, tap a gate and
+cross it, camera and all, the worlds, rocks and minimap marks on the far side are the far side's, and
+the universe no longer dies with the process. It is also no longer *made* by the process: `UniverseGen`
+writes one and `Outpost` runs it. And building in one system no longer re-plans routes in the other
+fifty-three. **Every slice has landed.**
+
+Five sections changed on contact and say so where they stand: §3.4's separation arithmetic (a
+disc's, where the jitter is a square), §10's gate radius (a circle inside the structure, which
+nothing could ever enter), §10's gate ring (past the path grid's ceiling), §9's scenery, which
+slice 4 deliberately did not finish and 4b did, and §8's header, which was a byte short of being
+able to tell a torn file from a whole one.
+
+**Slice 1**: `LayOutGalaxy` is in `GameLogic` with its twelve-row suite, and
+[ADR 0055](Decisions/0055-the-galaxy-is-one-seed-and-its-gates-are-the-relative-neighborhood-graph.md)
+carries the two decisions it took.
+**Slice 2**: gates, the `Jump` order, `StepJumps`, `JumpedOut` and the wire's fourth departure run
+are in, with [ADR 0056](Decisions/0056-a-jump-is-a-despawn-and-a-spawn-under-one-identity.md).
+**Slice 3**: genesis builds the galaxy at boot. **Slice 4**: the sheet's fifth command, the gate
+pick, the silent removal and the camera that crosses with the fleet. **Slice 4b**: `Game::SystemAt`
+answers which system a point is in, and the client rebuilds its worlds, rocks and marks when the
+camera's answer changes.
+**Slice 5**: the save file, with [ADR 0057](Decisions/0057-the-save-is-a-versioned-file-and-a-refused-one-stops-the-boot.md).
+**Slice 5b**: genesis leaves the game for `Tools/UniverseGen`, with
+[ADR 0058](Decisions/0058-a-universe-is-authored-by-a-tool-not-by-the-program-that-runs-it.md).
+**Slice 6**: a route is scoped to the island that planned it, with
+[ADR 0059](Decisions/0059-a-route-is-scoped-to-the-island-that-planned-it.md), superseding 0034.
+This document is amended in place as its slices land (ADR 0054).
 
 The player-facing sentence: **the frontier stops being one system.** Today the universe is three
 planets from one seed, a government at each of them, one rival base, and nowhere else to go. After
@@ -122,11 +150,23 @@ today.
 ### 3.4 Scale, and the proofs that come with it
 
 The lattice pitch is **16 sectors — 131 072 m** between neighboring cells, and jitter is bounded
-to **0.30 of the pitch** per axis. Minimum separation between two systems' stars is therefore
-0.4 × pitch = **52 428.8 m by construction** — against a worst-case system half-width of 6 500 m
-plus a station's approach traffic, a gather radius of 655 m and a ghost zone of 700 m, which is
-not a margin so much as a different order of magnitude. The bound gets a test the way
-`PlanetsKeepTheirDistance` has one: a proof over the construction, not a sample over seeds.
+to **0.20 of the pitch** per axis. Minimum separation between two systems' stars is therefore
+
+    (1 - 2 * sqrt(2) * 0.20) * pitch = 0.434 * pitch = 56 926.5 m, by construction
+
+— against a worst-case system half-width of 6 500 m plus a station's approach traffic, a gather
+radius of 655 m and a ghost zone of 700 m, which is not a margin so much as a different order of
+magnitude. The bound gets a test the way `PlanetsKeepTheirDistance` has one: a proof over the
+construction, not a sample over seeds.
+
+**The `sqrt(2)` is what this section got wrong first, and it is worth keeping visible.** This design
+originally wrote 0.30 jitter and proved `(1 - 2 * jitter) * pitch`. That is a *disc's* arithmetic,
+and the jitter is a *square* — two independent draws, which is the cheap and deterministic way to
+draw one — so a star's worst displacement is its diagonal rather than its edge, and the real bound
+was 19 851 m where the design claimed 52 428.8. `SystemsKeepTheirDistance` failed on its first run
+and said so. The formula is now `MinimumStarSeparationMetres`, one function so the test and every
+caller cannot each state it and drift, and the shipped jitter moved to 0.20 so that the separation
+this design asked for still holds with room over (ADR 0055, `Universe-slice-1.md` §7).
 
 Three consequences fall out of the spacing rather than needing machinery:
 
@@ -204,7 +244,7 @@ the gate, through the same move machinery every order uses.
 ### 6.2 The pass
 
 The jump is **atomic at fleet grain**: the tick in which every live member of the fleet stands
-inside `GATE_RADIUS_METRES` of the gate structure, the whole fleet goes through together. Members
+inside the gate's capture range (`GateRangeMetres`, measured to the skins), the whole fleet goes through together. Members
 still flying in simply have not arrived yet; the fleet cruises at its slowest member's speed
 precisely so that arrival is a fleet-shaped event, and the door keeps that promise. A fleet never
 exists in two systems, which is a sentence the fleet row can say and the trickle alternative
@@ -218,8 +258,12 @@ entity, the hull, the faction, the damage — and the apply half despawns each m
 `DespawnShip` with the new cause **`JumpedOut`**, then spawns them through `SpawnShipAs` at the
 destination gate: same identities, fresh handles, hull damage carried, formed up clear of the
 gate on the exit bearing. The fleet row is rebuilt on the new handles in the same apply, its
-order set to `Idle` — the jump order completed — and its threat and alert cleared: **fleeing
-through a gate is escape**, and a leash anchored a galaxy away would never release.
+order set to `Idle` — the jump order completed — and its threat and alert cleared.
+
+That rebuild is not bookkeeping, and slice 2 found out why: every member's handle dies in the
+crossing, so a fleet left holding the dead ones is pruned to nothing by `StepFleets` at the end of
+the very tick it arrived — the ships would be there and the fleet would not. **Fleeing through a
+gate is escape**, and a leash anchored a galaxy away would never release.
 
 ### 6.3 What crosses, and what does not
 
@@ -251,10 +295,12 @@ its subscribers are. One save file per shard falls out of one universe per shard
 
 Two honest consequences, named rather than discovered:
 
-- **The replan scope.** A route's version is the whole universe's (ADR 0034), so architecture
-  changing in any system re-plans every routed ship in the shard. That was tolerable at one
-  system and is the bite ADR 0034 predicted at fifty; slice 6 scopes the re-plan to the island
-  that changed and supersedes that record.
+- **The replan scope — closed by slice 6.** A route's version was the whole universe's (ADR 0034),
+  so architecture changing in any system re-planned every routed ship in the shard: tolerable at one
+  system, and the bite that record predicted at fifty. A route now carries the *key* of the island
+  that planned it — its lowest occupied path cell, which is world-fixed and survives a repartition —
+  and that island's version, so building in one system costs the other fifty-three nothing
+  ([ADR 0059](Decisions/0059-a-route-is-scoped-to-the-island-that-planned-it.md)).
 - **Cross-shard is the same door, later.** An intra-shard jump and a cross-shard handoff are
   both `DespawnShip(JumpedOut)` + `SpawnShipAs`; the cross-shard case moves the capture over a
   transport first. This design proves the door intra-shard and deliberately stops there — the
@@ -265,23 +311,38 @@ Two honest consequences, named rather than discovered:
 
 The save is the state codec given a file:
 
-- **A header the codec does not own**: a format version byte, the shard id, and the galaxy seed
-  — then the `WriteUniverseState` bytes as they are. The seed rides in the file because the
-  client-visible galaxy derives from it: a binary whose compiled seed has moved on still boots
-  the universe the file holds, laid out from the header's seed, and a shard and its clients
-  never disagree about where everything is.
+- **A header the codec does not own**: a format version byte, the shard id, the galaxy seed, and
+  **the length of the state** — then the `WriteUniverseState` bytes as they are. The seed rides in
+  the file because the client-visible galaxy derives from it: a binary whose compiled seed has
+  moved on still boots the universe the file holds, laid out from the header's seed, and a shard
+  and its clients never disagree about where everything is.
+
+  The length was not in this design and slice 5 added it, because "torn" turned out not to be
+  checkable without it: `ReadUniverseState` stops at the end of the state and never looks past it,
+  so a file with rubbish appended loads and is believed. Eight bytes at the front catch that *and*
+  catch a truncation before the body parser allocates anything. The shard is then in the file twice,
+  header and state; the reader cross-checks them and refuses a file that disagrees with itself,
+  which is what keeps a header readable without the body from becoming a second answer.
 - **An atomic write**: written to a sibling temporary and renamed over the last save, so a crash
   mid-write leaves the previous good universe instead of half of a new one.
 - **A cadence**: every `saveEveryTicks` — a `Server.cfg` value beside the port, because a save
   cadence is exactly what a deployment may change without a rebuild (ADR 0043) — and once at
   clean shutdown. Always between ticks, never inside one; the codec's contract is a universe at
   rest.
-- **A boot that fails closed**: file absent means first boot, and genesis runs `LayOutGalaxy`
-  from the seed. A file *present but refused* — wrong version, torn, inconsistent — **stops the
+- **A boot that fails closed**: an absent file means there is nothing to run, and the boot stops
+  naming the tool that writes one. It meant "first boot, and genesis runs" until slice 5b took
+  genesis out of the game (ADR 0058); the fallback went with it, because two things that can author
+  a universe is one more than the number that can be right. A file *present but refused* — wrong version, torn, inconsistent — **stops the
   boot naming what refused**, exactly as a boot that cannot open the wire does (ADR 0028). It
   never falls through to genesis: a refused save quietly replaced by a fresh universe is the one
   mistake this file must not make, and "diagnostics, not crashes" (AGENTS.md §5) means the
   message names the byte, not that the universe gets discarded.
+
+  Slice 5 found that this is not expressible with the file reader the tree had: `ReadFile` answers
+  "no such file" and "I could not read the file" with the same empty buffer, which is right for a
+  texture and catastrophic here — the second would have read as a first boot, and the next periodic
+  save would have landed on top of the file nobody could read. `Neuron::FileSys::Exists` exists for
+  that one distinction (ADR 0057).
 
 The shot log stays out of the file, as it already is by design: a reloaded universe with no
 tracers pending is the correct picture of one that has just resumed.
@@ -294,13 +355,20 @@ The smallest client that makes the galaxy real, and no more:
   station tap. A gate is a record; a tap already knows how to name one.
 - **The camera crosses with the fleet.** A fleet that jumps while selected takes the camera to
   its arrival — the fleet-button fly-to that already exists, fired by the jump.
-- **Bodies and marks follow the system.** The view places worlds, rocks and station marks for
-  the system the camera is in, from the same layout both halves derive; the minimap keeps its
-  4 km half-range and marks the local system's static content. The wink-out a `JumpedOut`
-  departure draws may land as a plain removal first, stated as the placeholder it is.
-- **The sky may stay one sky this phase** — stated as an assumption rather than discovered: a
-  per-system sky seeded from the system seed is a later nicety, and F5's semantics (looks
-  reroll, places never) do not change either way.
+- **Bodies and marks follow the system**, landed in slice 4b. The view places worlds, rocks and
+  station marks for the system the camera is in, from the same layout both halves derive; the
+  minimap keeps its 4 km half-range and marks the local system's static content. Which system that
+  is turned out to belong in `GameLogic` rather than the client — `Game::SystemAt`, the nearest star
+  to a point — because a server asking the same question would otherwise need its own copy, and
+  because that is the only half of it a suite can reach (`Universe-slice-4b.md` §7). The trigger is
+  where the camera **is**, not that a jump happened, so a galaxy map or a reloaded save gets it
+  free. The wink-out a `JumpedOut` departure draws landed as a plain removal, stated as the
+  placeholder it is.
+- **The sky stays one sky**, and slice 4b turned that from an assumption into an argument: a
+  crossing moves the camera from one system's gate ring to the other's — 43 km at the guaranteed
+  minimum, 117 km on the shipped lattice pitch — and a background that visibly turned over at that
+  range would be claiming the galaxy is a few hundred kilometres across. A per-system sky is a later nicety and
+  F5's semantics (looks reroll, places never) do not change either way.
 
 The galaxy *map* — the screen where the graph is a picture and a destination is a tap — belongs
 on the HUD function rail whose screens are not built yet, and it is deliberately not in slice 4.
@@ -315,18 +383,37 @@ game actually runs.
 | Value | Shipped | Why this number |
 |---|---|---|
 | Lattice pitch | 16 sectors = 131 072 m | far past every radius that exists; loose change against the wire's ±1 858 ly |
-| Cell jitter | 0.30 × pitch per axis | min star separation 0.4 × pitch = 52 428.8 m, by construction |
+| Cell jitter | 0.20 × pitch per axis | min star separation `(1 - 2√2 · j) · pitch` = 56 926.5 m, by construction |
 | Lattice rings | 5 → 91 cells | a first galaxy in the dozens of systems, not hundreds |
 | Density | 0.55 | unevenness without emptiness; retunable without moving anyone (§3.1) |
 | Planets per system | 2 + `Below(4)` → 2–5 | home keeps its authored 3 |
 | Orbit / radius bounds | the shipped `SystemDesc` defaults | unchanged, and the ceiling proof holds per system |
-| `GATE_RING_METRES` | 8 000 | outside the widest orbit (6 500), inside a short cruise |
-| `GATE_RADIUS_METRES` | 120 | a fleet-sized doorstep; generous against formation spread |
+| `GalaxyDesc::gateRingMetres` | 7 000 | outside the widest orbit (6 500); **8 000 breaks the path grid** — see below |
+| `GATE_CAPTURE_METRES` | 400, **to the skins** | below: a flat centre-to-centre radius cannot be satisfied at all |
+| `GATE_APPROACH_METRES` | 120 clear of the skin | comfortably inside the capture range, so arriving implies crossing |
 | `saveEveryTicks` | 18 000 (5 min at 60 Hz) | a `Server.cfg` default, not a constant |
 | Galaxy seed | one `constexpr` u64 beside `UNIVERSE_LAYOUT_SEED` | content, like every seed that places things |
 
-The shipped seed's actual census — systems, links, chokepoints, the worst jump count from home —
-is measured and stated in slice 1's pull request, not guessed here.
+**The gate ring is 7 000 m, not the 8 000 this table first specified.** A gate stands further from
+its star than any planet, so it decides a system's static span — and at 8 000 m that span is 532
+cells against a path-grid ceiling of 512. `PathIslands` declines past its ceiling *quietly*, so the
+symptom would have been ships that stop routing, a long way from this number. It now lives in
+`GalaxyDesc` rather than in the composition root, so the bound is a test rather than a hope
+(`Universe-slice-3.md` §7).
+
+**The gate radius is measured to the hulls' skins, and this table said otherwise until slice 2
+built it.** It specified a flat `GATE_RADIUS_METRES` of 120 m, centre to centre. A Structure's centre
+sits 251 m from its own skin, so that is a circle *inside the building* — space the blocking pass
+exists to keep empty — and a fleet ordered through such a gate flies at it forever. The range is now
+derived per pair as `DockApproachRangeMetres` already is, both hulls' radii plus a margin, and it is
+wider than the docking one because a jump is atomic where a docking is one ship at a time: the
+doorstep has to hold a whole formation at once (`Universe-slice-2.md` §7, ADR 0056).
+
+**The shipped seed's census, measured** (galaxy seed `0x46726F6E74696572`, "Frontier", at the
+values above): **54 systems, 68 gate links, 5 chokepoints**, a widest crossing of **8 jumps** from
+home, a mean of 4.07, and no system carrying more than 4 gates. Nothing is unreachable, which the
+graph guarantees rather than the seed. That is the galaxy the design is arguing about, and it is a
+number rather than a hope because slice 1 has landed.
 
 ## 11. Deliberately left out, so nobody goes looking
 
@@ -381,24 +468,49 @@ Put and taken 2026-09-01, in two rounds against the live workbench; each with wh
 
 One slice, one branch, one pull request; work orders are cut from here one at a time, when a
 slice is actually next. Slices 1, 2 and 6 share the GameLogic layer and are serial among
-themselves, as 3 and 5 are in `Outpost`; 4 rides `NeuronClient` + `Outpost`.
+themselves, as 3 and 5 are in `Outpost`; 4 rides `NeuronClient` + `Outpost`. Slice 5 spread wider
+than that on contact — the file's format is `GameLogic`'s, beside the state codec it fronts, and the
+atomic write is `NeuronCore`'s, because "replace a file without ever being able to lose both
+versions" has nothing game-shaped about it. Slice 4b was cut from
+4 on contact rather than planned, and it crossed a layer while being built: written as client work,
+landed as `GameLogic`+`Outpost`, because its one piece of real logic belonged in the simulation
+library where a suite could reach it (`Universe-slice-4b.md` §7).
 
 | # | Slice | Layer | Size | Depends on | ADR |
 |---|---|---|---|---|---|
-| 1 | `LayOutGalaxy`: lattice, walk, pins, per-system recipe, gate links | `GameLogic` | M | — | ADR: the galaxy is one seed and a pin table; the gate graph is the relative neighborhood graph |
-| 2 | Gates and the jump door: gate table, `Jump` order, `StepJumps`, `JumpedOut`, codec, ALPN | `GameLogic` | M | 1 | ADR: a jump is a despawn and a spawn under one identity |
-| 3 | Genesis composes the galaxy: root lays out, spawns stations and gates, boot log | `Outpost` | S | 1, 2 | — |
-| 4 | The client crosses: `JUMP` on the sheet, gate marks, camera follow, per-system bodies | `NeuronClient`+`Outpost` | M | 3 | — |
-| 5 | The save file: header, atomic write, cadence in `Server.cfg`, restore-or-stop boot | `Outpost` | M | 2 (3 in practice) | ADR: the save is a versioned file, and a refused one stops the boot |
-| 6 | The replan scoped to its island | `GameLogic` | M | 2 | ADR: supersedes 0034 |
+| 1 | [`LayOutGalaxy`](Universe-slice-1.md): lattice, walk, pins, per-system recipe, gate links | `GameLogic` | M | — | [ADR 0055](Decisions/0055-the-galaxy-is-one-seed-and-its-gates-are-the-relative-neighborhood-graph.md) — **landed** |
+| 2 | [Gates and the jump door](Universe-slice-2.md): gate table, `Jump` order, `StepJumps`, `JumpedOut`, codec, ALPN | `GameLogic` | M | 1 | [ADR 0056](Decisions/0056-a-jump-is-a-despawn-and-a-spawn-under-one-identity.md) — **landed** |
+| 3 | [Genesis composes the galaxy](Universe-slice-3.md): root lays out, spawns stations and gates, boot log | `Outpost` | S | 1, 2 | — **landed** |
+| 4 | [The client crosses](Universe-slice-4.md): `JUMP` on the sheet, gate pick, silent removal, camera follow | `NeuronClient`+`Outpost` | M | 3 | — **landed** |
+| 4b | [The scenery follows the camera](Universe-slice-4b.md): `Game::SystemAt`, per-system bodies and marks | `GameLogic`+`Outpost` | S | 4 | — **landed** |
+| 5 | [The save file](Universe-slice-5.md): header, atomic write, cadence in `Server.cfg`, restore-or-stop boot | `GameLogic`+`NeuronCore`+`Outpost` | M | 2 (3 in practice) | [ADR 0057](Decisions/0057-the-save-is-a-versioned-file-and-a-refused-one-stops-the-boot.md) — **landed** |
+| 5b | [Genesis moves into a tool](Universe-slice-5b.md): `UniverseGen` writes a universe, the game only loads one, and the starting content leaves the client header | `GameLogic`+`Tools/UniverseGen`+`Outpost` | M | 5 | [ADR 0058](Decisions/0058-a-universe-is-authored-by-a-tool-not-by-the-program-that-runs-it.md) — **landed** |
+| 6 | [The replan scoped to its island](Universe-slice-6.md): a route carries the key of the island that planned it | `GameLogic` | M | 2 | [ADR 0059](Decisions/0059-a-route-is-scoped-to-the-island-that-planned-it.md) — **landed** |
 
-**Acceptance texture, seeded now for the orders to expand**: slice 1 proves determinism (one
+**Acceptance texture, seeded now for the orders to expand**: slice 1 proved determinism (one
 seed, one galaxy, twice), pin stability under reroll, census monotonicity with survivors fixed
-(§3.1), connectivity by union-find for every tested seed, and the 0.4-pitch separation bound as a
-property; slice 2 keeps both replay gates green with gates and jumps in the state, and adds the
-row: a fleet ordered through a gate arrives whole, once, in formation, with its damage and its
-identities and without its alert; slice 3's boot log states the galaxy
-(`GALAXY | SEED … | N SYSTEMS | M GATES`) and home boots pixel-identical to today; slice 4 owes
-screenshots at two window sizes, on both sides of a jump; slice 5 saves, kills the process,
-restores, and replays to byte equality — and a truncated file stops the boot naming the reason;
-slice 6 proves a static spawn in one system re-plans no route in another.
+(§3.1), connectivity by union-find for every tested seed, and the separation bound as a property —
+twelve rows in `GalaxyLayoutTests`, and it also gained the row nothing predicted, that a distance
+tie leaves a link alone; slice 2 kept both replay gates green with gates and jumps in the state, and added the
+rows: a fleet ordered through a gate arrives whole, once, with its damage and its identities and
+without its alert; a gate that leads nowhere strands nobody; and a jumped ship reaches a subscriber
+as *jumped* rather than as *destroyed*; slice 3's boot log states the galaxy
+(`GALAXY | 54 SYSTEMS | 136 GATES`) and home boots pixel-identical to today; slice 4 owes
+screenshots at two window sizes, on both sides of a jump; slice 4b added the four rows that pin
+`SystemAt` — every system owns its own star, every planet and gate of a system resolves to it, a tie
+keeps the lower index, an empty galaxy answers zero — the second of which is what now bounds
+`gateRingMetres` against the lattice pitch from a second direction; slice 5 proved the codec half —
+a restored universe replays to byte equality, and a wrong magic, an unknown format, a length that
+disagrees with the file, an appended byte and a header that contradicts its own body are each
+refused and change nothing — while the disk half (the atomic write, the cadence, the boot that
+stops) is compiled by CI and demonstrated by nobody, which `Universe-slice-5.md` §8 states rather
+than implies; slice 5b made genesis provable at all — the census, the gate graph's integrity, the
+determinism and the round trip through the save file are seven rows in `StartingUniverseTests` where
+they used to be a thing you checked by launching the game — and proved the move byte-identical to the
+code it replaced over 900 ticks; and slice 6 proves exactly what this line asked it to — a static
+spawn in one system re-plans no route in another — measured through `RoutePlanCount` rather than
+asserted, with the mutation that restores ADR 0034's behaviour turning that row red.
+
+**The screenshots slices 4 and 4b owed, and the play-quit-relaunch pass slice 5 owed, were waived by
+the owner on 2026-09-01** rather than run. Each work order records the waiver where the check stood,
+because a check that quietly stops existing looks exactly like one that passed.

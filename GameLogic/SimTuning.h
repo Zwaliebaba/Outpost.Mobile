@@ -361,6 +361,42 @@ static_assert(FLEET_LAUNCH_EVERY_TICKS > 0, "a launch cadence of zero would spaw
 inline constexpr float FLEET_ENGAGE_RANGE_METRES = 1000.0f;
 inline constexpr std::uint32_t FLEET_ALERT_TICKS = 600; // ten seconds
 
+// --- gates -------------------------------------------------------------------------------------
+
+// How far clear of the two hulls' SKINS every member of a fleet must be before the fleet crosses.
+//
+// Clear of the skins, and that is the whole content of this constant. Design/Universe.md 10 specified
+// a flat 120 m measured centre to centre, and that number cannot be satisfied by anything: a
+// Structure's centre sits 251 m from its own skin, so a 120 m radius is a circle *inside the
+// building*, and the blocking pass projects traffic out of exactly that space. A fleet ordered
+// through such a gate flies at it forever (Design/Universe-slice-2.md 7).
+//
+// So the gate range is derived per pair, which is the shape DOCK_CAPTURE_METRES already has and for
+// its reason: the hull table spans a 3.4 m Interceptor and a 107 m Carrier against a 251 m gate, and
+// no single centre-to-centre number is outside the big pair's no-go band while still being a
+// doorstep for the small one.
+//
+// Wider than DOCK_CAPTURE_METRES because a jump is atomic where a docking is one ship at a time:
+// every member has to be inside simultaneously, so the doorstep has to hold a formation rather than
+// a hull. Eight hulls at the table's widest slot spacing spread further than any single capture
+// range would admit, and a radius only one ship at a time could satisfy is a fleet that never
+// crosses.
+inline constexpr float GATE_CAPTURE_METRES = 400.0f;
+
+// How far beyond the far gate a fleet arrives, and how far apart its members are set down.
+//
+// Clear of the structure, because a fleet materialising inside a Structure's bounding radius is a
+// separation solve the first tick has to fight rather than a fleet arriving. Abreast at a spacing
+// wide enough that no two hulls in the table overlap on the tick they appear.
+// Where a fleet is sent to wait at a gate: clear of the structure's skin, and comfortably inside
+// GATE_CAPTURE_METRES so that arriving implies being able to cross. The gap between the two is what
+// stops a fleet settling just outside its own doorstep and sitting there -- the failure
+// ArrivalRadiusMetres was added to DockRangeMetres to prevent, measured rather than assumed.
+inline constexpr float GATE_APPROACH_METRES = 120.0f;
+
+inline constexpr float JUMP_ARRIVAL_STANDOFF_METRES = 180.0f;
+inline constexpr float JUMP_ARRIVAL_SPACING_METRES = 45.0f;
+
 // --- combat --------------------------------------------------------------------------------------
 // How close a turret's aim has to be to its target's bearing before it will fire. In the contract:
 // it decides which tick a shot lands on, and therefore which tick a ship dies on.

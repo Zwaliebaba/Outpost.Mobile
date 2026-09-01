@@ -34,8 +34,6 @@ const HullMesh HULL_MESHES[] = {{L"Bomber", Game::HullId::Bomber},
                                 {L"Interceptor", Game::HullId::Interceptor},
                                 {L"Structure", Game::HullId::Structure}};
 
-const Game::HullId STARTING_FLEET[] = {Game::HullId::Bomber, Game::HullId::Corvette, Game::HullId::Frigate};
-
 // For the one log line that has to say what a connection was doing when it ran out of time.
 [[nodiscard]] const char* LinkStateName(Neuron::ConnectionState _state) noexcept
 {
@@ -55,17 +53,23 @@ const Game::HullId STARTING_FLEET[] = {Game::HullId::Bomber, Game::HullId::Corve
   return "?";
 }
 
-// The one error path, taken where the wire cannot be opened (AGENTS.md 5). It throws rather than
-// returning, because with no fallback there is no second thing for the caller to try.
+// The one error path, taken where the boot cannot have what it was told to have (AGENTS.md 5). It
+// throws rather than returning, because with no fallback there is no second thing for the caller to
+// try.
+//
+// It was ThrowLinkFailure and said "could not open its link", because the wire was the only thing
+// that could refuse a boot. The saved universe is the second (ADR 0057) and it fails for the same
+// reason -- there is no acceptable other thing to run instead -- so it is one helper and one
+// sentence, with each stage naming itself.
 //
 // hresult_error rather than Fatal(): wWinMain catches it first and shows message() verbatim, so the
 // player reads which stage refused and why. Neuron::Fatal drops its formatted arguments on the floor
 // and puts "Fatal Error" in the box, which for a taken port is a support ticket rather than a
 // diagnostic. The reason strings come from QuicApi, QuicListener and QuicTransport, which is why
 // each of them keeps one.
-[[noreturn]] void ThrowLinkFailure(const char* _stage, const char* _reason)
+[[noreturn]] void ThrowBootFailure(const char* _stage, const char* _reason)
 {
-  const std::string message = std::format("Outpost: Frontier could not open its link: {} ({}).", _stage, _reason);
+  const std::string message = std::format("Outpost: Frontier could not start: {} ({}).", _stage, _reason);
   throw winrt::hresult_error(E_FAIL, winrt::to_hstring(message));
 }
 
@@ -158,7 +162,6 @@ void OutpostApp::Init(HINSTANCE _instance)
   // boot that cannot open the wire fails here rather than quietly running on something else
   // (ADR 0028, Design/Archive/QuicTransport.md 6).
   OpenQuicLink();
-  m_simulation.Connect(*m_serverQuic, m_config);
 
   m_view.Init(m_clientQuic, m_camera, m_meshes, m_sceneRenderer.UnitQuad());
   m_view.SetTracker(m_pointers);
@@ -187,14 +190,62 @@ void OutpostApp::Init(HINSTANCE _instance)
   m_gpu.ExecuteAndWait();
   m_sceneRenderer.DiscardStaging();
 
-  // The places, before anything is put at them. One call, at boot, and the result is then ordinary
-  // spawn input: the station spawns, the body placements and the minimap's marks all read m_layout
-  // and none of them re-rolls it (Design/Archive/Stations.md 5.3). The fleet keeps the ids it has by being
-  // spawned first; the stations follow, then the base.
-  m_layout = Game::LayOutSystem(UNIVERSE_LAYOUT_SEED, Game::UniversePos{}, STARTING_SYSTEM);
-  SpawnStartingFleet();
-  SpawnVanguardStations();
-  SpawnHostileBase();
+  // The universe comes out of the file, and out of nothing else.
+  //
+  // This program does not author a universe any more; UniverseGen does, and Outpost runs what it
+  // wrote (ADR 0058). So BOTH of the ways this can fail stop the boot, and they say different
+  // things because the reader has different work to do: a missing file means run the tool, and an
+  // unreadable one means do not, because generating over it would destroy whatever it holds.
+  //
+  // It is the same shape as the link failing above -- a boot that cannot have what it was told to
+  // have says so rather than quietly running on something else -- and the reason it matters more
+  // here is that the something else would OVERWRITE.
+  const RestoreResult restored = RestoreUniverse();
+  if (restored == RestoreResult::Absent)
+  {
+    ThrowBootFailure("there is no universe to run", "Universe.sav was not found beside the executable; run UniverseGen to write one");
+  }
+  if (restored == RestoreResult::Refused)
+  {
+    ThrowBootFailure("the saved universe was refused",
+                     "Universe.sav is present and is not a universe this build can read; move it aside and run "
+                     "UniverseGen to write a new one");
+  }
+
+  // The places the file's contents stand in. Laid out rather than stored, because a galaxy is a pure
+  // function of its seed and 54 systems of planet sites would be a second copy of something the file
+  // already determines (ADR 0055). The body placements and the minimap's marks both read m_layout
+  // and neither re-rolls it (Design/Archive/Stations.md 5.3).
+  //
+  // The galaxy first, then the system the player is standing in, taken out of it rather than laid
+  // out beside it -- so home is the galaxy's home and not a second opinion about where it is.
+  //
+  // From m_galaxySeed, which came out of the save header, and NEVER from a compiled constant: the
+  // ships in the file were spawned into the galaxy that seed lays out and no other, so a build whose
+  // own idea of the seed had moved on would draw stations inside stars (Design/Universe.md 8).
+  m_galaxy = Game::LayOutGalaxy(m_galaxySeed, Game::UniversePos{}, Game::STARTING_GALAXY, Game::GALAXY_PINS);
+  for (std::size_t at = 0; at < m_galaxy.systems.size(); ++at)
+  {
+    if (m_galaxy.systems[at].pin != Game::INVALID_PIN_INDEX)
+      m_localSystem = static_cast<std::uint32_t>(at);
+  }
+  m_layout = Game::LayOutGalaxySystem(m_galaxy.systems[m_localSystem], Game::STARTING_GALAXY, Game::GALAXY_PINS);
+
+  // Every ship, station and gate is already in the file. What is NOT in the file is the marks: they
+  // are drawn from the layout rather than from the universe, because they are a picture of where the
+  // government is and not a record of anything. So they are built here, from the same layout the
+  // stations in the file were spawned against -- the two agree because both derive from the seed the
+  // file carries, which is the whole reason it carries one.
+  MarkLocalStations();
+  m_log.PushFormat(EventLog::Severity::Friendly, 0.0f, "UNIVERSE | TICK %llu | %u SHIPS | %u GATES",
+                   static_cast<unsigned long long>(m_universe.Tick()), m_universe.ShipCount(), m_universe.GateCount());
+
+  // After the universe exists, and that ordering is load-bearing. The subscriber opens its despawn
+  // cursor at DespawnHead, so that a ship which died during boot is not replayed as news to a client
+  // that never held it (ADR 0027) -- and on a restored boot the head is the SAVED one, tens of
+  // thousands of deaths in. Connected before the restore, the cursor would open at zero and the
+  // publisher would walk the whole despawn log on the first tick.
+  m_simulation.Connect(*m_serverQuic, m_config);
 
   // The bodies, last, and all in one bracket. The outline texture and every body's vertices are
   // copies recorded into one command list and carried by one submission, which is what
@@ -237,6 +288,10 @@ void OutpostApp::Init(HINSTANCE _instance)
   // Every station row, the Vandal base included: the line says the grid spawned what the layout
   // described, and the base is a row in the same table (Design/Archive/Stations.md 6.1, 9.4).
   m_log.PushFormat(EventLog::Severity::Info, 0.0f, "STATIONS ONLINE | %u", m_universe.StationCount());
+  // What genesis actually built, so a boot that laid out a different galaxy says so rather than
+  // being discovered later by a fleet that cannot get anywhere.
+  m_log.PushFormat(EventLog::Severity::Info, 0.0f, "GALAXY | %u SYSTEMS | %u GATES", static_cast<unsigned>(m_galaxy.systems.size()),
+                   m_universe.GateCount());
 
   m_window.Show();
 }
@@ -275,7 +330,7 @@ void OutpostApp::OpenQuicLink()
   QuicApi::Desc quicDesc;
   quicDesc.allowUnvalidatedPeer = true;
   if (!m_quic.Open(quicDesc))
-    ThrowLinkFailure("the QUIC library would not open", m_quic.Reason());
+    ThrowBootFailure("the QUIC library would not open", m_quic.Reason());
 
   QuicListener::Desc listenerDesc;
   listenerDesc.backlog = m_config.backlog;
@@ -283,7 +338,7 @@ void OutpostApp::OpenQuicLink()
   {
     const std::string reason = m_listener.Reason();
     m_quic.Close();
-    ThrowLinkFailure("the port was refused", reason.c_str());
+    ThrowBootFailure("the port was refused", reason.c_str());
   }
 
   if (!m_clientQuic.Connect(m_quic, {"127.0.0.1", m_config.port}, {}))
@@ -291,7 +346,7 @@ void OutpostApp::OpenQuicLink()
     const std::string reason = m_clientQuic.Reason();
     m_listener.Stop();
     m_quic.Close();
-    ThrowLinkFailure("the dial was refused", reason.c_str());
+    ThrowBootFailure("the dial was refused", reason.c_str());
   }
 
   // Boot is the one place in this program where waiting is acceptable, and it is bounded: on the way
@@ -325,7 +380,7 @@ void OutpostApp::OpenQuicLink()
       m_clientQuic.Close();
       m_listener.Stop();
       m_quic.Close();
-      ThrowLinkFailure("the handshake timed out", states.c_str());
+      ThrowBootFailure("the handshake timed out", states.c_str());
     }
 
     // A millisecond back to the scheduler rather than a spin: MsQuic is doing the handshake on its
@@ -363,6 +418,18 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
   // _centreY is the height of the body's centre, so a caller says where a world sits rather than
   // deriving it from a radius the seed chose. A rock passes its own radius and so rests on the
   // fleet's plane; a world passes a depth well below it (ViewTuning.h).
+  //
+  // Everything in this scene is placed around the local system's star, not around the universe
+  // origin. They were the same point until there was a second system -- home is pinned at lattice
+  // cell (0, 0) and a pinned system takes no jitter, so its star IS the origin -- which is why this
+  // used to be LocalPos of a bearing and a distance, and why a world in any other system would have
+  // been drawn a whole system away from the one it belongs to (Design/Universe-slice-4b.md 4).
+  //
+  // The boot scene does not move: Translate on a default UniversePos carries exactly the two floats
+  // LocalPos carries and stores the same two remainders, so while the anchor is the origin the
+  // result is bit-identical.
+  const Game::UniversePos anchor = m_layout.starPos;
+
   const auto place = [&](BodyClass bodyClass, std::uint64_t _bodySeed, float _radiusMetres, float _bearingRad, float _distanceMetres,
                          float _centreY, bool _asteroid, bool _textured)
   {
@@ -423,7 +490,8 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
       return;
 
     view.textured = _textured;
-    view.centre = Game::LocalPos(std::sin(_bearingRad) * _distanceMetres, std::cos(_bearingRad) * _distanceMetres);
+    view.centre = anchor;
+    Game::Translate(view.centre, std::sin(_bearingRad) * _distanceMetres, std::cos(_bearingRad) * _distanceMetres);
     view.centreY = _centreY;
     // The sphere the frustum test uses. A textured body is the sphere BuildSphere emitted and nothing
     // more -- unit directions scaled by the radius -- so the radius is the whole of it. A generated
@@ -507,6 +575,104 @@ void OutpostApp::BuildSky(std::uint64_t _seed)
   DebugTrace("sky: {} billboards generated in {} ms\n", sky.verts.size() / 6, m_clock.ElapsedMs(startQpc, m_clock.Now()));
 }
 
+std::uint32_t OutpostApp::SystemAtCamera() const noexcept
+{
+  // Where the camera is looking, as a universe position: the view owns that conversion, because it
+  // owns the origin the render space is measured from (UniverseView::UniversePosAt). What that
+  // point is IN is the galaxy's question and is answered in GameLogic, where a suite can reach it
+  // (Game::SystemAt, ADR 0055).
+  const Game::UniversePos eye = m_view.UniversePosAt(m_camera.Target().x, m_camera.Target().z);
+  return Game::SystemAt(m_galaxy.systems, eye);
+}
+
+OutpostApp::RestoreResult OutpostApp::RestoreUniverse()
+{
+  // Asked before it is read, and that is the whole of failing closed here. ReadFile answers "no
+  // such file" and "I could not read the file" with the same empty buffer -- right for a texture,
+  // where both mean the same missing thing, and wrong for this, where one starts a new universe and
+  // the other must not (Neuron::FileSys::Exists).
+  if (!Neuron::FileSys::Exists(Game::UNIVERSE_SAVE_FILE))
+    return RestoreResult::Absent;
+
+  const Neuron::ByteBuffer file = Neuron::BinaryFile::ReadFile(Game::UNIVERSE_SAVE_FILE);
+  if (file.empty())
+    return RestoreResult::Refused; // present and unreadable, or present and empty; neither is a universe
+
+  Game::SaveHeader header;
+  if (!Game::ReadSaveFile(file, header, m_universe))
+    return RestoreResult::Refused;
+
+  m_galaxySeed = header.galaxySeed;
+
+  // From the file's own tick, so the first periodic save falls a whole period after the restore
+  // rather than immediately -- a game reloaded and quit again should not rewrite the file it just
+  // read.
+  m_lastSaveTick = m_universe.Tick();
+  return RestoreResult::Restored;
+}
+
+void OutpostApp::SaveUniverse()
+{
+  Game::SaveHeader header;
+  header.galaxySeed = m_galaxySeed;
+  // From the universe rather than from a constant, so the header and the state cannot disagree --
+  // which is the one thing ReadSaveFile refuses a file for.
+  header.shard = m_universe.Shard();
+
+  Game::WriteSaveFile(m_universe, header, m_saveScratch);
+
+  // The tick is stamped whether or not the write lands, and deliberately: a disk that refuses once
+  // will refuse again, and retrying every tick would turn a full disk into a frame rate. The log
+  // line is what a player has to go on, so it says which tick was lost.
+  m_lastSaveTick = m_universe.Tick();
+
+  if (!Neuron::BinaryFile::WriteFileAtomic(Game::UNIVERSE_SAVE_FILE, m_saveScratch))
+  {
+    // Alert rather than Info: the enum has three levels and this is the one a player must actually
+    // see, because everything since the last good save is what a crash now would cost.
+    m_log.PushFormat(EventLog::Severity::Alert, 0.0f, "SAVE REFUSED | TICK %llu", static_cast<unsigned long long>(m_universe.Tick()));
+    return;
+  }
+
+  m_log.PushFormat(EventLog::Severity::Info, 0.0f, "SAVED | TICK %llu | %u KB", static_cast<unsigned long long>(m_universe.Tick()),
+                   static_cast<unsigned>(m_saveScratch.size() / 1024u));
+}
+
+void OutpostApp::RebuildLocalSystemScenery()
+{
+  m_layout = Game::LayOutGalaxySystem(m_galaxy.systems[m_localSystem], Game::STARTING_GALAXY, Game::GALAXY_PINS);
+
+  // The marks are replaced, not added to: they belong to one system, and the minimap's half-range is
+  // 4 km against a guaranteed 57 km between stars, so a mark left behind for the system the camera
+  // came from draws pinned to the edge forever.
+  m_view.ClearStationMarks();
+  for (const Game::PlanetSite& site : m_layout.planets)
+    m_view.AddStationMark({site.posUniverse, Game::FACTION_VANGUARD});
+
+  // The scene is released before the next one is built, which is what stops a crossing leaking the
+  // system it left -- F5's bracket exactly, copies first for its reason (ADR 0044).
+  m_view.ClearBodies();
+  m_bodyRenderer.FreeAllBodies();
+
+  m_gpu.BeginCopies();
+  m_gpu.BeginUploads();
+  // The system's own seed, so a system looks the same every time it is entered. BODY_START_SEED is
+  // home's and F5's; a system that borrowed it would wear home's rocks.
+  //
+  // The sky is NOT rebuilt with the bodies, which is where this parts company with F5. F5 rerolls
+  // the neighborhood and the sky is the far half of it; a gate crossing moves the camera from one
+  // system's gate ring to the other's -- 43 km at the guaranteed minimum, 117 km on the shipped
+  // pitch -- and a background that visibly turned over at that range would be claiming the galaxy
+  // is a few hundred kilometres across. The sky is the same sky from every system in it.
+  SpawnStartingBodies(m_galaxy.systems[m_localSystem].systemSeed);
+  m_gpu.SubmitCopies();
+  m_gpu.ExecuteAndWait();
+  m_bodyRenderer.DiscardStaging();
+
+  m_log.PushFormat(EventLog::Severity::Info, 0.0f, "SYSTEM | %u | %u WORLDS", m_localSystem,
+                   static_cast<unsigned>(m_layout.planets.size()));
+}
+
 // F5. A different scene each press, and the same different scene after a restart: what the seed is
 // offset by is the number of presses, not a clock.
 //
@@ -539,61 +705,12 @@ void OutpostApp::ReseedBodies()
   m_bodyRenderer.DiscardStaging();
   m_skyRenderer.DiscardStaging();
 }
-
-void OutpostApp::SpawnStartingFleet()
+void OutpostApp::MarkLocalStations()
 {
-  // Which shard this universe mints identities for, told to it by the composition root before anything
-  // spawns -- AGENTS.md 5's rule, and the same shape as ConfigureIndex. Zero because there is one
-  // universe and one process; a dedicated server would read its own out of the configuration file
-  // slice 24 cuts, and nothing else in the tree would change (ADR 0047).
-  m_universe.ConfigureShard(0);
-
-  constexpr int hullCount = static_cast<int>(std::size(STARTING_FLEET));
-  std::vector<Game::ShipId> ships;
-  ships.reserve(hullCount);
-  for (int i = 0; i < hullCount; ++i)
-  {
-    const float x = (static_cast<float>(i) - static_cast<float>(hullCount - 1) * 0.5f) * START_SPACING;
-    ships.push_back(
-      m_universe.SpawnShip(Game::LocalPos(x, 0.0f), 0.0f, static_cast<std::uint32_t>(STARTING_FLEET[i]), Game::FACTION_PLAYER));
-  }
-
-  // Into slot 1, and this is not a convenience. Selection is fleet-grain since the bar was rebound
-  // (ADR 0049), so a starting hull in no fleet is a hull the player cannot take hold of -- the
-  // fleet-only model reaching the composition root, which is where a universe is authored
-  // (Design/Archive/Fleets.md 15, decision 1).
-  //
-  // FormFleet rather than ComposeFleet: these ships are already in space. Composing is what draws
-  // hulls out of a station's ledger, and there is no ledger at boot.
-  (void)m_universe.FormFleet(Game::FACTION_PLAYER, 0, ships);
-}
-
-// The government's presence: a station at every planet of the starting system, in the Vanguard's
-// faction, with the garrison ViewTuning.h authors. The structure is an ordinary ship and the row is
-// what makes it a station (Design/Archive/Stations.md 6.1); the heading is 0 because nothing reads a
-// structure's facing, and the day one matters the bearing from the star is on the site.
-//
-// The nearest is 3.5 km out -- past the interest radius, so it is a mark on the minimap and not a
-// record until a ship gets near it, which is what "static so can be marked" bought
-// (Design/Archive/Stations.md 9.3). The mark is handed to the view here, beside the spawn it stands for.
-void OutpostApp::SpawnVanguardStations()
-{
-  Game::Universe::StationDesc desc;
-  desc.ownerFaction = Game::FACTION_VANGUARD;
-  desc.protectorHullId = static_cast<std::uint32_t>(VANGUARD_PROTECTOR_HULL);
-  desc.protectorComplement = VANGUARD_PROTECTOR_COMPLEMENT;
-  desc.launchEveryTicks = VANGUARD_LAUNCH_EVERY_TICKS;
-  desc.targetCap = VANGUARD_TARGET_CAP;
-
+  m_view.ClearStationMarks();
   for (const Game::PlanetSite& site : m_layout.planets)
-  {
-    const Game::ShipId structure =
-      m_universe.SpawnShip(site.posUniverse, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
-    m_universe.MakeStation(structure, desc);
     m_view.AddStationMark({site.posUniverse, Game::FACTION_VANGUARD});
-  }
 }
-
 // Somebody else lives here: a station northeast of the fleet, and three Interceptors walking a ring
 // around it at a third of their top speed. Their guns work -- a mount acquires the nearest ship its
 // faction already holds hostile, which at this range is anything of the player's that comes close --
@@ -604,30 +721,6 @@ void OutpostApp::SpawnVanguardStations()
 // The base is a station row too, with no garrison: its patrol is not a garrison and does not
 // change, and what the row buys is one answer path for "may I dock here" -- the player is refused
 // by standing rather than by a special case (Design/Archive/Stations.md 6.1, 15 decision 4).
-void OutpostApp::SpawnHostileBase()
-{
-  const Game::ShipId station = m_universe.SpawnShip(Game::LocalPos(HOSTILE_BASE_EAST_METRES, HOSTILE_BASE_NORTH_METRES), 0.0f,
-                                                    static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANDAL);
-  Game::Universe::StationDesc base;
-  base.ownerFaction = Game::FACTION_VANDAL;
-  base.protectorComplement = 0;
-  m_universe.MakeStation(station, base);
-  const Game::UniversePos anchor = Game::LocalPos(HOSTILE_BASE_EAST_METRES, HOSTILE_BASE_NORTH_METRES);
-
-  for (int at = 0; at < HOSTILE_PATROL_COUNT; ++at)
-  {
-    // Spread evenly over the ring -- 0, 4, 8 of twelve -- and headed along it, so the first leg does
-    // not begin with a turn. The geometry is Patrol.h's, because the universe steers by the same
-    // function and a root doing its own arithmetic would put them somewhere it then walks away from.
-    const std::uint32_t index =
-      static_cast<std::uint32_t>(at) * Game::PATROL_RING_WAYPOINTS / static_cast<std::uint32_t>(HOSTILE_PATROL_COUNT);
-    const Game::ShipId ship =
-      m_universe.SpawnShip(Game::PatrolRingPoint(anchor, index, HOSTILE_PATROL_RING_METRES), Game::PatrolRingHeadingRad(index),
-                           static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
-    m_universe.AssignPatrol(ship, station, HOSTILE_PATROL_RING_METRES, HOSTILE_PATROL_CRUISE_MPS);
-  }
-}
-
 // The player's own ships, not every ship in the universe. Without this the game would greet the player
 // with FLEET ONLINE | 7 SHIPS, four of them the enemy's.
 std::uint32_t OutpostApp::OwnShipCount() const noexcept
@@ -883,8 +976,55 @@ void OutpostApp::Run()
     m_hud.UpdatePulse(dtSec);
     m_sheet.Update(m_view);
 
+    // The scenery follows the camera across a gate.
+    //
+    // Driven by where the camera IS rather than by the jump itself, and that is the load-bearing
+    // choice: a jump is one way to arrive in another system, and the day there is a second -- a
+    // galaxy map that flies you somewhere, a spectator following a fleet, a save reloaded
+    // elsewhere -- this already covers it. It is also the only formulation that cannot get out of
+    // step, because the question it asks is a fact about the camera rather than a memory of an
+    // event.
+    //
+    // Here rather than in Update, and that placement is the whole of it: UpdateFocus is the last
+    // thing in a frame that moves the camera, and it is what SNAPS across a crossing. Asked in
+    // Update the answer would be one frame stale, and that frame renders the new system's ships with
+    // the old system's worlds -- tens of kilometres behind the camera and so outside the frustum
+    // entirely, which reads as the arrival flashing empty. Asked here it cannot: nothing moves the
+    // camera between this line and Render.
+    //
+    // Once per frame and free at this scale: fifty-four squared distances, against a lattice whose
+    // stars are 56 926 m apart, so the answer is never ambiguous anywhere a player can be
+    // (Game::SystemAt, Design/Universe-slice-4b.md 4).
+    const std::uint32_t here = SystemAtCamera();
+    if (here != m_localSystem)
+    {
+      m_localSystem = here;
+      RebuildLocalSystemScenery();
+    }
+
+    // The periodic save, here because here is between ticks: Advance ran every tick this frame was
+    // owed and the next one cannot start until the next Advance, so the universe is at rest, which
+    // is the codec's whole contract (Design/Universe.md 8).
+    //
+    // A distance since the last save, not a modulo of the tick. A frame that advances four ticks
+    // steps straight over any single tick the modulo would have matched, so the save would be
+    // skipped -- rarely, on a slow frame, and therefore in exactly the run that most wanted it.
+    //
+    // The universe's own tick, not the host's. They are the same number -- ServerHost::Tick forwards
+    // to the simulation, which forwards to the universe -- and m_lastSaveTick is stamped from the
+    // universe, so reading one object at both ends is what stops the subtraction underflowing into
+    // a save every frame if that chain ever grows a counter of its own.
+    if (m_config.saveEveryTicks != 0 && m_universe.Tick() - m_lastSaveTick >= m_config.saveEveryTicks)
+      SaveUniverse();
+
     Render();
   }
+
+  // Once at clean shutdown, and "clean" means precisely this: the loop above returned rather than
+  // threw. Putting it in Shutdown instead would save on the way out of a FAILED boot too -- wWinMain
+  // calls Shutdown from both catch blocks -- which would write a half-built universe over a good
+  // file, or, worse, over the very file that had just been refused (Design/Universe-slice-5.md 7).
+  SaveUniverse();
 }
 
 void OutpostApp::Shutdown()

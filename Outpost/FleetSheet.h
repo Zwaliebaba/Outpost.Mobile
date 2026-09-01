@@ -61,7 +61,9 @@ private:
   // The four the design names. MINE is absent until the mining design lands (Design/Archive/Fleets.md 6.6),
   // and it is absent from this array rather than drawn disabled: a button that has never worked is
   // a promise, and the design would rather make none.
-  static constexpr int COMMANDS = 4;
+  // MOVE, ATTACK, DOCK, JUMP, STOP. STOP stays last because it is the one that needs no target and
+  // therefore arms nothing; JUMP joins beside DOCK, which is the command it is shaped like.
+  static constexpr int COMMANDS = 5;
 
   struct Rect
   {

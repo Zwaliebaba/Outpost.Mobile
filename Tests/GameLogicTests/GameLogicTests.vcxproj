@@ -200,12 +200,15 @@
     <ClCompile Include="ProtectorTests.cpp" />
     <ClCompile Include="BackOffTests.cpp" />
     <ClCompile Include="UniverseLayoutTests.cpp" />
+    <ClCompile Include="GalaxyLayoutTests.cpp" />
+    <ClCompile Include="JumpTests.cpp" />
     <ClCompile Include="PublisherTests.cpp" />
     <ClCompile Include="SeparationTests.cpp" />
     <ClCompile Include="EntityIdentityTests.cpp" />
     <ClCompile Include="SectorTests.cpp" />
     <ClCompile Include="SnapshotTests.cpp" />
     <ClCompile Include="SpatialIndexTests.cpp" />
+    <ClCompile Include="StartingUniverseTests.cpp" />
     <ClCompile Include="UniverseStateTests.cpp" />
     <ClCompile Include="UniverseTests.cpp" />
   </ItemGroup>

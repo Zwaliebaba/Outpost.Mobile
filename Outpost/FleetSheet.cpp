@@ -22,9 +22,10 @@ constexpr char TIMES[] = "\xD7";
 }
 
 // In the order the design lists them, and MINE is not among them (Design/Archive/Fleets.md 9.3, 6.6).
-constexpr const char* COMMAND_LABELS[] = {"MOVE", "ATTACK", "DOCK", "STOP"};
+constexpr const char* COMMAND_LABELS[] = {"MOVE", "ATTACK", "DOCK", "JUMP", "STOP"};
 constexpr UniverseView::ArmedOrder COMMAND_ARMS[] = {UniverseView::ArmedOrder::Move, UniverseView::ArmedOrder::Attack,
-                                                     UniverseView::ArmedOrder::Dock, UniverseView::ArmedOrder::None};
+                                                     UniverseView::ArmedOrder::Dock, UniverseView::ArmedOrder::Jump,
+                                                     UniverseView::ArmedOrder::None};
 static_assert(std::size(COMMAND_LABELS) == std::size(COMMAND_ARMS), "a command lost its meaning");
 
 [[nodiscard]] Rgba WithAlpha(Rgba _colour, float _alpha) noexcept
@@ -103,8 +104,13 @@ void FleetSheet::Draw(TextRenderer& _text, const UniverseView& _view, std::span<
               WithAlpha(HUD_ACCENT_AMBER, HUD_ACTIVE_OUTLINE_ALPHA), s);
 
     const UniverseView::ArmedOrder armed = _view.Armed();
-    const char* verb =
-      (armed == UniverseView::ArmedOrder::Move) ? "MOVE" : ((armed == UniverseView::ArmedOrder::Attack) ? "ATTACK" : "DOCK");
+    const char* verb = "DOCK";
+    if (armed == UniverseView::ArmedOrder::Move)
+      verb = "MOVE";
+    else if (armed == UniverseView::ArmedOrder::Attack)
+      verb = "ATTACK";
+    else if (armed == UniverseView::ArmedOrder::Jump)
+      verb = "JUMP";
     char line[64] = {};
     std::snprintf(line, sizeof(line), "%s | TAP A TARGET", verb);
     _text.DrawTextLine(FontId::Ui, layout.panel.x0 + HUD_SHEET_PAD_PX * s, y0 + (h - textPx) * 0.5f, HUD_TEXT_SCALE * s, HUD_ACCENT_AMBER,
@@ -301,7 +307,7 @@ bool FleetSheet::HandlePointer(const PointerEvent& _event, UniverseView& _view, 
     if (!layout.commands[at].Contains(_event.xPx, _event.yPx))
       continue;
 
-    // STOP needs no target, so it is the one command that sends immediately. The other three arm
+    // STOP needs no target, so it is the one command that sends immediately. The other four arm
     // the next universe tap and close, which is what turns a named verb into an order
     // (Design/Archive/Fleets.md 9.3).
     if (COMMAND_ARMS[at] == UniverseView::ArmedOrder::None)

@@ -534,6 +534,12 @@ macro of that shape appears.
 - **No argv, no environment variables.** Configuration is loaded by the composition root only;
   libraries receive plain config structs (`Camera::Desc`, `ServerHost::Desc`,
   `PointerTracker::Desc`) and never read files or the registry themselves.
+
+  **A command-line tool under `Tools/` may read `argv`** — the owner's call, taken when
+  `UniverseGen` arrived (ADR 0058). The rule is about the *game*, and its reason is that a library
+  must not reach around its caller for configuration; a command-line tool **is** its caller, and a
+  generator you cannot point at a seed is a generator you have to rebuild to use. The exemption is
+  the tools only: `Outpost` still reads neither, and a library still reads nothing at all.
 - **Single-writer state.** The authoritative universe belongs to whichever thread ticks it, render
   state to the main thread. Today both are the same thread, which is why this rule is easy to break
   without noticing: when a transport's workers or an audio callback arrive, they enqueue to a ring

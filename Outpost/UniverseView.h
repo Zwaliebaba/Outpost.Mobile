@@ -436,10 +436,20 @@ public:
     None,
     Move,
     Attack,
-    Dock
+    Dock,
+    Jump
   };
 
   void ArmFleetOrder(ArmedOrder _kind);
+
+  // The gate under a tap, or -1. PickStation's shape and its rule: by the record's own flag, never
+  // by the hull table -- a gate and a station are both Structures, so an inference from "immovable"
+  // would now be wrong as well as fragile (Game::SHIP_FLAG_GATE).
+  [[nodiscard]] int PickGate(float _xPx, float _yPx) const;
+
+  // Sends Jump at the gate to every selected fleet. No standing refusal to tell the truth about
+  // first, unlike docking: a gate takes anyone this phase (Design/Universe.md 6.1).
+  void IssueJumpOrder(std::size_t _gate);
 
   [[nodiscard]] ArmedOrder Armed() const noexcept
   {
@@ -502,11 +512,19 @@ public:
     return m_bodies.size();
   }
 
-  // The marks, from the composition root at boot. Nothing removes one: stations do not despawn this
-  // phase, and a mark is content rather than state.
+  // The marks, from the composition root. Content rather than state -- but content that belongs to
+  // ONE system, so crossing a gate replaces the set rather than adding to it. Before the galaxy this
+  // was add-only and said "nothing removes one"; against a 4 km minimap half-range and a guaranteed
+  // 57 km between stars, a mark left behind for another system draws pinned to the edge forever,
+  // which is a lie about where the government is (Design/Universe-slice-4b.md 4).
   void AddStationMark(const StationMark& _mark)
   {
     m_stationMarks.push_back(_mark);
+  }
+
+  void ClearStationMarks() noexcept
+  {
+    m_stationMarks.clear();
   }
 
   [[nodiscard]] std::span<const StationMark> StationMarks() const noexcept

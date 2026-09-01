@@ -311,6 +311,58 @@ void UniverseView::ExplodeTheLost(std::uint64_t _tick)
     m_log->PushFormat(EventLog::Severity::Friendly, SimTimeSec(), "DOCKED | %d SHIPS", ownDocked);
   m_receiver.ClearDocked();
 
+  // Jumped, on the docked run's terms and for its reason: the hull leaves with no explosion, no
+  // shake and no SHIP LOST, because the ship is not dead -- it is in another system under the same
+  // identity (ADR 0056). Without its own run this would arrive as a DESTROY and a fleet crossing a
+  // gate would detonate on screen, which is the whole reason the wire states a cause at all.
+  //
+  // What it does NOT do yet is draw anything. A wink-out belongs here and is a look rather than a
+  // mechanism; it is left out on purpose and said so, so nobody mistakes a plain removal for the
+  // finished effect (Design/Universe.md 9).
+  const std::span<const Game::EntityId> jumped = m_receiver.Jumped();
+  int ownJumped = 0;
+  int crossedSlot = -1;
+  for (std::size_t at = 0; at < m_carryEntities.size() && at < m_carryScratch.size(); ++at)
+  {
+    const Game::EntityId entity = m_carryEntities[at];
+    if (entity == Game::INVALID_ENTITY_ID)
+      continue;
+    bool inside = false;
+    for (const Game::EntityId gone : jumped)
+      inside = inside || gone == entity;
+    if (!inside)
+      continue;
+    if (m_carryScratch[at].faction == m_ownFaction)
+      ++ownJumped;
+
+    // Which of this client's own fleets went through, so the camera can go with it. Noted before
+    // NoteFleetDeparture, which reads the same rosters -- the roster that still names this entity is
+    // the fleet it left in.
+    for (int slot = 0; slot < FLEET_SLOTS; ++slot)
+    {
+      for (const Game::EntityId member : m_lastRoster[slot])
+      {
+        if (member == entity && m_carryScratch[at].faction == m_ownFaction)
+          crossedSlot = slot;
+      }
+    }
+
+    NoteFleetDeparture(entity, true);
+  }
+  if (ownJumped > 0 && m_log != nullptr)
+    m_log->PushFormat(EventLog::Severity::Friendly, SimTimeSec(), "JUMPED | %d SHIPS", ownJumped);
+
+  // The camera crosses with the fleet, through the machinery the fleet button already uses: the
+  // focus re-reads the fleet's position every frame, so it lands wherever the far side turned out to
+  // be rather than where this client guessed. It snaps rather than flies, because the gap is a
+  // galaxy's (UpdateFocus, CAMERA_SNAP_METRES).
+  //
+  // Only a fleet this client had SELECTED. A fleet crossing somewhere else is not a reason to take
+  // the camera off what the player is looking at.
+  if (crossedSlot >= 0 && IsFleetSelected(crossedSlot))
+    FocusFleet(crossedSlot);
+  m_receiver.ClearJumped();
+
   const std::span<const Game::EntityId> destroyed = m_receiver.Destroyed();
   for (std::size_t at = 0; at < m_carryEntities.size() && at < m_carryScratch.size(); ++at)
   {
@@ -566,7 +618,13 @@ void UniverseView::ArmFleetOrder(ArmedOrder _kind)
   if (m_armed == ArmedOrder::None || m_log == nullptr)
     return;
 
-  const char* verb = (m_armed == ArmedOrder::Move) ? "MOVE" : ((m_armed == ArmedOrder::Attack) ? "ATTACK" : "DOCK");
+  const char* verb = "DOCK";
+  if (m_armed == ArmedOrder::Move)
+    verb = "MOVE";
+  else if (m_armed == ArmedOrder::Attack)
+    verb = "ATTACK";
+  else if (m_armed == ArmedOrder::Jump)
+    verb = "JUMP";
   m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "%s | TAP A TARGET", verb);
 }
 
@@ -723,7 +781,17 @@ void UniverseView::UpdateFocus(float _dtSec)
   const Game::UniversePos target = FleetPosition(m_focusSlot);
   const float x = ViewX(target);
   const float z = ViewZ(target);
-  m_camera->SetGoal(x, z);
+
+  // A crossing rather than a flight: past CAMERA_SNAP_METRES the camera arrives instead of easing,
+  // because the ease would spend seconds in interstellar space showing nothing and the half-life
+  // never lands. Measured from where the camera IS, so a fleet that jumps while the camera is
+  // already following it snaps once and then eases normally on the far side.
+  const float gapX = x - m_camera->Target().x;
+  const float gapZ = z - m_camera->Target().z;
+  if (gapX * gapX + gapZ * gapZ > CAMERA_SNAP_METRES * CAMERA_SNAP_METRES)
+    m_camera->SnapGoal(x, z);
+  else
+    m_camera->SetGoal(x, z);
   m_camera->Follow(0.0f, 0.0f, _dtSec);
 
   // Whoever moves the camera recomputes it, which is the convention PointerTracker's own gestures
@@ -1058,6 +1126,59 @@ int UniverseView::PickStation(float _xPx, float _yPx) const
   return best;
 }
 
+int UniverseView::PickGate(float _xPx, float _yPx) const
+{
+  XMFLOAT3 origin;
+  XMFLOAT3 direction;
+  m_camera->ScreenRay(_xPx, _yPx, origin, direction);
+  const std::span<const Game::ShipSnapshot> state = Ships();
+
+  int best = -1;
+  float bestT = 1e30f;
+  for (std::size_t i = 0; i < m_ships.size() && i < state.size(); ++i)
+  {
+    if ((state[i].flags & Game::SHIP_FLAG_GATE) == 0)
+      continue;
+    const float t = RayHitDistance(i, origin, direction);
+    if (t >= 0.0f && t < bestT)
+    {
+      bestT = t;
+      best = static_cast<int>(i);
+    }
+  }
+  return best;
+}
+
+void UniverseView::IssueJumpOrder(std::size_t _gate)
+{
+  const std::span<const Game::ShipSnapshot> state = Ships();
+  if (m_transport == nullptr || _gate >= state.size() || SelectedFleetCount() == 0)
+    return;
+
+  // No standing check before this one, and that is not an omission: a gate takes anyone this phase,
+  // so an affordance that refused would be telling a truth the simulation does not hold
+  // (Design/Universe.md 6.1). The day gates can be owned, this is where the refusal goes -- beside
+  // IssueDockOrder's, and with the simulation's gate still standing behind it.
+  Game::FleetOrder order;
+  order.kind = Game::FleetOrderKind::Jump;
+  order.gate = state[_gate].entity;
+  const std::uint32_t sent = SendToSelectedFleets(order);
+  if (sent == 0)
+    return;
+
+  // The marker the tap earns, on the gate, so the tap visibly landed on the thing rather than the
+  // ground beside it. Amber, because a gate is a road rather than an allegiance -- the one marker in
+  // this view whose colour is not somebody's livery.
+  const DisplayPose pose = DisplayedPose(_gate);
+  OrderMarker marker;
+  marker.posUniverse = XMFLOAT3(ViewX(pose.pos), 0.0f, ViewZ(pose.pos));
+  marker.colour = HUD_ACCENT_AMBER;
+  m_markers.push_back(marker);
+
+  if (m_log)
+    m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "JUMPING | %d %s", static_cast<int>(sent), (sent == 1) ? "FLEET" : "FLEETS");
+}
+
 int UniverseView::PickHostile(float _xPx, float _yPx) const
 {
   XMFLOAT3 origin;
@@ -1335,6 +1456,15 @@ void UniverseView::OnTap(float _xPx, float _yPx, bool _shiftHeld, bool _doubleTa
       if (station >= 0)
       {
         IssueDockOrder(static_cast<std::size_t>(station));
+        return;
+      }
+    }
+    else if (armed == ArmedOrder::Jump)
+    {
+      const int gate = PickGate(_xPx, _yPx);
+      if (gate >= 0)
+      {
+        IssueJumpOrder(static_cast<std::size_t>(gate));
         return;
       }
     }

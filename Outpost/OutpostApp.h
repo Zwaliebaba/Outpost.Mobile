@@ -66,7 +66,6 @@ private:
   void OpenQuicLink();
 
   void LoadHullMeshes();
-  void SpawnStartingFleet();
 
   // Generates, uploads and places the starting bodies from one seed. Called at boot and again on
   // every F5; the caller brackets it with BeginUploads and ExecuteAndWait, because every body's
@@ -77,11 +76,48 @@ private:
   // trace at the call site is where a regression in it would show.
   void BuildSky(std::uint64_t _seed);
   void ReseedBodies();
-  void SpawnHostileBase();
 
-  // One Vanguard station at every planet site of the starting system: the structure ship, then the
-  // row that makes it a station (Design/Archive/Stations.md 5.3, 6.1).
-  void SpawnVanguardStations();
+  // Which system the camera is standing in. Two lines: where the camera is looking, which only the
+  // view can say, and what is there, which is Game::SystemAt's.
+  [[nodiscard]] std::uint32_t SystemAtCamera() const noexcept;
+
+  // Re-lays the local system and rebuilds everything drawn from it: the worlds, the rocks and the
+  // minimap's station marks.
+  //
+  // The bodies go through the same free-and-upload bracket F5 uses, for its reason: a body's
+  // vertices are a copy recorded into one command list, and the scene being replaced has to be
+  // released or every crossing leaks the system it left (ADR 0044).
+  void RebuildLocalSystemScenery();
+
+  // What the boot found where the universe should be.
+  //
+  // Three answers and not two, because "there is no file" and "there is a file I cannot read" must
+  // lead to opposite places: the first is a first boot and the second stops the program. Collapsing
+  // them is the one mistake this file must not make -- a refused save quietly replaced by a fresh
+  // universe is a player's game deleted by a bug in reading it (Design/Universe.md 8, ADR 0057).
+  enum class RestoreResult
+  {
+    Absent,   // no file: this is a first boot and genesis runs
+    Restored, // the universe came out of the file
+    Refused,  // there is a file and it is not one this build can use
+  };
+
+  // Reads Universe.sav into m_universe, and the galaxy seed it was laid out from into m_galaxySeed.
+  // Touches neither on anything but Restored.
+  [[nodiscard]] RestoreResult RestoreUniverse();
+
+  // Writes the universe to Universe.sav, atomically. Logs and carries on if the disk refuses: a
+  // running game should not end because a save did, and the previous save is still there.
+  //
+  // Only ever called between ticks. The state codec's contract is a universe at rest, and a save
+  // taken mid-Step would be a universe that never existed (Design/Universe.md 8).
+  void SaveUniverse();
+
+  // The local system's planets, as minimap marks. The stations they stand for are in the save file;
+  // the marks are not, because a mark is a picture rather than a record. Rebuilt at boot and again
+  // whenever the camera changes systems (Design/Universe-slice-4b.md 4).
+  void MarkLocalStations();
+
   [[nodiscard]] std::uint32_t OwnShipCount() const noexcept;
   void Update();
   void Render();
@@ -129,6 +165,31 @@ private:
   // is handed the sites as spawn positions and never sees the generator (Design/Archive/Stations.md 5, 10).
   // F5 rebuilds the bodies from it and never re-rolls it, so a debug key cannot move a station.
   Game::SystemLayout m_layout;
+
+  // The galaxy, laid out once at boot beside the starting system. Static content on the same terms
+  // (ADR 0037, ADR 0055): the universe is handed positions and seeds as spawn input and never sees
+  // the generator, and F5 does not reach it.
+  Game::GalaxyLayout m_galaxy;
+
+  // Which system the camera is in. Home at boot, and nothing moves it yet -- the client half of
+  // crossing a gate is slice 4's. It is here now because the station marks and the bodies both ask
+  // it which system they are placing, and answering "home" in two places would be two places to
+  // change (Design/Universe.md 9).
+  std::uint32_t m_localSystem = 0;
+
+  // The seed the galaxy on screen was laid out from, taken from the save header at boot. The
+  // initialiser is what a default-constructed app would use and is never what runs: RestoreUniverse
+  // overwrites it before anything reads it, and a boot that could not read a file does not get this
+  // far. A binary whose own idea of the seed had moved on still draws the galaxy its file holds.
+  std::uint64_t m_galaxySeed = Game::STARTING_GALAXY_SEED;
+
+  // The tick the last save was taken at, so the cadence is a distance rather than a modulo -- see
+  // the call site in Run.
+  std::uint64_t m_lastSaveTick = 0;
+
+  // Reused across saves rather than allocated per save: at 300 ships this is tens of kilobytes and
+  // the save runs inside a frame.
+  std::vector<std::uint8_t> m_saveScratch;
 
   // Which faction this client is. Session identity, which nothing below the composition root can
   // know: it decides what the overview colors green, what may be selected, and what counts as a

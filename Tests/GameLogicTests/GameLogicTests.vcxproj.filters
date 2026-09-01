@@ -65,6 +65,12 @@
     <ClCompile Include="UniverseLayoutTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="GalaxyLayoutTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="JumpTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="PublisherTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -81,6 +87,9 @@
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="SpatialIndexTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="StartingUniverseTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="UniverseStateTests.cpp">

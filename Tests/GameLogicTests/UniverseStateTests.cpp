@@ -290,6 +290,69 @@ public:
                      static_cast<std::uint32_t>(reloaded.HostileMaskFor(Game::FACTION_PLAYER)), L"the standings table did not survive");
   }
 
+  // The gate table and the order that names one. Step reads both -- the jump pass resolves a
+  // destination through the table on every tick a fleet is crossing -- so a file that dropped them
+  // would reload a universe whose fleets stop at doors they were ordered through.
+  TEST_METHOD(TheGateTableSurvivesTheRoundTrip)
+  {
+    Game::Universe original;
+
+    const Game::UniversePos nearPos = Game::LocalPos(0.0f, 0.0f);
+    const Game::UniversePos farPos = Game::LocalPos(60000.0f, 0.0f);
+    const Game::ShipId nearShip =
+      original.SpawnShip(nearPos, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+    const Game::ShipId farShip =
+      original.SpawnShip(farPos, 1.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+
+    Game::Universe::GateDesc toFar;
+    toFar.destination = original.EntityIdOf(farShip);
+    const Game::Universe::GateId nearGate = original.MakeGate(nearShip, toFar);
+    Game::Universe::GateDesc toNear;
+    toNear.destination = original.EntityIdOf(nearShip);
+    toNear.ownerFaction = Game::FACTION_VANDAL;
+    (void)original.MakeGate(farShip, toNear);
+
+    // A fleet with a standing jump order, so orderGate is carrying something: comparing a null
+    // handle against a null handle would prove nothing.
+    std::vector<Game::ShipId> ships;
+    for (int at = 0; at < 2; ++at)
+    {
+      Game::UniversePos where = nearPos;
+      Game::Translate(where, 30.0f * static_cast<float>(at), 400.0f);
+      ships.push_back(original.SpawnShip(where, 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette), Game::FACTION_PLAYER));
+    }
+    (void)original.FormFleet(Game::FACTION_PLAYER, 0, ships);
+    Game::Universe::FleetCommand command;
+    command.kind = Game::FleetOrderKind::Jump;
+    command.gate = nearShip;
+    Assert::IsTrue(Game::Universe::FleetOrderResult::Ordered == original.IssueFleetOrder(Game::FACTION_PLAYER, 0, command),
+                   L"the jump order was refused, so there is no order to round-trip");
+
+    std::vector<std::uint8_t> saved;
+    Game::WriteUniverseState(original, saved);
+    Game::Universe reloaded;
+    Assert::IsTrue(Game::ReadUniverseState(saved, reloaded), L"the state did not load");
+
+    Assert::AreEqual(original.GateCount(), reloaded.GateCount(), L"the gate table did not survive");
+    const Game::Universe::Gate& before = original.GateOf(nearGate);
+    const Game::Universe::Gate& after = reloaded.GateOf(nearGate);
+    Assert::IsTrue(before.structure == after.structure, L"the gate's structure handle did not survive");
+    Assert::AreEqual(before.destination, after.destination, L"the gate's destination did not survive");
+    Assert::AreEqual(static_cast<std::uint32_t>(original.GateOf(1u).ownerFaction),
+                     static_cast<std::uint32_t>(reloaded.GateOf(1u).ownerFaction), L"a gate's owner did not survive");
+
+    const Game::Universe::FleetId id = reloaded.FleetInSlot(Game::FACTION_PLAYER, 0);
+    Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID, id, L"the fleet did not survive");
+    Assert::IsTrue(Game::FleetOrderKind::Jump == reloaded.FleetOf(id).orderKind, L"the standing jump order did not survive");
+    Assert::IsTrue(original.FleetOf(id).orderGate == reloaded.FleetOf(id).orderGate, L"the order's gate handle did not survive");
+
+    // And the whole-state comparison, which is what catches a field added to Universe and forgotten
+    // in the codec without any list here having to be kept in step.
+    std::vector<std::uint8_t> again;
+    Game::WriteUniverseState(reloaded, again);
+    Assert::IsTrue(saved == again, L"a reloaded universe does not write the bytes it was read from");
+  }
+
   TEST_METHOD(AMalformedStateIsRefusedAndChangesNothing)
   {
     // The same discipline SnapshotReceiver keeps, and AGENTS.md 5's rule for anything parsing
@@ -367,6 +430,173 @@ public:
     // And it still runs.
     reloaded.Step();
     Assert::AreEqual(static_cast<std::uint64_t>(1), reloaded.Tick(), L"a reloaded empty universe would not step");
+  }
+  // --- the save file (Design/Universe-slice-5.md) ----------------------------------------------
+
+  // The header round-trips, and the file it fronts is still the state codec's own bytes.
+  TEST_METHOD(ASaveFileCarriesItsHeader)
+  {
+    Game::Universe source;
+    (void)BuildScene(source);
+    for (int tick = 0; tick < 20; ++tick)
+      source.Step();
+
+    Game::SaveHeader header;
+    header.galaxySeed = 0x46726F6E74696572ull; // "Frontier"
+    header.shard = source.Shard();
+
+    std::vector<std::uint8_t> file;
+    Game::WriteSaveFile(source, header, file);
+
+    // The state is the state, byte for byte, and it begins exactly where the constant says.
+    std::vector<std::uint8_t> state;
+    Game::WriteUniverseState(source, state);
+    Assert::AreEqual(Game::SAVE_HEADER_BYTES + state.size(), file.size(), L"the file is not its header plus its state");
+    Assert::IsTrue(std::equal(state.begin(), state.end(), file.begin() + Game::SAVE_HEADER_BYTES),
+                   L"the state does not begin at SAVE_HEADER_BYTES");
+
+    Game::Universe reloaded;
+    (void)BuildScene(reloaded); // something to overwrite, so "loaded nothing" cannot pass by accident
+    Game::SaveHeader read;
+    Assert::IsTrue(Game::ReadSaveFile(file, read, reloaded), L"a file this build wrote was refused");
+    Assert::AreEqual(header.galaxySeed, read.galaxySeed, L"the galaxy seed did not survive the header");
+    Assert::AreEqual(static_cast<std::uint32_t>(header.shard), static_cast<std::uint32_t>(read.shard),
+                     L"the shard did not survive the header");
+    Assert::AreEqual(source.Tick(), reloaded.Tick(), L"the state behind the header did not take");
+  }
+
+  // The property the file exists for: a universe that has been through it is the same universe, and
+  // goes on being the same universe. Byte equality after sixty more ticks on both -- the standing
+  // replay gate, run through the file rather than through the state codec alone.
+  TEST_METHOD(ARestoredSaveFileReplaysToTheSameRun)
+  {
+    Game::Universe source;
+    (void)BuildScene(source);
+    for (int tick = 0; tick < 40; ++tick)
+      source.Step();
+
+    Game::SaveHeader header;
+    header.galaxySeed = 0x53797331ull;
+    header.shard = source.Shard();
+    std::vector<std::uint8_t> file;
+    Game::WriteSaveFile(source, header, file);
+
+    Game::Universe restored;
+    Game::SaveHeader read;
+    Assert::IsTrue(Game::ReadSaveFile(file, read, restored), L"the save file was refused");
+
+    for (int tick = 0; tick < 60; ++tick)
+    {
+      source.Step();
+      restored.Step();
+    }
+
+    std::vector<std::uint8_t> afterSource;
+    std::vector<std::uint8_t> afterRestored;
+    Game::WriteUniverseState(source, afterSource);
+    Game::WriteUniverseState(restored, afterRestored);
+    Assert::IsTrue(afterSource == afterRestored, L"a restored universe diverged from the run that saved it");
+  }
+
+  // A file that disagrees with itself is refused rather than reconciled. The shard is in the header
+  // AND in the state; picking either answer would mean running the shard that was not saved, and
+  // nothing can say which of the two is the mistake.
+  TEST_METHOD(ASaveFileThatDisagreesWithItselfIsRefused)
+  {
+    Game::Universe source;
+    (void)BuildScene(source); // BuildScene configures shard 3
+    source.Step();
+
+    Game::SaveHeader header;
+    header.galaxySeed = 1234u;
+    header.shard = source.Shard();
+    std::vector<std::uint8_t> file;
+    Game::WriteSaveFile(source, header, file);
+
+    // The header's shard sits after the magic, the format byte and the seed.
+    constexpr std::size_t SHARD_AT = 4u + 1u + 8u;
+    file[SHARD_AT] = static_cast<std::uint8_t>(file[SHARD_AT] + 1u);
+
+    Game::Universe target;
+    Game::SaveHeader read;
+    Assert::IsFalse(Game::ReadSaveFile(file, read, target), L"a file whose header and body disagree about the shard was accepted");
+    Assert::AreEqual(0u, target.ShipCount(), L"a refused file was applied anyway");
+    Assert::AreEqual(static_cast<std::uint64_t>(0), read.galaxySeed, L"a refused file wrote its header out");
+  }
+
+  // Every way a file can be wrong, and the same discipline the state codec keeps: refuse, change
+  // nothing, never throw, never assert.
+  TEST_METHOD(AMalformedSaveFileIsRefusedAndChangesNothing)
+  {
+    Game::Universe source;
+    (void)BuildScene(source);
+    for (int tick = 0; tick < 25; ++tick)
+      source.Step();
+
+    Game::SaveHeader header;
+    header.galaxySeed = 0xABCDEF0123456789ull;
+    header.shard = source.Shard();
+    std::vector<std::uint8_t> file;
+    Game::WriteSaveFile(source, header, file);
+
+    // A universe with something in it, so a partial apply would be visible.
+    Game::Universe target;
+    (void)BuildScene(target);
+    for (int tick = 0; tick < 10; ++tick)
+      target.Step();
+    std::vector<std::uint8_t> before;
+    Game::WriteUniverseState(target, before);
+
+    Game::SaveHeader read;
+    const auto refuses = [&](std::span<const std::uint8_t> _bytes, const wchar_t* _what)
+    {
+      Assert::IsFalse(Game::ReadSaveFile(_bytes, read, target), _what);
+      std::vector<std::uint8_t> after;
+      Game::WriteUniverseState(target, after);
+      Assert::IsTrue(before == after, L"a refused save file changed the universe it was read into");
+      Assert::AreEqual(static_cast<std::uint64_t>(0), read.galaxySeed, L"a refused save file wrote its header out");
+    };
+
+    refuses({}, L"an empty file was accepted");
+    refuses(std::span<const std::uint8_t>(file).first(Game::SAVE_HEADER_BYTES - 1), L"a file too short for its header was accepted");
+    refuses(std::span<const std::uint8_t>(file).first(Game::SAVE_HEADER_BYTES), L"a header with no state behind it was accepted");
+
+    std::vector<std::uint8_t> wrongMagic = file;
+    wrongMagic[0] = static_cast<std::uint8_t>(wrongMagic[0] + 1u);
+    refuses(wrongMagic, L"a file with the wrong magic was accepted");
+
+    std::vector<std::uint8_t> wrongFormat = file;
+    wrongFormat[4] = static_cast<std::uint8_t>(wrongFormat[4] + 1u);
+    refuses(wrongFormat, L"a file in a format this build does not know was accepted");
+
+    // The length field, wrong in both directions. Neither is caught by the state codec: it is the
+    // header's job, and this row is the whole reason the field exists.
+    std::vector<std::uint8_t> shortLength = file;
+    constexpr std::size_t LENGTH_AT = 4u + 1u + 8u + 2u;
+    shortLength[LENGTH_AT] = static_cast<std::uint8_t>(shortLength[LENGTH_AT] - 1u);
+    refuses(shortLength, L"a file whose length field is short was accepted");
+
+    std::vector<std::uint8_t> longLength = file;
+    longLength[LENGTH_AT] = static_cast<std::uint8_t>(longLength[LENGTH_AT] + 1u);
+    refuses(longLength, L"a file whose length field is long was accepted");
+
+    // A file with something appended. ReadUniverseState alone would take this: it stops at the end
+    // of the state and never looks past it.
+    std::vector<std::uint8_t> appended = file;
+    appended.push_back(0x7Fu);
+    refuses(appended, L"a file with rubbish appended was accepted");
+
+    // Every prefix of a valid file, which is every truncation there is.
+    for (std::size_t length = 0; length < file.size(); ++length)
+      Assert::IsFalse(Game::ReadSaveFile(std::span<const std::uint8_t>(file).first(length), read, target),
+                      L"a truncated save file was accepted");
+    std::vector<std::uint8_t> afterEverything;
+    Game::WriteUniverseState(target, afterEverything);
+    Assert::IsTrue(before == afterEverything, L"a run of refusals changed the universe they were read into");
+
+    // The whole thing still loads, so the sweep above was refusing damage and not the format.
+    Assert::IsTrue(Game::ReadSaveFile(file, read, target), L"the intact file was refused");
+    Assert::AreEqual(header.galaxySeed, read.galaxySeed, L"the intact file did not take");
   }
 };
 } // namespace GameLogicTests

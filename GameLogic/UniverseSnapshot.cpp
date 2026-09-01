@@ -82,7 +82,7 @@ constexpr std::uint32_t SNAPSHOT_HEADER_BYTES = 1 + 1 + 4 + 4 + 4 + 8 + 4 + 1;
 constexpr std::uint32_t FLEET_STATUS_BYTES = 4 + 4 + 2 + 2 + 1 + 1;
 constexpr std::uint32_t FLEET_BLOCK_MAX_BYTES = 1 + FLEET_SLOTS * FLEET_STATUS_BYTES;
 
-// kind, tick, leaveCount, destroyedCount, dockedCount
+// kind, tick, leaveCount, destroyedCount, dockedCount, jumpedCount
 //
 // The docked handles ride this message and not the snapshot header, and Design/Archive/Stations.md 7.4 says
 // otherwise only because it predates ADR 0029 moving departures onto the reliable lane. That ADR's
@@ -90,7 +90,7 @@ constexpr std::uint32_t FLEET_BLOCK_MAX_BYTES = 1 + FLEET_SLOTS * FLEET_STATUS_B
 // departure is stated once, and a lost "it docked" is a ghost ship for the rest of the match. So
 // ShipsPerSnapshotFragment does *not* follow this header -- it derives from SNAPSHOT_HEADER_BYTES,
 // which a docking never touches (Design/Archive/Stations-slice-3.md 2.1, ADR 0040).
-constexpr std::uint32_t LEAVE_HEADER_BYTES = 1 + 8 + 4 + 4 + 4;
+constexpr std::uint32_t LEAVE_HEADER_BYTES = 1 + 8 + 4 + 4 + 4 + 4;
 // handle, the sector pair, the local offsets, the prevPos delta, two angles, three floats, order,
 // faction, flags, hullId, hullFraction.
 //
@@ -116,7 +116,8 @@ static_assert(FIRE_HEADER_BYTES + MAX_FIRE_EVENTS * FIRE_EVENT_BYTES <= Neuron::
 // rather than a misread. The format byte is what makes a disagreement between two builds a refusal
 // too -- there is nothing to migrate from yet, and a version nobody checks is a version nobody has.
 constexpr std::uint32_t UNIVERSE_STATE_MAGIC = 0x54535550u; // 'PUST' little-endian: Persisted Universe STate
-constexpr std::uint8_t UNIVERSE_STATE_FORMAT = 6;           // 2: the fleet table. 3: its manifest. 4: its order. 5: its threat. 6: the guns
+constexpr std::uint8_t UNIVERSE_STATE_FORMAT =
+  7; // 2: the fleet table. 3: its manifest. 4: its order. 5: its threat. 6: the guns. 7: the plan stamp
 
 // An EntityId is a u64, which is exactly what a {slot, generation} pair cost. So identity became
 // global for no bytes at all: the ship record stays 47, a fragment stays 23 ships, and the order cap
@@ -486,7 +487,15 @@ void WriteShipRecord(ByteWriter& _out, const Universe& _universe, ShipId _id)
   _out.F32(ship.turnRateRadPerSec);
   _out.U8(static_cast<std::uint8_t>(ship.order));
   _out.U8(ship.factionId);
-  _out.U8(_universe.IsStation(_id) ? SHIP_FLAG_STATION : std::uint8_t{0});
+  // A ship is at most one of these today -- MakeStation and MakeGate are never called on the same
+  // structure -- but they are separate bits rather than a kind byte, so a thing that is both is
+  // expressible the day some design wants a gate you can dock at.
+  std::uint8_t flags = 0;
+  if (_universe.IsStation(_id))
+    flags |= SHIP_FLAG_STATION;
+  if (_universe.IsGate(_id))
+    flags |= SHIP_FLAG_GATE;
+  _out.U8(flags);
   _out.U32(ship.hullId);
 
   // 255ths of whole, and 255 for a hull that cannot be destroyed: an indestructible thing is
@@ -675,20 +684,21 @@ bool SnapshotWriter::WriteFire(std::uint64_t _tick, std::span<const ShotRecord> 
 }
 
 bool SnapshotWriter::WriteLeaves(std::uint64_t _tick, std::span<const EntityId> _left, std::span<const EntityId> _destroyed,
-                                 std::span<const EntityId> _docked, Neuron::Transport& _transport)
+                                 std::span<const EntityId> _docked, std::span<const EntityId> _jumped, Neuron::Transport& _transport)
 {
-  if (_left.empty() && _destroyed.empty() && _docked.empty())
+  if (_left.empty() && _destroyed.empty() && _docked.empty() && _jumped.empty())
     return true; // nothing to state is not a failure to state it
 
   const std::uint32_t leaveCount = static_cast<std::uint32_t>(_left.size());
   const std::uint32_t destroyedCount = static_cast<std::uint32_t>(_destroyed.size());
   const std::uint32_t dockedCount = static_cast<std::uint32_t>(_docked.size());
+  const std::uint32_t jumpedCount = static_cast<std::uint32_t>(_jumped.size());
 
   // One message, not fragmented. The lane's bound is what caps it, and at eight bytes a handle that
   // is 1021 departures in one update -- far past what an interest set can shed at 10 Hz, and the
   // day it is not, the answer is a second message and not a silent truncation. The third run costs
   // the bound nothing: 8192 less a 21-byte header is still 1021 handles.
-  if (LEAVE_HEADER_BYTES + (leaveCount + destroyedCount + dockedCount) * ENTITY_ID_BYTES > Neuron::MAX_RELIABLE_BYTES)
+  if (LEAVE_HEADER_BYTES + (leaveCount + destroyedCount + dockedCount + jumpedCount) * ENTITY_ID_BYTES > Neuron::MAX_RELIABLE_BYTES)
     return false;
 
   m_leaveScratch.clear();
@@ -698,11 +708,14 @@ bool SnapshotWriter::WriteLeaves(std::uint64_t _tick, std::span<const EntityId> 
   out.U32(leaveCount);
   out.U32(destroyedCount);
   out.U32(dockedCount);
+  out.U32(jumpedCount);
   for (const EntityId entity : _left)
     out.Entity(entity);
   for (const EntityId entity : _destroyed)
     out.Entity(entity);
   for (const EntityId entity : _docked)
+    out.Entity(entity);
+  for (const EntityId entity : _jumped)
     out.Entity(entity);
 
   return _transport.SendReliable(m_leaveScratch.data(), static_cast<std::uint32_t>(m_leaveScratch.size()));
@@ -710,7 +723,7 @@ bool SnapshotWriter::WriteLeaves(std::uint64_t _tick, std::span<const EntityId> 
 
 std::uint32_t SnapshotWriter::WriteInterest(const Universe& _universe, std::span<const ShipHandle> _sent, std::span<const EntityId> _left,
                                             std::span<const EntityId> _destroyed, std::span<const EntityId> _docked,
-                                            Neuron::Transport& _transport, FactionId _viewer)
+                                            std::span<const EntityId> _jumped, Neuron::Transport& _transport, FactionId _viewer)
 {
   m_lastBytes = 0;
   m_lastRecords = 0;
@@ -723,7 +736,7 @@ std::uint32_t SnapshotWriter::WriteInterest(const Universe& _universe, std::span
   // handle the receiver does not hold is a no-op -- while an upsert that overtakes its own leave
   // would put a dead ship back. The two lanes have no ordering between them, so the order that is
   // safe under either is the one to send in.
-  if (!WriteLeaves(_universe.Tick(), _left, _destroyed, _docked, _transport))
+  if (!WriteLeaves(_universe.Tick(), _left, _destroyed, _docked, _jumped, _transport))
   {
     // The lane refused: it is full, or not up yet. Nothing is retried and the update goes on --
     // the next one carries these handles again only if the interest set states them again, which
@@ -1015,6 +1028,7 @@ bool SnapshotReceiver::AcceptLeaves(std::span<const std::uint8_t> _message)
   const std::uint32_t leaveCount = in.U32();
   const std::uint32_t destroyedCount = in.U32();
   const std::uint32_t dockedCount = in.U32();
+  const std::uint32_t jumpedCount = in.U32();
   if (!in.Ok())
     return false;
 
@@ -1023,16 +1037,19 @@ bool SnapshotReceiver::AcceptLeaves(std::span<const std::uint8_t> _message)
   m_leaveScratch.clear();
   m_destroyedScratch.clear();
   m_dockedScratch.clear();
+  m_jumpedScratch.clear();
   for (std::uint32_t at = 0; at < leaveCount; ++at)
     m_leaveScratch.push_back(in.Entity());
   for (std::uint32_t at = 0; at < destroyedCount; ++at)
     m_destroyedScratch.push_back(in.Entity());
   for (std::uint32_t at = 0; at < dockedCount; ++at)
     m_dockedScratch.push_back(in.Entity());
+  for (std::uint32_t at = 0; at < jumpedCount; ++at)
+    m_jumpedScratch.push_back(in.Entity());
   if (!in.Ok())
     return false;
 
-  // All three leave the held set the same way. The lists differ in what they *say*, not in what they
+  // All four leave the held set the same way. The lists differ in what they *say*, not in what they
   // do to the set, and only the client's effects care which.
   for (const EntityId gone : m_leaveScratch)
     Remove(gone);
@@ -1040,11 +1057,14 @@ bool SnapshotReceiver::AcceptLeaves(std::span<const std::uint8_t> _message)
     Remove(dead);
   for (const EntityId docked : m_dockedScratch)
     Remove(docked);
+  for (const EntityId jumped : m_jumpedScratch)
+    Remove(jumped);
 
   // Appended, not assigned: several of these can arrive in one drain, and every death in them is one
   // the client owes an explosion. The consumer clears it when it has drawn them.
   m_destroyed.insert(m_destroyed.end(), m_destroyedScratch.begin(), m_destroyedScratch.end());
   m_docked.insert(m_docked.end(), m_dockedScratch.begin(), m_dockedScratch.end());
+  m_jumped.insert(m_jumped.end(), m_jumpedScratch.begin(), m_jumpedScratch.end());
 
   // The lane is ordered, so a later message cannot be overtaken by an earlier one; the tick is
   // carried for diagnostics and for the day a subscriber wants to know how stale a departure is.
@@ -1169,7 +1189,6 @@ void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _o
   // The four tables parallel to m_ships, in the same order, so none of them carries a count of its
   // own: they are the same length as m_ships by construction and a length that disagreed would be a
   // defect this format cannot express.
-  const std::uint32_t currentVersion = _universe.m_pathIslands.Version();
   for (const Universe::Route& route : _universe.m_routes)
   {
     out.U32(route.count);
@@ -1191,10 +1210,15 @@ void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _o
     // wall toward this route's point. Left out, a reload would reset every blocked counter and the
     // replayed universe would end orders on different ticks than the run that saved it.
     out.U32(route.blockedTicks);
+    // The island it was planned against, by the key that survives a run: a lowest path cell is a
+    // universe coordinate and means the same thing in every process (ADR 0059).
+    out.Bool(route.stamp.scopedToIsland);
+    out.I64(route.stamp.islandCellX);
+    out.I64(route.stamp.islandCellZ);
     // Whether it was planned against the architecture as it stands -- not the number that says so.
-    // A grid version is an epoch counter with no meaning outside the run that produced it, and a
-    // loaded universe's islands get whatever number their rebuild produces (work order 2.1).
-    out.Bool(route.gridVersion == currentVersion);
+    // A version is an epoch counter with no meaning outside the run that produced it, and a loaded
+    // universe's islands get whatever numbers their rebuild produces (work order 2.1).
+    out.Bool(_universe.m_pathIslands.IsStampCurrent(route.stamp));
     out.Bool(route.reachesDestination);
   }
 
@@ -1279,6 +1303,16 @@ void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _o
     }
   }
 
+  // The gates. Step reads them -- the jump pass resolves a destination through this table on every
+  // tick a fleet is crossing -- so the file carries them (AGENTS.md 8).
+  out.U32(static_cast<std::uint32_t>(_universe.m_gates.size()));
+  for (const Universe::Gate& gate : _universe.m_gates)
+  {
+    out.Handle(gate.structure);
+    out.Entity(gate.destination);
+    out.U8(gate.ownerFaction);
+  }
+
   // The fleets. Step prunes and retires them, so they are state it reads and the file carries them
   // (AGENTS.md 8). Only the live members are written, for the reason the routes above give about
   // their waypoints: entries past the count are never read, and writing them would make two universes
@@ -1302,6 +1336,7 @@ void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _o
     out.Bool(fleet.orderHasFacing);
     out.Handle(fleet.orderStation);
     out.Handle(fleet.orderTarget);
+    out.Handle(fleet.orderGate);
     out.Handle(fleet.threat);
     out.Pos(fleet.threatAnchorPos);
     out.U32(fleet.alertTicks);
@@ -1357,9 +1392,13 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
     route.requiredClearanceMetres = in.F32();
     route.cursor = in.U32();
     route.blockedTicks = in.U32();
-    // Held as the relation it was written as; the number it becomes is filled in below, once the
-    // islands this universe will actually route against have been rebuilt.
-    route.gridVersion = in.Bool() ? 1u : 0u;
+    // The key is read as it stands, because it means the same thing here. The currency is held as
+    // the relation it was written as; the number it becomes is filled in below, once the islands
+    // this universe will actually route against have been rebuilt.
+    route.stamp.scopedToIsland = in.Bool();
+    route.stamp.islandCellX = in.I64();
+    route.stamp.islandCellZ = in.I64();
+    route.stamp.version = in.Bool() ? 1u : 0u;
     route.reachesDestination = in.Bool();
     if (!in.Ok() || route.cursor > route.count)
       return false;
@@ -1479,6 +1518,26 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
     }
   }
 
+  // The gates. Bounded against what is left in the buffer rather than by a count of its own: a gate
+  // row is thirteen bytes, so a count past Remaining() is a corrupt file however large the universe.
+  const std::uint32_t gateCount = in.U32();
+  if (!in.Ok() || gateCount > in.Remaining())
+    return false;
+
+  std::vector<Universe::Gate> gates(gateCount);
+  for (Universe::Gate& gate : gates)
+  {
+    gate.structure = in.Handle();
+    gate.destination = in.Entity();
+    gate.ownerFaction = in.U8();
+    // The destination is deliberately not checked against this universe's entities. A gate whose far
+    // side is not here is exactly what a half-loaded shard looks like, and the jump pass already
+    // refuses to move anybody through one -- so the fail-closed behaviour is the pass's, and a check
+    // here would turn a recoverable universe into a refused load (Design/Universe-slice-2.md 4.6).
+    if (!in.Ok() || gate.ownerFaction >= FACTION_LIMIT)
+      return false;
+  }
+
   // An exact bound rather than a heuristic one: every slot of every faction is the most fleets a
   // universe can legitimately hold, so a count past it is a corrupt file and not a big universe.
   const std::uint32_t fleetCount = in.U32();
@@ -1519,7 +1578,7 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
     fleet.launchCooldownTicks = in.U32();
 
     const std::uint8_t orderKind = in.U8();
-    if (!in.Ok() || orderKind > static_cast<std::uint8_t>(FleetOrderKind::Mine))
+    if (!in.Ok() || orderKind > static_cast<std::uint8_t>(FleetOrderKind::Jump))
       return false;
     fleet.orderKind = static_cast<FleetOrderKind>(orderKind);
     fleet.orderPoint = in.Pos();
@@ -1527,6 +1586,7 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
     fleet.orderHasFacing = in.Bool();
     fleet.orderStation = in.Handle();
     fleet.orderTarget = in.Handle();
+    fleet.orderGate = in.Handle();
     // Nothing bounds the threat: a handle that resolves to nothing is a fleet that stands down on
     // its first tick, which is the fail-closed direction already.
     fleet.threat = in.Handle();
@@ -1553,6 +1613,7 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
   _outUniverse.m_freeSlots = std::move(freeSlots);
   _outUniverse.m_despawnLog = std::move(despawnLog);
   _outUniverse.m_stations = std::move(stations);
+  _outUniverse.m_gates = std::move(gates);
   _outUniverse.m_fleets = std::move(fleets);
 
   // The two inverses of the slot table, rebuilt rather than read. m_entityRows is sorted by id
@@ -1580,15 +1641,106 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
 
   const std::uint32_t currentVersion = _outUniverse.m_pathIslands.Version();
   for (Universe::Route& route : _outUniverse.m_routes)
-    route.gridVersion = (route.gridVersion != 0) ? currentVersion : currentVersion - 1u;
+  {
+    if (route.stamp.version == 0)
+    {
+      // It was already stale when it was written, and it stays stale: unscoped against a version
+      // that cannot be the current one, so the next tick re-plans it exactly as the saving run's
+      // next tick would have.
+      route.stamp.scopedToIsland = false;
+      route.stamp.version = currentVersion - 1u;
+      continue;
+    }
 
+    if (!route.stamp.scopedToIsland)
+    {
+      route.stamp.version = currentVersion;
+      continue;
+    }
+
+    // It was current against the island with this key, and the same obstacles partition the same
+    // way, so that island is here. NO_ISLAND is the fail-closed answer if it somehow is not: an
+    // unscoped stale stamp, which re-plans, rather than a number that might match by accident.
+    const std::uint32_t version = _outUniverse.m_pathIslands.IslandVersion(route.stamp.islandCellX, route.stamp.islandCellZ);
+    if (version == PathIslands::NO_ISLAND)
+    {
+      route.stamp.scopedToIsland = false;
+      route.stamp.version = currentVersion - 1u;
+      continue;
+    }
+    route.stamp.version = version;
+  }
+
+  return true;
+}
+
+void WriteSaveFile(const Universe& _universe, const SaveHeader& _header, std::vector<std::uint8_t>& _outBytes)
+{
+  // The state first, into a scratch, because the header carries its length and the length is not
+  // known until it exists. One copy of the state, not two: the header is emitted into _outBytes and
+  // the state appended to it.
+  std::vector<std::uint8_t> state;
+  WriteUniverseState(_universe, state);
+
+  _outBytes.clear();
+  _outBytes.reserve(SAVE_HEADER_BYTES + state.size());
+  ByteWriter out(_outBytes);
+  out.U32(SAVE_FILE_MAGIC);
+  out.U8(SAVE_FILE_FORMAT);
+  out.U64(_header.galaxySeed);
+  out.U16(static_cast<std::uint16_t>(_header.shard));
+  out.U64(static_cast<std::uint64_t>(state.size()));
+  // The header is exactly as long as the constant says. A field added above without moving the
+  // constant would put the state at an offset the reader does not look at, and the reader's own
+  // arithmetic would then be measured against the wrong place -- so it is asserted here, at compile
+  // time, rather than discovered in a file somebody cannot load.
+  static_assert(SAVE_HEADER_BYTES == 4u + 1u + 8u + 2u + 8u, "the save header's length has drifted from its fields");
+
+  _outBytes.insert(_outBytes.end(), state.begin(), state.end());
+}
+
+bool ReadSaveFile(std::span<const std::uint8_t> _bytes, SaveHeader& _outHeader, Universe& _outUniverse)
+{
+  ByteReader in(_bytes);
+  if (in.U32() != SAVE_FILE_MAGIC || in.U8() != SAVE_FILE_FORMAT)
+    return false;
+
+  SaveHeader header;
+  header.galaxySeed = in.U64();
+  header.shard = static_cast<ShardId>(in.U16());
+  const std::uint64_t stateBytes = in.U64();
+  if (!in.Ok())
+    return false;
+
+  // The length must account for the file exactly. Short is a torn write; long is a file with
+  // something appended, which the state codec would not notice because it stops at the end of the
+  // state. Compared against the buffer rather than trusted, and computed in uint64 so a length near
+  // the top of the range cannot wrap the addition into a small number that happens to match.
+  if (stateBytes != static_cast<std::uint64_t>(_bytes.size()) - static_cast<std::uint64_t>(SAVE_HEADER_BYTES))
+    return false;
+
+  // Into a local universe, not the caller's, for ReadUniverseState's own reason one level up: a
+  // refusal at the LAST check below -- the shard cross-check -- must leave the caller holding the
+  // universe it had, and a read straight into _outUniverse could not offer that.
+  Universe loaded;
+  if (!ReadUniverseState(_bytes.subspan(SAVE_HEADER_BYTES), loaded))
+    return false;
+
+  // The one thing the header claims that the body can contradict. A file that disagrees with itself
+  // is refused rather than reconciled: picking either answer would mean shipping the shard that was
+  // not saved, and there is no way to tell which of the two is the mistake.
+  if (loaded.Shard() != header.shard)
+    return false;
+
+  _outHeader = header;
+  _outUniverse = std::move(loaded);
   return true;
 }
 
 // kind, orderId, station handle, handleCount -- 17 bytes, against the move order's 38.
 bool WriteFleetOrder(const FleetOrder& _order, Neuron::Transport& _transport)
 {
-  if (_order.slot >= FLEET_SLOTS || _order.kind > FleetOrderKind::Mine)
+  if (_order.slot >= FLEET_SLOTS || _order.kind > FleetOrderKind::Jump)
     return false;
 
   std::vector<std::uint8_t> bytes;
@@ -1602,6 +1754,7 @@ bool WriteFleetOrder(const FleetOrder& _order, Neuron::Transport& _transport)
   out.Pos(_order.point);
   out.Entity(_order.station);
   out.Entity(_order.target);
+  out.Entity(_order.gate);
   return _transport.SendReliable(bytes.data(), static_cast<std::uint32_t>(bytes.size()));
 }
 
@@ -1619,7 +1772,8 @@ bool ReadFleetOrder(std::span<const std::uint8_t> _datagram, FleetOrder& _outOrd
   const UniversePos point = in.Pos();
   const EntityId station = in.Entity();
   const EntityId target = in.Entity();
-  if (!in.Ok() || slot >= FLEET_SLOTS || kind > static_cast<std::uint8_t>(FleetOrderKind::Mine))
+  const EntityId gate = in.Entity();
+  if (!in.Ok() || slot >= FLEET_SLOTS || kind > static_cast<std::uint8_t>(FleetOrderKind::Jump))
     return false;
 
   _outOrder.slot = slot;
@@ -1629,6 +1783,7 @@ bool ReadFleetOrder(std::span<const std::uint8_t> _datagram, FleetOrder& _outOrd
   _outOrder.hasFacing = hasFacing;
   _outOrder.station = station;
   _outOrder.target = target;
+  _outOrder.gate = gate;
   return true;
 }
 

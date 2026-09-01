@@ -249,7 +249,7 @@ public:
     CaptureLink link;
 
     const Game::ShipHandle handles[] = {universe.HandleOf(first), universe.HandleOf(second)};
-    Assert::IsTrue(writer.WriteInterest(universe, handles, {}, {}, {}, link) > 0, L"the first update did not send");
+    Assert::IsTrue(writer.WriteInterest(universe, handles, {}, {}, {}, {}, link) > 0, L"the first update did not send");
     for (const std::vector<std::uint8_t>& datagram : link.sent)
       (void)receiver.Accept(datagram);
     Assert::AreEqual(static_cast<std::size_t>(2), receiver.Latest().ships.size(), L"the client did not take both ships");
@@ -258,7 +258,7 @@ public:
     link.sent.clear();
     universe.Step();
     const Game::ShipHandle justFirst[] = {universe.HandleOf(first)};
-    Assert::IsTrue(writer.WriteInterest(universe, justFirst, {}, {}, {}, link) > 0, L"the refresh did not send");
+    Assert::IsTrue(writer.WriteInterest(universe, justFirst, {}, {}, {}, {}, link) > 0, L"the refresh did not send");
     for (const std::vector<std::uint8_t>& datagram : link.sent)
       (void)receiver.Accept(datagram);
     Assert::AreEqual(static_cast<std::size_t>(2), receiver.Latest().ships.size(), L"a refresh appended instead of updating in place");
@@ -270,7 +270,7 @@ public:
     // Ids, not handles: the departure runs on the wire name ships that may already be gone, so the
     // wire's currency is identity (ADR 0047). The sent list two lines up is still handles.
     const Game::EntityId leaving[] = {universe.EntityIdOf(second)};
-    Assert::IsTrue(writer.WriteInterest(universe, {}, leaving, {}, {}, link) > 0, L"the leave did not send");
+    Assert::IsTrue(writer.WriteInterest(universe, {}, leaving, {}, {}, {}, link) > 0, L"the leave did not send");
     Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"the leave did not take the reliable lane");
     for (const std::vector<std::uint8_t>& message : link.sentReliable)
       (void)receiver.Accept(message);
@@ -334,7 +334,7 @@ public:
     Game::SnapshotWriter writer;
     Game::SnapshotReceiver receiver;
     CaptureLink link;
-    Assert::IsTrue(writer.WriteInterest(universe, all, {}, {}, {}, link) > 2, L"the ship count did not need three fragments");
+    Assert::IsTrue(writer.WriteInterest(universe, all, {}, {}, {}, {}, link) > 2, L"the ship count did not need three fragments");
 
     for (std::size_t at = 0; at < link.sent.size(); ++at)
     {
@@ -378,7 +378,7 @@ public:
 
       Game::SnapshotWriter scoped;
       CaptureLink scopedLink;
-      (void)scoped.WriteInterest(universe, sent, {}, {}, {}, scopedLink);
+      (void)scoped.WriteInterest(universe, sent, {}, {}, {}, {}, scopedLink);
 
       Game::SnapshotWriter whole;
       CaptureLink wholeLink;

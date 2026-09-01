@@ -83,6 +83,7 @@ bool ParseServerConfig(std::string_view _text, ServerConfig& _outConfig, std::st
   bool seenRadius = false;
   bool seenUpdateTicks = false;
   bool seenOrders = false;
+  bool seenSaveTicks = false;
 
   std::size_t line = 0;
   std::size_t at = 0;
@@ -196,6 +197,24 @@ bool ParseServerConfig(std::string_view _text, ServerConfig& _outConfig, std::st
       }
       parsed.ordersPerTick = static_cast<std::uint32_t>(whole);
       seenOrders = true;
+    }
+    else if (key == "saveEveryTicks")
+    {
+      if (seenSaveTicks)
+      {
+        _outError = Refuse(line, "key set twice:", key);
+        return false;
+      }
+      // Zero is allowed here where the other periods are not, and it means something: no periodic
+      // save. The others have no such reading -- an interest update every zero ticks is not a
+      // slower update, it is a division by zero waiting at the call site.
+      if (!ReadUnsigned(value, whole) || whole > 0xFFFFFFFFull)
+      {
+        _outError = Refuse(line, "saveEveryTicks must be a whole number of ticks, 0 for never, found", value);
+        return false;
+      }
+      parsed.saveEveryTicks = static_cast<std::uint32_t>(whole);
+      seenSaveTicks = true;
     }
     else
     {

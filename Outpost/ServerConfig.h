@@ -40,6 +40,18 @@ struct ServerConfig
   float interestRadiusMetres = Game::InterestSet::Desc{}.radiusMetres;
   std::uint32_t interestUpdateEveryTicks = Game::InterestSet::Desc{}.updateEveryTicks;
   std::uint32_t ordersPerTick = Game::Publisher::Desc{}.ordersPerTick;
+
+  // How often the universe is written to disk, in ticks. 1800 is thirty seconds at 60 Hz.
+  //
+  // It is here rather than compiled in for ADR 0043's reason exactly: how much progress a deployment
+  // is willing to lose to a power cut is a property of the deployment, and nothing about the game
+  // changes when it moves. It has no library Desc to default from -- the save is the composition
+  // root's, because nothing in GameLogic or NeuronCore opens a file -- so, like the port, this is
+  // where the number lives.
+  //
+  // 0 disables the PERIODIC save; the save at clean shutdown still happens. A period of zero has no
+  // other sensible reading, and "never save at all" is a missing file rather than a setting.
+  std::uint32_t saveEveryTicks = 1800;
 };
 
 // The file the root reads, relative to the home directory -- so it resolves under <exe>\Assets\ the

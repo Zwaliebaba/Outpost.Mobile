@@ -57,6 +57,14 @@ public:
 
   // --- framing ----------------------------------------------------------------------------------
   void SetGoal(float _x, float _z) noexcept;
+
+  // Puts the goal AND the target on a point, so the next frame is already there.
+  //
+  // Follow eases asymptotically, which is right for a flight across a system and wrong for one
+  // across a galaxy: at interstellar range the ease spends whole seconds crossing empty space with
+  // nothing on screen, and the half-life never actually arrives. A caller that knows the gap is
+  // beyond any distance worth watching uses this instead (UniverseView::FollowFocusedFleet).
+  void SnapGoal(float _x, float _z) noexcept;
   // Eases the target towards the goal plus a lead, on real time.
   void Follow(float _leadX, float _leadZ, float _dtSec) noexcept;
   void Shake() noexcept;

@@ -6,12 +6,21 @@
 #include "Movement.h"
 #include "SimTuning.h"
 
+#include <cmath>
 #include <cstddef>
 
 using namespace DirectX;
 
 namespace Game
 {
+namespace
+{
+// Defined further down with the docking geometry it belongs to, and declared here because the jump
+// pass's approach reaches it first. Shared rather than copied: two approach points would be two
+// chances to disagree about where a structure's doorstep is.
+[[nodiscard]] UniversePos DockApproachPoint(const UniversePos& _station, const UniversePos& _ship, float _dockRangeMetres) noexcept;
+} // namespace
+
 ShipId Universe::SpawnShip(const UniversePos& _posUniverse, float _headingRad, std::uint32_t _hullId, FactionId _factionId)
 {
   // The serial is taken here rather than inside SpawnShipAs so that there is exactly one place that
@@ -308,6 +317,44 @@ Universe::StationId Universe::MakeStation(ShipId _structure, const StationDesc& 
   return id;
 }
 
+Universe::GateId Universe::MakeGate(ShipId _structure, const GateDesc& _desc)
+{
+  if (_structure >= m_ships.size())
+    return INVALID_GATE_ID;
+
+  Gate gate;
+  gate.structure = HandleOf(_structure);
+  gate.destination = _desc.destination;
+  gate.ownerFaction = _desc.ownerFaction;
+
+  const GateId id = static_cast<GateId>(m_gates.size());
+  m_gates.push_back(gate);
+  return id;
+}
+
+Universe::GateId Universe::GateAt(ShipId _id) const noexcept
+{
+  if (_id >= m_ships.size())
+    return INVALID_GATE_ID;
+
+  // StationAt's walk and its reason: through Resolve rather than by comparing stored ids, because
+  // swap-and-pop moves ids and a row holding a raw one would name whichever ship arrived in that
+  // slot (ADR 0005). A linear scan over single digits of rows, which becomes an index the day
+  // there are hundreds -- the sentence the station table already carries.
+  for (std::size_t at = 0; at < m_gates.size(); ++at)
+  {
+    if (Resolve(m_gates[at].structure) == _id)
+      return static_cast<GateId>(at);
+  }
+  return INVALID_GATE_ID;
+}
+
+const Universe::Gate& Universe::GateOf(GateId _id) const noexcept
+{
+  static const Gate NONE;
+  return (_id < m_gates.size()) ? m_gates[_id] : NONE;
+}
+
 Universe::StationId Universe::StationAt(ShipId _id) const noexcept
 {
   if (_id >= m_ships.size())
@@ -553,6 +600,24 @@ void Universe::LowerFleetOrder(Fleet& _fleet)
     if (station != INVALID_SHIP_ID)
       (void)IssueDockOrder(m_fleetShipScratch, station, _fleet.ownerFaction);
   }
+  else if (_fleet.orderKind == FleetOrderKind::Jump)
+  {
+    // The approach, through the same call a player's click has always gone through. The pass below
+    // does the crossing; this only gets the fleet to the door, in formation, so the members arrive
+    // together rather than trickling into the radius one at a time (Design/Universe.md 6.1).
+    const ShipId gate = Resolve(_fleet.orderGate);
+    if (gate != INVALID_SHIP_ID)
+    {
+      // Aimed at a point beside the gate rather than at its centre, which is inside the structure
+      // and is a point the wall forbids (ADR 0042). The dock pass solves the same problem with
+      // DockApproachPoint, and this is that call for the same reason.
+      const HullSpec& gateHull = HullSpecOf(m_ships[gate].hullId);
+      const UniversePos here = m_ships[Resolve(_fleet.members[0])].posUniverse;
+      const UniversePos approach =
+        DockApproachPoint(m_ships[gate].posUniverse, here, gateHull.BoundingRadiusMetres() + GATE_APPROACH_METRES);
+      (void)IssueMoveOrder(m_fleetShipScratch, approach, false, 0.0f, _fleet.ownerFaction);
+    }
+  }
   else if (_fleet.orderKind == FleetOrderKind::Attack)
   {
     // The combatants take the target and the rest hold where the order found them -- Stop's
@@ -607,6 +672,17 @@ Universe::FleetOrderResult Universe::IssueFleetOrder(FactionId _issuerFaction, s
       return FleetOrderResult::RefusedFriendly;
     target = HandleOf(_command.target);
   }
+  ShipHandle gate;
+  if (_command.kind == FleetOrderKind::Jump)
+  {
+    const GateId row = GateAt(_command.gate);
+    if (row == INVALID_GATE_ID)
+      return FleetOrderResult::NotAGate;
+    // One gate and one refusal. There is deliberately no standing check beside it: a gate takes
+    // anyone this phase, and half a gate-standings design invented here is the mistake the stations
+    // design declined rather than a head start (Design/Universe.md 6.1).
+    gate = m_gates[row].structure;
+  }
   else if (_command.kind == FleetOrderKind::Mine)
   {
     // Known to the wire, and refused until there is a mining design and something in the universe to
@@ -622,6 +698,7 @@ Universe::FleetOrderResult Universe::IssueFleetOrder(FactionId _issuerFaction, s
     fleet.orderKind = FleetOrderKind::Idle;
     fleet.orderStation = ShipHandle{};
     fleet.orderTarget = ShipHandle{};
+    fleet.orderGate = ShipHandle{};
     fleet.threat = ShipHandle{};
     for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
     {
@@ -641,6 +718,7 @@ Universe::FleetOrderResult Universe::IssueFleetOrder(FactionId _issuerFaction, s
   fleet.orderHasFacing = _command.hasFacing;
   fleet.orderStation = station;
   fleet.orderTarget = target;
+  fleet.orderGate = gate;
 
   // An explicit order outranks the standing behavior, which is the line IssueDockOrder already
   // carries for patrols: the threat is dropped and everybody is re-tasked. The alert is left
@@ -984,6 +1062,133 @@ void Universe::StepDockings()
     (void)DespawnShip(capture.ship, DespawnCause::Docked);
   }
   m_captureScratch.clear();
+}
+
+void Universe::StepJumps()
+{
+  m_jumpScratch.clear();
+
+  // Walked per fleet rather than per ship, because atomicity is a fleet's property: the question
+  // this pass asks is "is EVERY live member inside the gate", and no ship can answer it alone
+  // (ADR 0056).
+  for (Fleet& fleet : m_fleets)
+  {
+    if (fleet.orderKind != FleetOrderKind::Jump)
+      continue;
+
+    const ShipId gate = Resolve(fleet.orderGate);
+    const GateId row = (gate == INVALID_SHIP_ID) ? INVALID_GATE_ID : GateAt(gate);
+    if (row == INVALID_GATE_ID)
+    {
+      fleet.orderKind = FleetOrderKind::Idle; // the gate is gone, or is no longer one: stand down
+      fleet.orderGate = ShipHandle{};
+      continue;
+    }
+
+    // Where the road leads, resolved before anybody is despawned. A destination that no longer names
+    // a live gate strands nobody: the fleet holds at the near gate with its order standing, and the
+    // moment the far side exists again it crosses. Losing a fleet into a gate that leads nowhere is
+    // the one failure this pass must not have (Design/Universe-slice-2.md 4.6).
+    const ShipId farGate = ResolveEntity(m_gates[row].destination);
+    if (farGate == INVALID_SHIP_ID || farGate == gate || GateAt(farGate) == INVALID_GATE_ID)
+      continue;
+
+    // Whole or not at all, and the test is over every LIVE member: a member that died on the way is
+    // not a member any more, and the fleet pass prunes it at the end of this same tick. A fleet with
+    // nobody left in space crosses nothing.
+    bool everyoneIsHere = false;
+    for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+    {
+      const ShipId member = Resolve(fleet.members[at]);
+      if (member == INVALID_SHIP_ID)
+        continue;
+      everyoneIsHere = true;
+      // Measured to the skins, per pair, because a Structure's centre is 251 m inside its own hull
+      // and a flat centre-to-centre radius is a circle no ship can enter (HullSpec.h, GateRangeMetres).
+      if (Distance(m_ships[member].posUniverse, m_ships[gate].posUniverse) >
+          GateRangeMetres(HullSpecOf(m_ships[gate].hullId), HullSpecOf(m_ships[member].hullId)))
+      {
+        everyoneIsHere = false;
+        break;
+      }
+    }
+    if (!everyoneIsHere)
+      continue; // still arriving; the approach order keeps them coming, and this pass is patient
+
+    // The fleet arrives pointed the way the far gate faces. Which way that is away from a star is a
+    // genesis concept this library does not have, and a heading is content the structure already
+    // carries -- so using it keeps this pass free of any layout knowledge.
+    const float exitRad = m_ships[farGate].headingRad;
+    const UniversePos farPos = m_ships[farGate].posUniverse;
+
+    // How many are crossing, counted before anything is captured, so the spread below can be centred
+    // on the gate rather than starting at it.
+    std::uint32_t crossing = 0;
+    for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+      crossing += (Resolve(fleet.members[at]) != INVALID_SHIP_ID) ? 1u : 0u;
+
+    // Everything the far side needs, taken while the ship is still here: after the walk this id may
+    // name another ship. Ids would not do -- each despawn swap-and-pops -- which is the dock pass's
+    // argument for its captures, unchanged.
+    std::uint32_t placed = 0;
+    for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+    {
+      const ShipId member = Resolve(fleet.members[at]);
+      if (member == INVALID_SHIP_ID)
+        continue;
+
+      // Abreast on the exit bearing, one spacing apart and centred on the gate, so a fleet arrives
+      // spread rather than stacked on one point. The separation solver would push them apart anyway;
+      // arriving already apart is what makes a crossing read as a fleet rather than as a pile.
+      const float across = JUMP_ARRIVAL_SPACING_METRES * (static_cast<float>(placed) - 0.5f * static_cast<float>(crossing - 1u));
+      UniversePos arrival = farPos;
+      Translate(arrival, std::cos(exitRad) * across + std::sin(exitRad) * JUMP_ARRIVAL_STANDOFF_METRES,
+                -std::sin(exitRad) * across + std::cos(exitRad) * JUMP_ARRIVAL_STANDOFF_METRES);
+
+      const ShipState& ship = m_ships[member];
+      m_jumpScratch.push_back(Jumper{fleet.members[at], EntityIdOf(fleet.members[at]), ship.hullId, ship.factionId, ship.hullPoints,
+                                     arrival, exitRad, fleet.ownerFaction, fleet.slot, at});
+      ++placed;
+    }
+
+    // The order is spent by being obeyed, and the alert goes with it. Fleeing through a gate is
+    // escape: a leash anchored a system away would never release, so the threat is dropped here
+    // rather than left to time out on the far side (Design/Universe.md 6.2).
+    fleet.orderKind = FleetOrderKind::Idle;
+    fleet.orderGate = ShipHandle{};
+    fleet.threat = ShipHandle{};
+    fleet.alertTicks = 0;
+  }
+
+  // After the walk, in collection order -- which is array order, which is deterministic. During it
+  // would make the visit order depend on who jumped, for the reason the dock pass gives.
+  for (const Jumper& jumper : m_jumpScratch)
+  {
+    if (!DespawnShip(jumper.ship, DespawnCause::JumpedOut))
+      continue;
+
+    // SpawnShipAs under the SAME identity is the whole of what a jump is: the ship that left is the
+    // ship that arrives, and every client that holds it goes on holding it. It is also, exactly, a
+    // shard handoff with no transport in the middle -- which is the property this pass exists to
+    // prove (ADR 0056).
+    const ShipId born = SpawnShipAs(jumper.entity, jumper.arrivalPos, jumper.headingRad, jumper.hullId, jumper.factionId);
+    if (born == INVALID_SHIP_ID)
+      continue;
+
+    // Damage rides across; intent does not. A fresh row's route, patrol, docking, duty and mounts
+    // are already at their rest state, which is exactly what the far side should re-derive
+    // (Design/Universe.md 6.3).
+    m_ships[born].hullPoints = jumper.hullPoints;
+
+    // The fleet takes the new handle in the slot the old one left. Without this the row goes on
+    // holding handles that no longer resolve, StepFleets prunes every one of them at the end of this
+    // same tick, and the fleet retires on the tick it arrived -- the ships would be there and the
+    // fleet would not (Design/Universe.md 6.2).
+    const FleetId fleetId = FleetInSlot(jumper.ownerFaction, jumper.slot);
+    if (fleetId != INVALID_FLEET_ID && jumper.memberIndex < m_fleets[fleetId].memberCount)
+      m_fleets[fleetId].members[jumper.memberIndex] = HandleOf(born);
+  }
+  m_jumpScratch.clear();
 }
 
 void Universe::StepPatrols()
@@ -1674,7 +1879,7 @@ void Universe::PlanRoute(ShipId _id, const UniversePos& _destination, float _req
   Route& route = m_routes[_id];
 
   ++m_routePlans;
-  const bool complete = m_pathIslands.FindPath(ship.posUniverse, _destination, _requiredClearanceMetres, m_routeScratch);
+  const bool complete = m_pathIslands.FindPath(ship.posUniverse, _destination, _requiredClearanceMetres, m_routeScratch, route.stamp);
   route.destination = _destination;
   route.requiredClearanceMetres = _requiredClearanceMetres;
   route.count = std::min<std::uint32_t>(MAX_PATH_WAYPOINTS, static_cast<std::uint32_t>(m_routeScratch.size()));
@@ -1682,7 +1887,6 @@ void Universe::PlanRoute(ShipId _id, const UniversePos& _destination, float _req
     route.waypoint[at] = m_routeScratch[at];
   route.cursor = 0;
   route.legStart = ship.posUniverse;
-  route.gridVersion = m_pathIslands.Version();
   route.reachesDestination = complete;
   route.blockedTicks = 0;
 
@@ -1740,7 +1944,11 @@ void Universe::AdvanceRoute(ShipId _id)
   }
 
   // A route that was planned against architecture that has since changed is not a route any more.
-  if (route.gridVersion != m_pathIslands.Version())
+  //
+  // "Changed" is now scoped: architecture in another island is another island's business, so a
+  // station going up fifty kilometres away costs this route nothing (PathIslands::IsStampCurrent,
+  // ADR 0059).
+  if (!m_pathIslands.IsStampCurrent(route.stamp))
   {
     PlanRoute(_id, route.destination, route.requiredClearanceMetres);
     return;
@@ -1782,6 +1990,11 @@ void Universe::SnapshotPreviousTick() noexcept
     ship.prevPos = ship.posUniverse;
     ship.prevHeading = ship.headingRad;
   }
+}
+
+void Universe::SettleDerivedState()
+{
+  RebuildStaticIfDirty();
 }
 
 void Universe::RebuildStaticIfDirty()
@@ -2058,6 +2271,7 @@ void Universe::ApplyBlocking()
 void Universe::Step()
 {
   StepDockings();
+  StepJumps();
   StepPatrols();
   StepProtectors();
   StepFleets();

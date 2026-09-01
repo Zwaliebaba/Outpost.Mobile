@@ -96,8 +96,14 @@ struct ShipSnapshot
   std::uint8_t hullFraction = 255;
 };
 
-// Bit 0 of ShipSnapshot::flags.
+// Bits of ShipSnapshot::flags.
+//
+// What a Structure *is* travels as a flag rather than being worked out from the hull table, and that
+// is the rule rather than an economy: a client that inferred "station" from "immovable" would be
+// making exactly the inference the flag exists to end -- and a gate is a Structure too, so the
+// inference would now be wrong as well as fragile (UniverseView::PickStation).
 inline constexpr std::uint8_t SHIP_FLAG_STATION = 0x01;
+inline constexpr std::uint8_t SHIP_FLAG_GATE = 0x02;
 
 // One shot, as a client is told about it: who fired, at what, and from which mount.
 //
@@ -140,6 +146,7 @@ struct FleetOrder
   bool hasFacing = false;               // Move
   EntityId station = INVALID_ENTITY_ID; // Dock
   EntityId target = INVALID_ENTITY_ID;  // Attack
+  EntityId gate = INVALID_ENTITY_ID;    // Jump
 };
 
 // Who is in one fleet, as the owning client is told it.
@@ -250,15 +257,15 @@ public:
   // departure lists are ids because they name ships that are already gone, which is why the despawn
   // log carries one (ADR 0047).
   std::uint32_t WriteInterest(const Universe& _universe, std::span<const ShipHandle> _sent, std::span<const EntityId> _left,
-                              std::span<const EntityId> _destroyed, std::span<const EntityId> _docked, Neuron::Transport& _transport,
-                              FactionId _viewer = FACTION_PLAYER);
+                              std::span<const EntityId> _destroyed, std::span<const EntityId> _docked, std::span<const EntityId> _jumped,
+                              Neuron::Transport& _transport, FactionId _viewer = FACTION_PLAYER);
 
   // The leave and destroyed lists, as one message on the reliable lane. Public because a caller
   // that is not sending an interest update -- a subscriber leaving, a universe shutting down -- still
   // has departures to state. Returns false when the lane refused it, which is a full lane or one
   // that is not up yet, and never a partial send.
   bool WriteLeaves(std::uint64_t _tick, std::span<const EntityId> _left, std::span<const EntityId> _destroyed,
-                   std::span<const EntityId> _docked, Neuron::Transport& _transport);
+                   std::span<const EntityId> _docked, std::span<const EntityId> _jumped, Neuron::Transport& _transport);
 
   // The gunfire since this subscriber last heard, as one datagram. False when there was none to
   // send or the lane refused it; nothing is retried, because a lost muzzle flash is not a lie and a
@@ -412,6 +419,22 @@ public:
     m_docked.clear();
   }
 
+  // The handles the last applied departure message said had jumped out: gone from this system,
+  // alive somewhere else, under the same identity. The fourth run rather than a reuse of the docked
+  // one, and the reason is what a client does with it: a docking is a silent removal, a jump is a
+  // thing a player watched happen and should see. Without its own run a jump would arrive as a
+  // DESTROY -- SplitTheLost routes everything that is not a docking there -- and a fleet crossing a
+  // gate would explode on every screen that watched it leave (ADR 0056, ADR 0040).
+  [[nodiscard]] std::span<const EntityId> Jumped() const noexcept
+  {
+    return m_jumped;
+  }
+
+  void ClearJumped() noexcept
+  {
+    m_jumped.clear();
+  }
+
   // The gunfire the last messages carried. Accumulated across a drain and cleared by the consumer,
   // which is Destroyed()'s idiom and its reason: two fire messages in one pump must not leave the
   // first one's tracers undrawn.
@@ -452,8 +475,10 @@ private:
   std::vector<EntityId> m_leaveScratch;     // one departure message, read before any of it applies
   std::vector<EntityId> m_destroyedScratch; // the same, for the deaths in it
   std::vector<EntityId> m_dockedScratch;    // and for the dockings
+  std::vector<EntityId> m_jumpedScratch;    // and for the jumps
   std::vector<EntityId> m_destroyed;        // deaths since the consumer last cleared them
   std::vector<EntityId> m_docked;           // dockings since the consumer last cleared them
+  std::vector<EntityId> m_jumped;           // jumps since the consumer last cleared them
   std::vector<FireEvent> m_fire;            // gunfire since the consumer last cleared it
   std::vector<FireEvent> m_fireScratch;     // one message, read whole before any of it is kept
   std::uint64_t m_lastFireTick = 0;
@@ -491,6 +516,60 @@ private:
 // AGENTS.md 5's rule for anything parsing content and the discipline SnapshotReceiver already keeps.
 void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _outBytes);
 [[nodiscard]] bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUniverse);
+
+// What a save file carries in front of the state.
+//
+// The seed is here because the client-visible galaxy derives from it: a binary whose compiled
+// GALAXY_SEED has moved on still boots the universe the file holds, laid out from this seed, and a
+// shard and its clients never disagree about where anything is (Design/Universe.md 8).
+//
+// The shard is here as well as in the state, and that duplication is deliberate: a header exists to
+// be readable WITHOUT decoding the body, so a launcher can ask which shard a file belongs to for
+// the price of fifteen bytes. The reader cross-checks the two and refuses a file where they
+// disagree, which is what stops a second source of truth becoming a second answer
+// (Design/Universe-slice-5.md 7).
+struct SaveHeader
+{
+  std::uint64_t galaxySeed = 0;
+  ShardId shard = 0;
+};
+
+// 'VASU' little-endian: Universe SAVe. Distinct from UNIVERSE_STATE_MAGIC because these are two
+// formats and not one: this byte says how to find the state, the state's own says how to read it,
+// and bumping either need not bump the other.
+inline constexpr std::uint32_t SAVE_FILE_MAGIC = 0x55534156u;
+inline constexpr std::uint8_t SAVE_FILE_FORMAT = 1;
+
+// magic 4 + format 1 + galaxy seed 8 + shard 2 + state length 8.
+inline constexpr std::size_t SAVE_HEADER_BYTES = 23;
+
+// What the file is called.
+//
+// Beside the magic rather than in whichever program opens one, because it is the same kind of fact:
+// two programs that disagree about a save file's NAME fail exactly as completely as two that
+// disagree about its format, and now there are two -- the tool that writes a universe and the game
+// that runs it (ADR 0058). GameLogic still opens nothing; it only says what the thing is called.
+//
+// A bare name, so FileSys::ResolvePath puts it under <exe>\Assets\. That is wrong for a real
+// install -- a read-only program directory cannot be saved into -- and it is deliberately one
+// constant, so the day there is a writable data directory this line moves and nothing else does
+// (Design/Universe-slice-5.md 6).
+inline constexpr const wchar_t* UNIVERSE_SAVE_FILE = L"Universe.sav";
+
+// The state codec given a file.
+//
+// The length is written even though the state is self-delimiting, and it is what makes "torn"
+// checkable in BOTH directions. ReadUniverseState stops at the end of the state and never looks
+// past it, so a file with rubbish appended would otherwise load and be believed; and a file cut
+// short is caught here, before the body parser allocates anything at all.
+//
+// Read refuses -- and changes NEITHER out-parameter -- on a buffer too short for the header, the
+// wrong magic, a format byte this build does not know, a length that disagrees with the buffer, a
+// state the state codec refuses, or a header shard that disagrees with the state's. It never throws
+// and never asserts, which is AGENTS.md 5's rule for anything parsing content: what a refusal MEANS
+// is the caller's business, and for the composition root it means the boot stops (ADR 0057).
+void WriteSaveFile(const Universe& _universe, const SaveHeader& _header, std::vector<std::uint8_t>& _outBytes);
+[[nodiscard]] bool ReadSaveFile(std::span<const std::uint8_t> _bytes, SaveHeader& _outHeader, Universe& _outUniverse);
 
 // Orders travel the other way. Written by the client half, read and applied by the server half.
 //
