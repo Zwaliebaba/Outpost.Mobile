@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "Publisher.h"
 
-#include "World.h"
+#include "Universe.h"
 
 #include <algorithm>
 
@@ -24,11 +24,11 @@ namespace
 
 // Whether a faction holds any slot at all. What decides that an update with no records is still
 // worth sending, because its header carries the status block.
-[[nodiscard]] bool HasAnyFleet(const World& _world, FactionId _faction) noexcept
+[[nodiscard]] bool HasAnyFleet(const Universe& _universe, FactionId _faction) noexcept
 {
   for (std::uint8_t slot = 0; slot < FLEET_SLOTS; ++slot)
   {
-    if (_world.FleetInSlot(_faction, slot) != World::INVALID_FLEET_ID)
+    if (_universe.FleetInSlot(_faction, slot) != Universe::INVALID_FLEET_ID)
       return true;
   }
   return false;
@@ -67,8 +67,8 @@ Publisher::Handle Publisher::Add(const Desc& _desc)
   added.phase = slot % std::max(1u, _desc.interest.updateEveryTicks);
 
   // Whatever the caller said. Zero -- the default -- is "everything the log still holds", which is
-  // right for a subscriber present from the first tick and wrong for one joining a running world;
-  // that caller passes World::DespawnHead() (ADR 0027).
+  // right for a subscriber present from the first tick and wrong for one joining a running universe;
+  // that caller passes Universe::DespawnHead() (ADR 0027).
   added.despawnCursor = _desc.openingDespawnCursor;
   added.shotCursor = _desc.openingShotCursor;
 
@@ -117,7 +117,7 @@ const Publisher::Subscriber* Publisher::Resolve(Handle _handle) const noexcept
   return const_cast<Publisher*>(this)->Resolve(_handle);
 }
 
-void Publisher::SetCentre(Handle _handle, const WorldPos& _centre) noexcept
+void Publisher::SetCentre(Handle _handle, const UniversePos& _centre) noexcept
 {
   if (Subscriber* const found = Resolve(_handle))
     found->centre = _centre;
@@ -141,7 +141,7 @@ std::uint32_t Publisher::PhaseOf(Handle _handle) const noexcept
   return (found != nullptr) ? found->phase : 0u;
 }
 
-void Publisher::ApplyOrders(World& _world)
+void Publisher::ApplyOrders(Universe& _universe)
 {
   m_messageScratch.resize(Neuron::MAX_RELIABLE_BYTES);
 
@@ -180,7 +180,7 @@ void Publisher::ApplyOrders(World& _world)
         // Ids resolve here and nowhere else, for every kind. A ship that died between the click and
         // this tick resolves to nothing and the order does nothing with it, rather than acting on
         // whichever ship swap-and-pop moved into its index (ADR 0005) -- and an id minted by another
-        // shard resolves to nothing too, which is what stops a client naming what this world does
+        // shard resolves to nothing too, which is what stops a client naming what this universe does
         // not own. There is far less of it to do than there was: an order names a fleet now and
         // carries at most two ids, where a ship-list order carried up to 139 (ADR 0049).
         FleetOrder fleetOrder;
@@ -192,14 +192,14 @@ void Publisher::ApplyOrders(World& _world)
           // instead of a list, and the authority gate below is a comparison rather than a filter
           // over everything the message carried (ADR 0049). The subscriber's faction is what the
           // gate reads, so a client cannot order a slot that is not its own.
-          World::FleetCommand command;
+          Universe::FleetCommand command;
           command.kind = fleetOrder.kind;
           command.point = fleetOrder.point;
           command.facingRad = fleetOrder.facingRad;
           command.hasFacing = fleetOrder.hasFacing;
-          command.station = _world.ResolveEntity(fleetOrder.station);
-          command.target = _world.ResolveEntity(fleetOrder.target);
-          (void)_world.IssueFleetOrder(subscriber.faction, fleetOrder.slot, command);
+          command.station = _universe.ResolveEntity(fleetOrder.station);
+          command.target = _universe.ResolveEntity(fleetOrder.target);
+          (void)_universe.IssueFleetOrder(subscriber.faction, fleetOrder.slot, command);
         }
         else if (ReadLedgerRequest(message, ledgerRequest))
         {
@@ -213,17 +213,17 @@ void Publisher::ApplyOrders(World& _world)
           // A station that is not one, or is gone, is answered with zeros rather than with silence.
           // The screen has to open on something, and a reply that never comes is indistinguishable
           // from a lost one -- which would leave a player looking at a spinner over a dead dock.
-          const ShipId structure = _world.ResolveEntity(ledgerRequest.station);
-          _world.LedgerFor(_world.StationAt(structure), subscriber.faction, reply.hullCounts);
+          const ShipId structure = _universe.ResolveEntity(ledgerRequest.station);
+          _universe.LedgerFor(_universe.StationAt(structure), subscriber.faction, reply.hullCounts);
           (void)WriteLedgerReply(reply, *subscriber.transport);
         }
         else if (ReadComposeOrder(message, composeOrder))
         {
-          // Every gate is World's, including the standing gate and the slot gate, for ADR 0014's
+          // Every gate is Universe's, including the standing gate and the slot gate, for ADR 0014's
           // reason; the issuing faction is the subscriber's and never the message's, so a client
           // cannot compose out of somebody else's ledger by saying it is somebody else.
-          const ShipId structure = _world.ResolveEntity(composeOrder.station);
-          (void)_world.ComposeFleet(_world.StationAt(structure), composeOrder.slot, composeOrder.hullCounts, subscriber.faction);
+          const ShipId structure = _universe.ResolveEntity(composeOrder.station);
+          (void)_universe.ComposeFleet(_universe.StationAt(structure), composeOrder.slot, composeOrder.hullCounts, subscriber.faction);
         }
         // A message this half does not understand is dropped, not fatal.
       }
@@ -231,7 +231,7 @@ void Publisher::ApplyOrders(World& _world)
   }
 }
 
-void Publisher::Publish(World& _world)
+void Publisher::Publish(Universe& _universe)
 {
   for (Subscriber& subscriber : m_subscribers)
   {
@@ -242,49 +242,49 @@ void Publisher::Publish(World& _world)
     // a fleet; the status block that rides the update says where it is and what it is doing, and a
     // block describing a membership the client has not been told yet is a button that cannot draw
     // itself (Design/Archive/Fleets.md 8.1).
-    PublishRosters(_world, subscriber);
+    PublishRosters(_universe, subscriber);
 
-    if (subscriber.interest.IsDueOn(_world.Tick(), subscriber.phase))
-      PublishOne(_world, subscriber);
+    if (subscriber.interest.IsDueOn(_universe.Tick(), subscriber.phase))
+      PublishOne(_universe, subscriber);
   }
 
   // Then, and only then, the log may forget. The minimum across every subscriber is what is safe to
   // drop -- anything newer is still owed to whichever one is furthest behind (ADR 0027). With no
   // subscribers at all the head is the minimum, because nobody is owed anything.
-  std::uint64_t minimum = _world.DespawnHead();
+  std::uint64_t minimum = _universe.DespawnHead();
   for (const Subscriber& subscriber : m_subscribers)
     minimum = std::min(minimum, subscriber.despawnCursor);
-  _world.TrimDespawnsBefore(minimum);
+  _universe.TrimDespawnsBefore(minimum);
 
   // And the shot log, on the same terms: what remains is what at least one subscriber has still to
   // hear about, and with no subscribers the head is the minimum because nobody is owed anything.
-  std::uint64_t oldestShot = _world.ShotHead();
+  std::uint64_t oldestShot = _universe.ShotHead();
   for (const Subscriber& subscriber : m_subscribers)
     oldestShot = std::min(oldestShot, subscriber.shotCursor);
-  _world.TrimShotsBefore(oldestShot);
+  _universe.TrimShotsBefore(oldestShot);
 }
 
-void Publisher::PublishRosters(const World& _world, Subscriber& _subscriber)
+void Publisher::PublishRosters(const Universe& _universe, Subscriber& _subscriber)
 {
   // The publisher's own scratch rather than a local, so the common case -- five slots, nothing
   // changed -- allocates nothing. Every other buffer here is held for the same reason.
   FleetRoster& roster = m_rosterScratch;
   for (std::uint8_t slot = 0; slot < FLEET_SLOTS; ++slot)
   {
-    // The world's own membership for this slot, as ids. The fleet holds handles because a reference
+    // The universe's own membership for this slot, as ids. The fleet holds handles because a reference
     // that outlives a tick has to (ADR 0005); the wire holds identities because a client has never
     // been given a handle and could not interpret one (ADR 0047). This is where the two meet, the
     // same meeting SplitTheLost is.
     roster.slot = slot;
     roster.members.clear();
 
-    const World::FleetId id = _world.FleetInSlot(_subscriber.faction, slot);
-    if (id != World::INVALID_FLEET_ID)
+    const Universe::FleetId id = _universe.FleetInSlot(_subscriber.faction, slot);
+    if (id != Universe::INVALID_FLEET_ID)
     {
-      const World::Fleet& fleet = _world.FleetOf(id);
+      const Universe::Fleet& fleet = _universe.FleetOf(id);
       for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
       {
-        const EntityId entity = _world.EntityIdOf(fleet.members[at]);
+        const EntityId entity = _universe.EntityIdOf(fleet.members[at]);
         if (entity != INVALID_ENTITY_ID)
           roster.members.push_back(entity);
       }
@@ -303,9 +303,9 @@ void Publisher::PublishRosters(const World& _world, Subscriber& _subscriber)
   }
 }
 
-void Publisher::PublishOne(const World& _world, Subscriber& _subscriber)
+void Publisher::PublishOne(const Universe& _universe, Subscriber& _subscriber)
 {
-  _subscriber.interest.Update(_world, _subscriber.centre);
+  _subscriber.interest.Update(_universe, _subscriber.centre);
 
   // Entered and refreshed go on the wire together: the receiver upserts either way and the
   // distinction is the sender's, not the format's.
@@ -313,7 +313,7 @@ void Publisher::PublishOne(const World& _world, Subscriber& _subscriber)
   m_sendScratch.insert(m_sendScratch.end(), _subscriber.interest.Entered().begin(), _subscriber.interest.Entered().end());
   m_sendScratch.insert(m_sendScratch.end(), _subscriber.interest.Refreshed().begin(), _subscriber.interest.Refreshed().end());
 
-  SplitTheLost(_world, _subscriber);
+  SplitTheLost(_universe, _subscriber);
 
   // The gunfire, filtered to what this subscriber can see either end of.
   //
@@ -327,21 +327,21 @@ void Publisher::PublishOne(const World& _world, Subscriber& _subscriber)
   const std::span<const ShipHandle> subscribed = _subscriber.interest.Subscribed();
   const auto sees = [&](EntityId _entity)
   {
-    const ShipHandle handle = _world.HandleOfEntity(_entity);
+    const ShipHandle handle = _universe.HandleOfEntity(_entity);
     if (handle.generation != 0 && std::binary_search(subscribed.begin(), subscribed.end(), handle, HandleOrderBefore))
       return true;
     return Names(m_destroyedScratch, _entity) || Names(m_dockedScratch, _entity) || Names(m_leftScratch, _entity);
   };
 
   m_fireScratch.clear();
-  for (const ShotRecord& shot : _world.ShotsSince(_subscriber.shotCursor))
+  for (const ShotRecord& shot : _universe.ShotsSince(_subscriber.shotCursor))
   {
     if (sees(shot.shooter) || sees(shot.victim))
       m_fireScratch.push_back(shot);
   }
-  _subscriber.shotCursor = _world.ShotHead();
+  _subscriber.shotCursor = _universe.ShotHead();
   if (!m_fireScratch.empty())
-    (void)_subscriber.writer.WriteFire(_world.Tick(), m_fireScratch, *_subscriber.transport);
+    (void)_subscriber.writer.WriteFire(_universe.Tick(), m_fireScratch, *_subscriber.transport);
 
   // An empty update is not information -- unless this subscriber has a fleet, in which case the
   // header alone is. The case this guard would otherwise break is the one the whole feature is for:
@@ -349,16 +349,16 @@ void Publisher::PublishOne(const World& _world, Subscriber& _subscriber)
   // empty space would be told nothing about any of them. A zero-record fragment carrying a status
   // block is 28 to 98 bytes at the update rate, and it is the only thing that says where they are
   // (Design/Archive/Fleets.md 8.2, Design/Archive/Fleets-slice-5.md 2.8).
-  if (m_sendScratch.empty() && _subscriber.interest.Left().empty() && !HasAnyFleet(_world, _subscriber.faction))
+  if (m_sendScratch.empty() && _subscriber.interest.Left().empty() && !HasAnyFleet(_universe, _subscriber.faction))
     return;
 
   // The subscriber's faction is what the header's hostileMask is stated for. The publisher is the
   // only thing that knows whose view an update is; this is not a second authority check.
-  (void)_subscriber.writer.WriteInterest(_world, m_sendScratch, m_leftScratch, m_destroyedScratch, m_dockedScratch, *_subscriber.transport,
-                                         _subscriber.faction);
+  (void)_subscriber.writer.WriteInterest(_universe, m_sendScratch, m_leftScratch, m_destroyedScratch, m_dockedScratch,
+                                         *_subscriber.transport, _subscriber.faction);
 }
 
-void Publisher::SplitTheLost(const World& _world, Subscriber& _subscriber)
+void Publisher::SplitTheLost(const Universe& _universe, Subscriber& _subscriber)
 {
   const std::span<const ShipHandle> left = _subscriber.interest.Left();
   m_destroyedScratch.clear();
@@ -372,9 +372,9 @@ void Publisher::SplitTheLost(const World& _world, Subscriber& _subscriber)
   // advances whether or not anything is sent, since a death nobody held has nobody to tell.
   //
   // The two stated causes come off the log as *ids*, because their ships are already gone and the
-  // world can no longer be asked who they were -- which is why the log carries one (ADR 0047). The
+  // universe can no longer be asked who they were -- which is why the log carries one (ADR 0047). The
   // handles go into a separate list, used only to work out who is left over.
-  for (const DespawnRecord& gone : _world.DespawnsSince(_subscriber.despawnCursor))
+  for (const DespawnRecord& gone : _universe.DespawnsSince(_subscriber.despawnCursor))
   {
     if (!std::binary_search(left.begin(), left.end(), gone.handle, HandleOrderBefore))
       continue;
@@ -384,7 +384,7 @@ void Publisher::SplitTheLost(const World& _world, Subscriber& _subscriber)
     else
       m_destroyedScratch.push_back(gone.entity);
   }
-  _subscriber.despawnCursor = _world.DespawnHead();
+  _subscriber.despawnCursor = _universe.DespawnHead();
 
   // One sorted list to subtract instead of a set_union of two, which is what the currency split
   // bought: the causes no longer have to be sorted in the same terms they are sent in.
@@ -400,7 +400,7 @@ void Publisher::SplitTheLost(const World& _world, Subscriber& _subscriber)
     // subscribers, so no subscriber can be past a death it has not been shown (ADR 0027). A handle
     // that resolves to nothing here would therefore be a ship this subscriber will never be told
     // about -- a ghost -- so it is dropped rather than sent as a null id, which would remove nothing.
-    const EntityId entity = _world.EntityIdOf(handle);
+    const EntityId entity = _universe.EntityIdOf(handle);
     if (entity != INVALID_ENTITY_ID)
       m_leftScratch.push_back(entity);
   }

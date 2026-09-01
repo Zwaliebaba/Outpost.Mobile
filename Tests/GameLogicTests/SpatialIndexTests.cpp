@@ -54,7 +54,7 @@ std::vector<Game::SpatialIndex::Entry> RandomEntries(IndexRandom& _random, std::
   return entries;
 }
 
-std::vector<Game::ShipId> BruteForce(const std::vector<Game::SpatialIndex::Entry>& _entries, const Game::WorldPos& _centre,
+std::vector<Game::ShipId> BruteForce(const std::vector<Game::SpatialIndex::Entry>& _entries, const Game::UniversePos& _centre,
                                      float _radiusMetres)
 {
   std::vector<Game::ShipId> found;
@@ -92,7 +92,7 @@ public:
       std::vector<Game::ShipId> actual;
       for (int probe = 0; probe < 24; ++probe)
       {
-        const Game::WorldPos centre = Game::LocalPos(random.NextFloat(-1600.0f, 1600.0f), random.NextFloat(-1600.0f, 1600.0f));
+        const Game::UniversePos centre = Game::LocalPos(random.NextFloat(-1600.0f, 1600.0f), random.NextFloat(-1600.0f, 1600.0f));
         const float radius = random.NextFloat(1.0f, 700.0f);
         index.QueryCircle(centre, radius, actual);
 
@@ -122,7 +122,7 @@ public:
     std::vector<Game::ShipId> actual;
     for (const float radius : {60.0f, 200.0f, 650.0f, 1400.0f})
     {
-      const Game::WorldPos centre = Game::LocalPos(random.NextFloat(-500.0f, 500.0f), random.NextFloat(-500.0f, 500.0f));
+      const Game::UniversePos centre = Game::LocalPos(random.NextFloat(-500.0f, 500.0f), random.NextFloat(-500.0f, 500.0f));
       index.QueryCircle(centre, radius, actual);
 
       std::vector<Game::ShipId> expected = BruteForce(entries, centre, radius);
@@ -156,7 +156,7 @@ public:
     std::vector<Game::ShipId> fromFine;
     for (int probe = 0; probe < 40; ++probe)
     {
-      const Game::WorldPos centre = Game::LocalPos(random.NextFloat(-2200.0f, 2200.0f), random.NextFloat(-2200.0f, 2200.0f));
+      const Game::UniversePos centre = Game::LocalPos(random.NextFloat(-2200.0f, 2200.0f), random.NextFloat(-2200.0f, 2200.0f));
       const float radius = random.NextFloat(5.0f, 900.0f);
       coarse.QueryCircle(centre, radius, fromCoarse);
       fine.QueryCircle(centre, radius, fromFine);
@@ -232,7 +232,7 @@ public:
     std::vector<Game::ShipId> actual;
     for (int probe = 0; probe < 24; ++probe)
     {
-      const Game::WorldPos centre = Game::LocalPos(random.NextFloat(-1300.0f, 1300.0f), random.NextFloat(-1300.0f, 1300.0f));
+      const Game::UniversePos centre = Game::LocalPos(random.NextFloat(-1300.0f, 1300.0f), random.NextFloat(-1300.0f, 1300.0f));
       const float radius = random.NextFloat(1.0f, 700.0f);
       tiered.QueryCircle(centre, radius, actual);
       std::vector<Game::ShipId> expected = BruteForce(entries, centre, radius);
@@ -327,21 +327,21 @@ public:
     for (const float spread : {4000.0f, 2000.0f, 1000.0f})
     {
       IndexRandom random(7u);
-      Game::World world;
+      Game::Universe universe;
       for (std::uint32_t at = 0; at < SHIPS; ++at)
       {
         const float x = random.NextFloat(-spread, spread);
         const float z = random.NextFloat(-spread, spread);
-        (void)world.SpawnShip(Game::LocalPos(x, z), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor));
+        (void)universe.SpawnShip(Game::LocalPos(x, z), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor));
       }
-      world.Step();
+      universe.Step();
 
-      const double queried = static_cast<double>(world.QueriedCandidateCount()) / SHIPS;
-      const double gathered = static_cast<double>(world.GatheredCandidateCount()) / SHIPS;
+      const double queried = static_cast<double>(universe.QueriedCandidateCount()) / SHIPS;
+      const double gathered = static_cast<double>(universe.GatheredCandidateCount()) / SHIPS;
       Logger::WriteMessage(std::format(L"spread {:>5.0f} m   queried {:>7.1f}/ship   gathered {:>7.1f}/ship   "
                                        L"query radius {:.0f} m\n",
                                        spread, queried, gathered,
-                                       Game::QueryRadiusMetres(Game::HullSpecOf(Game::HullId::Interceptor), world.Extent()))
+                                       Game::QueryRadiusMetres(Game::HullSpecOf(Game::HullId::Interceptor), universe.Extent()))
                              .c_str());
 
       Assert::IsTrue(gathered <= queried, L"the pair filter kept more candidates than the index returned");
@@ -349,14 +349,14 @@ public:
       previousPerShip = gathered;
     }
 
-    // And the radius the whole thing rests on: a world of nothing but Interceptors must not be
+    // And the radius the whole thing rests on: a universe of nothing but Interceptors must not be
     // asking for the Carrier's circle.
-    Game::World fighters;
+    Game::Universe fighters;
     (void)fighters.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor));
     fighters.Step();
     const Game::HullSpec& interceptor = Game::HullSpecOf(Game::HullId::Interceptor);
     Assert::IsTrue(Game::QueryRadiusMetres(interceptor, fighters.Extent()) < Game::QueryRadiusMetres(interceptor),
-                   L"a world of fighters still asked for the whole hull table's query radius");
+                   L"a universe of fighters still asked for the whole hull table's query radius");
   }
 };
 } // namespace GameLogicTests

@@ -19,25 +19,25 @@ constexpr int TICKS_TO_ARRIVE = 6000; // 100 s at 60 Hz, several times what the 
 
 // A Vanguard station and one player Corvette at the origin. Returns the station's row id; the ship
 // is always id 1, because the structure is spawned first and nothing has despawned yet.
-Game::World::StationId BuildDockScene(Game::World& _world, Game::ShipId& _outStation, Game::ShipId& _outShip,
-                                      Game::HullId _hull = Game::HullId::Corvette)
+Game::Universe::StationId BuildDockScene(Game::Universe& _universe, Game::ShipId& _outStation, Game::ShipId& _outShip,
+                                         Game::HullId _hull = Game::HullId::Corvette)
 {
-  _outStation = _world.SpawnShip(Game::LocalPos(STATION_EAST_METRES, STATION_NORTH_METRES), 0.0f,
-                                 static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
-  Game::World::StationDesc desc;
+  _outStation = _universe.SpawnShip(Game::LocalPos(STATION_EAST_METRES, STATION_NORTH_METRES), 0.0f,
+                                    static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+  Game::Universe::StationDesc desc;
   desc.ownerFaction = Game::FACTION_VANGUARD;
-  const Game::World::StationId station = _world.MakeStation(_outStation, desc);
+  const Game::Universe::StationId station = _universe.MakeStation(_outStation, desc);
 
-  _outShip = _world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(_hull), Game::FACTION_PLAYER);
+  _outShip = _universe.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(_hull), Game::FACTION_PLAYER);
   return station;
 }
 
-[[nodiscard]] bool StepUntilDocked(Game::World& _world, Game::ShipHandle _ship, int _maxTicks = TICKS_TO_ARRIVE)
+[[nodiscard]] bool StepUntilDocked(Game::Universe& _universe, Game::ShipHandle _ship, int _maxTicks = TICKS_TO_ARRIVE)
 {
   for (int tick = 0; tick < _maxTicks; ++tick)
   {
-    _world.Step();
-    if (_world.Resolve(_ship) == Game::INVALID_SHIP_ID)
+    _universe.Step();
+    if (_universe.Resolve(_ship) == Game::INVALID_SHIP_ID)
       return true;
   }
   return false;
@@ -47,33 +47,33 @@ Game::World::StationId BuildDockScene(Game::World& _world, Game::ShipId& _outSta
 TEST_CLASS(DockingTests)
 {
 public:
-  TEST_METHOD(AShipDocksAndLeavesTheWorld)
+  TEST_METHOD(AShipDocksAndLeavesTheUniverse)
   {
-    Game::World world;
+    Game::Universe universe;
     Game::ShipId structure = 0;
     Game::ShipId ship = 0;
-    const Game::World::StationId station = BuildDockScene(world, structure, ship);
-    const Game::ShipHandle shipHandle = world.HandleOf(ship);
-    const std::uint32_t hullId = world.Ship(ship).hullId;
+    const Game::Universe::StationId station = BuildDockScene(universe, structure, ship);
+    const Game::ShipHandle shipHandle = universe.HandleOf(ship);
+    const std::uint32_t hullId = universe.Ship(ship).hullId;
 
-    Assert::IsTrue(world.IssueDockOrder(std::array{ship}, structure, Game::FACTION_PLAYER) == Game::World::DockOrderResult::Ordered,
+    Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, structure, Game::FACTION_PLAYER) == Game::Universe::DockOrderResult::Ordered,
                    L"the dock order was refused");
 
     // The order is an order, not a next-tick suggestion: the first leg is issued immediately.
-    Assert::IsTrue(world.Ship(ship).order == Game::OrderState::Moving, L"the ship did not set off on the tick it was ordered");
-    Assert::IsTrue(world.DockingOf(ship).active, L"the docking intent was not set");
+    Assert::IsTrue(universe.Ship(ship).order == Game::OrderState::Moving, L"the ship did not set off on the tick it was ordered");
+    Assert::IsTrue(universe.DockingOf(ship).active, L"the docking intent was not set");
 
-    Assert::IsTrue(StepUntilDocked(world, shipHandle), L"the ship never reached the station");
+    Assert::IsTrue(StepUntilDocked(universe, shipHandle), L"the ship never reached the station");
 
-    // Captured, not merely arrived: it is gone from the world and inside the ledger.
-    Assert::AreEqual(Game::INVALID_SHIP_ID, world.Resolve(shipHandle), L"a docked ship is still in the world");
-    Assert::AreEqual(static_cast<std::size_t>(1), world.StationOf(station).docked.size(), L"the ledger did not gain a row");
-    Assert::AreEqual(hullId, world.StationOf(station).docked[0].hullId, L"the ledger row forgot the hull");
-    Assert::AreEqual(Faction(Game::FACTION_PLAYER), Faction(world.StationOf(station).docked[0].factionId),
+    // Captured, not merely arrived: it is gone from the universe and inside the ledger.
+    Assert::AreEqual(Game::INVALID_SHIP_ID, universe.Resolve(shipHandle), L"a docked ship is still in the universe");
+    Assert::AreEqual(static_cast<std::size_t>(1), universe.StationOf(station).docked.size(), L"the ledger did not gain a row");
+    Assert::AreEqual(hullId, universe.StationOf(station).docked[0].hullId, L"the ledger row forgot the hull");
+    Assert::AreEqual(Faction(Game::FACTION_PLAYER), Faction(universe.StationOf(station).docked[0].factionId),
                      L"the ledger row forgot the faction");
 
     // And it left with a cause, which is the whole reason this is not just a despawn.
-    const std::span<const Game::DespawnRecord> log = world.DespawnsSince(0);
+    const std::span<const Game::DespawnRecord> log = universe.DespawnsSince(0);
     Assert::AreEqual(static_cast<std::size_t>(1), log.size(), L"the departure was not logged exactly once");
     Assert::IsTrue(log[0].handle == shipHandle, L"the wrong ship was logged");
     Assert::IsTrue(log[0].cause == Game::DespawnCause::Docked, L"a docking was logged as a death");
@@ -85,33 +85,33 @@ public:
   {
     for (const Game::HullId hull : {Game::HullId::Interceptor, Game::HullId::Corvette, Game::HullId::Carrier})
     {
-      Game::World world;
+      Game::Universe universe;
       Game::ShipId structure = 0;
       Game::ShipId ship = 0;
-      const Game::World::StationId station = BuildDockScene(world, structure, ship, hull);
-      const Game::ShipHandle shipHandle = world.HandleOf(ship);
+      const Game::Universe::StationId station = BuildDockScene(universe, structure, ship, hull);
+      const Game::ShipHandle shipHandle = universe.HandleOf(ship);
       const float expected =
-        Game::DockRangeMetres(Game::HullSpecOf(world.Ship(structure).hullId), Game::HullSpecOf(world.Ship(ship).hullId));
+        Game::DockRangeMetres(Game::HullSpecOf(universe.Ship(structure).hullId), Game::HullSpecOf(universe.Ship(ship).hullId));
 
-      Assert::IsTrue(world.IssueDockOrder(std::array{ship}, structure, Game::FACTION_PLAYER) == Game::World::DockOrderResult::Ordered,
+      Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, structure, Game::FACTION_PLAYER) == Game::Universe::DockOrderResult::Ordered,
                      L"the dock order was refused");
 
       // Captured on the first tick it is within range, and never before: a hull that docked early
       // would be one whose range came from somebody else's bounding radius.
-      float lastDistance = Game::Distance(world.Ship(structure).posWorld, world.Ship(ship).posWorld);
+      float lastDistance = Game::Distance(universe.Ship(structure).posUniverse, universe.Ship(ship).posUniverse);
       bool docked = false;
       for (int tick = 0; tick < TICKS_TO_ARRIVE && !docked; ++tick)
       {
-        world.Step();
-        const Game::ShipId live = world.Resolve(shipHandle);
+        universe.Step();
+        const Game::ShipId live = universe.Resolve(shipHandle);
         if (live == Game::INVALID_SHIP_ID)
           docked = true;
         else
-          lastDistance = Game::Distance(world.Ship(0).posWorld, world.Ship(live).posWorld);
+          lastDistance = Game::Distance(universe.Ship(0).posUniverse, universe.Ship(live).posUniverse);
       }
       Assert::IsTrue(docked, L"a hull never reached its station");
       Assert::IsTrue(lastDistance <= expected + 1.0f, L"a hull was captured further out than its own dock range");
-      Assert::AreEqual(static_cast<std::size_t>(1), world.StationOf(station).docked.size(), L"the ledger did not gain a row");
+      Assert::AreEqual(static_cast<std::size_t>(1), universe.StationOf(station).docked.size(), L"the ledger did not gain a row");
     }
   }
 
@@ -119,99 +119,102 @@ public:
   // somewhere, and nothing about it should survive being told to go elsewhere.
   TEST_METHOD(AMoveOrderCancelsDocking)
   {
-    Game::World world;
+    Game::Universe universe;
     Game::ShipId structure = 0;
     Game::ShipId ship = 0;
-    const Game::World::StationId station = BuildDockScene(world, structure, ship);
-    const Game::ShipHandle shipHandle = world.HandleOf(ship);
+    const Game::Universe::StationId station = BuildDockScene(universe, structure, ship);
+    const Game::ShipHandle shipHandle = universe.HandleOf(ship);
 
-    Assert::IsTrue(world.IssueDockOrder(std::array{ship}, structure, Game::FACTION_PLAYER) == Game::World::DockOrderResult::Ordered,
+    Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, structure, Game::FACTION_PLAYER) == Game::Universe::DockOrderResult::Ordered,
                    L"the dock order was refused");
     for (int tick = 0; tick < 60; ++tick)
-      world.Step();
-    Assert::IsTrue(world.DockingOf(ship).active, L"the ship stopped docking on its own");
+      universe.Step();
+    Assert::IsTrue(universe.DockingOf(ship).active, L"the ship stopped docking on its own");
 
     // Away from the station, and far enough that an unclean cancel would show as a ship that turns
     // round again.
-    (void)world.IssueMoveOrder(std::array{ship}, Game::LocalPos(-1200.0f, 0.0f), false, 0.0f, Game::FACTION_PLAYER);
-    Assert::IsFalse(world.DockingOf(ship).active, L"a move order did not clear the docking intent");
+    (void)universe.IssueMoveOrder(std::array{ship}, Game::LocalPos(-1200.0f, 0.0f), false, 0.0f, Game::FACTION_PLAYER);
+    Assert::IsFalse(universe.DockingOf(ship).active, L"a move order did not clear the docking intent");
 
     for (int tick = 0; tick < TICKS_TO_ARRIVE; ++tick)
-      world.Step();
+      universe.Step();
 
-    Assert::AreNotEqual(Game::INVALID_SHIP_ID, world.Resolve(shipHandle), L"the ship docked after being told to go elsewhere");
-    Assert::IsTrue(world.StationOf(station).docked.empty(), L"a cancelled docking still reached the ledger");
-    Assert::IsTrue(Game::Distance(world.Ship(structure).posWorld, world.Ship(world.Resolve(shipHandle)).posWorld) > 1000.0f,
+    Assert::AreNotEqual(Game::INVALID_SHIP_ID, universe.Resolve(shipHandle), L"the ship docked after being told to go elsewhere");
+    Assert::IsTrue(universe.StationOf(station).docked.empty(), L"a cancelled docking still reached the ledger");
+    Assert::IsTrue(Game::Distance(universe.Ship(structure).posUniverse, universe.Ship(universe.Resolve(shipHandle)).posUniverse) > 1000.0f,
                    L"the ship never left for its new destination");
   }
 
   TEST_METHOD(TheStandingGateRefusesADock)
   {
-    Game::World world;
+    Game::Universe universe;
     Game::ShipId structure = 0;
     Game::ShipId ship = 0;
-    const Game::World::StationId station = BuildDockScene(world, structure, ship);
+    const Game::Universe::StationId station = BuildDockScene(universe, structure, ship);
 
     // A Vandal base beside it, which every other faction is hostile to from the first tick.
     const Game::ShipId base =
-      world.SpawnShip(Game::LocalPos(-900.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANDAL);
-    Game::World::StationDesc vandalDesc;
+      universe.SpawnShip(Game::LocalPos(-900.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANDAL);
+    Game::Universe::StationDesc vandalDesc;
     vandalDesc.ownerFaction = Game::FACTION_VANDAL;
-    (void)world.MakeStation(base, vandalDesc);
+    (void)universe.MakeStation(base, vandalDesc);
 
-    Assert::IsTrue(world.IssueDockOrder(std::array{ship}, base, Game::FACTION_PLAYER) == Game::World::DockOrderResult::RefusedStanding,
+    Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, base, Game::FACTION_PLAYER) ==
+                     Game::Universe::DockOrderResult::RefusedStanding,
                    L"the player was allowed to dock at the pirates");
 
     // Refused means *nothing changes*. Not a diverted ship, not a cleared patrol, not an intent.
-    Assert::IsFalse(world.DockingOf(ship).active, L"a refused order still set a docking intent");
-    Assert::IsTrue(world.Ship(ship).order == Game::OrderState::Idle, L"a refused order still moved the ship");
+    Assert::IsFalse(universe.DockingOf(ship).active, L"a refused order still set a docking intent");
+    Assert::IsTrue(universe.Ship(ship).order == Game::OrderState::Idle, L"a refused order still moved the ship");
 
     // A target that is not a station at all.
     const Game::ShipId scenery =
-      world.SpawnShip(Game::LocalPos(0.0f, 900.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
-    Assert::IsTrue(world.IssueDockOrder(std::array{ship}, scenery, Game::FACTION_PLAYER) == Game::World::DockOrderResult::NotAStation,
+      universe.SpawnShip(Game::LocalPos(0.0f, 900.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+    Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, scenery, Game::FACTION_PLAYER) == Game::Universe::DockOrderResult::NotAStation,
                    L"a Structure that is only scenery accepted a dock");
-    Assert::IsFalse(world.DockingOf(ship).active, L"an order at scenery set a docking intent");
+    Assert::IsFalse(universe.DockingOf(ship).active, L"an order at scenery set a docking intent");
 
     // Somebody else's ship is dropped from an otherwise good order, and the rest of it still goes.
     const Game::ShipId theirs =
-      world.SpawnShip(Game::LocalPos(100.0f, 100.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
-    Assert::IsTrue(world.IssueDockOrder(std::array{ship, theirs}, structure, Game::FACTION_PLAYER) == Game::World::DockOrderResult::Ordered,
+      universe.SpawnShip(Game::LocalPos(100.0f, 100.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
+    Assert::IsTrue(universe.IssueDockOrder(std::array{ship, theirs}, structure, Game::FACTION_PLAYER) ==
+                     Game::Universe::DockOrderResult::Ordered,
                    L"a mixed order was refused outright");
-    Assert::IsTrue(world.DockingOf(ship).active, L"the issuer's own ship was dropped from its order");
-    Assert::IsFalse(world.DockingOf(theirs).active, L"another faction's ship took the order");
-    Assert::IsTrue(world.StationOf(station).docked.empty(), L"nobody should have docked yet");
+    Assert::IsTrue(universe.DockingOf(ship).active, L"the issuer's own ship was dropped from its order");
+    Assert::IsFalse(universe.DockingOf(theirs).active, L"another faction's ship took the order");
+    Assert::IsTrue(universe.StationOf(station).docked.empty(), L"nobody should have docked yet");
   }
 
   // The door is guarded, not just the doorbell: an aggression recorded during the flight turns the
   // ship away at capture range rather than admitting it on a permission it no longer has.
   TEST_METHOD(AggressionAbortsAnApproach)
   {
-    Game::World world;
+    Game::Universe universe;
     Game::ShipId structure = 0;
     Game::ShipId ship = 0;
-    const Game::World::StationId station = BuildDockScene(world, structure, ship);
-    const Game::ShipHandle shipHandle = world.HandleOf(ship);
+    const Game::Universe::StationId station = BuildDockScene(universe, structure, ship);
+    const Game::ShipHandle shipHandle = universe.HandleOf(ship);
 
-    Assert::IsTrue(world.IssueDockOrder(std::array{ship}, structure, Game::FACTION_PLAYER) == Game::World::DockOrderResult::Ordered,
+    Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, structure, Game::FACTION_PLAYER) == Game::Universe::DockOrderResult::Ordered,
                    L"the dock order was refused");
 
     // Mid-flight, well clear of capture range.
     for (int tick = 0; tick < 120; ++tick)
-      world.Step();
-    Assert::AreNotEqual(Game::INVALID_SHIP_ID, world.Resolve(shipHandle), L"the ship docked before the test could provoke anybody");
-    world.RecordAggression(shipHandle, station);
+      universe.Step();
+    Assert::AreNotEqual(Game::INVALID_SHIP_ID, universe.Resolve(shipHandle), L"the ship docked before the test could provoke anybody");
+    universe.RecordAggression(shipHandle, station);
 
     for (int tick = 0; tick < TICKS_TO_ARRIVE; ++tick)
-      world.Step();
+      universe.Step();
 
-    Assert::AreNotEqual(Game::INVALID_SHIP_ID, world.Resolve(shipHandle), L"a criminal was admitted to the station it had just attacked");
-    Assert::IsTrue(world.StationOf(station).docked.empty(), L"a criminal reached the ledger");
-    Assert::IsFalse(world.DockingOf(world.Resolve(shipHandle)).active, L"the aborted approach is still running");
+    Assert::AreNotEqual(Game::INVALID_SHIP_ID, universe.Resolve(shipHandle),
+                        L"a criminal was admitted to the station it had just attacked");
+    Assert::IsTrue(universe.StationOf(station).docked.empty(), L"a criminal reached the ledger");
+    Assert::IsFalse(universe.DockingOf(universe.Resolve(shipHandle)).active, L"the aborted approach is still running");
 
     // Turned away at the door, not sent home: it stands down where it is, which is inside the
     // approach it had already flown.
-    const float distance = Game::Distance(world.Ship(structure).posWorld, world.Ship(world.Resolve(shipHandle)).posWorld);
+    const float distance = Game::Distance(universe.Ship(structure).posUniverse, universe.Ship(universe.Resolve(shipHandle)).posUniverse);
     Assert::IsTrue(distance < STATION_EAST_METRES, L"the aborted ship went back the way it came");
   }
 
@@ -219,122 +222,122 @@ public:
   // with the ship it belongs to, or a despawn silently retargets somebody else's approach.
   TEST_METHOD(ADespawnRepairsEveryTable)
   {
-    Game::World world;
-    const Game::ShipId structure = world.SpawnShip(Game::LocalPos(STATION_EAST_METRES, 0.0f), 0.0f,
-                                                   static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
-    Game::World::StationDesc desc;
+    Game::Universe universe;
+    const Game::ShipId structure = universe.SpawnShip(Game::LocalPos(STATION_EAST_METRES, 0.0f), 0.0f,
+                                                      static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+    Game::Universe::StationDesc desc;
     desc.ownerFaction = Game::FACTION_VANGUARD;
-    const Game::World::StationId station = world.MakeStation(structure, desc);
+    const Game::Universe::StationId station = universe.MakeStation(structure, desc);
 
-    const Game::ShipId first = world.SpawnShip(Game::LocalPos(0.0f, -100.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
-    const Game::ShipId second = world.SpawnShip(Game::LocalPos(0.0f, 100.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
-    const Game::ShipHandle secondHandle = world.HandleOf(second);
+    const Game::ShipId first = universe.SpawnShip(Game::LocalPos(0.0f, -100.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+    const Game::ShipId second = universe.SpawnShip(Game::LocalPos(0.0f, 100.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+    const Game::ShipHandle secondHandle = universe.HandleOf(second);
 
-    Assert::IsTrue(world.IssueDockOrder(std::array{second}, structure, Game::FACTION_PLAYER) == Game::World::DockOrderResult::Ordered,
+    Assert::IsTrue(universe.IssueDockOrder(std::array{second}, structure, Game::FACTION_PLAYER) == Game::Universe::DockOrderResult::Ordered,
                    L"the dock order was refused");
-    Assert::IsFalse(world.DockingOf(first).active, L"the wrong ship took the order");
+    Assert::IsFalse(universe.DockingOf(first).active, L"the wrong ship took the order");
 
     // Despawn the ship in front of it, so swap-and-pop moves the docking one down the array.
-    Assert::IsTrue(world.DespawnShip(world.HandleOf(first)), L"the despawn failed");
-    const Game::ShipId moved = world.Resolve(secondHandle);
+    Assert::IsTrue(universe.DespawnShip(universe.HandleOf(first)), L"the despawn failed");
+    const Game::ShipId moved = universe.Resolve(secondHandle);
     Assert::AreNotEqual(Game::INVALID_SHIP_ID, moved, L"the surviving ship stopped resolving");
-    Assert::IsTrue(world.DockingOf(moved).active, L"the moved ship lost its docking intent");
+    Assert::IsTrue(universe.DockingOf(moved).active, L"the moved ship lost its docking intent");
 
-    Assert::IsTrue(StepUntilDocked(world, secondHandle), L"the moved ship never docked");
-    Assert::AreEqual(static_cast<std::size_t>(1), world.StationOf(station).docked.size(), L"the moved ship docked as somebody else");
+    Assert::IsTrue(StepUntilDocked(universe, secondHandle), L"the moved ship never docked");
+    Assert::AreEqual(static_cast<std::size_t>(1), universe.StationOf(station).docked.size(), L"the moved ship docked as somebody else");
   }
 
   // The fourth table, on the same terms. A protector whose duty did not move with it would hunt
   // whatever swap-and-pop put in its place, or stop being a protector at all.
   TEST_METHOD(ADespawnRepairsTheProtectorTable)
   {
-    Game::World world;
+    Game::Universe universe;
     const Game::ShipId structure =
-      world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
-    Game::World::StationDesc desc;
+      universe.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+    Game::Universe::StationDesc desc;
     desc.ownerFaction = Game::FACTION_VANGUARD;
     desc.protectorHullId = static_cast<std::uint32_t>(Game::HullId::Corvette);
     desc.protectorComplement = 2;
     desc.launchEveryTicks = 30;
-    const Game::World::StationId station = world.MakeStation(structure, desc);
+    const Game::Universe::StationId station = universe.MakeStation(structure, desc);
 
-    const Game::ShipId raider = world.SpawnShip(Game::LocalPos(1500.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
-    world.RecordAggression(world.HandleOf(raider), station);
+    const Game::ShipId raider = universe.SpawnShip(Game::LocalPos(1500.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
+    universe.RecordAggression(universe.HandleOf(raider), station);
     for (int tick = 0; tick < 200; ++tick)
-      world.Step();
-    Assert::AreEqual(static_cast<std::uint32_t>(2), world.LaunchedProtectorCount(station), L"the garrison did not launch");
+      universe.Step();
+    Assert::AreEqual(static_cast<std::uint32_t>(2), universe.LaunchedProtectorCount(station), L"the garrison did not launch");
 
     // Take the *first* protector, so swap-and-pop moves the second one down over its slot.
     Game::ShipId first = Game::INVALID_SHIP_ID;
     Game::ShipHandle survivor;
-    for (Game::ShipId id = 0; id < world.ShipCount(); ++id)
+    for (Game::ShipId id = 0; id < universe.ShipCount(); ++id)
     {
-      if (!world.ProtectorOf(id).active)
+      if (!universe.ProtectorOf(id).active)
         continue;
       if (first == Game::INVALID_SHIP_ID)
         first = id;
       else
-        survivor = world.HandleOf(id);
+        survivor = universe.HandleOf(id);
     }
-    Assert::IsTrue(world.DespawnShip(world.HandleOf(first)), L"the despawn failed");
+    Assert::IsTrue(universe.DespawnShip(universe.HandleOf(first)), L"the despawn failed");
 
-    const Game::ShipId moved = world.Resolve(survivor);
+    const Game::ShipId moved = universe.Resolve(survivor);
     Assert::AreNotEqual(Game::INVALID_SHIP_ID, moved, L"the surviving protector stopped resolving");
-    Assert::IsTrue(world.ProtectorOf(moved).active, L"the moved protector lost its duty");
-    Assert::IsTrue(world.ProtectorOf(moved).home == station, L"the moved protector forgot which station it belongs to");
-    Assert::IsTrue(world.ProtectorOf(moved).target == world.HandleOf(raider), L"the moved protector forgot its target");
+    Assert::IsTrue(universe.ProtectorOf(moved).active, L"the moved protector lost its duty");
+    Assert::IsTrue(universe.ProtectorOf(moved).home == station, L"the moved protector forgot which station it belongs to");
+    Assert::IsTrue(universe.ProtectorOf(moved).target == universe.HandleOf(raider), L"the moved protector forgot its target");
   }
 
   // A station that stops being one -- or whose structure dies -- ends the approach where it stands,
   // rather than flying ships at an index that now means something else.
   TEST_METHOD(ADeadStationStandsItsVisitorsDown)
   {
-    Game::World world;
+    Game::Universe universe;
     Game::ShipId structure = 0;
     Game::ShipId ship = 0;
-    (void)BuildDockScene(world, structure, ship);
-    const Game::ShipHandle shipHandle = world.HandleOf(ship);
+    (void)BuildDockScene(universe, structure, ship);
+    const Game::ShipHandle shipHandle = universe.HandleOf(ship);
 
-    Assert::IsTrue(world.IssueDockOrder(std::array{ship}, structure, Game::FACTION_PLAYER) == Game::World::DockOrderResult::Ordered,
+    Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, structure, Game::FACTION_PLAYER) == Game::Universe::DockOrderResult::Ordered,
                    L"the dock order was refused");
     for (int tick = 0; tick < 60; ++tick)
-      world.Step();
+      universe.Step();
 
-    Assert::IsTrue(world.DespawnShip(world.HandleOf(structure)), L"the despawn failed");
-    world.Step();
+    Assert::IsTrue(universe.DespawnShip(universe.HandleOf(structure)), L"the despawn failed");
+    universe.Step();
 
-    const Game::ShipId live = world.Resolve(shipHandle);
+    const Game::ShipId live = universe.Resolve(shipHandle);
     Assert::AreNotEqual(Game::INVALID_SHIP_ID, live, L"the visitor vanished with its station");
-    Assert::IsFalse(world.DockingOf(live).active, L"the visitor is still docking at a station that is gone");
+    Assert::IsFalse(universe.DockingOf(live).active, L"the visitor is still docking at a station that is gone");
   }
 
   // The replay gate over the new pass, in the shape the patrol test set.
   TEST_METHOD(TheSameDockProducesTheSameRun)
   {
-    const auto play = [](std::vector<Game::WorldPos>& _outTrack, std::vector<float>& _outMotion, std::vector<std::size_t>& _outLedger)
+    const auto play = [](std::vector<Game::UniversePos>& _outTrack, std::vector<float>& _outMotion, std::vector<std::size_t>& _outLedger)
     {
-      Game::World world;
+      Game::Universe universe;
       Game::ShipId structure = 0;
       Game::ShipId ship = 0;
-      const Game::World::StationId station = BuildDockScene(world, structure, ship);
-      const Game::ShipId second =
-        world.SpawnShip(Game::LocalPos(-120.0f, 60.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_PLAYER);
-      (void)world.IssueDockOrder(std::array{ship, second}, structure, Game::FACTION_PLAYER);
+      const Game::Universe::StationId station = BuildDockScene(universe, structure, ship);
+      const Game::ShipId second = universe.SpawnShip(Game::LocalPos(-120.0f, 60.0f), 0.0f,
+                                                     static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_PLAYER);
+      (void)universe.IssueDockOrder(std::array{ship, second}, structure, Game::FACTION_PLAYER);
 
       for (int tick = 0; tick < 4000; ++tick)
       {
-        world.Step();
-        for (Game::ShipId id = 0; id < world.ShipCount(); ++id)
+        universe.Step();
+        for (Game::ShipId id = 0; id < universe.ShipCount(); ++id)
         {
-          _outTrack.push_back(world.Ship(id).posWorld);
-          _outMotion.push_back(world.Ship(id).speed);
-          _outMotion.push_back(world.Ship(id).headingRad);
+          _outTrack.push_back(universe.Ship(id).posUniverse);
+          _outMotion.push_back(universe.Ship(id).speed);
+          _outMotion.push_back(universe.Ship(id).headingRad);
         }
-        _outLedger.push_back(world.StationOf(station).docked.size());
+        _outLedger.push_back(universe.StationOf(station).docked.size());
       }
     };
 
-    std::vector<Game::WorldPos> firstTrack, secondTrack;
+    std::vector<Game::UniversePos> firstTrack, secondTrack;
     std::vector<float> firstMotion, secondMotion;
     std::vector<std::size_t> firstLedger, secondLedger;
     play(firstTrack, firstMotion, firstLedger);

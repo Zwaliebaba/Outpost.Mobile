@@ -2,7 +2,7 @@
 
 #include "HullSpec.h"
 #include "ShipState.h"
-#include "WorldPos.h"
+#include "UniversePos.h"
 
 #include "Transport.h"
 
@@ -12,7 +12,7 @@
 
 namespace Game
 {
-class World;
+class Universe;
 
 // The wire format between the two halves.
 //
@@ -31,9 +31,9 @@ class World;
 //
 // Field-by-field is also what let the record be quantized without a rework. A ship record is 47
 // bytes, not 83: a position is a sector pair narrowed to i32 plus an offset on a 0.125 m lattice, an
-// angle is a sixteenth-bit of a turn, and prevPos is an integer step delta from posWorld rather than
+// angle is a sixteenth-bit of a turn, and prevPos is an integer step delta from posUniverse rather than
 // a second whole position. That is 23 records in a datagram against 13 (ADR 0046). The decoded types
-// below are unchanged floats and WorldPos, so nothing above this layer knows the wire quantizes --
+// below are unchanged floats and UniversePos, so nothing above this layer knows the wire quantizes --
 // what it costs is 6.25 cm on a position and pi/2^16 on an angle, stated here because it is the only
 // place a reader would find it.
 
@@ -50,7 +50,7 @@ class World;
 // NPCs in one faction, nothing on the wire changes (Design/Archive/Hostiles.md 4.2).
 struct ShipSnapshot
 {
-  // Who this is, not where it is. A ShipHandle would have been enough while there was one World; an
+  // Who this is, not where it is. A ShipHandle would have been enough while there was one Universe; an
   // id is what survives being handed between two, and it is what a client may key its own state on
   // without that state evaporating at a shard boundary (ADR 0047). The server still uses handles
   // everywhere a reference outlives a tick -- ADR 0005 is untouched -- and the publisher is where
@@ -61,8 +61,8 @@ struct ShipSnapshot
   // within 6.25 cm of the simulation's and an angle within pi/2^16 of it, and a decoded heading is
   // in (-pi, pi] like a simulated one -- so a source of exactly -pi arrives as +pi, the same bearing
   // and a different number (ADR 0046).
-  WorldPos posWorld;
-  WorldPos prevPos;
+  UniversePos posUniverse;
+  UniversePos prevPos;
   float headingRad = 0.0f;
   float prevHeading = 0.0f;
 
@@ -117,8 +117,8 @@ struct FireEvent
 // OLDEST are dropped: the newest gunfire is the gunfire a player is looking at.
 inline constexpr std::uint32_t MAX_FIRE_EVENTS = 64;
 
-// A decoded snapshot: what the client renders instead of reaching into World.
-struct WorldSnapshot
+// A decoded snapshot: what the client renders instead of reaching into Universe.
+struct UniverseSnapshot
 {
   std::uint64_t tick = 0;
   std::vector<ShipSnapshot> ships;
@@ -135,7 +135,7 @@ struct FleetOrder
 {
   std::uint8_t slot = 0;
   FleetOrderKind kind = FleetOrderKind::Idle;
-  WorldPos point;                       // Move
+  UniversePos point;                    // Move
   float facingRad = 0.0f;               // Move
   bool hasFacing = false;               // Move
   EntityId station = INVALID_ENTITY_ID; // Dock
@@ -171,7 +171,7 @@ struct LedgerRequest
 // The answer: how many of each hull the asker has docked there, indexed by hull id.
 //
 // A fixed array rather than a vector of rows, because the array IS the format -- and because
-// World::ComposeFleet already takes a span in exactly this shape, so the assembly screen's draft
+// Universe::ComposeFleet already takes a span in exactly this shape, so the assembly screen's draft
 // goes back down the wire without being repacked on either side.
 struct LedgerReply
 {
@@ -179,7 +179,7 @@ struct LedgerReply
   std::uint32_t hullCounts[HULL_COUNT]{};
 };
 
-// A draft, sent. The slot and the counts the assembly screen assembled; every gate is World's
+// A draft, sent. The slot and the counts the assembly screen assembled; every gate is Universe's
 // (Design/Archive/Fleets.md 5.2), and the issuing faction is the subscriber's rather than anything stated
 // here -- the same rule every other order on this lane follows.
 struct ComposeOrder
@@ -197,7 +197,7 @@ struct ComposeOrder
 // (Design/Archive/Fleets.md 8.2).
 struct FleetStatus
 {
-  WorldPos position;       // the centroid of live members, or the launch station while none is out
+  UniversePos position;    // the centroid of live members, or the launch station while none is out
   std::uint8_t status = 0; // bits 0-2 the kind shown, bit 6 engaged, bit 7 under attack
   std::uint8_t count = 0;  // members in space plus manifest
 };
@@ -220,7 +220,7 @@ inline constexpr std::uint8_t FLEET_STATUS_UNDER_ATTACK = 0x80;
 // property ADR 0049 was for, and the cap's retirement is the visible proof of it.
 [[nodiscard]] std::uint32_t ShipsPerSnapshotFragment() noexcept;
 
-// Sends a world as one or more datagrams.
+// Sends a universe as one or more datagrams.
 //
 // Two shapes, and the difference is what slice 6 added. Write sends every entity every time, which
 // is what slice 2b built and what the benchmark measures against. WriteInterest sends one
@@ -234,9 +234,9 @@ class SnapshotWriter
 {
 public:
   // _viewer is whose standing the header's hostileMask states. It is defaulted because Write is the
-  // whole-world path -- a benchmark and a test harness, with no subscriber to speak of -- while
+  // whole-universe path -- a benchmark and a test harness, with no subscriber to speak of -- while
   // WriteInterest is always written for somebody, and Publisher is the only caller that knows who.
-  std::uint32_t Write(const World& _world, Neuron::Transport& _transport, FactionId _viewer = FACTION_PLAYER);
+  std::uint32_t Write(const Universe& _universe, Neuron::Transport& _transport, FactionId _viewer = FACTION_PLAYER);
 
   // One subscriber's update. _sent are handles to carry in full -- entered and refreshed together,
   // because the wire cannot tell them apart and the receiver upserts either way. _left are dropped.
@@ -246,15 +246,15 @@ public:
   // death from an absence (Design/Archive/Hostiles.md 4.4). A handle belongs in one list, never both; the
   // caller decides which and the writer does not check.
   //
-  // _sent are handles because the writer resolves them against the world to build records; the three
+  // _sent are handles because the writer resolves them against the universe to build records; the three
   // departure lists are ids because they name ships that are already gone, which is why the despawn
   // log carries one (ADR 0047).
-  std::uint32_t WriteInterest(const World& _world, std::span<const ShipHandle> _sent, std::span<const EntityId> _left,
+  std::uint32_t WriteInterest(const Universe& _universe, std::span<const ShipHandle> _sent, std::span<const EntityId> _left,
                               std::span<const EntityId> _destroyed, std::span<const EntityId> _docked, Neuron::Transport& _transport,
                               FactionId _viewer = FACTION_PLAYER);
 
   // The leave and destroyed lists, as one message on the reliable lane. Public because a caller
-  // that is not sending an interest update -- a subscriber leaving, a world shutting down -- still
+  // that is not sending an interest update -- a subscriber leaving, a universe shutting down -- still
   // has departures to state. Returns false when the lane refused it, which is a full lane or one
   // that is not up yet, and never a partial send.
   bool WriteLeaves(std::uint64_t _tick, std::span<const EntityId> _left, std::span<const EntityId> _destroyed,
@@ -278,7 +278,7 @@ public:
   }
 
   // Bytes the last Write or WriteInterest put on the wire, and how many ship records it carried.
-  // The benchmark in slice 6's acceptance is this pair against a growing world.
+  // The benchmark in slice 6's acceptance is this pair against a growing universe.
   [[nodiscard]] std::uint32_t LastByteCount() const noexcept
   {
     return m_lastBytes;
@@ -311,16 +311,16 @@ public:
   // that the view should redraw from.
   //
   // A datagram carries snapshot fragments; the reliable lane carries departures. The caller does not
-  // have to know which it is holding, which is what keeps the two drains in WorldView identical.
+  // have to know which it is holding, which is what keeps the two drains in UniverseView identical.
   //
   // An update UPSERTS rather than replaces: a record for a handle already held updates it in place,
   // one for a handle not held appends it, and a handle in the leave list removes it. That is what
-  // lets a datagram carry a change to a world rather than a whole world -- and it is also why an
+  // lets a datagram carry a change to a universe rather than a whole universe -- and it is also why an
   // incomplete update is dropped entire, since unlike a full snapshot a delta stream cannot
   // resynchronise by waiting for the next one (Design/Archive/Collision-slice-6.md 3.5).
   bool Accept(std::span<const std::uint8_t> _datagram);
 
-  [[nodiscard]] const WorldSnapshot& Latest() const noexcept
+  [[nodiscard]] const UniverseSnapshot& Latest() const noexcept
   {
     return m_latest;
   }
@@ -334,7 +334,7 @@ public:
   //
   // Taken from every fragment that passes the header and staleness checks, rather than on apply
   // like the upserts -- deliberately. An incomplete update is dropped because a half-applied set of
-  // records is a half-updated world; a mask has no such coupling, so taking it from whatever
+  // records is a half-updated universe; a mask has no such coupling, so taking it from whatever
   // arrives is strictly more robust, and robustness against loss is the entire argument for
   // spending the byte (Design/Archive/Stations.md 4.3).
   [[nodiscard]] std::uint8_t HostileMask() const noexcept
@@ -399,7 +399,7 @@ public:
     m_destroyed.clear();
   }
 
-  // The handles the last applied departure message said had docked: gone from the world, but not
+  // The handles the last applied departure message said had docked: gone from the universe, but not
   // dead. The client removes the hull silently -- no explosion, no shake, no SHIP LOST -- which is
   // the entire reason a departure carries a cause (ADR 0040).
   [[nodiscard]] std::span<const EntityId> Docked() const noexcept
@@ -447,7 +447,7 @@ private:
   [[nodiscard]] bool AcceptLedgerReply(std::span<const std::uint8_t> _message);
 
   // What arrived in the update being assembled, held until every fragment is in. Applying as
-  // fragments land would leave the world half-updated if one never arrived.
+  // fragments land would leave the universe half-updated if one never arrived.
   std::vector<ShipSnapshot> m_pendingUpserts;
   std::vector<EntityId> m_leaveScratch;     // one departure message, read before any of it applies
   std::vector<EntityId> m_destroyedScratch; // the same, for the deaths in it
@@ -464,7 +464,7 @@ private:
   std::vector<EntityId> m_rosters[FLEET_SLOTS];
   LedgerReply m_ledger;
   std::uint32_t m_ledgerReplies = 0;
-  WorldSnapshot m_latest;
+  UniverseSnapshot m_latest;
   std::uint32_t m_buildingId = 0;
   std::uint64_t m_buildingTick = 0;
   bool m_buildingComplete = false;
@@ -480,7 +480,7 @@ private:
 // heading, and every intent table beside m_ships -- so the snapshot path structurally cannot carry a
 // save or a handoff, and until now nothing else could either (Design/Archive/MmoScalabilityReview.md U3).
 // These two carry all of it, at full fidelity: this is a save, so the wire's 0.125 m lattice and its
-// turns16 have no business here and every position is a whole WorldPos.
+// turns16 have no business here and every position is a whole UniversePos.
 //
 // What is written and what is rebuilt is argued in Design/Archive/WorldState-work-order.md 2. The
 // short version: everything Step READS is written, and everything Step DERIVES -- the spatial index,
@@ -489,8 +489,8 @@ private:
 // Read refuses and changes nothing on a buffer that is truncated, that carries the wrong magic, or
 // that carries a format byte this build does not know. It never throws and never asserts, which is
 // AGENTS.md 5's rule for anything parsing content and the discipline SnapshotReceiver already keeps.
-void WriteWorldState(const World& _world, std::vector<std::uint8_t>& _outBytes);
-[[nodiscard]] bool ReadWorldState(std::span<const std::uint8_t> _bytes, World& _outWorld);
+void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _outBytes);
+[[nodiscard]] bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUniverse);
 
 // Orders travel the other way. Written by the client half, read and applied by the server half.
 //

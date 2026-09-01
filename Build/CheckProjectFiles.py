@@ -180,7 +180,7 @@ def game_headers():
     """Every header GameLogic publishes, read off disk rather than listed here.
 
     This was a hard-coded six while GameLogic had grown to fourteen, so an engine file including
-    WorldSnapshot.h or SpatialIndex.h passed CI (MmoScalabilityReview.md C2). A list that has to be
+    UniverseSnapshot.h or SpatialIndex.h passed CI (MmoScalabilityReview.md C2). A list that has to be
     edited when a header is added is a list that is wrong from the next commit onwards, and wrong in
     the direction that lets the defect through rather than the one that reports it.
     """

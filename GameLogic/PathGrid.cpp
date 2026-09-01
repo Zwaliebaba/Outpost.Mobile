@@ -22,7 +22,7 @@ constexpr std::uint32_t NO_CELL = 0xFFFFFFFFu;
 
 // One axis of the lattice. The sector contributes whole cells and the local offset the rest, which
 // is exact only because a cell never straddles a sector boundary (SimTuning.h,
-// PATH_CELLS_PER_SECTOR). std::floor rather than a cast because the invariant on WorldPos keeps
+// PATH_CELLS_PER_SECTOR). std::floor rather than a cast because the invariant on UniversePos keeps
 // _localMetres non-negative today and a cast would be the thing that broke silently if it stopped.
 [[nodiscard]] std::int64_t CellOnAxis(std::int64_t _sector, float _localMetres) noexcept
 {
@@ -30,17 +30,17 @@ constexpr std::uint32_t NO_CELL = 0xFFFFFFFFu;
 }
 } // namespace
 
-std::int64_t PathCellX(const WorldPos& _pos) noexcept
+std::int64_t PathCellX(const UniversePos& _pos) noexcept
 {
   return CellOnAxis(_pos.sectorX, _pos.localX);
 }
 
-std::int64_t PathCellZ(const WorldPos& _pos) noexcept
+std::int64_t PathCellZ(const UniversePos& _pos) noexcept
 {
   return CellOnAxis(_pos.sectorZ, _pos.localZ);
 }
 
-WorldPos PathCellCentre(std::int64_t _cellX, std::int64_t _cellZ) noexcept
+UniversePos PathCellCentre(std::int64_t _cellX, std::int64_t _cellZ) noexcept
 {
   // Built field by field rather than through LocalPos, because LocalPos takes metres from the
   // universe origin and a cell index far from it does not survive the trip through a float. The
@@ -48,8 +48,8 @@ WorldPos PathCellCentre(std::int64_t _cellX, std::int64_t _cellZ) noexcept
   // offset is half a cell to half a cell short of a sector.
   const std::int64_t sectorX = FloorDivide(_cellX, PATH_CELLS_PER_SECTOR);
   const std::int64_t sectorZ = FloorDivide(_cellZ, PATH_CELLS_PER_SECTOR);
-  return WorldPos{sectorX, sectorZ, (static_cast<float>(_cellX - sectorX * PATH_CELLS_PER_SECTOR) + 0.5f) * PATH_CELL_SIZE_METRES,
-                  (static_cast<float>(_cellZ - sectorZ * PATH_CELLS_PER_SECTOR) + 0.5f) * PATH_CELL_SIZE_METRES};
+  return UniversePos{sectorX, sectorZ, (static_cast<float>(_cellX - sectorX * PATH_CELLS_PER_SECTOR) + 0.5f) * PATH_CELL_SIZE_METRES,
+                     (static_cast<float>(_cellZ - sectorZ * PATH_CELLS_PER_SECTOR) + 0.5f) * PATH_CELL_SIZE_METRES};
 }
 
 bool PathGrid::Worse(const Open& _a, const Open& _b) noexcept
@@ -96,7 +96,7 @@ void PathGrid::Rebuild(std::span<const Obstacle> _obstacles)
   // The extent is swept as offsets from the first obstacle rather than as coordinates, so that a
   // set of obstacles straddling a sector boundary gets a bounding box the width of the obstacles
   // and not the width of a sector.
-  const WorldPos& reference = _obstacles[0].pos;
+  const UniversePos& reference = _obstacles[0].pos;
   float minX = 0.0f;
   float maxX = 0.0f;
   float minZ = 0.0f;
@@ -115,11 +115,11 @@ void PathGrid::Rebuild(std::span<const Obstacle> _obstacles)
   minZ -= PATH_GRID_MARGIN_METRES;
   maxZ += PATH_GRID_MARGIN_METRES;
 
-  // The bounding box, snapped outward onto the world lattice. This is the whole of what a build
+  // The bounding box, snapped outward onto the universe lattice. This is the whole of what a build
   // decides: which cells it holds, never where they are. Both corners go through the lattice
   // rather than being divided by the cell size here, so a box that spans a sector boundary is
   // measured in cells and not in the offsets it happens to be expressed in.
-  WorldPos corner = reference;
+  UniversePos corner = reference;
   Translate(corner, minX, minZ);
   const std::int64_t originCellX = PathCellX(corner);
   const std::int64_t originCellZ = PathCellZ(corner);
@@ -128,7 +128,7 @@ void PathGrid::Rebuild(std::span<const Obstacle> _obstacles)
   const std::int64_t width = PathCellX(corner) - originCellX + 1;
   const std::int64_t height = PathCellZ(corner) - originCellZ + 1;
 
-  // A world whose architecture is spread over tens of kilometres would want a grid of millions of
+  // A universe whose architecture is spread over tens of kilometres would want a grid of millions of
   // cells, and the honest answer today is to decline rather than to silently coarsen: cell size is
   // in the replay contract, so coarsening it here would change recorded outcomes as a side effect
   // of where someone put a building. Declining degrades to exactly the behaviour before this
@@ -153,7 +153,7 @@ void PathGrid::Rebuild(std::span<const Obstacle> _obstacles)
   {
     for (std::uint32_t cellX = 0; cellX < m_width; ++cellX)
     {
-      const WorldPos centre = PathCellCentre(m_originCellX + cellX, m_originCellZ + cellZ);
+      const UniversePos centre = PathCellCentre(m_originCellX + cellX, m_originCellZ + cellZ);
       float clearance = OPEN_CLEARANCE_METRES;
       for (const Obstacle& obstacle : _obstacles)
         clearance = std::min(clearance, Distance(centre, obstacle.pos) - obstacle.radiusMetres);
@@ -162,25 +162,25 @@ void PathGrid::Rebuild(std::span<const Obstacle> _obstacles)
   }
 }
 
-std::uint32_t PathGrid::ClampedCell(const WorldPos& _pos) const noexcept
+std::uint32_t PathGrid::ClampedCell(const UniversePos& _pos) const noexcept
 {
   const std::int64_t cellX = std::clamp(PathCellX(_pos) - m_originCellX, std::int64_t{0}, static_cast<std::int64_t>(m_width) - 1);
   const std::int64_t cellZ = std::clamp(PathCellZ(_pos) - m_originCellZ, std::int64_t{0}, static_cast<std::int64_t>(m_height) - 1);
   return static_cast<std::uint32_t>(cellZ) * m_width + static_cast<std::uint32_t>(cellX);
 }
 
-WorldPos PathGrid::CentreOf(std::uint32_t _cell) const noexcept
+UniversePos PathGrid::CentreOf(std::uint32_t _cell) const noexcept
 {
   return PathCellCentre(m_originCellX + (_cell % m_width), m_originCellZ + (_cell / m_width));
 }
 
-float PathGrid::ClearanceAt(const WorldPos& _pos) const noexcept
+float PathGrid::ClearanceAt(const UniversePos& _pos) const noexcept
 {
   if (m_clearance.empty())
     return OPEN_CLEARANCE_METRES;
 
   // Which cell of the lattice, then whether this grid holds it. In that order: the cell a point is
-  // in is the world's answer and the same for every grid, and holding it is this grid's.
+  // in is the universe's answer and the same for every grid, and holding it is this grid's.
   const std::int64_t cellX = PathCellX(_pos) - m_originCellX;
   const std::int64_t cellZ = PathCellZ(_pos) - m_originCellZ;
   if (cellX < 0 || cellZ < 0 || cellX >= static_cast<std::int64_t>(m_width) || cellZ >= static_cast<std::int64_t>(m_height))
@@ -188,12 +188,12 @@ float PathGrid::ClearanceAt(const WorldPos& _pos) const noexcept
   return m_clearance[static_cast<std::size_t>(cellZ) * m_width + static_cast<std::size_t>(cellX)];
 }
 
-bool PathGrid::IsClearBetween(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres) const
+bool PathGrid::IsClearBetween(const UniversePos& _from, const UniversePos& _to, float _requiredClearanceMetres) const
 {
   return BlockedAlong(_from, _to, _requiredClearanceMetres).first > 1.0f;
 }
 
-PathGrid::BlockedSpan PathGrid::BlockedAlong(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres) const
+PathGrid::BlockedSpan PathGrid::BlockedAlong(const UniversePos& _from, const UniversePos& _to, float _requiredClearanceMetres) const
 {
   // Greater than one, rather than any particular value: a caller compares it against one to ask
   // "clear?" and against another grid's answer to ask "which first?", and both work as long as a
@@ -221,7 +221,7 @@ PathGrid::BlockedSpan PathGrid::BlockedAlong(const WorldPos& _from, const WorldP
   for (int step = 0; step <= steps; ++step)
   {
     const float along = static_cast<float>(step) / static_cast<float>(steps);
-    const WorldPos sample = Lerp(_from, _to, along);
+    const UniversePos sample = Lerp(_from, _to, along);
     if (PathCellX(sample) == startCellX && PathCellZ(sample) == startCellZ)
       continue;
     if (ClearanceAt(sample) >= _requiredClearanceMetres)
@@ -233,7 +233,8 @@ PathGrid::BlockedSpan PathGrid::BlockedAlong(const WorldPos& _from, const WorldP
   return blocked;
 }
 
-bool PathGrid::FindPath(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres, std::vector<WorldPos>& _outWaypoints)
+bool PathGrid::FindPath(const UniversePos& _from, const UniversePos& _to, float _requiredClearanceMetres,
+                        std::vector<UniversePos>& _outWaypoints)
 {
   _outWaypoints.clear();
   if (IsClearBetween(_from, _to, _requiredClearanceMetres))
@@ -251,7 +252,7 @@ bool PathGrid::FindPath(const WorldPos& _from, const WorldPos& _to, float _requi
   m_visited.assign(cells, 0);
   m_open.clear();
 
-  const WorldPos goalCentre = CentreOf(goal);
+  const UniversePos goalCentre = CentreOf(goal);
   m_travelled[start] = 0.0f;
   m_open.push_back({Distance(CentreOf(start), goalCentre), 0.0f, start});
 
@@ -271,7 +272,7 @@ bool PathGrid::FindPath(const WorldPos& _from, const WorldPos& _to, float _requi
       continue;
     m_visited[current.cell] = 1;
 
-    const WorldPos centre = CentreOf(current.cell);
+    const UniversePos centre = CentreOf(current.cell);
     const float heuristic = Distance(centre, goalCentre);
     if (heuristic < bestHeuristic || (heuristic == bestHeuristic && current.cell < best))
     {
@@ -329,7 +330,7 @@ bool PathGrid::FindPath(const WorldPos& _from, const WorldPos& _to, float _requi
 
   // String-pull: keep a cell only when the run from the last kept point to the next one is not
   // clear. Without it the follower steers at every cell centre and the route reads as a staircase.
-  WorldPos anchor = _from;
+  UniversePos anchor = _from;
   for (std::size_t at = 1; at < m_cellPath.size(); ++at)
   {
     if (IsClearBetween(anchor, CentreOf(m_cellPath[at]), _requiredClearanceMetres))

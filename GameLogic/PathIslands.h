@@ -1,7 +1,7 @@
 #pragma once
 
 #include "PathGrid.h"
-#include "WorldPos.h"
+#include "UniversePos.h"
 
 #include <cstdint>
 #include <span>
@@ -9,12 +9,12 @@
 
 namespace Game
 {
-// The world's architecture, partitioned into islands, with one PathGrid over each.
+// The universe's architecture, partitioned into islands, with one PathGrid over each.
 //
 // One grid over everything was the right first shape and does not survive a universe. It sweeps a
 // single bounding box over every obstacle there is, so two stations 20 km apart ask for a grid of
 // hundreds of millions of cells, it declines to build, and A* goes off for *every ship in the
-// world* rather than for the space between them. HullSpec.h is explicit that this is not a graceful
+// universe* rather than for the space between them. HullSpec.h is explicit that this is not a graceful
 // degradation: a capital's look-ahead is deliberately shorter than its own turning circle, so a
 // single distant outpost turns every Carrier in the game into a ship that flies into things
 // (Design/Archive/RegionalPathfinding.md 1.1).
@@ -25,7 +25,7 @@ namespace Game
 // The islands are the connected components of that relation, so the partition is a function of the
 // obstacle set and of nothing else.
 //
-// The seam is PathGrid's, unchanged: World holds this instead of a grid and calls the same three
+// The seam is PathGrid's, unchanged: Universe holds this instead of a grid and calls the same three
 // things. What it gives up is optimality *between* islands -- a ship cannot see that going round
 // island two is cheaper than through it until it gets there. That is the right trade at this scale;
 // the alternative is a portal graph answering a question no content in this tree asks yet
@@ -37,8 +37,8 @@ public:
   // and never per tick. Partitions first, then builds one grid per island.
   void Rebuild(std::span<const PathGrid::Obstacle> _obstacles);
 
-  // Bumped when the architecture changes, and only then. One number for the whole world because a
-  // Route carries one: a follower that planned against an older one re-plans (World::AdvanceRoute).
+  // Bumped when the architecture changes, and only then. One number for the whole universe because a
+  // Route carries one: a follower that planned against an older one re-plans (Universe::AdvanceRoute).
   [[nodiscard]] std::uint32_t Version() const noexcept
   {
     return m_version;
@@ -53,8 +53,8 @@ public:
   // one, and the first island plans as far as it can while the answer says the route is unfinished
   // -- because the second island is still in the way however well the first one planned, and an
   // unfinished route is what makes the follower come back for the rest.
-  [[nodiscard]] bool FindPath(const WorldPos& _from, const WorldPos& _to, float _requiredClearanceMetres,
-                              std::vector<WorldPos>& _outWaypoints);
+  [[nodiscard]] bool FindPath(const UniversePos& _from, const UniversePos& _to, float _requiredClearanceMetres,
+                              std::vector<UniversePos>& _outWaypoints);
 
   // How many islands the architecture came to. For the F1 readout and for the tests that have to
   // say "these two stations are two islands and not one".
@@ -65,7 +65,7 @@ public:
 
   // How many islands the last rebuild actually built a clearance field for. The rest were handed the
   // obstacles they already held and kept the grid they had, which is the whole of slice 4: one
-  // station moving in a world of thirty pays for its own island and not for the world
+  // station moving in a universe of thirty pays for its own island and not for the universe
   // (Design/Archive/RegionalPathfinding.md 4). Read off a benchmark rather than inferred from a timing.
   [[nodiscard]] std::uint32_t RebuiltIslandCount() const noexcept
   {
@@ -88,7 +88,7 @@ public:
     return declined;
   }
 
-  // The grid over one island, in the world-fixed order Rebuild put them in. For diagnostics and
+  // The grid over one island, in the universe-fixed order Rebuild put them in. For diagnostics and
   // tests; routing goes through FindPath, which is the whole point of the class.
   [[nodiscard]] const PathGrid& Island(std::size_t _at) const noexcept
   {
@@ -97,7 +97,7 @@ public:
 
 private:
   // One island while it is being found: which union-find root it is, and the lowest path cell any
-  // of its members sits in, which is what puts the islands in a world-fixed order.
+  // of its members sits in, which is what puts the islands in a universe-fixed order.
   struct Found
   {
     std::uint32_t root = 0;
@@ -120,11 +120,11 @@ private:
 
   // What each island's grid was built from, one list per entry of m_islands and in the same order.
   // A rebuild that hands an island the same obstacles it already holds keeps that grid rather than
-  // computing the same clearance field again, which is the difference between paying for the world
+  // computing the same clearance field again, which is the difference between paying for the universe
   // and paying for what moved (Design/Archive/RegionalPathfinding.md 4).
   //
   // Matched by content and not by position, because the islands are ordered by where they sit in the
-  // world and building anything renumbers every island after it. An island index is not a handle,
+  // universe and building anything renumbers every island after it. An island index is not a handle,
   // for the same reason a ShipId is not (ADR 0005, ADR 0034) -- so this asks "which of the old lists
   // is this one" rather than "what was at this slot".
   std::vector<std::vector<PathGrid::Obstacle>> m_islandBuilt;
@@ -139,7 +139,7 @@ private:
   std::vector<std::uint32_t> m_parent;
   std::vector<Found> m_found;
   std::vector<std::uint32_t> m_islandOf; // which entry of m_found each obstacle landed in
-  std::vector<std::uint32_t> m_order;    // m_found's entries, in the world-fixed order
+  std::vector<std::uint32_t> m_order;    // m_found's entries, in the universe-fixed order
   std::vector<std::uint32_t> m_members;
   std::vector<std::uint32_t> m_memberStart;
   std::vector<PathGrid::Obstacle> m_islandScratch;

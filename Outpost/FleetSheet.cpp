@@ -23,8 +23,8 @@ constexpr char TIMES[] = "\xD7";
 
 // In the order the design lists them, and MINE is not among them (Design/Archive/Fleets.md 9.3, 6.6).
 constexpr const char* COMMAND_LABELS[] = {"MOVE", "ATTACK", "DOCK", "STOP"};
-constexpr WorldView::ArmedOrder COMMAND_ARMS[] = {WorldView::ArmedOrder::Move, WorldView::ArmedOrder::Attack, WorldView::ArmedOrder::Dock,
-                                                  WorldView::ArmedOrder::None};
+constexpr UniverseView::ArmedOrder COMMAND_ARMS[] = {UniverseView::ArmedOrder::Move, UniverseView::ArmedOrder::Attack,
+                                                     UniverseView::ArmedOrder::Dock, UniverseView::ArmedOrder::None};
 static_assert(std::size(COMMAND_LABELS) == std::size(COMMAND_ARMS), "a command lost its meaning");
 
 [[nodiscard]] Rgba WithAlpha(Rgba _colour, float _alpha) noexcept
@@ -43,7 +43,7 @@ void DrawPanel(TextRenderer& _text, float _x0, float _y0, float _x1, float _y1, 
 }
 } // namespace
 
-void FleetSheet::Update(const WorldView& _view) noexcept
+void FleetSheet::Update(const UniverseView& _view) noexcept
 {
   if (m_slot < 0)
     return;
@@ -85,7 +85,7 @@ FleetSheet::Layout FleetSheet::ComputeLayout(float _dpiScale, std::uint32_t _wid
   return layout;
 }
 
-void FleetSheet::Draw(TextRenderer& _text, const WorldView& _view, std::span<const char* const> _hullNames, float _dpiScale,
+void FleetSheet::Draw(TextRenderer& _text, const UniverseView& _view, std::span<const char* const> _hullNames, float _dpiScale,
                       std::uint32_t _widthPx, std::uint32_t _heightPx) const
 {
   const float s = std::max(0.5f, _dpiScale);
@@ -94,7 +94,7 @@ void FleetSheet::Draw(TextRenderer& _text, const WorldView& _view, std::span<con
 
   // The armed prompt stands in the sheet's own place once a command has closed it, so the state is
   // visible while it is live rather than only in the log line that announced it.
-  if (_view.Armed() != WorldView::ArmedOrder::None)
+  if (_view.Armed() != UniverseView::ArmedOrder::None)
   {
     const Layout layout = ComputeLayout(_dpiScale, _widthPx, _heightPx);
     const float h = HUD_SHEET_PROMPT_H_PX * s;
@@ -102,8 +102,9 @@ void FleetSheet::Draw(TextRenderer& _text, const WorldView& _view, std::span<con
     DrawPanel(_text, layout.panel.x0, y0, layout.panel.x1, layout.panel.y1, HUD_PANEL_FILL,
               WithAlpha(HUD_ACCENT_AMBER, HUD_ACTIVE_OUTLINE_ALPHA), s);
 
-    const WorldView::ArmedOrder armed = _view.Armed();
-    const char* verb = (armed == WorldView::ArmedOrder::Move) ? "MOVE" : ((armed == WorldView::ArmedOrder::Attack) ? "ATTACK" : "DOCK");
+    const UniverseView::ArmedOrder armed = _view.Armed();
+    const char* verb =
+      (armed == UniverseView::ArmedOrder::Move) ? "MOVE" : ((armed == UniverseView::ArmedOrder::Attack) ? "ATTACK" : "DOCK");
     char line[64] = {};
     std::snprintf(line, sizeof(line), "%s | TAP A TARGET", verb);
     _text.DrawTextLine(FontId::Ui, layout.panel.x0 + HUD_SHEET_PAD_PX * s, y0 + (h - textPx) * 0.5f, HUD_TEXT_SCALE * s, HUD_ACCENT_AMBER,
@@ -265,7 +266,7 @@ void FleetSheet::Draw(TextRenderer& _text, const WorldView& _view, std::span<con
   }
 }
 
-bool FleetSheet::HandlePointer(const PointerEvent& _event, WorldView& _view, float _dpiScale, std::uint32_t _widthPx,
+bool FleetSheet::HandlePointer(const PointerEvent& _event, UniverseView& _view, float _dpiScale, std::uint32_t _widthPx,
                                std::uint32_t _heightPx)
 {
   if (m_slot < 0)
@@ -279,14 +280,14 @@ bool FleetSheet::HandlePointer(const PointerEvent& _event, WorldView& _view, flo
   if (_event.kind == PointerEvent::Kind::Down)
   {
     if (m_captured || !layout.panel.Contains(_event.xPx, _event.yPx))
-      return false; // not modal: a press past the panel is a press on the world, and stays one
+      return false; // not modal: a press past the panel is a press on the universe, and stays one
     m_captured = true;
     m_capturedPointer = _event.pointerId;
     return true;
   }
 
-  // Only what this class captured. A contact that began on the world and drifted over the panel is
-  // still the world's, and it is still the world that will be told it lifted.
+  // Only what this class captured. A contact that began on the universe and drifted over the panel is
+  // still the universe's, and it is still the universe that will be told it lifted.
   if (!m_captured || _event.pointerId != m_capturedPointer)
     return false;
   if (_event.kind == PointerEvent::Kind::Update)
@@ -301,9 +302,9 @@ bool FleetSheet::HandlePointer(const PointerEvent& _event, WorldView& _view, flo
       continue;
 
     // STOP needs no target, so it is the one command that sends immediately. The other three arm
-    // the next world tap and close, which is what turns a named verb into an order
+    // the next universe tap and close, which is what turns a named verb into an order
     // (Design/Archive/Fleets.md 9.3).
-    if (COMMAND_ARMS[at] == WorldView::ArmedOrder::None)
+    if (COMMAND_ARMS[at] == UniverseView::ArmedOrder::None)
       _view.IssueStopOrder();
     else
       _view.ArmFleetOrder(COMMAND_ARMS[at]);

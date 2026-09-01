@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "InterestSet.h"
 
-#include "World.h"
+#include "Universe.h"
 
 #include <algorithm>
 #include <cmath>
@@ -23,7 +23,7 @@ bool InterestSet::IsDueOn(std::uint64_t _tick, std::uint32_t _phase) const noexc
   return (_tick % m_desc.updateEveryTicks) == (_phase % m_desc.updateEveryTicks);
 }
 
-void InterestSet::Update(const World& _world, const WorldPos& _centre)
+void InterestSet::Update(const Universe& _universe, const UniversePos& _centre)
 {
   m_entered.clear();
   m_left.clear();
@@ -31,16 +31,16 @@ void InterestSet::Update(const World& _world, const WorldPos& _centre)
 
   // The set as it stands now, sorted into the total order so that nothing downstream depends on the
   // order QueryCircle walked its cells in.
-  _world.Index().QueryCircle(_centre, m_desc.radiusMetres, m_queryScratch);
+  _universe.Index().QueryCircle(_centre, m_desc.radiusMetres, m_queryScratch);
 
   m_currentScratch.clear();
   m_distanceScratch.clear();
   for (const ShipId id : m_queryScratch)
   {
-    if (id >= _world.ShipCount())
+    if (id >= _universe.ShipCount())
       continue;
-    m_currentScratch.push_back(_world.HandleOf(id));
-    m_distanceScratch.push_back(Distance(_centre, _world.Ship(id).posWorld));
+    m_currentScratch.push_back(_universe.HandleOf(id));
+    m_distanceScratch.push_back(Distance(_centre, _universe.Ship(id).posUniverse));
   }
 
   // Sort the two arrays together. Small and bounded by the radius, so an index permutation costs

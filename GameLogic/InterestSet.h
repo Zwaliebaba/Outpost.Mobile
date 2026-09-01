@@ -2,7 +2,7 @@
 
 #include "ShipState.h"
 #include "SimTuning.h"
-#include "WorldPos.h"
+#include "UniversePos.h"
 
 #include <cstdint>
 #include <span>
@@ -10,7 +10,7 @@
 
 namespace Game
 {
-class World;
+class Universe;
 
 // What one subscriber can see, and what changed since it last looked.
 //
@@ -21,7 +21,7 @@ class World;
 //
 // The problem it solves is that a snapshot carrying every entity costs O(N) per subscriber and so
 // O(N^2) across them. Carrying only what a subscriber can see costs O(k), where k is the population
-// of one neighbourhood, and stops growing once the world is larger than the view.
+// of one neighbourhood, and stops growing once the universe is larger than the view.
 //
 // Nothing here is in the replay contract. It changes what is sent, never what is simulated.
 class InterestSet
@@ -47,7 +47,7 @@ public:
   [[nodiscard]] bool IsDueOn(std::uint64_t _tick, std::uint32_t _phase = 0) const noexcept;
 
   // Recomputes the set around _centre and works out what changed. Call only on a due tick.
-  void Update(const World& _world, const WorldPos& _centre);
+  void Update(const Universe& _universe, const UniversePos& _centre);
 
   // Handles seen for the first time this update. Sent in full: the subscriber has never had them.
   [[nodiscard]] std::span<const ShipHandle> Entered() const noexcept

@@ -16,36 +16,36 @@ constexpr std::uint32_t TARGET_CAP = 4;
   return _faction;
 }
 
-Game::World::StationId MakeStation(Game::World& _world, float _x, float _z, std::uint32_t _complement = COMPLEMENT)
+Game::Universe::StationId MakeStation(Game::Universe& _universe, float _x, float _z, std::uint32_t _complement = COMPLEMENT)
 {
   const Game::ShipId structure =
-    _world.SpawnShip(Game::LocalPos(_x, _z), 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
-  Game::World::StationDesc desc;
+    _universe.SpawnShip(Game::LocalPos(_x, _z), 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+  Game::Universe::StationDesc desc;
   desc.ownerFaction = Game::FACTION_VANGUARD;
   desc.protectorHullId = static_cast<std::uint32_t>(Game::HullId::Corvette);
   desc.protectorComplement = _complement;
   desc.launchEveryTicks = CADENCE_TICKS;
   desc.targetCap = TARGET_CAP;
-  return _world.MakeStation(structure, desc);
+  return _universe.MakeStation(structure, desc);
 }
 
 // The nearest live protector to a position, or a very large number if none is out.
-[[nodiscard]] float NearestProtector(const Game::World& _world, const Game::WorldPos& _to)
+[[nodiscard]] float NearestProtector(const Game::Universe& _universe, const Game::UniversePos& _to)
 {
   float nearest = 1.0e30f;
-  for (Game::ShipId id = 0; id < _world.ShipCount(); ++id)
+  for (Game::ShipId id = 0; id < _universe.ShipCount(); ++id)
   {
-    if (_world.ProtectorOf(id).active)
-      nearest = std::min(nearest, Game::Distance(_world.Ship(id).posWorld, _to));
+    if (_universe.ProtectorOf(id).active)
+      nearest = std::min(nearest, Game::Distance(_universe.Ship(id).posUniverse, _to));
   }
   return nearest;
 }
 
-[[nodiscard]] Game::ShipId FirstProtector(const Game::World& _world)
+[[nodiscard]] Game::ShipId FirstProtector(const Game::Universe& _universe)
 {
-  for (Game::ShipId id = 0; id < _world.ShipCount(); ++id)
+  for (Game::ShipId id = 0; id < _universe.ShipCount(); ++id)
   {
-    if (_world.ProtectorOf(id).active)
+    if (_universe.ProtectorOf(id).active)
       return id;
   }
   return Game::INVALID_SHIP_ID;
@@ -57,37 +57,37 @@ TEST_CLASS(ProtectorTests)
 public:
   TEST_METHOD(TheStationScramblesItsComplement)
   {
-    Game::World world;
-    const Game::World::StationId station = MakeStation(world, 0.0f, 0.0f);
-    const Game::ShipId raider = world.SpawnShip(Game::LocalPos(1500.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
+    Game::Universe universe;
+    const Game::Universe::StationId station = MakeStation(universe, 0.0f, 0.0f);
+    const Game::ShipId raider = universe.SpawnShip(Game::LocalPos(1500.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
 
     // Nothing before the act. The response starts from a *stated* aggression, never from a radius:
     // a ship parked beside a station it has not attacked is unmolested (Design/Archive/Stations.md 8.4).
     for (int tick = 0; tick < 400; ++tick)
-      world.Step();
-    Assert::AreEqual(static_cast<std::uint32_t>(0), world.LaunchedProtectorCount(station),
+      universe.Step();
+    Assert::AreEqual(static_cast<std::uint32_t>(0), universe.LaunchedProtectorCount(station),
                      L"a station launched at somebody who had done nothing");
 
-    world.RecordAggression(world.HandleOf(raider), station);
-    world.Step();
-    Assert::AreEqual(static_cast<std::uint32_t>(1), world.LaunchedProtectorCount(station),
+    universe.RecordAggression(universe.HandleOf(raider), station);
+    universe.Step();
+    Assert::AreEqual(static_cast<std::uint32_t>(1), universe.LaunchedProtectorCount(station),
                      L"the first protector did not launch on the tick after the aggression");
 
     // On the metronome, and capped. Stepped well past what three launches need.
     for (int tick = 0; tick < static_cast<int>(CADENCE_TICKS) * 6; ++tick)
-      world.Step();
-    Assert::AreEqual(COMPLEMENT, world.LaunchedProtectorCount(station), L"the garrison did not reach, or overran, its complement");
+      universe.Step();
+    Assert::AreEqual(COMPLEMENT, universe.LaunchedProtectorCount(station), L"the garrison did not reach, or overran, its complement");
 
     // In the owner's faction and on the owner's hull, so IFF and silhouette both read right.
     std::uint32_t seen = 0;
-    for (Game::ShipId id = 0; id < world.ShipCount(); ++id)
+    for (Game::ShipId id = 0; id < universe.ShipCount(); ++id)
     {
-      if (!world.ProtectorOf(id).active)
+      if (!universe.ProtectorOf(id).active)
         continue;
       ++seen;
-      Assert::AreEqual(Faction(Game::FACTION_VANGUARD), Faction(world.Ship(id).factionId), L"a protector flew somebody else's flag");
-      Assert::AreEqual(static_cast<std::uint32_t>(Game::HullId::Corvette), world.Ship(id).hullId, L"a protector flew the wrong hull");
-      Assert::IsTrue(world.ProtectorOf(id).home == station, L"a protector belongs to the wrong station");
+      Assert::AreEqual(Faction(Game::FACTION_VANGUARD), Faction(universe.Ship(id).factionId), L"a protector flew somebody else's flag");
+      Assert::AreEqual(static_cast<std::uint32_t>(Game::HullId::Corvette), universe.Ship(id).hullId, L"a protector flew the wrong hull");
+      Assert::IsTrue(universe.ProtectorOf(id).home == station, L"a protector belongs to the wrong station");
     }
     Assert::AreEqual(COMPLEMENT, seen, L"the duty table and the launched count disagree");
   }
@@ -95,48 +95,49 @@ public:
   // Complement 0 is the Vandal base: its patrol is not a garrison and it launches nothing, ever.
   TEST_METHOD(AStationWithNoGarrisonLaunchesNothing)
   {
-    Game::World world;
-    const Game::World::StationId station = MakeStation(world, 0.0f, 0.0f, 0);
-    const Game::ShipId raider = world.SpawnShip(Game::LocalPos(900.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
+    Game::Universe universe;
+    const Game::Universe::StationId station = MakeStation(universe, 0.0f, 0.0f, 0);
+    const Game::ShipId raider = universe.SpawnShip(Game::LocalPos(900.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
 
-    world.RecordAggression(world.HandleOf(raider), station);
+    universe.RecordAggression(universe.HandleOf(raider), station);
     for (int tick = 0; tick < static_cast<int>(CADENCE_TICKS) * 10; ++tick)
-      world.Step();
+      universe.Step();
 
-    Assert::AreEqual(static_cast<std::uint32_t>(0), world.LaunchedProtectorCount(station),
+    Assert::AreEqual(static_cast<std::uint32_t>(0), universe.LaunchedProtectorCount(station),
                      L"a station with no complement launched something");
-    Assert::AreEqual(static_cast<std::uint32_t>(2), world.ShipCount(), L"a ship appeared from somewhere");
+    Assert::AreEqual(static_cast<std::uint32_t>(2), universe.ShipCount(), L"a ship appeared from somewhere");
   }
 
   // The chase, and the threshold that keeps it a sequence of ordinary orders rather than a replan
   // every tick.
   TEST_METHOD(AProtectorPursuesItsTarget)
   {
-    Game::World world;
-    const Game::World::StationId station = MakeStation(world, 0.0f, 0.0f, 1);
-    const Game::ShipId raider = world.SpawnShip(Game::LocalPos(1200.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor));
-    const Game::ShipHandle raiderHandle = world.HandleOf(raider);
+    Game::Universe universe;
+    const Game::Universe::StationId station = MakeStation(universe, 0.0f, 0.0f, 1);
+    const Game::ShipId raider =
+      universe.SpawnShip(Game::LocalPos(1200.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor));
+    const Game::ShipHandle raiderHandle = universe.HandleOf(raider);
 
-    world.RecordAggression(raiderHandle, station);
-    world.Step();
-    const Game::ShipId hunter = FirstProtector(world);
+    universe.RecordAggression(raiderHandle, station);
+    universe.Step();
+    const Game::ShipId hunter = FirstProtector(universe);
     Assert::AreNotEqual(Game::INVALID_SHIP_ID, hunter, L"nothing launched");
 
     // The raider runs. A fleeing target is the case the replan threshold exists for.
-    (void)world.IssueMoveOrder(std::array{raider}, Game::LocalPos(1200.0f, 4000.0f), false, 0.0f, Game::FACTION_PLAYER);
+    (void)universe.IssueMoveOrder(std::array{raider}, Game::LocalPos(1200.0f, 4000.0f), false, 0.0f, Game::FACTION_PLAYER);
 
-    const float startDistance = Game::Distance(world.Ship(hunter).posWorld, world.Ship(raider).posWorld);
+    const float startDistance = Game::Distance(universe.Ship(hunter).posUniverse, universe.Ship(raider).posUniverse);
     std::uint32_t reaims = 0;
-    Game::WorldPos aim = world.RouteOf(hunter).empty() ? world.Ship(hunter).posWorld : world.RouteOf(hunter).back();
+    Game::UniversePos aim = universe.RouteOf(hunter).empty() ? universe.Ship(hunter).posUniverse : universe.RouteOf(hunter).back();
 
     constexpr int WINDOW = 3000;
     for (int tick = 0; tick < WINDOW; ++tick)
     {
-      world.Step();
-      const Game::ShipId live = world.Resolve(raiderHandle);
+      universe.Step();
+      const Game::ShipId live = universe.Resolve(raiderHandle);
       Assert::AreNotEqual(Game::INVALID_SHIP_ID, live, L"the raider vanished");
 
-      const std::span<const Game::WorldPos> route = world.RouteOf(hunter);
+      const std::span<const Game::UniversePos> route = universe.RouteOf(hunter);
       if (route.empty())
         continue;
       if (!IsSamePosition(route.back(), aim))
@@ -149,163 +150,163 @@ public:
       // Between re-aims the target must be inside the threshold of the point last aimed at. That is
       // the invariant the constant states, checked on every tick rather than inferred from a count.
       //
-      // Asked of World::PursuitAimedAt rather than of the route's destination, which is where this
+      // Asked of Universe::PursuitAimedAt rather than of the route's destination, which is where this
       // row used to read it. The two were the same point until a pursuit gained a stand-off and the
       // destination moved up to 224 m short of the target (Design/Combat.md 8, ADR 0052); measured
       // against the destination now, a Corvette's own 144 m stand-off reads as permanent drift.
-      Assert::IsTrue(Game::Distance(world.PursuitAimedAt(hunter), world.Ship(live).posWorld) <= Game::PURSUIT_REPLAN_METRES + 1.0f,
+      Assert::IsTrue(Game::Distance(universe.PursuitAimedAt(hunter), universe.Ship(live).posUniverse) <= Game::PURSUIT_REPLAN_METRES + 1.0f,
                      L"the hunter let its target drift past the replan threshold without re-aiming");
     }
 
     Assert::IsTrue(reaims > 0, L"the hunter never re-aimed at a target that ran");
     Assert::IsTrue(reaims < WINDOW / 10, L"the hunter re-planned far too often -- the threshold is not holding");
 
-    const float endDistance = Game::Distance(world.Ship(hunter).posWorld, world.Ship(world.Resolve(raiderHandle)).posWorld);
+    const float endDistance = Game::Distance(universe.Ship(hunter).posUniverse, universe.Ship(universe.Resolve(raiderHandle)).posUniverse);
     Assert::IsTrue(endDistance < startDistance, L"the hunter did not close on its target");
   }
 
   TEST_METHOD(AProtectorStandsDownWhenItsTargetDies)
   {
-    Game::World world;
-    const Game::World::StationId station = MakeStation(world, 0.0f, 0.0f);
-    const Game::ShipId raider = world.SpawnShip(Game::LocalPos(1500.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
-    const Game::ShipHandle raiderHandle = world.HandleOf(raider);
+    Game::Universe universe;
+    const Game::Universe::StationId station = MakeStation(universe, 0.0f, 0.0f);
+    const Game::ShipId raider = universe.SpawnShip(Game::LocalPos(1500.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
+    const Game::ShipHandle raiderHandle = universe.HandleOf(raider);
 
-    world.RecordAggression(raiderHandle, station);
+    universe.RecordAggression(raiderHandle, station);
     for (int tick = 0; tick < static_cast<int>(CADENCE_TICKS) * 4; ++tick)
-      world.Step();
-    Assert::AreEqual(COMPLEMENT, world.LaunchedProtectorCount(station), L"the garrison never reached its complement");
+      universe.Step();
+    Assert::AreEqual(COMPLEMENT, universe.LaunchedProtectorCount(station), L"the garrison never reached its complement");
 
-    Assert::IsTrue(world.DespawnShip(raiderHandle), L"the despawn failed");
+    Assert::IsTrue(universe.DespawnShip(raiderHandle), L"the despawn failed");
 
     bool home = false;
     for (int tick = 0; tick < 30000 && !home; ++tick)
     {
-      world.Step();
-      home = world.LaunchedProtectorCount(station) == 0;
+      universe.Step();
+      home = universe.LaunchedProtectorCount(station) == 0;
     }
     Assert::IsTrue(home, L"the garrison never came home");
 
     // A garrison is not a guest: docking home returns the hull to the complement and writes no
     // ledger row (Design/Archive/Stations.md 8.3).
-    Assert::IsTrue(world.StationOf(station).docked.empty(), L"a protector coming home was written into the ledger");
-    Assert::AreEqual(static_cast<std::uint32_t>(1), world.ShipCount(), L"only the station should be left in the world");
+    Assert::IsTrue(universe.StationOf(station).docked.empty(), L"a protector coming home was written into the ledger");
+    Assert::AreEqual(static_cast<std::uint32_t>(1), universe.ShipCount(), L"only the station should be left in the universe");
 
     // And it stays down. Nothing relaunches at a target list that is empty.
     for (int tick = 0; tick < static_cast<int>(CADENCE_TICKS) * 6; ++tick)
-      world.Step();
-    Assert::AreEqual(static_cast<std::uint32_t>(0), world.LaunchedProtectorCount(station), L"the station relaunched at nobody");
+      universe.Step();
+    Assert::AreEqual(static_cast<std::uint32_t>(0), universe.LaunchedProtectorCount(station), L"the station relaunched at nobody");
   }
 
   // The reserve is bottomless for as long as a target lives, which is safe precisely because a
   // protector drops nothing when destroyed (Design/Archive/Stations.md 8.6) -- there is nothing to farm.
   TEST_METHOD(ALossIsReplaced)
   {
-    Game::World world;
-    const Game::World::StationId station = MakeStation(world, 0.0f, 0.0f);
-    const Game::ShipId raider = world.SpawnShip(Game::LocalPos(2500.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
+    Game::Universe universe;
+    const Game::Universe::StationId station = MakeStation(universe, 0.0f, 0.0f);
+    const Game::ShipId raider = universe.SpawnShip(Game::LocalPos(2500.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
 
-    world.RecordAggression(world.HandleOf(raider), station);
+    universe.RecordAggression(universe.HandleOf(raider), station);
     for (int tick = 0; tick < static_cast<int>(CADENCE_TICKS) * 4; ++tick)
-      world.Step();
-    Assert::AreEqual(COMPLEMENT, world.LaunchedProtectorCount(station), L"the garrison never reached its complement");
+      universe.Step();
+    Assert::AreEqual(COMPLEMENT, universe.LaunchedProtectorCount(station), L"the garrison never reached its complement");
 
-    const Game::ShipId doomed = FirstProtector(world);
-    Assert::IsTrue(world.DespawnShip(world.HandleOf(doomed)), L"the despawn failed");
-    Assert::AreEqual(COMPLEMENT - 1, world.LaunchedProtectorCount(station), L"the loss was not counted");
+    const Game::ShipId doomed = FirstProtector(universe);
+    Assert::IsTrue(universe.DespawnShip(universe.HandleOf(doomed)), L"the despawn failed");
+    Assert::AreEqual(COMPLEMENT - 1, universe.LaunchedProtectorCount(station), L"the loss was not counted");
 
     // Replaced by the same metronome, and the complement is never exceeded on the way back up.
     for (int tick = 0; tick < static_cast<int>(CADENCE_TICKS) * 3; ++tick)
     {
-      world.Step();
-      Assert::IsTrue(world.LaunchedProtectorCount(station) <= COMPLEMENT, L"the station overran its complement replacing a loss");
+      universe.Step();
+      Assert::IsTrue(universe.LaunchedProtectorCount(station) <= COMPLEMENT, L"the station overran its complement replacing a loss");
     }
-    Assert::AreEqual(COMPLEMENT, world.LaunchedProtectorCount(station), L"the loss was never replaced");
+    Assert::AreEqual(COMPLEMENT, universe.LaunchedProtectorCount(station), L"the loss was never replaced");
   }
 
   // Standing is imperial, the response is local. Both come straight from the owner's brief.
   TEST_METHOD(AggressionIsImperialAndTheResponseIsLocal)
   {
-    Game::World world;
-    const Game::World::StationId attacked = MakeStation(world, 0.0f, 0.0f);
-    const Game::World::StationId elsewhere = MakeStation(world, 4000.0f, 0.0f);
-    const Game::ShipId raider = world.SpawnShip(Game::LocalPos(1500.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
+    Game::Universe universe;
+    const Game::Universe::StationId attacked = MakeStation(universe, 0.0f, 0.0f);
+    const Game::Universe::StationId elsewhere = MakeStation(universe, 4000.0f, 0.0f);
+    const Game::ShipId raider = universe.SpawnShip(Game::LocalPos(1500.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
 
-    world.RecordAggression(world.HandleOf(raider), attacked);
+    universe.RecordAggression(universe.HandleOf(raider), attacked);
     for (int tick = 0; tick < static_cast<int>(CADENCE_TICKS) * 5; ++tick)
-      world.Step();
+      universe.Step();
 
-    Assert::AreEqual(COMPLEMENT, world.LaunchedProtectorCount(attacked), L"the attacked station did not scramble");
-    Assert::AreEqual(static_cast<std::uint32_t>(0), world.LaunchedProtectorCount(elsewhere),
+    Assert::AreEqual(COMPLEMENT, universe.LaunchedProtectorCount(attacked), L"the attacked station did not scramble");
+    Assert::AreEqual(static_cast<std::uint32_t>(0), universe.LaunchedProtectorCount(elsewhere),
                      L"a station nobody attacked scrambled: the response is local");
 
     // The grudge, though, is the whole government's.
-    Assert::IsTrue(world.StandingOf(Game::FACTION_VANGUARD, Game::FACTION_PLAYER) == Game::Standing::Hostile,
+    Assert::IsTrue(universe.StandingOf(Game::FACTION_VANGUARD, Game::FACTION_PLAYER) == Game::Standing::Hostile,
                    L"the attacker is not criminal in the Vanguard's eyes");
   }
 
   TEST_METHOD(AFullTargetListDropsTheNewest)
   {
-    Game::World world;
-    const Game::World::StationId station = MakeStation(world, 0.0f, 0.0f, 1);
+    Game::Universe universe;
+    const Game::Universe::StationId station = MakeStation(universe, 0.0f, 0.0f, 1);
 
     std::vector<Game::ShipHandle> raiders;
     for (std::uint32_t at = 0; at < TARGET_CAP + 2; ++at)
     {
-      const Game::ShipId raider = world.SpawnShip(Game::LocalPos(1500.0f + static_cast<float>(at) * 120.0f, 0.0f), 0.0f,
-                                                  static_cast<std::uint32_t>(Game::HullId::Bomber));
-      raiders.push_back(world.HandleOf(raider));
-      world.RecordAggression(raiders.back(), station);
+      const Game::ShipId raider = universe.SpawnShip(Game::LocalPos(1500.0f + static_cast<float>(at) * 120.0f, 0.0f), 0.0f,
+                                                     static_cast<std::uint32_t>(Game::HullId::Bomber));
+      raiders.push_back(universe.HandleOf(raider));
+      universe.RecordAggression(raiders.back(), station);
     }
 
-    const std::vector<Game::ShipHandle>& targets = world.StationOf(station).targets;
+    const std::vector<Game::ShipHandle>& targets = universe.StationOf(station).targets;
     Assert::AreEqual(static_cast<std::size_t>(TARGET_CAP), targets.size(), L"the target list is not capped");
     for (std::uint32_t at = 0; at < TARGET_CAP; ++at)
       Assert::IsTrue(targets[at] == raiders[at], L"the list did not keep the earliest arrivals, in arrival order");
 
     // Every one of them is still criminal: the standing flip happens whether or not there is room,
     // which is the part that matters.
-    Assert::IsTrue(world.StandingOf(Game::FACTION_VANGUARD, Game::FACTION_PLAYER) == Game::Standing::Hostile,
+    Assert::IsTrue(universe.StandingOf(Game::FACTION_VANGUARD, Game::FACTION_PLAYER) == Game::Standing::Hostile,
                    L"an over-cap aggressor escaped the standing flip");
 
     // Attacking twice does not queue two protectors.
     const std::size_t before = targets.size();
-    world.RecordAggression(raiders[0], station);
-    Assert::AreEqual(before, world.StationOf(station).targets.size(), L"a repeat aggression was listed twice");
+    universe.RecordAggression(raiders[0], station);
+    Assert::AreEqual(before, universe.StationOf(station).targets.size(), L"a repeat aggression was listed twice");
   }
 
   // A protector on its way home picks a new target up and turns round, rather than docking and
   // being relaunched a tick later (Design/Archive/Stations-slice-4.md 2.4).
   TEST_METHOD(AHomewardProtectorTurnsRound)
   {
-    Game::World world;
-    const Game::World::StationId station = MakeStation(world, 0.0f, 0.0f, 1);
-    const Game::ShipId first = world.SpawnShip(Game::LocalPos(1500.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
-    const Game::ShipHandle firstHandle = world.HandleOf(first);
+    Game::Universe universe;
+    const Game::Universe::StationId station = MakeStation(universe, 0.0f, 0.0f, 1);
+    const Game::ShipId first = universe.SpawnShip(Game::LocalPos(1500.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
+    const Game::ShipHandle firstHandle = universe.HandleOf(first);
 
-    world.RecordAggression(firstHandle, station);
+    universe.RecordAggression(firstHandle, station);
     for (int tick = 0; tick < 600; ++tick)
-      world.Step();
-    const Game::ShipId hunter = FirstProtector(world);
+      universe.Step();
+    const Game::ShipId hunter = FirstProtector(universe);
     Assert::AreNotEqual(Game::INVALID_SHIP_ID, hunter, L"nothing launched");
 
     // Its target dies; it turns for home.
-    Assert::IsTrue(world.DespawnShip(firstHandle), L"the despawn failed");
-    world.Step();
-    const Game::ShipId homeward = FirstProtector(world);
+    Assert::IsTrue(universe.DespawnShip(firstHandle), L"the despawn failed");
+    universe.Step();
+    const Game::ShipId homeward = FirstProtector(universe);
     Assert::AreNotEqual(Game::INVALID_SHIP_ID, homeward, L"the protector stopped being one the moment its target died");
-    Assert::IsTrue(world.DockingOf(homeward).active, L"a protector with nothing to hunt did not head home");
+    Assert::IsTrue(universe.DockingOf(homeward).active, L"a protector with nothing to hunt did not head home");
 
     // A second aggressor, while it is still on its way in.
-    const Game::ShipId second = world.SpawnShip(Game::LocalPos(-1500.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
-    world.RecordAggression(world.HandleOf(second), station);
-    world.Step();
+    const Game::ShipId second = universe.SpawnShip(Game::LocalPos(-1500.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber));
+    universe.RecordAggression(universe.HandleOf(second), station);
+    universe.Step();
 
-    const Game::ShipId turned = FirstProtector(world);
+    const Game::ShipId turned = FirstProtector(universe);
     Assert::AreNotEqual(Game::INVALID_SHIP_ID, turned, L"the protector docked instead of turning round");
-    Assert::IsFalse(world.DockingOf(turned).active, L"the protector is still trying to dock with a target outstanding");
-    Assert::IsTrue(world.ProtectorOf(turned).target == world.HandleOf(second), L"the protector did not take the new target");
-    Assert::IsTrue(world.StationOf(station).docked.empty(), L"the protector docked on its way past");
+    Assert::IsFalse(universe.DockingOf(turned).active, L"the protector is still trying to dock with a target outstanding");
+    Assert::IsTrue(universe.ProtectorOf(turned).target == universe.HandleOf(second), L"the protector did not take the new target");
+    Assert::IsTrue(universe.StationOf(station).docked.empty(), L"the protector docked on its way past");
   }
 
   // The replay gate over everything slices 1 to 4 added: a layout's spawns, a dock, an aggression,
@@ -319,10 +320,10 @@ public:
       std::uint32_t docked = 0;
     };
 
-    const auto play = [](std::vector<Game::WorldPos>& _outTrack, std::vector<float>& _outMotion, std::vector<std::uint32_t>& _outCounts,
+    const auto play = [](std::vector<Game::UniversePos>& _outTrack, std::vector<float>& _outMotion, std::vector<std::uint32_t>& _outCounts,
                          Summary& _outSummary)
     {
-      Game::World world;
+      Game::Universe universe;
 
       // Content out of the layout function, so the replay covers slice 1's output as spawn input.
       //
@@ -335,57 +336,57 @@ public:
       desc.firstPlanetBearingRad = 0.0f;
       desc.firstPlanetOrbitMetres = 900.0f;
       const Game::SystemLayout layout = Game::LayOutSystem(0x53746174696F6Eull, Game::LocalPos(0.0f, 0.0f), desc);
-      std::vector<Game::World::StationId> stations;
+      std::vector<Game::Universe::StationId> stations;
       for (const Game::PlanetSite& site : layout.planets)
       {
         const Game::ShipId structure =
-          world.SpawnShip(site.posWorld, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
-        Game::World::StationDesc garrison;
+          universe.SpawnShip(site.posUniverse, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+        Game::Universe::StationDesc garrison;
         garrison.ownerFaction = Game::FACTION_VANGUARD;
         garrison.protectorHullId = static_cast<std::uint32_t>(Game::HullId::Corvette);
         garrison.protectorComplement = COMPLEMENT;
         garrison.launchEveryTicks = CADENCE_TICKS;
         garrison.targetCap = TARGET_CAP;
-        stations.push_back(world.MakeStation(structure, garrison));
+        stations.push_back(universe.MakeStation(structure, garrison));
       }
 
-      const Game::ShipId docker = world.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
+      const Game::ShipId docker = universe.SpawnShip(Game::LocalPos(0.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
 
       // The raider is a Vandal and not the player, deliberately. Provoking with the same faction
       // that is docking makes the two halves of the scene contradict each other: the standing flip
       // is empire-wide, so the docker would be turned away at the door by the capture-time re-check
       // and the run would prove only that two refusals agree (Design/Archive/Stations.md 7.3).
       const Game::ShipId raider =
-        world.SpawnShip(Game::LocalPos(200.0f, 600.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber), Game::FACTION_VANDAL);
+        universe.SpawnShip(Game::LocalPos(200.0f, 600.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber), Game::FACTION_VANDAL);
 
-      const Game::ShipId firstStructure = world.Resolve(world.StationOf(stations[0]).structure);
-      (void)world.IssueDockOrder(std::array{docker}, firstStructure, Game::FACTION_PLAYER);
-      world.RecordAggression(world.HandleOf(raider), stations[1]);
+      const Game::ShipId firstStructure = universe.Resolve(universe.StationOf(stations[0]).structure);
+      (void)universe.IssueDockOrder(std::array{docker}, firstStructure, Game::FACTION_PLAYER);
+      universe.RecordAggression(universe.HandleOf(raider), stations[1]);
 
       for (int tick = 0; tick < 3000; ++tick)
       {
-        world.Step();
-        for (Game::ShipId id = 0; id < world.ShipCount(); ++id)
+        universe.Step();
+        for (Game::ShipId id = 0; id < universe.ShipCount(); ++id)
         {
-          _outTrack.push_back(world.Ship(id).posWorld);
-          _outMotion.push_back(world.Ship(id).speed);
-          _outMotion.push_back(world.Ship(id).headingRad);
+          _outTrack.push_back(universe.Ship(id).posUniverse);
+          _outMotion.push_back(universe.Ship(id).speed);
+          _outMotion.push_back(universe.Ship(id).headingRad);
         }
-        _outCounts.push_back(world.ShipCount());
-        for (const Game::World::StationId station : stations)
+        _outCounts.push_back(universe.ShipCount());
+        for (const Game::Universe::StationId station : stations)
         {
-          const std::uint32_t launched = world.LaunchedProtectorCount(station);
-          const std::uint32_t docked = static_cast<std::uint32_t>(world.StationOf(station).docked.size());
+          const std::uint32_t launched = universe.LaunchedProtectorCount(station);
+          const std::uint32_t docked = static_cast<std::uint32_t>(universe.StationOf(station).docked.size());
           _outCounts.push_back(launched);
           _outCounts.push_back(docked);
-          _outCounts.push_back(static_cast<std::uint32_t>(world.StationOf(station).targets.size()));
+          _outCounts.push_back(static_cast<std::uint32_t>(universe.StationOf(station).targets.size()));
           _outSummary.peakLaunched = std::max(_outSummary.peakLaunched, launched);
           _outSummary.docked += docked;
         }
       }
     };
 
-    std::vector<Game::WorldPos> firstTrack, secondTrack;
+    std::vector<Game::UniversePos> firstTrack, secondTrack;
     std::vector<float> firstMotion, secondMotion;
     std::vector<std::uint32_t> firstCounts, secondCounts;
     Summary firstSummary, secondSummary;

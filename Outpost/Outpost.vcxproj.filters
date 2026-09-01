@@ -13,7 +13,7 @@
     <ClCompile Include="ShipExplosion.cpp">
       <Filter>View</Filter>
     </ClCompile>
-    <ClCompile Include="WorldView.cpp">
+    <ClCompile Include="UniverseView.cpp">
       <Filter>View</Filter>
     </ClCompile>
     <ClCompile Include="BodyCatalogue.cpp">
@@ -37,13 +37,13 @@
     <ClInclude Include="ServerConfig.h">
       <Filter>Boot</Filter>
     </ClInclude>
-    <ClInclude Include="WorldSimulation.h">
+    <ClInclude Include="UniverseSimulation.h">
       <Filter>Boot</Filter>
     </ClInclude>
     <ClInclude Include="ShipExplosion.h">
       <Filter>View</Filter>
     </ClInclude>
-    <ClInclude Include="WorldView.h">
+    <ClInclude Include="UniverseView.h">
       <Filter>View</Filter>
     </ClInclude>
     <ClInclude Include="Hud.h">

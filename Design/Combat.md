@@ -2,7 +2,7 @@
 
 **Status: agreed with the owner on 2026-08-31 — the six decisions in §15 were put and taken the
 same day, each the recommended option. Slices 1 to 5 landed on 2026-09-01 and are in review; slice 6
-is open.** The world is lethal, says so on the wire, and draws it: muzzle flashes, tracers and
+is open.** The universe is lethal, says so on the wire, and draws it: muzzle flashes, tracers and
 impacts in the shooter's colours, condition pips on the fleet sheet, and F6/F7 retired because the
 simulation states its own acts now. §13's pacing targets have been measured against the shipped
 table and two numbers moved (slice 5). What is left is slice 6 — the turret geometry turning, the
@@ -55,7 +55,7 @@ design can later hang a different tool on the same arm (§12) without reopening 
 - **Deterministic gunnery** (§4): a shot happens exactly when geometry allows — in range, in arc,
   aim settled, cooldown spent. No dice, no generator in the contract; a miss is a turret losing a
   crossing target, which is a tactic, not a roll.
-- **The fire pass** (§5): `StepMounts`, one more pass inside `World::Step` (ADR 0015) and the last
+- **The fire pass** (§5): `StepMounts`, one more pass inside `Universe::Step` (ADR 0015) and the last
   one in the tick, gather-then-apply like the dock captures and the launches. Senses live in the
   mounts, not the helm: no hull changes course because of what it sees.
 - **A shot is a stated act** (§6): the fire pass is the caller ADR 0041 and ADR 0050 were waiting
@@ -84,24 +84,24 @@ The sockets, by name, all verified in the tree as it stands:
 
 | Socket | Where | What this design does with it |
 |---|---|---|
-| `RecordHostileAct(attacker, victim)` | `World.h`, Fleets §7.1 | called by the fire pass on every landed hit against a ship |
-| `RecordAggression(attacker, station)` | `World.h`, Stations §8.1 | called on every landed hit against a station or its garrison ship |
-| `PursueTarget` — "one function with two masters" | `World.cpp`, ADR 0050 | gains a stand-off (§8); stays the only chase |
+| `RecordHostileAct(attacker, victim)` | `Universe.h`, Fleets §7.1 | called by the fire pass on every landed hit against a ship |
+| `RecordAggression(attacker, station)` | `Universe.h`, Stations §8.1 | called on every landed hit against a station or its garrison ship |
+| `PursueTarget` — "one function with two masters" | `Universe.cpp`, ADR 0050 | gains a stand-off (§8); stays the only chase |
 | `HullSpec::combatant` | `HullSpec.h`, ADR 0050 | unchanged; decides who *moves* to a fight, while mounts decide who *shoots* (§5.3) |
-| `Fleet::threat` / `threatAnchorPos` / `alertTicks`, leash + alert | `World.h`, Fleets §7 | unchanged; becomes lethal because the pursuers now carry working guns |
-| `Station::targets`, protector launch metronome | `World.h`, Stations §8.2–8.3 | unchanged; a protector's duty target is its mounts' priority |
-| `DespawnCause::Destroyed` → leave runs → `ExplodeTheLost` | ADR 0040, `WorldView.cpp` | the fire pass becomes the first in-simulation caller |
+| `Fleet::threat` / `threatAnchorPos` / `alertTicks`, leash + alert | `Universe.h`, Fleets §7 | unchanged; becomes lethal because the pursuers now carry working guns |
+| `Station::targets`, protector launch metronome | `Universe.h`, Stations §8.2–8.3 | unchanged; a protector's duty target is its mounts' priority |
+| `DespawnCause::Destroyed` → leave runs → `ExplodeTheLost` | ADR 0040, `UniverseView.cpp` | the fire pass becomes the first in-simulation caller |
 | `FleetOrderKind::Attack`, armed and flowing end to end | Fleets §6.5, `FleetSheet.cpp` | unchanged on the wire; finally means what it says |
 | Named turret submeshes, and the `Gun` marker the format defines | NmoFormat §5.10 | the view's anchor for muzzle, tracer and slew (§10). No shipped hull carries a skeleton, a clip or a skin buffer, so the anchor is a named part and its bind-pose centre rather than a bone |
 | Fleet status bits 6–7, the red pulse, `SHIP LOST`, the pip row | Fleets §8.2, §9.3 | the pips start reading (§10.3); the target bar is slice 6's |
 
 Truth maintenance, because the rulebook demands it in the same commits — all of these have now
 been retargeted: "there is still no combat" and its siblings in `README.md` and `AGENTS.md`;
-`World.h`'s "nothing inside Step states an act" (§6 changed that sentence on purpose);
+`Universe.h`'s "nothing inside Step states an act" (§6 changed that sentence on purpose);
 `OutpostApp.cpp`'s F4 comment "nothing in the game can destroy a ship"; the `FleetOrderKind` comment
 in `ShipState.h` describing what Attack waits for. Each slice retargets the sentences its change
 falsifies, and this design is amended in the same pass (ADR 0054). Two were missed at the time and
-caught by a sweep afterwards, `World.h`'s among them — which is the honest argument for the
+caught by a sweep afterwards, `Universe.h`'s among them — which is the honest argument for the
 checklist line ADR 0054 added, and for not trusting the discipline alone.
 
 ## 3. The mount and the device
@@ -133,7 +133,7 @@ blocker for the simulation half.
 Three fields per mount: `aimBearingRad` (hull frame — bounded, and a heading change costs the
 turret nothing it should not pay), `cooldownTicks`, and a held `ShipHandle target`. A dense table
 parallel to `m_ships`, `MAX_MOUNTS` per ship, swap-and-popped with the other parallel tables, in
-the state codec with a `WORLD_STATE_FORMAT` bump.
+the state codec with a `UNIVERSE_STATE_FORMAT` bump.
 
 The held target is `avoidHeadingRad`'s argument at the gunnery scale: without it a mount flickers
 between two targets that score within noise of each other, resetting its traverse each time. A
@@ -252,7 +252,7 @@ gun, so the ring itself is what sweeps its arc across an intruder: it cannot tur
 does not try. A loose ship defends itself precisely that
 far: guns yes, course no. The first helm that *reacts* — breaks off, kites, flees — is the NPC
 behaviors design (§14), and the fleet defense already covers the player's ships. This is the
-narrowest reading of "senses and thresholds" that makes the world dangerous, and it is deliberate:
+narrowest reading of "senses and thresholds" that makes the universe dangerous, and it is deliberate:
 approach the Vandal ring today and the first shot, the stated act, the roused fleet and the fight
 all fall out of machinery that already exists.
 
@@ -272,7 +272,7 @@ The acts are stated **before** the deaths are applied, which is why the pass is 
 one (§5.1): `RecordHostileAct` resolves its victim, so a fleet member killed outright would rouse
 nobody at all if its death had already landed.
 
-`World.h`'s "nothing inside Step states an act" was true and dated the day it was written — the
+`Universe.h`'s "nothing inside Step states an act" was true and dated the day it was written — the
 acts were always going to come from the one pass that can observe a shot, and that comment now says
 so. What ADR 0041 actually forbids is unchanged and load-bearing: **no client message states an act,
 and there never will be one.** A client sends orders; the simulation fires, observes itself firing,
@@ -343,7 +343,7 @@ doctrine, screening assignments are RoE work (§14).
 ### 9.1 Hull fraction in the record
 
 One byte, `hullFraction` (255 = whole), in the ship record beside `flags`: 47 → 48 bytes, and the
-fragment capacity re-derives itself the way `WorldSnapshot.h` promises — 22 ships to a fragment, and
+fragment capacity re-derives itself the way `UniverseSnapshot.h` promises — 22 ships to a fragment, and
 then 21. A hull that cannot be destroyed reads 255, because undamaged is the only honest answer for
 a thing with nothing to lose. It is state that heals — the next update corrects a lost one — so it
 belongs in the record, ADR 0029's own test answered the record's way. Every subscribed ship carries
@@ -376,7 +376,7 @@ wire — *who* destroyed you — is deliberately absent this design (§14); the 
 
 ### 9.3 Format discipline
 
-`WORLD_STATE_FORMAT` bumps for the codec fields (§3.2, §7.1) — 5 → 6; the ALPN string bumps with
+`UNIVERSE_STATE_FORMAT` bumps for the codec fields (§3.2, §7.1) — 5 → 6; the ALPN string bumps with
 the record's width and the new message kind, `outpost-3` → `outpost-4`, so two builds that disagree
 refuse at the handshake rather than misparse — both rules already written, both merely obeyed.
 
@@ -551,7 +551,7 @@ said "fighters harass capitals, **Bombers kill them**", and the second half meas
 first half does not survive contact, and making it true would need a fighter that can trade with a
 Frigate, which breaks the first target. New `SimTuning.h` constants: `FIRE_ALIGN_RAD`,
 `ENGAGE_STANDOFF_FRACTION` and the gather's gunnery margin, with the fire message's cap in
-`WorldSnapshot.h` beside the format it belongs to — each with the argued comment the file demands.
+`UniverseSnapshot.h` beside the format it belongs to — each with the argued comment the file demands.
 
 ## 14. Deliberately left out, so nobody goes looking
 
@@ -665,6 +665,6 @@ One agent per slice, one slice per layer at a time; each retargets the sentences
    one that changes what the same frames show.
 
 Dependencies: 1 → {2, 3}, 2 → 4, 4 → 5, and 6 after 3 and 4 — slice 3 reads a mesh and depends on
-neither of the two before it. After slice 1 the world is lethal in tests and under F-keys; after 2
+neither of the two before it. After slice 1 the universe is lethal in tests and under F-keys; after 2
 a client knows; after 4 a player sees; after 5 the numbers are measured rather than guessed; after 6
 the guns are geometry and content rather than scaffolding.

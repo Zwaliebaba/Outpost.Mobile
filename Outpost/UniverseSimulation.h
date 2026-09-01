@@ -3,7 +3,7 @@
 #include "ServerConfig.h"
 
 #include "Publisher.h"
-#include "World.h"
+#include "Universe.h"
 
 #include "Simulation.h"
 
@@ -14,24 +14,24 @@
 namespace Outpost
 {
 // The one place the engine's server half and the game meet. NeuronServer declares Simulation and
-// knows nothing else; GameLogic declares World and knows nothing about being hosted; this adapter,
+// knows nothing else; GameLogic declares Universe and knows nothing about being hosted; this adapter,
 // in the executable, is what makes one drive the other.
 //
 // It also owns the server end of the transport, because the tick is where both directions have to
 // happen and in this order: take the orders that arrived, run the tick, publish what the tick
 // produced. Draining orders after the step would give every click an extra tick of latency that no
-// configured latency accounts for, and publishing before the step would send last tick's world
+// configured latency accounts for, and publishing before the step would send last tick's universe
 // (Design/Archive/Collision-slice-2b.md 2.5).
 //
 // What it no longer owns is the fan-out. An interest set, a writer, a faction and a despawn cursor
 // per subscriber live in Game::Publisher now, and this class holds a Publisher with one entry in it
 // (ADR 0030). The behavior is the same to the byte; the shape is what changed, and it changed here
 // rather than the day a second client arrives, because that is the day it would be expensive.
-class WorldSimulation final : public Neuron::Simulation
+class UniverseSimulation final : public Neuron::Simulation
 {
 public:
-  explicit WorldSimulation(Game::World& _world) noexcept
-    : m_world(_world)
+  explicit UniverseSimulation(Game::Universe& _universe) noexcept
+    : m_universe(_universe)
   {
   }
 
@@ -53,16 +53,16 @@ public:
 
     // From the head, not from zero: the fleet is spawned before the link is opened, and a ship that
     // died during boot is not something this client ever held (ADR 0027).
-    desc.openingDespawnCursor = m_world.DespawnHead();
+    desc.openingDespawnCursor = m_universe.DespawnHead();
     m_subscriber = m_publisher.Add(desc);
   }
 
   void Step() override
   {
-    m_publisher.ApplyOrders(m_world);
-    m_world.Step();
+    m_publisher.ApplyOrders(m_universe);
+    m_universe.Step();
     m_publisher.SetCentre(m_subscriber, m_viewCentre);
-    m_publisher.Publish(m_world);
+    m_publisher.Publish(m_universe);
   }
 
   // Where this subscriber is looking, pushed in by the composition root each frame from the
@@ -84,14 +84,14 @@ public:
   // this change was not safe before slice 5. And a fleet that docks no longer drags the view: the
   // camera does not move when a ship docks, so the station the player flew into stays on screen,
   // which Design/Archive/Stations-slice-6.md 5 fixed by hand and this makes structural.
-  void SetViewCentre(const Game::WorldPos& _centre) noexcept
+  void SetViewCentre(const Game::UniversePos& _centre) noexcept
   {
     m_viewCentre = _centre;
   }
 
   [[nodiscard]] std::uint64_t Tick() const override
   {
-    return m_world.Tick();
+    return m_universe.Tick();
   }
 
   // Diagnostics the HUD does not show yet, exposed because the numbers are worth having a name for:
@@ -107,7 +107,7 @@ public:
   }
 
 private:
-  Game::World& m_world;
+  Game::Universe& m_universe;
   Game::Publisher m_publisher;
   Game::Publisher::Handle m_subscriber;
 
@@ -117,6 +117,6 @@ private:
 
   // Where the camera is looking, as of the last frame that said. The universe origin until one
   // does, which is where the boot scene stands.
-  Game::WorldPos m_viewCentre;
+  Game::UniversePos m_viewCentre;
 };
 } // namespace Outpost

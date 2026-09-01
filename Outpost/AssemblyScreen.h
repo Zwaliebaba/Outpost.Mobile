@@ -1,6 +1,6 @@
 #pragma once
 
-#include "WorldView.h"
+#include "UniverseView.h"
 
 #include "PointerEvent.h"
 #include "TextRenderer.h"
@@ -19,7 +19,7 @@ namespace Outpost
 // opposite one: everything is consumed, nothing falls through. And Hud.cpp is eight hundred lines,
 // which is the point at which a second screen goes in a second file.
 //
-// It reads a ledger reply and WorldView, and writes only by asking WorldView to send -- the same
+// It reads a ledger reply and UniverseView, and writes only by asking UniverseView to send -- the same
 // one-way seam the HUD keeps, and for the same reason: nothing here can feed back into a tick.
 //
 // What it is NOT: the station management screen. Undocking, trade, repair, cargo and the docked-ship
@@ -31,7 +31,7 @@ public:
   // Opens over _reply's station, with the first free slot chosen. A second call replaces what was
   // open: a long press on another station while this one is up is the player changing their mind,
   // not an error.
-  void Open(const Game::LedgerReply& _reply, const WorldView& _view);
+  void Open(const Game::LedgerReply& _reply, const UniverseView& _view);
 
   void Close() noexcept
   {
@@ -43,13 +43,13 @@ public:
     return m_open;
   }
 
-  void Draw(Neuron::TextRenderer& _text, const WorldView& _view, std::span<const char* const> _hullNames,
+  void Draw(Neuron::TextRenderer& _text, const UniverseView& _view, std::span<const char* const> _hullNames,
             std::span<const char* const> _factionNames, float _dpiScale, std::uint32_t _widthPx, std::uint32_t _heightPx) const;
 
-  // Consumes EVERY pointer event while open, so nothing reaches the HUD or the world behind it.
+  // Consumes EVERY pointer event while open, so nothing reaches the HUD or the universe behind it.
   // That is what modal means, and stating it as the return value rather than as a rule the caller
   // has to remember is what keeps the caller's dispatch a two-line chain.
-  [[nodiscard]] bool HandlePointer(const Neuron::PointerEvent& _event, WorldView& _view, float _dpiScale, std::uint32_t _widthPx,
+  [[nodiscard]] bool HandlePointer(const Neuron::PointerEvent& _event, UniverseView& _view, float _dpiScale, std::uint32_t _widthPx,
                                    std::uint32_t _heightPx);
 
 private:
@@ -76,7 +76,7 @@ private:
     Rect rows[Game::HULL_COUNT]; // the whole row, for reading; the two buttons sit inside it
     Rect plus[Game::HULL_COUNT];
     Rect minus[Game::HULL_COUNT];
-    Rect slots[WorldView::FLEET_SLOTS];
+    Rect slots[UniverseView::FLEET_SLOTS];
     Rect launch;
     int rowCount = 0;
   };
@@ -91,7 +91,7 @@ private:
   [[nodiscard]] std::uint32_t DraftTotal() const noexcept;
 
   // Whether LAUNCH would do anything: a non-empty draft, and a slot that is still free.
-  [[nodiscard]] bool CanLaunch(const WorldView& _view) const noexcept;
+  [[nodiscard]] bool CanLaunch(const UniverseView& _view) const noexcept;
 
   bool m_open = false;
   Game::LedgerReply m_ledger; // what was true when the reply was written; never refreshed

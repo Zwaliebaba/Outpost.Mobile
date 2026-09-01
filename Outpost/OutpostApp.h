@@ -6,8 +6,8 @@
 #include "FleetSheet.h"
 #include "Hud.h"
 #include "ServerConfig.h"
-#include "WorldSimulation.h"
-#include "WorldView.h"
+#include "UniverseSimulation.h"
+#include "UniverseView.h"
 
 #include "UniverseLayout.h"
 
@@ -121,11 +121,11 @@ private:
   // rule about where configuration is allowed to enter (ADR 0043).
   ServerConfig m_config;
 
-  Game::World m_world;
-  WorldSimulation m_simulation{m_world};
+  Game::Universe m_universe;
+  UniverseSimulation m_simulation{m_universe};
 
   // The starting system, laid out once at boot and read by three consumers: the station spawns,
-  // the body placements and the minimap's marks. Static content, not simulation state -- the world
+  // the body placements and the minimap's marks. Static content, not simulation state -- the universe
   // is handed the sites as spawn positions and never sees the generator (Design/Archive/Stations.md 5, 10).
   // F5 rebuilds the bodies from it and never re-rolls it, so a debug key cannot move a station.
   Game::SystemLayout m_layout;
@@ -151,7 +151,7 @@ private:
   bool m_linkOpen = false;
 
   // Presentation.
-  WorldView m_view;
+  UniverseView m_view;
   EventLog m_log;
   Hud m_hud;
 

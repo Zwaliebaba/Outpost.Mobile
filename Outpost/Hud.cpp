@@ -28,7 +28,7 @@ Rgba WithAlpha(Rgba _colour, float _alpha) noexcept
 }
 
 // The overview column of Design/Archive/Stations.md 9.3: what a faction is to the viewer, as a map colour.
-// The mask row outranks the Vanguard row for the reason WorldView::LiveryOf gives -- turn criminal
+// The mask row outranks the Vanguard row for the reason UniverseView::LiveryOf gives -- turn criminal
 // and the law turns red, dots and hulls together. A faction with no row is red, because a stranger
 // drawn as a friend is the one mistake this table must not make.
 Rgba OverviewColourOf(Game::FactionId _faction, bool _own, bool _hostileToMe) noexcept
@@ -161,7 +161,7 @@ Hud::Layout Hud::ComputeLayout(float _dpiScale, std::uint32_t _widthPx, std::uin
     const float bh = HUD_FLEET_BUTTON_H_PX * s;
     const float y0 = layout.bar.y0 + (layout.bar.Height() - bh) * 0.5f;
     float x = HUD_MARGIN_PX * s;
-    for (int i = 0; i < WorldView::FLEET_SLOTS; ++i)
+    for (int i = 0; i < UniverseView::FLEET_SLOTS; ++i)
     {
       layout.fleets[i] = {x, y0, x + bw, y0 + bh};
       x += bw + HUD_FLEET_GAP_PX * s;
@@ -302,13 +302,13 @@ float Hud::AlertPulse() const noexcept
 
 void Hud::UpdatePulse(float _dtSec)
 {
-  // Real time and wrapped at the period, for the reason WorldView::m_navTimeSec is wrapped: a float
+  // Real time and wrapped at the period, for the reason UniverseView::m_navTimeSec is wrapped: a float
   // second counter left running loses enough precision after a few hours that consecutive frames
   // land on the same argument and the pulse freezes.
   m_alertPhaseSec = std::fmod(m_alertPhaseSec + _dtSec, HUD_FLEET_ALERT_PERIOD_SEC);
 }
 
-void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view,
+void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<const Game::ShipSnapshot> _ships, const UniverseView& _view,
                       const Camera& _camera, const Frame& _frame, std::uint32_t _widthPx, std::uint32_t _heightPx) const
 {
   const float s = _layout.scale;
@@ -345,16 +345,16 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
       _text.DrawScreenRect(map.x0, y, map.x1, y + line1, faint);
   }
 
-  // World to map: centred on the camera target, north up, east right.
+  // Universe to map: centred on the camera target, north up, east right.
   const XMFLOAT3& centre = _camera.Target();
   const float pxPerMetre = map.Width() / (2.0f * HUD_MINIMAP_HALF_RANGE);
   const float mapCx = (map.x0 + map.x1) * 0.5f;
   const float mapCy = (map.y0 + map.y1) * 0.5f;
-  const auto toMapX = [&](float _worldX) { return mapCx + (_worldX - centre.x) * pxPerMetre; };
-  const auto toMapY = [&](float _worldZ) { return mapCy - (_worldZ - centre.z) * pxPerMetre; };
+  const auto toMapX = [&](float _viewX) { return mapCx + (_viewX - centre.x) * pxPerMetre; };
+  const auto toMapY = [&](float _viewZ) { return mapCy - (_viewZ - centre.z) * pxPerMetre; };
 
   // Sector boundaries, so the header's sector pair has an edge to read against. View metres are
-  // universe metres (WorldView::ViewX), so a boundary sits at a whole multiple of the sector size.
+  // universe metres (UniverseView::ViewX), so a boundary sits at a whole multiple of the sector size.
   {
     const float line1 = std::max(1.0f, std::floor(s));
     const Rgba boundary = WithAlpha(HUD_ACCENT_AMBER, 0.45f);
@@ -409,10 +409,10 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
   {
     const float half = HUD_MINIMAP_MARK_PX * 0.5f * s;
     const float line1 = std::max(1.0f, std::floor(s));
-    for (const WorldView::StationMark& mark : _view.StationMarks())
+    for (const UniverseView::StationMark& mark : _view.StationMarks())
     {
-      const float rawX = toMapX(_view.ViewX(mark.posWorld));
-      const float rawY = toMapY(_view.ViewZ(mark.posWorld));
+      const float rawX = toMapX(_view.ViewX(mark.posUniverse));
+      const float rawY = toMapY(_view.ViewZ(mark.posUniverse));
       const float x = std::clamp(rawX, map.x0 + half, map.x1 - half);
       const float y = std::clamp(rawY, map.y0 + half, map.y1 - half);
       const bool clamped = x != rawX || y != rawY;
@@ -438,11 +438,11 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
   {
     const float half = HUD_MINIMAP_MARK_PX * 0.5f * s;
     const float digitPx = _text.AdvancePx(FontId::Ui, HUD_LABEL_SCALE * s);
-    for (int slot = 0; slot < WorldView::FLEET_SLOTS; ++slot)
+    for (int slot = 0; slot < UniverseView::FLEET_SLOTS; ++slot)
     {
       if (!_view.IsFleetHeld(slot))
         continue;
-      const Game::WorldPos at = _view.FleetPosition(slot);
+      const Game::UniversePos at = _view.FleetPosition(slot);
       const float rawX = toMapX(_view.ViewX(at));
       const float rawY = toMapY(_view.ViewZ(at));
       const float x = std::clamp(rawX, map.x0 + half, map.x1 - half);
@@ -473,8 +473,8 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
       const bool own = ships[i].factionId == _frame.ownFaction;
       const bool station = (ships[i].flags & Game::SHIP_FLAG_STATION) != 0;
       const float dot = station ? HUD_MINIMAP_STRUCTURE_DOT_PX * s : HUD_MINIMAP_DOT_PX * s;
-      const float x = toMapX(_view.ViewX(ships[i].posWorld));
-      const float y = toMapY(_view.ViewZ(ships[i].posWorld));
+      const float x = toMapX(_view.ViewX(ships[i].posUniverse));
+      const float y = toMapY(_view.ViewZ(ships[i].posUniverse));
       // Clipped against the dot's own size, so the bigger square does not hang over the edge.
       if (x < map.x0 + dot || x > map.x1 - dot || y < map.y0 + dot || y > map.y1 - dot)
         continue;
@@ -546,7 +546,7 @@ void Hud::DrawEventLog(TextRenderer& _text, const Layout& _layout, const EventLo
   }
 }
 
-void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view,
+void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, std::span<const Game::ShipSnapshot> _ships, const UniverseView& _view,
                         const Frame& _frame) const
 {
   const float s = _layout.scale;
@@ -565,7 +565,7 @@ void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, std::span<co
   // Occupancy is the status block's mask and never an empty roster: a composed fleet holds its slot
   // with nobody in space yet, and the mask rides every update where a roster is stated once
   // (Design/Archive/Fleets.md 8.1's amendment).
-  for (int i = 0; i < WorldView::FLEET_SLOTS; ++i)
+  for (int i = 0; i < UniverseView::FLEET_SLOTS; ++i)
   {
     const Rect& button = _layout.fleets[i];
     const bool held = _view.IsFleetHeld(i);
@@ -600,7 +600,7 @@ void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, std::span<co
                        HUD_TEXT_SCALE * s, held ? HUD_COLOUR : HUD_LABEL_COLOUR, count);
   }
 
-  float x = _layout.fleets[WorldView::FLEET_SLOTS - 1].x1 + HUD_PANEL_GAP_PX * s;
+  float x = _layout.fleets[UniverseView::FLEET_SLOTS - 1].x1 + HUD_PANEL_GAP_PX * s;
   separator(x);
   x += HUD_PANEL_GAP_PX * s + line1;
 
@@ -630,7 +630,7 @@ void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, std::span<co
     // a fleet ordered across the map is selected with none of its hulls in the interest set, and a
     // count of visible records would read "0 SELECTED" under a title naming a live fleet.
     int commanded = 0;
-    for (int slot = 0; slot < WorldView::FLEET_SLOTS; ++slot)
+    for (int slot = 0; slot < UniverseView::FLEET_SLOTS; ++slot)
       commanded += _view.IsFleetSelected(slot) ? _view.FleetCount(slot) : 0;
 
     char line[256] = {};
@@ -715,7 +715,7 @@ void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, std::span<co
 
 // ------------------------------------------------------------------------------------------------
 
-void Hud::Draw(TextRenderer& _text, std::span<const Game::ShipSnapshot> _ships, const WorldView& _view, const Camera& _camera,
+void Hud::Draw(TextRenderer& _text, std::span<const Game::ShipSnapshot> _ships, const UniverseView& _view, const Camera& _camera,
                const EventLog& _log, const Frame& _frame, float _dpiScale, std::uint32_t _widthPx, std::uint32_t _heightPx)
 {
   m_cellPx = std::max(1.0f, _text.AdvancePx(FontId::Ui, 1.0f));
@@ -745,13 +745,13 @@ void Hud::Draw(TextRenderer& _text, std::span<const Game::ShipSnapshot> _ships, 
 // Input. A press that starts on a panel belongs to the HUD until it lifts; nothing about it reaches
 // the tracker, so it can neither pick a hull nor lay down an order through the bar.
 
-bool Hud::HandlePointer(const PointerEvent& _event, WorldView& _view, int& _outOpenSheet, float _dpiScale, std::uint32_t _widthPx,
+bool Hud::HandlePointer(const PointerEvent& _event, UniverseView& _view, int& _outOpenSheet, float _dpiScale, std::uint32_t _widthPx,
                         std::uint32_t _heightPx)
 {
   const Layout layout = ComputeLayout(_dpiScale, _widthPx, _heightPx);
 
   if (_event.kind == PointerEvent::Kind::Wheel)
-    return OverAnyPanel(layout, _event.xPx, _event.yPx); // no zooming the world through the minimap
+    return OverAnyPanel(layout, _event.xPx, _event.yPx); // no zooming the universe through the minimap
 
   if (_event.kind == PointerEvent::Kind::Down)
   {
@@ -768,7 +768,7 @@ bool Hud::HandlePointer(const PointerEvent& _event, WorldView& _view, int& _outO
       if (layout.rail[i].Contains(_event.xPx, _event.yPx))
         m_pressedRail = i;
     }
-    for (int i = 0; i < WorldView::FLEET_SLOTS; ++i)
+    for (int i = 0; i < UniverseView::FLEET_SLOTS; ++i)
     {
       if (layout.fleets[i].Contains(_event.xPx, _event.yPx))
         m_pressedFleet = i;
@@ -788,12 +788,12 @@ bool Hud::HandlePointer(const PointerEvent& _event, WorldView& _view, int& _outO
     m_activeRail = (m_activeRail == m_pressedRail) ? -1 : m_pressedRail;
 
   // What a press MEANS is the view's, not the HUD's: this class knows where a contact landed and
-  // WorldView knows what a fleet slot is. The same division the selection calls already keep -- and
+  // UniverseView knows what a fleet slot is. The same division the selection calls already keep -- and
   // opening a panel is a third thing, which belongs to neither, so it is reported upward.
   if (m_pressedFleet >= 0 && layout.fleets[m_pressedFleet].Contains(_event.xPx, _event.yPx))
   {
     const bool held = m_clock.ElapsedMs(m_downQpc, _event.timestampQpc) >= HUD_LONG_PRESS_MS;
-    if (_view.PressFleetButton(m_pressedFleet, held) == WorldView::ButtonPress::OpenSheet)
+    if (_view.PressFleetButton(m_pressedFleet, held) == UniverseView::ButtonPress::OpenSheet)
       _outOpenSheet = m_pressedFleet;
   }
 

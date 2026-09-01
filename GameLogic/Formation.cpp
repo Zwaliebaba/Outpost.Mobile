@@ -36,17 +36,17 @@ XMFLOAT2 FormationOffset(int _slot, int _count, FormationShape _shape, float _sp
   }
 }
 
-float FormationHeading(std::span<const WorldPos> _shipPositions, const WorldPos& _destination, float _fallbackHeadingRad) noexcept
+float FormationHeading(std::span<const UniversePos> _shipPositions, const UniversePos& _destination, float _fallbackHeadingRad) noexcept
 {
   if (_shipPositions.empty())
     return _fallbackHeadingRad;
 
   // The centroid is accumulated as offsets from the first ship rather than by averaging fields,
   // so a group straddling a sector boundary has a centre between its ships and not a sector away.
-  WorldPos centre = _shipPositions[0];
+  UniversePos centre = _shipPositions[0];
   float centreX = 0.0f;
   float centreZ = 0.0f;
-  for (const WorldPos& position : _shipPositions)
+  for (const UniversePos& position : _shipPositions)
   {
     centreX += OffsetX(centre, position);
     centreZ += OffsetZ(centre, position);

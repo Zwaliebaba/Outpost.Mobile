@@ -66,7 +66,7 @@ void ShipExplosion::Start(const Spawn& _spawn, SpriteParticles& _particles)
     DebugTrace("explosion: {} triangles past the {}-fragment cap\n", dropped, desc.maxFragments);
 
   // --- Location::Bang, the visual half ----------------------------------------------------------
-  // World up is the plume's axis. A banked hull's own up would tilt it a few degrees and nobody
+  // Universe up is the plume's axis. A banked hull's own up would tilt it a few degrees and nobody
   // would see it.
   const XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
   const XMVECTOR centre = XMLoadFloat3(&pos);

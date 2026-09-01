@@ -17,15 +17,15 @@ namespace Game
 // and never sees the difference (Design/Archive/Collision.md 3).
 //
 // The sector fields come FIRST, and that is deliberate rather than aesthetic. Brace-initialising a
-// position as WorldPos{x, z} is ill-formed with an integer field in front of a float argument --
+// position as UniversePos{x, z} is ill-formed with an integer field in front of a float argument --
 // [dcl.init.list] makes floating-point to integer narrowing in a braced list an error with no
-// constant-expression exception, so even WorldPos{0.0f, 0.0f} is rejected. That property is what
+// constant-expression exception, so even UniversePos{0.0f, 0.0f} is rejected. That property is what
 // turned this slice from a hunt into a compile: the 94 two-argument constructions in the tree all
 // failed at once and none could be missed. Reorder these fields and the next person to widen this
 // struct loses that (Design/Archive/Collision-slice-8.md 5.1).
 //
 // There is no Y. The simulation is a plane; the height a hull is drawn hovering at is the view's.
-struct WorldPos
+struct UniversePos
 {
   std::int64_t sectorX = 0;
   std::int64_t sectorZ = 0;
@@ -55,14 +55,14 @@ struct WorldPos
 //
 // It normalises, and that is not a nicety: LocalPos(0, -600) without it is sector zero at localZ
 // -600, which denotes the right point while breaking the invariant the type promises, so the same
-// place has two spellings and IsSamePosition says they are different. Every WorldPos in existence
+// place has two spellings and IsSamePosition says they are different. Every UniversePos in existence
 // satisfies the invariant because these are the only two functions that ever set the fields.
-[[nodiscard]] constexpr WorldPos LocalPos(float _x, float _z) noexcept
+[[nodiscard]] constexpr UniversePos LocalPos(float _x, float _z) noexcept
 {
   const std::int64_t carryX = SectorCarry(_x);
   const std::int64_t carryZ = SectorCarry(_z);
-  return WorldPos{carryX, carryZ, _x - static_cast<float>(carryX) * SECTOR_SIZE_METRES,
-                  _z - static_cast<float>(carryZ) * SECTOR_SIZE_METRES};
+  return UniversePos{carryX, carryZ, _x - static_cast<float>(carryX) * SECTOR_SIZE_METRES,
+                     _z - static_cast<float>(carryZ) * SECTOR_SIZE_METRES};
 }
 
 // The relative vector between two positions, always through these and never by subtracting the
@@ -73,24 +73,24 @@ struct WorldPos
 // approximate beyond that. Nothing in this design goes near the limit: the query radius caps at
 // 655 m (Design/Archive/Collision.md 10), an order of magnitude inside a single sector, so no interaction
 // spans even two.
-[[nodiscard]] inline float OffsetX(const WorldPos& _from, const WorldPos& _to) noexcept
+[[nodiscard]] inline float OffsetX(const UniversePos& _from, const UniversePos& _to) noexcept
 {
   return static_cast<float>(_to.sectorX - _from.sectorX) * SECTOR_SIZE_METRES + (_to.localX - _from.localX);
 }
 
-[[nodiscard]] inline float OffsetZ(const WorldPos& _from, const WorldPos& _to) noexcept
+[[nodiscard]] inline float OffsetZ(const UniversePos& _from, const UniversePos& _to) noexcept
 {
   return static_cast<float>(_to.sectorZ - _from.sectorZ) * SECTOR_SIZE_METRES + (_to.localZ - _from.localZ);
 }
 
-[[nodiscard]] inline float DistanceSquared(const WorldPos& _a, const WorldPos& _b) noexcept
+[[nodiscard]] inline float DistanceSquared(const UniversePos& _a, const UniversePos& _b) noexcept
 {
   const float dx = OffsetX(_a, _b);
   const float dz = OffsetZ(_a, _b);
   return dx * dx + dz * dz;
 }
 
-[[nodiscard]] inline float Distance(const WorldPos& _a, const WorldPos& _b) noexcept
+[[nodiscard]] inline float Distance(const UniversePos& _a, const UniversePos& _b) noexcept
 {
   return std::sqrt(DistanceSquared(_a, _b));
 }
@@ -105,7 +105,7 @@ struct WorldPos
 // Through SectorCarry rather than a bare truncating cast, because the case that matters is
 // negative: displacing a position at localX = 0 by -5 m must give the previous sector at
 // SECTOR_SIZE_METRES - 5, and truncation would leave it in this sector at -5.
-inline void Translate(WorldPos& _pos, float _dx, float _dz) noexcept
+inline void Translate(UniversePos& _pos, float _dx, float _dz) noexcept
 {
   _pos.localX += _dx;
   _pos.localZ += _dz;
@@ -120,9 +120,9 @@ inline void Translate(WorldPos& _pos, float _dx, float _dz) noexcept
 
 // _a displaced by _t of the way towards _b. Computed through the offset rather than by
 // interpolating the fields, so it stays right with a sector boundary between the two.
-[[nodiscard]] inline WorldPos Lerp(const WorldPos& _a, const WorldPos& _b, float _t) noexcept
+[[nodiscard]] inline UniversePos Lerp(const UniversePos& _a, const UniversePos& _b, float _t) noexcept
 {
-  WorldPos result = _a;
+  UniversePos result = _a;
   Translate(result, OffsetX(_a, _b) * _t, OffsetZ(_a, _b) * _t);
   return result;
 }

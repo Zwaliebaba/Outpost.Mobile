@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="World">
+    <Filter Include="Universe">
       <UniqueIdentifier>{b3a7c519-64e8-42f0-9d13-7c05a2e8b64f}</UniqueIdentifier>
     </Filter>
     <Filter Include="Motion">
@@ -24,17 +24,17 @@
     <ClInclude Include="SimTuning.h">
       <Filter>Tuning</Filter>
     </ClInclude>
-    <ClInclude Include="WorldPos.h">
-      <Filter>World</Filter>
+    <ClInclude Include="UniversePos.h">
+      <Filter>Universe</Filter>
     </ClInclude>
-    <ClInclude Include="WorldSnapshot.h">
-      <Filter>World</Filter>
+    <ClInclude Include="UniverseSnapshot.h">
+      <Filter>Universe</Filter>
     </ClInclude>
     <ClInclude Include="InterestSet.h">
-      <Filter>World</Filter>
+      <Filter>Universe</Filter>
     </ClInclude>
     <ClInclude Include="ShipState.h">
-      <Filter>World</Filter>
+      <Filter>Universe</Filter>
     </ClInclude>
     <ClInclude Include="HullSpec.h">
       <Filter>Tuning</Filter>
@@ -49,7 +49,7 @@
       <Filter>Motion</Filter>
     </ClInclude>
     <ClInclude Include="UniverseLayout.h">
-      <Filter>World</Filter>
+      <Filter>Universe</Filter>
     </ClInclude>
     <ClInclude Include="Movement.h">
       <Filter>Motion</Filter>
@@ -67,10 +67,10 @@
       <Filter>Motion</Filter>
     </ClInclude>
     <ClInclude Include="SpatialIndex.h">
-      <Filter>World</Filter>
+      <Filter>Universe</Filter>
     </ClInclude>
-    <ClInclude Include="World.h">
-      <Filter>World</Filter>
+    <ClInclude Include="Universe.h">
+      <Filter>Universe</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -96,19 +96,19 @@
       <Filter>Motion</Filter>
     </ClCompile>
     <ClCompile Include="SpatialIndex.cpp">
-      <Filter>World</Filter>
+      <Filter>Universe</Filter>
     </ClCompile>
-    <ClCompile Include="WorldSnapshot.cpp">
-      <Filter>World</Filter>
+    <ClCompile Include="UniverseSnapshot.cpp">
+      <Filter>Universe</Filter>
     </ClCompile>
     <ClCompile Include="InterestSet.cpp">
-      <Filter>World</Filter>
+      <Filter>Universe</Filter>
     </ClCompile>
     <ClCompile Include="UniverseLayout.cpp">
-      <Filter>World</Filter>
+      <Filter>Universe</Filter>
     </ClCompile>
-    <ClCompile Include="World.cpp">
-      <Filter>World</Filter>
+    <ClCompile Include="Universe.cpp">
+      <Filter>Universe</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

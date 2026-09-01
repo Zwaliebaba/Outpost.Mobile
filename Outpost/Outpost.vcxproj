@@ -214,8 +214,8 @@
     <ClInclude Include="OutpostApp.h" />
     <ClInclude Include="ServerConfig.h" />
     <ClInclude Include="ShipExplosion.h" />
-    <ClInclude Include="WorldView.h" />
-    <ClInclude Include="WorldSimulation.h" />
+    <ClInclude Include="UniverseView.h" />
+    <ClInclude Include="UniverseSimulation.h" />
     <ClInclude Include="ViewTuning.h" />
     <ClInclude Include="BodyCatalogue.h" />
     <ClInclude Include="Hud.h" />
@@ -231,7 +231,7 @@
     <ClCompile Include="OutpostApp.cpp" />
     <ClCompile Include="ServerConfig.cpp" />
     <ClCompile Include="ShipExplosion.cpp" />
-    <ClCompile Include="WorldView.cpp" />
+    <ClCompile Include="UniverseView.cpp" />
     <ClCompile Include="BodyCatalogue.cpp" />
     <ClCompile Include="Hud.cpp" />
     <ClCompile Include="AssemblyScreen.cpp" />

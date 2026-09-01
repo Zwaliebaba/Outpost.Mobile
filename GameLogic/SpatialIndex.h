@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ShipState.h"
-#include "WorldPos.h"
+#include "UniversePos.h"
 
 #include <cstdint>
 #include <span>
@@ -9,7 +9,7 @@
 
 namespace Game
 {
-// The spatial index World owns. Collision is its first customer, not its purpose.
+// The spatial index Universe owns. Collision is its first customer, not its purpose.
 //
 // Its second customer is interest management -- deciding which entities each connected player's
 // snapshot contains -- which is why the query is QueryCircle and not NeighboursOf: weapons range,
@@ -43,7 +43,7 @@ public:
   struct Entry
   {
     ShipId id = INVALID_SHIP_ID;
-    WorldPos pos;
+    UniversePos pos;
     float boundingRadiusMetres = 0.0f;
   };
 
@@ -79,7 +79,7 @@ public:
   // Every indexed entity whose bounding circle intersects the circle, appended to _out, which is
   // cleared first. Over-inclusive by design -- an entity 300 m away with a 107 m radius is within
   // a 250 m query -- because that is the conservative direction and the narrow phase is exact.
-  void QueryCircle(const WorldPos& _centre, float _radiusMetres, std::vector<ShipId>& _out) const;
+  void QueryCircle(const UniversePos& _centre, float _radiusMetres, std::vector<ShipId>& _out) const;
 
   [[nodiscard]] std::uint32_t DynamicLevelCount() const noexcept
   {
@@ -107,7 +107,7 @@ private:
   struct Cell
   {
     ShipId id = INVALID_SHIP_ID;
-    WorldPos pos;
+    UniversePos pos;
     float boundingRadiusMetres = 0.0f;
     std::int32_t cellX = 0;
     std::int32_t cellZ = 0;
@@ -123,7 +123,7 @@ private:
   };
 
   void Rebuild(Grid& _grid, std::span<const Entry> _entries, float _cellSizeMetres);
-  static void Gather(const Grid& _grid, const WorldPos& _centre, float _radiusMetres, std::vector<ShipId>& _out);
+  static void Gather(const Grid& _grid, const UniversePos& _centre, float _radiusMetres, std::vector<ShipId>& _out);
 
   Grid m_static;
   std::vector<Grid> m_dynamic{1};

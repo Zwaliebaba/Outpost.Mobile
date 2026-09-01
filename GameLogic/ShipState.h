@@ -1,6 +1,6 @@
 #pragma once
 
-#include "WorldPos.h"
+#include "UniversePos.h"
 
 #include <cstdint>
 
@@ -73,7 +73,7 @@ struct StandingTable
   Standing rows[FACTION_LIMIT][FACTION_LIMIT]{};
 };
 
-// The standings the world starts with.
+// The standings the universe starts with.
 //
 // Built by a loop rather than written out as sixty-four literals, because the rule is one sentence
 // and a grid of Neutrals is not: the Vandal Collective holds every other faction Hostile and is
@@ -124,7 +124,7 @@ struct ShipHandle
 
 // Who a ship is, as against where it is. This is the one thing about an entity that never changes.
 //
-// A ShipHandle is a reference into one World and is allocated by it: a ship handed from one region
+// A ShipHandle is a reference into one Universe and is allocated by it: a ship handed from one region
 // server to another gets a fresh slot and generation at the destination, so a wire that named
 // handles could not say "same ship, new region" -- a client keyed on them would see a destroy and an
 // enter, which is exactly the continuity ADR 0005 exists to provide, lost at the shard boundary
@@ -167,11 +167,11 @@ inline constexpr EntityId ENTITY_SERIAL_MASK = (EntityId{1} << ENTITY_SERIAL_BIT
 //
 // It lives here rather than beside the despawn log it is modelled on, and the reason is the wire:
 // SnapshotWriter names this type, and a header that describes the seam must not have to include the
-// whole authoritative World to do it. ShipState.h is what both sides already share.
+// whole authoritative Universe to do it. ShipState.h is what both sides already share.
 //
 // Entities rather than handles or ids, and taken while both ships are still live: a shot is read by
 // a subscriber several ticks after it happened, by which time either end may have been despawned,
-// and an id is an identity where a handle is a reference into one World (ADR 0047).
+// and an id is an identity where a handle is a reference into one Universe (ADR 0047).
 //
 // The mount index is here because the view needs to know which muzzle to flash. It is the only
 // piece of a mount that ever reaches a client -- the aim, the cooldown and the held target stay
@@ -195,7 +195,7 @@ enum class OrderState : std::uint8_t
 // under Move is Moving, Aligning or Idle at its own slot at different moments of the same order.
 //
 // Declared whole so the byte never renumbers, and one of the six is still refused: Mine waits for a
-// mining design and for something in the world to mine, since a rock is presentation and a ship
+// mining design and for something in the universe to mine, since a rock is presentation and a ship
 // flies through it (ADR 0016, Design/Archive/Fleets.md 6.6). Attack was refused beside it until it
 // had the protector's pursuit chassis and a combatant flag to aim with, and then until the guns it
 // aims were real; both have landed, and it now means what it says (Design/Combat.md 6).
@@ -212,21 +212,21 @@ enum class FleetOrderKind : std::uint8_t
   Mine
 };
 
-// One ship, as the simulation sees it. Everything here is advanced only in World::Step, and there
+// One ship, as the simulation sees it. Everything here is advanced only in Universe::Step, and there
 // is nothing in it a renderer needs that a snapshot could not carry over a wire.
 //
 // prevPos/prevHeading are the values from the tick before, kept so that the view can interpolate
 // between two ticks rather than sampling a half-stepped state. They are also the start-of-tick
 // snapshot every neighbour query reads, which is what makes the tick order-independent -- see
-// World::Step.
+// Universe::Step.
 struct ShipState
 {
-  WorldPos posWorld;
+  UniversePos posUniverse;
   float headingRad = 0.0f; // 0 points north (+Z); forward is (sin h, 0, cos h)
   float speed = 0.0f;      // metres per second along the facing
   float turnRateRadPerSec = 0.0f;
 
-  WorldPos prevPos;
+  UniversePos prevPos;
   float prevHeading = 0.0f;
 
   OrderState order = OrderState::Idle;
@@ -234,7 +234,7 @@ struct ShipState
   // The single point the intent layer steers at. Before pathfinding this was always the ordered
   // destination; with a planner in front of it, it is the current waypoint of a route and the
   // planner changes *which point* is steered at, never *how* (Design/Archive/Collision.md 12).
-  WorldPos steerTargetPos;
+  UniversePos steerTargetPos;
   float orderFacingRad = 0.0f;
   bool orderHasFacing = false;
 

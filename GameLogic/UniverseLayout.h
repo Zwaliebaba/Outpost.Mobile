@@ -1,6 +1,6 @@
 #pragma once
 
-#include "WorldPos.h"
+#include "UniversePos.h"
 
 #include <cstdint>
 #include <vector>
@@ -27,7 +27,7 @@ namespace Game
 // One planet, and therefore one station.
 struct PlanetSite
 {
-  WorldPos posWorld;          // where the planet -- and its station -- sit on the plane
+  UniversePos posUniverse;    // where the planet -- and its station -- sit on the plane
   float radiusMetres = 0.0f;  // the body's visual radius: drawn by the client, ignored by the server
   float bearingRad = 0.0f;    // from the star, for anything that wants to face or frame it
   std::uint64_t bodySeed = 0; // what the client's BodyCatalogue generates the look from
@@ -35,7 +35,7 @@ struct PlanetSite
 
 struct SystemLayout
 {
-  WorldPos starPos;
+  UniversePos starPos;
   std::vector<PlanetSite> planets;
 };
 
@@ -83,5 +83,5 @@ inline constexpr float PLANET_BEARING_JITTER = 0.5f;
 //
 // Boot-time only. The result is then ordinary spawn input -- positions, not a generator -- so the
 // replay contract never sees the randomness that produced it (Design/Archive/Stations.md 10).
-[[nodiscard]] SystemLayout LayOutSystem(std::uint64_t _seed, const WorldPos& _starPos, const SystemDesc& _desc);
+[[nodiscard]] SystemLayout LayOutSystem(std::uint64_t _seed, const UniversePos& _starPos, const SystemDesc& _desc);
 } // namespace Game
