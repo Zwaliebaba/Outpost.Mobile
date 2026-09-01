@@ -3,8 +3,14 @@
 **Status: agreed with the owner on 2026-09-01 — the eight decisions in §12 were put and taken the
 same day, each the recommended option, in an interactive session run against a live workbench: the
 shipped layout algorithm with its knobs exposed, and a working prototype of the galaxy lattice and
-all four candidate gate graphs.** No slice has landed; slice 1 is ready to be ordered. This
-document is amended in place as its slices land (ADR 0054).
+all four candidate gate graphs.**
+
+**Slice 1 has landed**: `LayOutGalaxy` is in `GameLogic` with its twelve-row suite, and
+[ADR 0055](Decisions/0055-the-galaxy-is-one-seed-and-its-gates-are-the-relative-neighborhood-graph.md)
+carries the two decisions it took. Slice 2 is ready to be ordered. This document is amended in
+place as its slices land (ADR 0054), and §3.4 is the first section that changed on contact: the
+separation arithmetic it originally stated was a disc's, the suite caught it on the first run, and
+what stands there now is what shipped.
 
 The player-facing sentence: **the frontier stops being one system.** Today the universe is three
 planets from one seed, a government at each of them, one rival base, and nowhere else to go. After
@@ -122,11 +128,23 @@ today.
 ### 3.4 Scale, and the proofs that come with it
 
 The lattice pitch is **16 sectors — 131 072 m** between neighboring cells, and jitter is bounded
-to **0.30 of the pitch** per axis. Minimum separation between two systems' stars is therefore
-0.4 × pitch = **52 428.8 m by construction** — against a worst-case system half-width of 6 500 m
-plus a station's approach traffic, a gather radius of 655 m and a ghost zone of 700 m, which is
-not a margin so much as a different order of magnitude. The bound gets a test the way
-`PlanetsKeepTheirDistance` has one: a proof over the construction, not a sample over seeds.
+to **0.20 of the pitch** per axis. Minimum separation between two systems' stars is therefore
+
+    (1 - 2 * sqrt(2) * 0.20) * pitch = 0.434 * pitch = 56 926.5 m, by construction
+
+— against a worst-case system half-width of 6 500 m plus a station's approach traffic, a gather
+radius of 655 m and a ghost zone of 700 m, which is not a margin so much as a different order of
+magnitude. The bound gets a test the way `PlanetsKeepTheirDistance` has one: a proof over the
+construction, not a sample over seeds.
+
+**The `sqrt(2)` is what this section got wrong first, and it is worth keeping visible.** This design
+originally wrote 0.30 jitter and proved `(1 - 2 * jitter) * pitch`. That is a *disc's* arithmetic,
+and the jitter is a *square* — two independent draws, which is the cheap and deterministic way to
+draw one — so a star's worst displacement is its diagonal rather than its edge, and the real bound
+was 19 851 m where the design claimed 52 428.8. `SystemsKeepTheirDistance` failed on its first run
+and said so. The formula is now `MinimumStarSeparationMetres`, one function so the test and every
+caller cannot each state it and drift, and the shipped jitter moved to 0.20 so that the separation
+this design asked for still holds with room over (ADR 0055, `Universe-slice-1.md` §7).
 
 Three consequences fall out of the spacing rather than needing machinery:
 
@@ -315,7 +333,7 @@ game actually runs.
 | Value | Shipped | Why this number |
 |---|---|---|
 | Lattice pitch | 16 sectors = 131 072 m | far past every radius that exists; loose change against the wire's ±1 858 ly |
-| Cell jitter | 0.30 × pitch per axis | min star separation 0.4 × pitch = 52 428.8 m, by construction |
+| Cell jitter | 0.20 × pitch per axis | min star separation `(1 - 2√2 · j) · pitch` = 56 926.5 m, by construction |
 | Lattice rings | 5 → 91 cells | a first galaxy in the dozens of systems, not hundreds |
 | Density | 0.55 | unevenness without emptiness; retunable without moving anyone (§3.1) |
 | Planets per system | 2 + `Below(4)` → 2–5 | home keeps its authored 3 |
@@ -325,8 +343,11 @@ game actually runs.
 | `saveEveryTicks` | 18 000 (5 min at 60 Hz) | a `Server.cfg` default, not a constant |
 | Galaxy seed | one `constexpr` u64 beside `UNIVERSE_LAYOUT_SEED` | content, like every seed that places things |
 
-The shipped seed's actual census — systems, links, chokepoints, the worst jump count from home —
-is measured and stated in slice 1's pull request, not guessed here.
+**The shipped seed's census, measured** (galaxy seed `0x46726F6E74696572`, "Frontier", at the
+values above): **54 systems, 68 gate links, 5 chokepoints**, a widest crossing of **8 jumps** from
+home, a mean of 4.07, and no system carrying more than 4 gates. Nothing is unreachable, which the
+graph guarantees rather than the seed. That is the galaxy the design is arguing about, and it is a
+number rather than a hope because slice 1 has landed.
 
 ## 11. Deliberately left out, so nobody goes looking
 
@@ -385,17 +406,18 @@ themselves, as 3 and 5 are in `Outpost`; 4 rides `NeuronClient` + `Outpost`.
 
 | # | Slice | Layer | Size | Depends on | ADR |
 |---|---|---|---|---|---|
-| 1 | `LayOutGalaxy`: lattice, walk, pins, per-system recipe, gate links | `GameLogic` | M | — | ADR: the galaxy is one seed and a pin table; the gate graph is the relative neighborhood graph |
+| 1 | [`LayOutGalaxy`](Universe-slice-1.md): lattice, walk, pins, per-system recipe, gate links | `GameLogic` | M | — | [ADR 0055](Decisions/0055-the-galaxy-is-one-seed-and-its-gates-are-the-relative-neighborhood-graph.md) — **landed** |
 | 2 | Gates and the jump door: gate table, `Jump` order, `StepJumps`, `JumpedOut`, codec, ALPN | `GameLogic` | M | 1 | ADR: a jump is a despawn and a spawn under one identity |
 | 3 | Genesis composes the galaxy: root lays out, spawns stations and gates, boot log | `Outpost` | S | 1, 2 | — |
 | 4 | The client crosses: `JUMP` on the sheet, gate marks, camera follow, per-system bodies | `NeuronClient`+`Outpost` | M | 3 | — |
 | 5 | The save file: header, atomic write, cadence in `Server.cfg`, restore-or-stop boot | `Outpost` | M | 2 (3 in practice) | ADR: the save is a versioned file, and a refused one stops the boot |
 | 6 | The replan scoped to its island | `GameLogic` | M | 2 | ADR: supersedes 0034 |
 
-**Acceptance texture, seeded now for the orders to expand**: slice 1 proves determinism (one
+**Acceptance texture, seeded now for the orders to expand**: slice 1 proved determinism (one
 seed, one galaxy, twice), pin stability under reroll, census monotonicity with survivors fixed
-(§3.1), connectivity by union-find for every tested seed, and the 0.4-pitch separation bound as a
-property; slice 2 keeps both replay gates green with gates and jumps in the state, and adds the
+(§3.1), connectivity by union-find for every tested seed, and the separation bound as a property —
+twelve rows in `GalaxyLayoutTests`, and it also gained the row nothing predicted, that a distance
+tie leaves a link alone; slice 2 keeps both replay gates green with gates and jumps in the state, and adds the
 row: a fleet ordered through a gate arrives whole, once, in formation, with its damage and its
 identities and without its alert; slice 3's boot log states the galaxy
 (`GALAXY | SEED … | N SYSTEMS | M GATES`) and home boots pixel-identical to today; slice 4 owes
