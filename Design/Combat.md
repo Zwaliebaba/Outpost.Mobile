@@ -1,11 +1,13 @@
 # Combat — mounts, gunnery, and the acts a shot states
 
 **Status: agreed with the owner on 2026-08-31 — the six decisions in §15 were put and taken the
-same day, each the recommended option.** Slices 1, 2 and 3 landed on 2026-09-01 and are in review
+same day, each the recommended option.** Slices 1 to 4 landed on 2026-09-01 and are in review
 ([`Combat-slice-1.md`](Combat-slice-1.md),
 [ADR 0052](Decisions/0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md)); the
-world is lethal, says so on the wire, and its hulls are addressable a part at a time; what is left is
-a client that draws the fight. §16 lists the two that remain and the dependencies between them.
+world is lethal, says so on the wire, and draws it: muzzle flashes, tracers and impacts in the
+shooter's colours, condition pips on the fleet sheet, and F6/F7 retired because the simulation states
+its own acts now. What is left is the turret geometry turning (§16 slice 6) and the tuning pass
+(slice 5). **The screenshots slice 4 is accepted by are owed.**
 
 **A factual correction, taken on 2026-09-01:** §3.1 and §10.1 describe the shipped Battleship as
 carrying "three turret submeshes with barrel bones" and plan for `MeshData` to grow bones and clips.
@@ -517,10 +519,21 @@ One agent per slice, one slice per layer at a time; each retargets the sentences
 4. **The look and the readouts** (`Outpost`) — muzzle, tracer, impact off the fire block; turret
    slew; pips and the target bar; the completion edge in the log; F6/F7 retire per decision 6.
    Screenshots at two sizes, a fight and a quiet frame.
+   Work order: [`Combat-slice-4.md`](Combat-slice-4.md). **Landed and in review 2026-09-01, less the
+   turret slew**, which is cut out as slice 6 below: it needs a renderer entry point that does not
+   exist, and a screenshot is the only thing that can accept it. **The screenshots are owed**, and
+   are recorded as owed for the reason `Fleets.md` records its own three.
 5. **Content and the check** (`Tools/` + assets + tuning) — `Gun` markers authored (scriptable
    offline), the mount-vs-marker consistency check beside `CheckProjectFiles.py`, and the
    measured hand-back against §13's targets with the numbers that actually shipped.
 
-Dependencies: 1 → 2 → {3, 4} → 5, with 3 and 4 concurrent. After slice 1 the world is lethal in
+6. **The turret turns** (`NeuronClient` + `Outpost`) — a submesh-range draw on `SceneRenderer`, the
+   hull drawn as its own complement, and a client-side table binding a hull's mounts to the parts
+   that carry them. It is a slice of its own because it is the only piece of this feature that
+   reaches into the D3D12 command list, and because slice 3 found the shipped hulls carry no rig:
+   the binding is a client table read off submesh names, which is where ADR 0002 would have put it.
+   A decision record is likely due for that table.
+
+Dependencies: 1 → 2 → {3, 4} → 5, with 3 and 4 concurrent, and 6 after 3 and 4. After slice 1 the world is lethal in
 tests and under F-keys; after 2 a client knows; after 4 a player sees; after 5 it is content, not
 scaffolding.

@@ -49,14 +49,21 @@ and its ledger comes back as a *reply* to a request (ADR 0051) on the assembly s
 of up to eight hulls becomes a fleet in a free slot and launches. That is the only way out of a
 ledger: undocking as such still does not exist, and the rest of the station management menu — trade,
 repair, cargo — is still the next phase's. A station whose owner holds the player hostile refuses
-both the dock and the ledger before either is sent, the Vandal base from the first frame. F6 declares
-a selected ship an aggressor against the nearest Vanguard station: the law turns red across the map,
-the station launches its Corvette garrison one every 1.5 s, and they shadow the aggressor until it
-dies -- which nothing can make it do, since there is still no combat (ADR 0041). F7 is the same kind
-of hook pointed the other way: it declares the nearest hostile the attacker of the player's selected
-fleet, so the defense, the button's red pulse and the minimap's red digit can be watched. `CONTACTS` counts the records whose faction holds the player hostile by the
+both the dock and the ledger before either is sent, the Vandal base from the first frame. An attack order on a Vanguard
+ship or station makes the player an aggressor: the law turns red across the map, the station launches
+its Corvette garrison one every 1.5 s, and they hunt the aggressor until it dies -- which its guns can
+now make it do. The same act pointed the other way rouses a fleet's own defense, its button's red
+pulse and its minimap digit. Both judgments are the simulation's own, stated off shots it observed;
+no client message declares one and none ever will (ADR 0041, ADR 0052). `CONTACTS` counts the records whose faction holds the player hostile by the
 update header's mask (ADR 0039), which at boot is the Vandal four and never a Vanguard station.
-There is still no combat. Three worlds and six asteroids share the sky with the fleet, and they are
+Combat is here, and it is one number deep. Hulls carry authored mounts, a mount carries a device, and
+a device fires when range, arc, a settled aim and a spent cooldown all allow it -- no dice anywhere,
+so a miss is a turret that lost a crossing target and a player can see why (ADR 0052). Damage is one
+unsigned number per ship, a hull at zero leaves through the despawn door every death already used, and
+an indestructible hull discards its damage while the act it provoked still counts. The wire carries a
+hull fraction in every ship record and gunfire as its own loss-tolerant datagram (ADR 0053), which is
+what the muzzle flashes, tracers and condition pips are drawn from. Three worlds and six asteroids
+share the sky with the fleet, and they are
 made two different ways (`Design/Decisions/0026`): a world is a smooth sphere wearing an authored
 equirectangular map, sampled per pixel off the direction so it has no seam, while a rock is still a
 seeded low-poly heightfield on a cube-sphere with one flat colour per triangle from a colour ramp and
@@ -82,16 +89,20 @@ stops, rather than running on a second path nobody is testing (`Design/Decisions
 `NeuronCore`, now as what the tests drive: it is the only way to drop or delay a datagram on
 purpose.
 
-**Deliberately not here yet**, so nobody goes looking for it: no audio, no combat, no economy, no
-damage model, and no save *file* — a `World` can be written out, read back and replayed to byte
+**Deliberately not here yet**, so nobody goes looking for it: no audio, no economy, no shields or
+armour classes past the one hull number, no turret that turns -- a hull's guns fire and its geometry
+holds still -- and no save *file* — a `World` can be written out, read back and replayed to byte
 equality (`WorldStateTests`), but the codec is bytes in memory and no format versions it. The
 content pipeline is still NMO and DDS, with `Tools/DdsBake.py` baking the DDS half's mips and BC
 compression offline. Tuning is `constexpr` in `SimTuning.h`, `HullSpec.h` and `ViewTuning.h` (§5);
 what a *deployment* may change without a rebuild — the port, the backlog, one subscriber's interest
 numbers — lives in `Outpost/Assets/Server.cfg`, read by the composition root alone (ADR 0043). The hostiles above
-have no weapons and no senses: the patrol is a metronome that never reacts to anything, and no
-station can be destroyed. The Vanguard's protectors react, but only to a stated act -- nothing in
-the running game states one yet, and a protector has no weapon either (ADR 0041). The networking
+have weapons and one sense -- a mount acquires the nearest ship its faction already holds hostile out
+of the neighbour list the sense pass built -- but their helms react to nothing: the patrol is still a
+metronome that walks its ring while its turrets fire, and no
+station can be destroyed: an immovable hull discards its damage, which is how a Vanguard station's
+indestructibility is spelled (ADR 0052). The Vanguard's protectors react only to a stated act, and a
+landed shot is what states one now -- they carry the same guns everything else does (ADR 0041). The networking
 stops well short of a network: one client, one process,
 `127.0.0.1` only, and a self-signed certificate the client does not validate. The wire has two lanes
 and the format chooses by asking whether a later message makes a lost one right (`ADR 0029`):

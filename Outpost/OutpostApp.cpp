@@ -694,92 +694,18 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
     // BodyRenderer keeps every handle for the run (OutpostApp.h says so beside the key list).
     ReseedBodies();
     break;
-  case VK_F6:
-  {
-    // Debug hook, under F4's charter: a tuning aid may reach past the wire and a gameplay path never
-    // may. Nothing in the game can attack a station yet -- the combat design owes the trigger -- so
-    // the first selected own ship is declared an aggressor against the nearest Vanguard station,
-    // and the response can be watched (Design/Archive/Stations.md 8.1). No client message exists for this,
-    // or ever will: a client that can declare an aggression can make anybody a criminal (ADR 0041).
-    const std::span<const Game::ShipSnapshot> ships = m_view.Ships();
-    Game::EntityId aggressor = Game::INVALID_ENTITY_ID;
-    for (std::size_t i = 0; i < ships.size() && aggressor == Game::INVALID_ENTITY_ID; ++i)
-    {
-      if (m_view.IsSelected(i))
-        aggressor = ships[i].entity;
-    }
-    // The wire names entities and the simulation's judgment takes a handle: the root sits on both
-    // sides of the seam and converts, exactly as the publisher does for orders (ADR 0047).
-    const Game::ShipHandle attacker = m_world.HandleOfEntity(aggressor);
-    const Game::ShipId attackerId = m_world.Resolve(attacker);
-    if (attackerId == Game::INVALID_SHIP_ID)
-      break;
-
-    Game::World::StationId nearest = Game::World::INVALID_STATION_ID;
-    float nearestMetres = 0.0f;
-    for (Game::World::StationId station = 0; station < m_world.StationCount(); ++station)
-    {
-      const Game::World::Station& row = m_world.StationOf(station);
-      const Game::ShipId structure = m_world.Resolve(row.structure);
-      if (row.ownerFaction != Game::FACTION_VANGUARD || structure == Game::INVALID_SHIP_ID)
-        continue;
-      const float metres = Game::Distance(m_world.Ship(attackerId).posWorld, m_world.Ship(structure).posWorld);
-      if (nearest == Game::World::INVALID_STATION_ID || metres < nearestMetres)
-      {
-        nearest = station;
-        nearestMetres = metres;
-      }
-    }
-    if (nearest == Game::World::INVALID_STATION_ID)
-      break;
-    m_world.RecordAggression(attacker, nearest);
-    m_log.Push(EventLog::Severity::Alert, static_cast<float>(m_host.Tick()) * Game::TICK_DT, "VANGUARD PROVOKED");
-    break;
-  }
-  case VK_F7:
-  {
-    // Debug hook, under F4's and F6's charter: a tuning aid may reach past the wire and a gameplay
-    // path never may. Nothing in the game can attack a ship -- the combat design owes the trigger --
-    // so the nearest hostile record is declared the attacker of the first selected own ship, and the
-    // defense, the button's glow and the minimap's red digit can all be watched.
-    //
-    // No client message exists for this or ever will: a client that can declare a hostile act can
-    // rouse anybody's fleet against anybody (ADR 0041, ADR 0050).
-    const std::span<const Game::ShipSnapshot> ships = m_view.Ships();
-    Game::EntityId victimEntity = Game::INVALID_ENTITY_ID;
-    for (std::size_t i = 0; i < ships.size() && victimEntity == Game::INVALID_ENTITY_ID; ++i)
-    {
-      if (m_view.IsSelected(i))
-        victimEntity = ships[i].entity;
-    }
-    const Game::ShipHandle victim = m_world.HandleOfEntity(victimEntity);
-    const Game::ShipId victimId = m_world.Resolve(victim);
-    if (victimId == Game::INVALID_SHIP_ID)
-      break;
-
-    // The nearest ship of a faction that holds the player hostile, by the same mask the client
-    // paints by -- so the ship the player would call an enemy is the one that hits them.
-    Game::ShipHandle attacker;
-    float nearestMetres = 0.0f;
-    const std::span<const Game::ShipState> world = m_world.Ships();
-    for (Game::ShipId at = 0; at < world.size(); ++at)
-    {
-      if (m_world.StandingOf(world[at].factionId, Game::FACTION_PLAYER) != Game::Standing::Hostile)
-        continue;
-      const float metres = Game::Distance(world[at].posWorld, world[victimId].posWorld);
-      if (attacker.generation == 0 || metres < nearestMetres)
-      {
-        attacker = m_world.HandleOf(at);
-        nearestMetres = metres;
-      }
-    }
-    if (attacker.generation == 0)
-      break;
-
-    m_world.RecordHostileAct(attacker, victim);
-    m_log.Push(EventLog::Severity::Alert, static_cast<float>(m_host.Tick()) * Game::TICK_DT, "FLEET STRUCK");
-    break;
-  }
+  // F6 and F7 are gone, and this is where they were.
+  //
+  // Each stood in for an act nothing in the game could perform: F6 declared a selected ship an
+  // aggressor against the nearest Vanguard station so the protector response could be watched, and
+  // F7 declared the nearest hostile the attacker of the player's fleet so the defense could be. The
+  // fire pass states both for itself now, off shots it observed (ADR 0052) -- an attack order on a
+  // Vanguard asset IS F6, and any landed hit IS F7 -- so a hook that stated an act the simulation
+  // never saw would be the one thing ADR 0041 forbids, wearing a keyboard shortcut.
+  //
+  // World::RecordAggression and World::RecordHostileAct stay exactly as they are. They are the
+  // simulation's own entry points, they still have no client message and never will, and the tests
+  // still drive them directly (Design/Combat-slice-4.md 2.6).
   case '1':
     m_timeScale = 0.25f;
     break;

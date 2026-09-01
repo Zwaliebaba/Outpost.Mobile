@@ -133,6 +133,7 @@ void WorldView::ApplySnapshot()
         view.to = SampleOf(ship, tick);
       }
       view.faction = ship.factionId;
+      view.hullFraction = ship.hullFraction;
       m_ships.push_back(std::move(view));
       // Struck off so the leftovers can be walked below. No shard ever mints the null id, so it can
       // never match a live ship on a later pass either.
@@ -147,6 +148,7 @@ void WorldView::ApplySnapshot()
       ShipView view;
       view.mesh = mesh;
       view.faction = ship.factionId;
+      view.hullFraction = ship.hullFraction;
       view.to = SampleOf(ship, tick);
       view.from = view.to; // one sample: it is drawn there until the next one gives it somewhere to go
       if (mesh != INVALID_MESH)
@@ -190,6 +192,11 @@ void WorldView::ApplySnapshot()
     m_entities.push_back(ship.entity);
   }
 
+  // Before ExplodeTheLost, and that ordering is the whole of why this is its own pass: a shot's two
+  // ends are resolved against the records this client holds, and ExplodeTheLost is what discards the
+  // record of anything that just died. Resolved after it, every killing shot would draw from nowhere.
+  TakeTheGunfire();
+
   ExplodeTheLost(tick);
 
   // Last, and after the carry rather than inside it: what is selected is a set of slots, and which
@@ -202,6 +209,65 @@ void WorldView::ApplySnapshot()
   // After ExplodeTheLost, because it is what set the docked-out flags this reads, and last because
   // it is the pass that takes the copy of the rosters the next update will attribute against.
   ReportFleetEvents();
+}
+
+std::size_t WorldView::IndexOfEntity(Game::EntityId _entity) const noexcept
+{
+  // m_entities is parallel to m_ships and rebuilt with it on every update, so this is the one place
+  // that has to know that. Linear because an interest set is tens of records and a shot resolves two
+  // of them per update; a sorted index would be a second thing to keep in step for no measured gain.
+  for (std::size_t at = 0; at < m_entities.size() && at < m_ships.size(); ++at)
+  {
+    if (m_entities[at] == _entity)
+      return at;
+  }
+  return m_ships.size(); // the one-past-the-end this file already uses to mean "no such ship"
+}
+
+void WorldView::TakeTheGunfire()
+{
+  const std::span<const Game::FireEvent> fired = m_receiver.Fire();
+  for (const Game::FireEvent& event : fired)
+  {
+    // Either end is enough, which is what slice 2's filter spent itself on: being shot at from
+    // outside your own view is exactly the event a player must not be denied. What is missing is
+    // drawn from the end that is known.
+    const std::size_t shooter = IndexOfEntity(event.shooter);
+    const std::size_t target = IndexOfEntity(event.target);
+    if (shooter == m_ships.size() && target == m_ships.size())
+      continue; // fire between two ships neither of which is on screen
+
+    GunShot shot;
+    if (shooter != m_ships.size())
+    {
+      shot.fromWorld = HullPointToWorld(m_ships[shooter], DisplayedPose(shooter), XMFLOAT3(0.0f, 0.0f, 0.0f));
+      shot.colour = LiveryOf(m_ships[shooter].faction, IsOwn(shooter), m_receiver.IsHostileToMe(m_ships[shooter].faction));
+    }
+    if (target != m_ships.size())
+      shot.toWorld = HullPointToWorld(m_ships[target], DisplayedPose(target), XMFLOAT3(0.0f, 0.0f, 0.0f));
+    // A shot from off screen: the impact is all there is to draw, and it keeps GunShot's default
+    // white. Not a guess at red -- this half genuinely does not know whose fire that was, and a
+    // colour is a claim about it (Design/Combat-slice-4.md 2.2).
+    if (shooter == m_ships.size())
+      shot.fromWorld = shot.toWorld;
+    if (target == m_ships.size())
+      shot.toWorld = shot.fromWorld;
+
+    // Oldest out, so a pathological update cannot turn into a frame spike. The newest gunfire is
+    // the gunfire a player is looking at, which is the cap the writer applies at the other end.
+    if (m_shots.size() >= MAX_DRAWN_SHOTS)
+      m_shots.erase(m_shots.begin());
+    m_shots.push_back(shot);
+
+    // Remembered only when it was this client's own ship that fired, because the only thing this
+    // list is for is crediting a kill to the player.
+    if (shooter != m_ships.size() && IsOwn(shooter) && event.target != Game::INVALID_ENTITY_ID)
+      m_shotAt.push_back(ShotAt{event.target, 0.0f});
+  }
+
+  // Drawn, so the receiver may forget them. Fire accumulates across every message in a drain for
+  // the reason deaths do, and nothing else clears it.
+  m_receiver.ClearFire();
 }
 
 // A ShipView that was not carried is a ship that has left the snapshot, and this is the only place
@@ -290,6 +356,19 @@ void WorldView::ExplodeTheLost(std::uint64_t _tick)
     TriggerCameraShake();
     if (m_log != nullptr)
       m_log->Push(EventLog::Severity::Alert, SimTimeSec(), "SHIP LOST");
+
+    // Attributed from two facts this client already holds and never from the wire: the fire block
+    // said who shot at whom, the departure run says who died, and the join of the two is a kill the
+    // player made. The wire deliberately states no killer (ADR 0053), and this is what that costs --
+    // a line that is right when the shot arrived and silent when it did not, which is a flourish on
+    // the log rather than a fact the player is owed (Design/Combat-slice-4.md 2.5).
+    for (const ShotAt& aimed : m_shotAt)
+    {
+      if (aimed.entity != entity || m_log == nullptr)
+        continue;
+      m_log->Push(EventLog::Severity::Friendly, SimTimeSec(), "TARGET DESTROYED");
+      break;
+    }
   }
 
   // Drawn, so the receiver may forget them. Deaths accumulate across every message in a drain now
@@ -498,6 +577,14 @@ void WorldView::IssueStopOrder()
   const std::uint32_t sent = SendToSelectedFleets(order);
   if (sent > 0 && m_log)
     m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "STOP | %d %s", static_cast<int>(sent), (sent == 1) ? "FLEET" : "FLEETS");
+}
+
+float WorldView::ConditionOfMember(Game::EntityId _entity) const noexcept
+{
+  const std::size_t at = IndexOfEntity(_entity);
+  if (at == m_ships.size())
+    return -1.0f; // no record: a fleet somewhere this camera has never been
+  return static_cast<float>(m_ships[at].hullFraction) / 255.0f;
 }
 
 std::uint32_t WorldView::HullOfMember(Game::EntityId _entity) const noexcept
@@ -730,6 +817,16 @@ void WorldView::UpdateFeedback(float _dtSec)
   // Real time, so a light drifts against the simulation and against a recording. That is what a
   // running light does.
   m_navTimeSec += dt;
+
+  // Gunfire ages on the same real-time clock, and for the same reason: a tracer is a drawing of
+  // something that already happened, so it is not the simulation's to time (ADR 0053).
+  for (GunShot& shot : m_shots)
+    shot.ageSec += dt;
+  std::erase_if(m_shots, [](const GunShot& _shot) { return _shot.ageSec >= GUN_TRACER_SEC; });
+
+  for (ShotAt& aimed : m_shotAt)
+    aimed.ageSec += dt;
+  std::erase_if(m_shotAt, [](const ShotAt& _aimed) { return _aimed.ageSec >= GUN_KILL_CREDIT_SEC; });
   if (m_navTimeSec > NAV_LIGHT_MAX_PERIOD_SEC)
     m_navTimeSec -= NAV_LIGHT_MAX_PERIOD_SEC;
 
@@ -1898,6 +1995,37 @@ void WorldView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const Sc
           if (trailLength <= 0.0f)
             break;
         }
+      }
+    }
+
+    // --- gunfire ------------------------------------------------------------------------------
+    // A shot is three glows on the billboards the running lights already ride: a muzzle at the
+    // shooter, beads down the line so it reads as a direction rather than a dot, and an impact at
+    // the far end. Nothing new enters the renderer's contract, which is what let this land without
+    // the slice that turns the turrets (Design/Combat-slice-4.md 1, 2.2).
+    for (const GunShot& shot : m_shots)
+    {
+      // Squared, so a tracer is bright for the first instant and gone rather than dimming evenly.
+      // A shot that lingers at half brightness reads as a beam, which is a different weapon.
+      const float life = std::clamp(1.0f - shot.ageSec / GUN_TRACER_SEC, 0.0f, 1.0f);
+      const float fade = life * life;
+      if (fade <= 0.002f)
+        continue;
+
+      const Rgba colour{shot.colour.r, shot.colour.g, shot.colour.b, fade};
+      m_glowSamples.push_back(
+        Neuron::GlowSample{.posWorld = shot.fromWorld, .radiusMetres = GUN_MUZZLE_RADIUS_METRES * fade * SHIP_SCALE, .colour = colour});
+      m_glowSamples.push_back(
+        Neuron::GlowSample{.posWorld = shot.toWorld, .radiusMetres = GUN_IMPACT_RADIUS_METRES * fade * SHIP_SCALE, .colour = colour});
+
+      for (int bead = 1; bead < GUN_TRACER_BEADS; ++bead)
+      {
+        const float along = static_cast<float>(bead) / static_cast<float>(GUN_TRACER_BEADS);
+        const XMFLOAT3 at(shot.fromWorld.x + (shot.toWorld.x - shot.fromWorld.x) * along,
+                          shot.fromWorld.y + (shot.toWorld.y - shot.fromWorld.y) * along,
+                          shot.fromWorld.z + (shot.toWorld.z - shot.fromWorld.z) * along);
+        m_glowSamples.push_back(
+          Neuron::GlowSample{.posWorld = at, .radiusMetres = GUN_TRACER_RADIUS_METRES * fade * SHIP_SCALE, .colour = colour});
       }
     }
 

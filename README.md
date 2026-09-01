@@ -44,21 +44,30 @@ five fleets, and everything below follows from that. You can:
   ledger.
 - **Watch a fleet defend itself.** Anything that attacks one rouses its combatants — the armed hulls
   turn on the attacker while the Miners and Haulers carry on with their orders — and its button and
-  minimap digit pulse red for as long as the alert holds. `F7` is the hook that fires it, since
-  nothing in the game can shoot yet.
+  minimap digit pulse red for as long as the alert holds. Anything that shoots one fires it: a
+  landed hit is what states the act.
+- **Fight.** An armed hull shoots what its fleet was ordered at, what struck it, or the nearest
+  thing its faction already holds hostile — whichever is first in reach. A shot lands when geometry
+  says it does: in range, inside the mount's arc, and with the turret's aim settled, so a heavy
+  turret genuinely loses a fighter crossing close aboard and holds one at three hundred metres.
+  Muzzle flashes and tracers in the shooter's own colours say who fired at whom, the fleet sheet's
+  condition pips say how much is left, and a hull at zero shatters. Nothing rolls dice.
 - **Read the world** through the HUD: minimap with the sector pair, your fleets' digits on it
   wherever they are, contact count, event log, and a function rail whose screens are not built yet.
 
 A second faction lives 1.2 km northeast: a Vandal station with three Interceptors walking a ring
 around it. They are drawn red, they count as contacts, and they cannot be selected or ordered — the
 simulation refuses an order from the wrong faction, and the client does not offer one. They are also
-a metronome. They do not react to you, because nothing in this game can yet shoot at anything.
+armed, and they shoot: fly a fleet inside a hundred and sixty metres of one and it opens fire, your
+combatants answer, and the fight runs itself. Their helms are still a metronome — they walk the ring
+whatever happens — because guns react in this game and courses do not.
 
 The government is here too. The starting solar system is laid out from a seed, and at each of its
 three planets stands a Core Vanguard Command station — azure in the scene, a hollow diamond on the
 minimap from the first frame, and the place your ships can dock. The Vanguard takes anyone who has
-not attacked it; press `F6` and it stops taking you — the law turns red across the map, and the
-provoked station launches Corvette protectors that shadow the aggressor for as long as it flies.
+not attacked it; order an attack on one of its ships or its stations and it stops taking you — the
+law turns red across the map, and the provoked station launches Corvette protectors that hunt the
+aggressor until it dies.
 
 Behind all of it: three worlds rendered as an authored equirectangular map — baked to BC with a
 full mip chain — on smooth spheres, six procedurally generated asteroids, and a seeded star field
@@ -75,8 +84,6 @@ at three levels of detail and drawn at the one its size on screen asks for. All 
 | `F3` | Camera shake (tuning hook) |
 | `F4` | Shatters the selected hulls into tumbling debris, a fireball and smoke (tuning hook) |
 | `F5` | Reseeds every body's look and the sky — the worlds and their stations hold still |
-| `F6` | Declares the first selected ship an aggressor against the nearest Vanguard station |
-| `F7` | Declares the nearest hostile the attacker of your selected fleet, so the defense can be watched |
 | `1` `2` `3` | Time scale: quarter, normal, quadruple |
 
 Input is `WM_POINTER`, so mouse and touch are the same path: drag with the second or third button to
@@ -84,7 +91,9 @@ move the camera, pinch and twist with two contacts to zoom and turn.
 
 ### Deliberately not here yet
 
-So nobody goes looking: no combat, no damage model, no economy, no audio, no save file. Tuning is
+So nobody goes looking: no economy, no audio, no save file, no mining, and no turret that turns —
+a hull's guns fire and its geometry holds still. Combat is here and is one number deep: hull points,
+one damage figure per device, and no shields, armour classes or resistances. Tuning is
 `constexpr` in `SimTuning.h`, `HullSpec.h` and `ViewTuning.h`; what a deployment may change without
 a rebuild lives in `Outpost/Assets/Server.cfg`. The networking is real QUIC over a real stack, and
 it is still one client in one process on `127.0.0.1` with a self-signed certificate the client does

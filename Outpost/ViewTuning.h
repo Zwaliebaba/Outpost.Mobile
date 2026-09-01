@@ -452,6 +452,35 @@ inline constexpr std::uint32_t VANGUARD_TARGET_CAP = 4;
 // be fighting it. 25 m is inside a hull length at the closest zoom.
 inline constexpr float FLEET_FOCUS_ARRIVE_METRES = 25.0f;
 
+// --- gunfire ---------------------------------------------------------------------------------
+// How long a shot stays on screen, and what it is drawn out of.
+//
+// Presentation only, and none of it is in the replay contract: the shot already happened, the wire
+// stated it once, and this is a drawing of it (ADR 0053). Nothing here can change what was hit.
+//
+// A third of a second is what a tracer needs to read as a direction rather than a flash. Longer and
+// a Corvette's two-a-second turrets draw a solid rope between the ships; shorter and a player
+// glancing away misses the whole engagement.
+inline constexpr float GUN_TRACER_SEC = 0.33f;
+
+// The beads a tracer is drawn as. They ride the same glow billboards a running light does, so the
+// tracer costs no pipeline, no shader and nothing in the renderer's contract -- which is the whole
+// reason this half of the slice could land without the other (Design/Combat-slice-4.md 1).
+inline constexpr int GUN_TRACER_BEADS = 6;
+inline constexpr float GUN_TRACER_RADIUS_METRES = 0.9f;
+inline constexpr float GUN_MUZZLE_RADIUS_METRES = 3.2f;
+inline constexpr float GUN_IMPACT_RADIUS_METRES = 2.4f;
+
+// The most shots drawn at once. A fleet of eight Corvettes fires sixteen turrets at 0.75 s each, so
+// a busy second is about twenty on screen; sixty is headroom past anything this envelope holds, and
+// a cap at all is what stops a pathological update turning into a frame spike.
+inline constexpr std::size_t MAX_DRAWN_SHOTS = 64;
+
+// How long after being shot at a ship's death still reads as the player's kill. Two seconds is past
+// any cooldown in the device table except the Bomber's, so a shot that lands and kills is credited
+// while a coincidence two fights away is not (Design/Combat-slice-4.md 2.5).
+inline constexpr float GUN_KILL_CREDIT_SEC = 2.0f;
+
 // --- HUD ---------------------------------------------------------------------------------------
 // Flat and square-cornered: no blur, no glow, no gradients. Sizes are in px at 96 DPI and scale
 // with the window DPI; the layout is anchored to corners and edges, so no width is assumed.
@@ -471,6 +500,13 @@ inline constexpr Neuron::Rgba HUD_ACCENT_AMBER{MARKER_COLOUR.r, MARKER_COLOUR.g,
 // picks a red-ish livery must not turn their own dots into the colour the HUD uses for hostiles, so
 // nothing on the HUD reads SELECTABLE_LIVERIES except the player's own hull bar.
 inline constexpr Neuron::Rgba HUD_ALERT_RED{LIVERY_VANDAL.r, LIVERY_VANDAL.g, LIVERY_VANDAL.b, 1.0f}; // hostile, and alerts
+
+// The condition pips on the fleet sheet: the trough a pip is drawn in, and the middle of the ramp
+// between the green above and the red beside it. Amber is mixed from the two rather than authored,
+// so a palette change carries the middle with it (Design/Combat-slice-4.md 2.4).
+inline constexpr Neuron::Rgba HUD_PIP_EMPTY{HUD_ALERT_RED.r * 0.2f, HUD_ALERT_RED.g * 0.2f, HUD_ALERT_RED.b * 0.2f, 0.5f};
+inline constexpr Neuron::Rgba HUD_PIP_HURT{(HUD_ACCENT_GREEN.r + HUD_ALERT_RED.r) * 0.5f, (HUD_ACCENT_GREEN.g + HUD_ALERT_RED.g) * 0.5f,
+                                           (HUD_ACCENT_GREEN.b + HUD_ALERT_RED.b) * 0.5f, 1.0f};
 // Derived the same way, for the same reason: the blue a Vanguard record draws in on the map is the
 // azure the Vanguard flies in the scene. Only while the mask says they are not hostile -- the day
 // the law turns on the player, every Vanguard dot goes HUD_ALERT_RED with the hulls

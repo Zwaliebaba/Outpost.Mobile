@@ -11,6 +11,16 @@ namespace
 {
 constexpr char TIMES[] = "\xD7";
 
+// Green through amber to red, so a fleet reads at a glance and a ship about to die is the one that
+// stands out. Two segments rather than a gradient, because the HUD's palette is three named colours
+// and inventing a fourth here would put a colour in the tree that nothing else can reach.
+[[nodiscard]] Rgba ConditionColour(float _condition)
+{
+  if (_condition > 0.6f)
+    return HUD_ACCENT_GREEN;
+  return (_condition > 0.25f) ? HUD_PIP_HURT : HUD_ALERT_RED;
+}
+
 // In the order the design lists them, and MINE is not among them (Design/Archive/Fleets.md 9.3, 6.6).
 constexpr const char* COMMAND_LABELS[] = {"MOVE", "ATTACK", "DOCK", "STOP"};
 constexpr WorldView::ArmedOrder COMMAND_ARMS[] = {WorldView::ArmedOrder::Move, WorldView::ArmedOrder::Attack, WorldView::ArmedOrder::Dock,
@@ -194,6 +204,45 @@ void FleetSheet::Draw(TextRenderer& _text, const WorldView& _view, std::span<con
       (void)std::snprintf(line, sizeof(line), "NOBODY IN SPACE YET");
 
     _text.DrawTextLine(FontId::Ui, layout.panel.x0 + pad, y, HUD_TEXT_SCALE * s, HUD_COLOUR, line);
+    y += textPx + pad * 0.6f;
+  }
+
+  // --- CONDITION  ####  ##--  ----  --------------------------------------------------------------
+  //
+  // One pip per member, in roster order, filled to that member's hull fraction. Pips rather than
+  // percentages because the question a commander asks this sheet is "is anything about to die", and
+  // eight small bars answer it in a glance where eight numbers do not (Design/Combat.md 10.3).
+  {
+    const float pipHeight = textPx * 0.55f;
+    const float pipWidth = textPx * 1.6f;
+    const float pipGap = pipWidth * 0.25f;
+    float x = layout.panel.x0 + pad;
+
+    _text.DrawTextLine(FontId::Ui, x, y, HUD_LABEL_SCALE * s, HUD_LABEL_COLOUR, "CONDITION");
+    x += _text.AdvancePx(FontId::Ui, HUD_LABEL_SCALE * s) * 10.0f;
+
+    bool any = false;
+    for (const Game::EntityId member : _view.RosterOf(m_slot))
+    {
+      any = true;
+      const float condition = _view.ConditionOfMember(member);
+      const float top = y + (textPx - pipHeight) * 0.5f;
+
+      // A member with no record draws as an empty outline rather than as a full or an empty bar:
+      // this half has never been told how that ship is, and either fill would be a claim
+      // (Design/Combat-slice-4.md 2.3).
+      _text.DrawScreenRect(x, top, x + pipWidth, top + pipHeight, HUD_PIP_EMPTY);
+      if (condition >= 0.0f)
+      {
+        const float filled = std::max(pipWidth * condition, (condition > 0.0f) ? 1.0f : 0.0f);
+        _text.DrawScreenRect(x, top, x + filled, top + pipHeight, ConditionColour(condition));
+      }
+      x += pipWidth + pipGap;
+    }
+
+    if (!any)
+      _text.DrawTextLine(FontId::Ui, x, y, HUD_TEXT_SCALE * s, HUD_LABEL_COLOUR, "--");
+    y += textPx + pad * 0.6f;
   }
 
   // --- [ MOVE ] [ ATTACK ] [ DOCK ] [ STOP ] -----------------------------------------------------
