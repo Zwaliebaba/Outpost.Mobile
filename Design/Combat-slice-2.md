@@ -95,7 +95,8 @@ bytes each, and past what any battle this envelope can hold produces in one upda
 cap the **oldest are dropped**, because the newest gunfire is the gunfire a player is looking at.
 
 **Its own message rather than a block in the fragment header**, which is where design §9.2's word
-"block" would have put it, and the reason is duplication: the fleet status block rides *every*
+"block" would have put it — §9.2 has since been amended to say *message*, with this order the
+record of why (ADR 0054). The reason is duplication: the fleet status block rides *every*
 fragment precisely so it heals, and a fire list stamped on every fragment would draw every tracer
 once per fragment. One message, sent once per update, is the shape that carries a list of events
 rather than a piece of state.

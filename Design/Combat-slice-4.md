@@ -113,7 +113,8 @@ it becomes true.
 
 ### 2.7 What this slice does not touch, and what moves out of it
 
-- **The turret slew moves to slice 6.** `SceneRenderer::DrawMesh` takes one world matrix for a whole
+- **The turret slew moves to slice 6**, and design §1, §10.2 and §16 were amended to say so in the
+  pass that followed (ADR 0054). `SceneRenderer::DrawMesh` takes one world matrix for a whole
   mesh, so turning one part needs a new submesh-range draw and a hull drawn as its complement — a
   new entry point into the D3D12 command list. It is the one piece of this feature whose acceptance
   is a screenshot and nothing else, and it is cleanly separable: everything above is visible without

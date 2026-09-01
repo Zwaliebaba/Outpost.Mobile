@@ -49,9 +49,26 @@ directory listing rather than seven slice tables. A design with one open slice d
 if the rest landed a month ago.
 
 The move costs the retarget of every citation, which is the honest price and is paid in the same
-commit. Nothing else changes in the document — a design is never rewritten to match what was built;
-where the code diverged, the decision record says so and the design keeps its argument. Sections of
-an archived design that a later record supersedes stay as they were, with the record naming them.
+commit.
+
+**A design is amended in place as its slices land** ([ADR 0054](Decisions/0054-a-design-is-amended-in-place-as-its-slices-land.md)).
+Where the code came back different from the design, the design changes to say what was built, in the
+commit that built it — so every section of a design describes the game as it stands, and a reader
+never has to hold a header full of corrections in their head while reading a body that contradicts
+it. What is amended is the *shape*, never the *argument*: a section that lost its reason says which
+slice took it and why, and a design does not quietly acquire a rationale it never had.
+
+**The history goes to the work order and the decision record, which is where it was always kept.**
+A work order says what changed on contact with the code and what the change cost; a decision record
+says what was chosen and what lost. Those two are append-only and are never rewritten, so nothing
+is lost by amending the design — the design is the current statement of a shape, and those are the
+record of how it got there. A design that is amended says so at its top and points at them.
+
+This reverses the rule this file used to state, which was that a design keeps its original argument
+and records divergence elsewhere. ADR 0054 has the argument for the reversal and for what the old
+rule was protecting. Sections of an *archived* design that a later record supersedes still stay as
+they were, with the record naming them: an archived design is finished, and amending it would be
+rewriting history rather than maintaining a live document.
 
 ## Decision records
 

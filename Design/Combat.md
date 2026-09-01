@@ -1,42 +1,28 @@
 # Combat — mounts, gunnery, and the acts a shot states
 
 **Status: agreed with the owner on 2026-08-31 — the six decisions in §15 were put and taken the
-same day, each the recommended option.** Slices 1 to 5 landed on 2026-09-01 and are in review
-([`Combat-slice-1.md`](Combat-slice-1.md),
-[ADR 0052](Decisions/0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md)); the
-world is lethal, says so on the wire, draws it — muzzle flashes, tracers and impacts in the shooter's
-colours, condition pips on the fleet sheet, and F6/F7 retired because the simulation states its own
-acts now — and has been measured against §13's pacing targets and retuned twice on what that found
-(slice 5). What is left is slice 6: the turret geometry turning, and the `Gun` markers and their
-consistency check, all three of which wait on the same binding between a mount and the part that
-carries it. **The screenshots slice 4 is accepted by are owed**, and slice 6 pays them.
+same day, each the recommended option. Slices 1 to 5 landed on 2026-09-01 and are in review; slice 6
+is open.** The world is lethal, says so on the wire, and draws it: muzzle flashes, tracers and
+impacts in the shooter's colours, condition pips on the fleet sheet, and F6/F7 retired because the
+simulation states its own acts now. §13's pacing targets have been measured against the shipped
+table and two numbers moved (slice 5). What is left is slice 6 — the turret geometry turning, the
+`Gun` markers, and their consistency check, all three of which wait on the same binding between a
+mount and the part that carries it. **The screenshots slice 4 is accepted by are owed**, and slice 6
+pays them.
 
-**A factual correction, taken on 2026-09-01:** §3.1 and §10.1 describe the shipped Battleship as
-carrying "three turret submeshes with barrel bones" and plan for `MeshData` to grow bones and clips.
-**The bones are not there.** Every hull in the game is named rigid submeshes with no skeleton, no
-clip and no skin buffer; the only file in the tree with a rig is the golden fixture. The turrets are
-real and so are the barrels — they are separate named submeshes — so a turret still turns, about its
-own bind-pose centre rather than about a bone. `Combat-slice-3.md` §2.6 has the table and the
-consequence, and the sections below keep their argument unamended, which is what this file does with
-a claim a slice overtakes.
+**This document is amended in place as its slices land**, on the owner's instruction of 2026-09-01
+and by [ADR 0054](Decisions/0054-a-design-is-amended-in-place-as-its-slices-land.md), which reverses
+the rule `Design/README.md` used to state. So every section below describes the game as it stands,
+and the ones that described something else — a fire *block* appended to the update, three turret
+submeshes with barrel bones, a turret slewing in slice 4 — describe what shipped instead.
 
-**Two more sentences the slices overtook, recorded the same way.** §1 and §9.2 call the fire
-events a "block"; they shipped as their own datagram message instead, because the fleet status block
-rides *every* fragment so that it heals, and a list of events stamped on every fragment would draw
-every tracer once per fragment ([`Combat-slice-2.md`](Combat-slice-2.md) §2.3). Only the word is
-wrong — the lane argument §9.2 makes is the one ADR 0053 records, untouched. And §1's "turrets slew
-and flash at authored `Gun` markers" is slice 6's sentence rather than slice 4's: the slew needs a
-submesh-range draw `SceneRenderer` does not have and a screenshot to accept it
-([`Combat-slice-4.md`](Combat-slice-4.md) §2.7), and the markers wait on the binding that would read
-one ([`Combat-slice-5.md`](Combat-slice-5.md) §3). What ships today is §3.1's own fallback rule — a
-mount without an authored marker draws its effects from the hull's origin — and §2's socket row
-naming "per-submesh skeletons and clips" retires with the bones above: what §10 will ride on is
-named submeshes and a client-side table.
-
-**One correction this document has already taken:** §8's stand-off reads the shortest range among
-a hull's *traversing* mounts rather than among all of them, so that a bow-fixed hull takes no
-stand-off and flies the attack runs the same section describes. The first reading contradicted its
-own next sentence, and the work order caught it before a line was written.
+**The history is not lost, and it is not here.** What changed on contact, and the argument for each
+change, is in the work order of the slice that changed it ([slice 1](Combat-slice-1.md) §4a,
+[slice 2](Combat-slice-2.md) §2.3, [slice 3](Combat-slice-3.md) §2.6, [slice 4](Combat-slice-4.md)
+§2.7, [slice 5](Combat-slice-5.md) §3) and in
+[ADR 0052](Decisions/0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md) and
+[ADR 0053](Decisions/0053-fire-events-ride-the-datagram-lane.md). Read this file for the design's
+reasoning; read those for what it once said and why it stopped saying it.
 
 This is the design the rest of the tree has been writing IOUs against. ADR 0041 closed with "the
 combat design meets this at two named sockets and needs nothing else: it calls `RecordAggression`
@@ -69,25 +55,27 @@ design can later hang a different tool on the same arm (§12) without reopening 
 - **Deterministic gunnery** (§4): a shot happens exactly when geometry allows — in range, in arc,
   aim settled, cooldown spent. No dice, no generator in the contract; a miss is a turret losing a
   crossing target, which is a tactic, not a roll.
-- **The fire pass** (§5): `StepMounts`, one more standing-behavior pass inside `World::Step`
-  (ADR 0015), gather-then-apply like the dock captures and the launches. Senses live in the
+- **The fire pass** (§5): `StepMounts`, one more pass inside `World::Step` (ADR 0015) and the last
+  one in the tick, gather-then-apply like the dock captures and the launches. Senses live in the
   mounts, not the helm: no hull changes course because of what it sees.
 - **A shot is a stated act** (§6): the fire pass is the caller ADR 0041 and ADR 0050 were waiting
   for. `RecordHostileAct` on a hit against a ship; `RecordAggression` on a hit against a station
   or its garrison. No client message states an act — the simulation observes its own shots.
 - **Damage and death** (§7): one number, `hullPoints`; at zero the ship leaves through
   `DespawnShip(handle, DespawnCause::Destroyed)` — ADR 0040's door, already wired to the shatter,
-  the shock ring, the departure runs and the fleet prune. Immovable hulls discard damage this
-  design; the act still counts.
+  the shock ring, the departure runs and the fleet prune. A hull authored with zero points is
+  indestructible and discards its damage this design; the act still counts.
 - **Engagement motion** (§8): pursuit gains a stand-off, so a gunship holds where its guns bear
   instead of ramming its quarry; fixed-gun hulls keep flying attack runs, which their arc gives
   them for free.
 - **The wire** (§9): one byte of hull fraction in the ship record, self-healing like everything
-  else in it; one loss-tolerant fire block on the datagram lane for the view's flashes and
+  else in it; one loss-tolerant fire message on the datagram lane for the view's flashes and
   tracers. Death already rides the reliable lane and keeps doing so.
-- **The view** (§10): the reader stops discarding the rigs it already validates; turrets slew and
-  flash at authored `Gun` markers; the fleet sheet's pip row reads the number it was placed for;
-  the event log stays edge-triggered.
+- **The view** (§10): the reader stops discarding the named parts it already validates, so a
+  consumer can address one of them; muzzle, tracer and impact draw off the fire message; the fleet
+  sheet's pip row reads the number it was placed for; the event log stays edge-triggered. The turret
+  that turns, and the `Gun` markers it would flash at, are slice 6 — they need a submesh-range draw
+  the renderer does not have, and a screenshot is the only thing that can accept them.
 - **The answers owed** (§11): friendly fire and fleeing — answered, not deferred again.
 
 ## 2. What this design builds on, and the sentences it retires
@@ -104,14 +92,17 @@ The sockets, by name, all verified in the tree as it stands:
 | `Station::targets`, protector launch metronome | `World.h`, Stations §8.2–8.3 | unchanged; a protector's duty target is its mounts' priority |
 | `DespawnCause::Destroyed` → leave runs → `ExplodeTheLost` | ADR 0040, `WorldView.cpp` | the fire pass becomes the first in-simulation caller |
 | `FleetOrderKind::Attack`, armed and flowing end to end | Fleets §6.5, `FleetSheet.cpp` | unchanged on the wire; finally means what it says |
-| `Gun` markers, turret submeshes, per-submesh skeletons and clips | NmoFormat §5.10, §7 | the view's anchor for muzzle, tracer and slew (§10) |
-| Fleet status bits 6–7, the red pulse, `SHIP LOST`, the pip row | Fleets §8.2, §9.3 | the pips and the target bar start reading (§10.3) |
+| Named turret submeshes, and the `Gun` marker the format defines | NmoFormat §5.10 | the view's anchor for muzzle, tracer and slew (§10). No shipped hull carries a skeleton, a clip or a skin buffer, so the anchor is a named part and its bind-pose centre rather than a bone |
+| Fleet status bits 6–7, the red pulse, `SHIP LOST`, the pip row | Fleets §8.2, §9.3 | the pips start reading (§10.3); the target bar is slice 6's |
 
-Truth maintenance, because the rulebook demands it in the same commits: "there is still no combat"
-and its siblings in `README.md` and `AGENTS.md`; `World.h`'s "nothing inside Step states an act"
-(§6 changes that sentence on purpose); `OutpostApp.cpp`'s F4 comment "nothing in the game can
-destroy a ship"; the `FleetOrderKind` comment in `ShipState.h` describing what Attack waits for.
-Each slice retargets the sentences its change falsifies.
+Truth maintenance, because the rulebook demands it in the same commits — all of these have now
+been retargeted: "there is still no combat" and its siblings in `README.md` and `AGENTS.md`;
+`World.h`'s "nothing inside Step states an act" (§6 changed that sentence on purpose);
+`OutpostApp.cpp`'s F4 comment "nothing in the game can destroy a ship"; the `FleetOrderKind` comment
+in `ShipState.h` describing what Attack waits for. Each slice retargets the sentences its change
+falsifies, and this design is amended in the same pass (ADR 0054). Two were missed at the time and
+caught by a sweep afterwards, `World.h`'s among them — which is the honest argument for the
+checklist line ADR 0054 added, and for not trusting the discipline alone.
 
 ## 3. The mount and the device
 
@@ -120,20 +111,22 @@ Each slice retargets the sentences its change falsifies.
 A **device** is what fires: range, cooldown in ticks (ADR 0045 — never seconds off a clock),
 traverse rate, aim tolerance, damage. A **mount** is where a hull carries one: a bearing in hull
 frame, an arc it may bear through, and the device id. `GameLogic/DeviceSpec.h` holds the device
-table; `HullSpec` grows `mounts[MAX_MOUNTS]` and `mountCount`, `constexpr` beside every other
-column, because every field changes recorded outcomes and belongs in the same contract by the same
-route (`SimTuning.h`'s own words).
+table; `HullSpec` grows a `MountLoadout` — up to `MAX_MOUNTS` mounts and a count, named once as a
+`LOADOUT_*` constant and shared by the rows that wear it — `constexpr` beside every other column,
+because every field changes recorded outcomes and belongs in the same contract by the same route
+(`SimTuning.h`'s own words).
 
-The meshes already speak turret — the shipped Battleship carries three turret submeshes with
-barrel bones, the Corvette two, and the format defines the `Gun` marker with "+Z = muzzle" — but
-the simulation reads none of it, for NmoFormat §9's stated boundary (ADR 0002): what the
+The meshes already speak turret — the shipped Battleship carries three named turret submeshes and
+three barrels, the Corvette two turrets, and the format defines the `Gun` marker with "+Z = muzzle"
+— but the simulation reads none of it, for NmoFormat §9's stated boundary (ADR 0002): what the
 simulation needs of a hardpoint arrives as authored numbers in `GameLogic`, generated or checked
 offline by a `Tools/` script at most, never read from content at runtime. The capsule table
 already made this exact argument about size: the mesh fit is where the numbers start, not what
 they are. A mount without an authored marker draws its effects from the hull's origin — content is
-a diagnostic, never a crash — and the `Tools/` check (§16, slice 5) is what keeps the two tables
-from quietly disagreeing. No shipped hull carries a `Gun` marker today; that is authoring work the
-slice plan owns, not a blocker for the simulation half.
+a diagnostic, never a crash — and the `Tools/` check (§16, slice 6) is what keeps the two tables
+from quietly disagreeing. No shipped hull carries a `Gun` marker today, and the shipped build draws
+every muzzle from the hull's origin because of it; that is authoring work the slice plan owns, not a
+blocker for the simulation half.
 
 ### 3.2 Per-mount state
 
@@ -148,8 +141,8 @@ held target is re-validated every tick — live, still valid under §5.3's rules
 envelope — and dropped the moment it is not; holding is a tie-break, never a commitment.
 
 Aim state is intent, and the snapshot exists to withhold intent: none of this table reaches the
-wire. The view slews its turrets from the fire block (§9.2) and its own clock, which may drift a
-degree from the simulation's aim and is allowed to — presentation, ADR 0016's side of the line.
+wire. The view will slew its turrets from the fire message (§9.2) and its own clock, which may drift
+a degree from the simulation's aim and is allowed to — presentation, ADR 0016's side of the line.
 
 ## 4. Gunnery is deterministic mechanics
 
@@ -187,17 +180,30 @@ projectile drawn by the view as long as it likes (§10.2).
 
 ### 5.1 Position and idiom
 
-`StepMounts`, last in the standing-intent slot, after `StepFleets` — so a mount reads the fleet
-posture decided *this* tick (the threat taken, the chase re-lowered), and every geometric read is
-end-of-last-tick state like every other pass, which keeps the answer independent of array order
-(Collision §6's property, restated once more because it is the property).
+`StepMounts`, **last in the tick** — after the separation and blocking solves, before the tick
+counter turns over. A mount therefore reads the fleet posture decided *this* tick (the threat taken,
+the chase re-lowered) and fires on where the ships ended the tick rather than where they began it.
+
+Last in the tick rather than in the standing-intent slot, which is where a design written before the
+code would put it, for one reason: opportunistic acquisition reads the neighbour list, a `Neighbour`
+names a `ShipId`, and a `ShipId` is an array index that every despawn moves (ADR 0005). That list is
+trustworthy only between the gather that built it and the next despawn, and the standing-intent slot
+sits outside that window — it runs before the gather, so it would read the previous tick's list with
+ids this tick's dock pass has already moved. Running last puts the whole pass inside the window.
+Every geometric read is still of one settled state that no part of this pass mutates, which is what
+keeps the answer independent of array order (Collision §6's property, restated once more because it
+is the property).
 
 Gather-then-apply, the dock pass's idiom: the walk chooses targets and fires, accumulating damage
 into a scratch indexed by ship, hits into an act list, and nothing mutates mid-walk. After the
-walk, in order: damage lands (immovable hulls discard theirs, §7.2), acts are stated off the hit
-list (§6), and ships at zero are despawned through the capture idiom, exactly as if the deaths had
-arrived from outside the tick — which is a case every table already survives. Two ships that kill
-each other on the same tick both die, in either array order, and the test suite says so.
+walk, in three loops and in this order: damage lands (indestructible hulls discard theirs, §7.2),
+acts are stated off the hit list (§6), and ships at zero are despawned through the capture idiom,
+exactly as if the deaths had arrived from outside the tick — which is a case every table already
+survives. The acts come **before** the deaths, and that is why they are three loops and not one:
+`RecordHostileAct` resolves its victim and returns early on a stale handle, so a fleet member killed
+outright by a single shot would rouse nobody at all if its death had already been applied. Being
+killed is the loudest hostile act there is. Two ships that kill each other on the same tick both
+die, in either array order, and the test suite says so.
 
 ### 5.2 Target priority
 
@@ -206,17 +212,22 @@ A mount evaluates candidates in one fixed order and takes the first that stands:
 1. the fleet's **threat**, while the fleet is engaged (defense outranks everything, Fleets §7.4);
 2. the fleet's **ordered attack target** (the standing order, doing its job);
 3. the ship's **protector duty target** (a protector is in no fleet; this is its whole life);
-4. **opportunistic**: the nearest ship in the neighbour list whose faction the mount's owner holds
+4. the target **this mount already held**, if it still stands and the shooter's faction still holds
+   it hostile — §3.2's tie-break, in the walk where it can be seen. Hostile standing is required of
+   it even when it was acquired as a stated target, so an order that ends is an order the guns stop
+   obeying rather than a grudge they keep;
+5. **opportunistic**: the nearest ship in the neighbour list whose faction the mount's owner holds
    `Standing::Hostile`, inside the device's envelope — nearest by `(proximityMetres, ShipId)`,
    which is already the sense pass's own deterministic order.
 
-Priorities 1–3 are stated handles; only priority 4 is a sense, and it is the sense Stations §8.4
-assigned to this design. It reads **only the neighbour list the sense pass already built** — no
-new query, no cadence, no scan. The honest consequence of the neighbour cap comes with that: a
-hull whose K nearest are all friends does not see the enemy K+1 away, holds its fire, gets shot,
-and the *stated act* takes over from there — the failure self-corrects through the defense, and a
-combatant's `neighbourCap` is one authored column away if measurement says it matters. The gather
-radius grows a third term so the list can contain what the guns can reach: `QueryRadiusMetres`
+Priorities 1–3 are stated handles and 4 is memory; only priority 5 is a sense, and it is the sense
+Stations §8.4 assigned to this design. It reads **only the neighbour list the sense pass already
+built** — no new query, no cadence, no scan. The honest consequence of the neighbour cap comes
+with that: a hull whose K nearest are all friends does not see the enemy K+1 away, holds its fire,
+gets shot, and the *stated act* takes over from there — the failure self-corrects through the
+defense, and a combatant's `neighbourCap` is one authored column away if measurement says so.
+
+The gather radius grows a third term so the list can contain what the guns can reach: `QueryRadiusMetres`
 takes the max of avoid, separate, and now `ownRadius + longest mounted range + margin`. For
 capitals the avoidance term still dominates (a Battleship's 8 s horizon out-reaches its own
 guns); for a fighter the gunnery term adds tens of metres to a query that narrowed below its gun
@@ -227,15 +238,18 @@ carries.
 
 Live, not itself, not its own faction — ever (§11). Priorities 1–3 shoot the stated handle
 whatever the standing says, because an *ordered* attack on a neutral is the player spending their
-own standing (that is F6 becoming gameplay); priority 4 fires only on `Standing::Hostile`, so no
-one drifts into a war by parking near it. No radius makes anyone a criminal (ADR 0041) — and no
+own standing (that is F6 becoming gameplay); priorities 4 and 5 fire only on `Standing::Hostile`,
+so no one drifts into a war by parking near it, and nobody keeps shooting a neutral after the order
+that named it ended. No radius makes anyone a criminal (ADR 0041) — and no
 radius starts shooting at anyone the shooter's faction has not already judged or been ordered at.
 
 ### 5.4 Senses live in the mounts, not the helm
 
 Nothing in this pass steers. The Vandal patrol keeps its metronome exactly as Hostiles §5.5
-promised — and now shoots back over its shoulder as it circles, because its mounts acquire
-opportunistically while its helm reacts to nothing. A loose ship defends itself precisely that
+promised — and now shoots whatever its bow gun comes to bear on as it circles, because its mounts
+acquire opportunistically while its helm reacts to nothing. An Interceptor carries one fixed bow
+gun, so the ring itself is what sweeps its arc across an intruder: it cannot turn to face you and
+does not try. A loose ship defends itself precisely that
 far: guns yes, course no. The first helm that *reacts* — breaks off, kites, flees — is the NPC
 behaviors design (§14), and the fleet defense already covers the player's ships. This is the
 narrowest reading of "senses and thresholds" that makes the world dangerous, and it is deliberate:
@@ -254,16 +268,20 @@ The fire pass states, from its hit list, after damage lands:
   against a station or its garrison", idempotent because the standing flip and the target list
   both already tolerate repetition.
 
-`World.h`'s "nothing inside Step states an act" was true and dated the day it was written — the
-acts were always going to come from the one pass that can observe a shot. What ADR 0041 actually
-forbids is unchanged and load-bearing: **no client message states an act, and there never will be
-one.** A client sends orders; the simulation fires, observes itself firing, and judges. The ADR
-this design owes (§16, slice 1) records that completion rather than leaving the sentence's change
-to be discovered in a diff.
+The acts are stated **before** the deaths are applied, which is why the pass is three loops and not
+one (§5.1): `RecordHostileAct` resolves its victim, so a fleet member killed outright would rouse
+nobody at all if its death had already landed.
 
-F6 and F7 retire in the last slice, replaced by the acts they were standing in for — an attack
-order on a Vanguard asset *is* F6 now, and any landed hit *is* F7. F4 stays: a tuning hook for the
-explosion is still a tuning hook.
+`World.h`'s "nothing inside Step states an act" was true and dated the day it was written — the
+acts were always going to come from the one pass that can observe a shot, and that comment now says
+so. What ADR 0041 actually forbids is unchanged and load-bearing: **no client message states an act,
+and there never will be one.** A client sends orders; the simulation fires, observes itself firing,
+and judges. [ADR 0052](Decisions/0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md)
+records that completion rather than leaving the sentence's change to be discovered in a diff.
+
+F6 and F7 retired with slice 4, replaced by the acts they were standing in for — an attack order on
+a Vanguard asset *is* F6 now, and any landed hit *is* F7. F4 stays: a tuning hook for the explosion
+is still a tuning hook.
 
 ## 7. Damage and death
 
@@ -282,9 +300,14 @@ the shatter, the shock ring, the camera shake, `SHIP LOST`, the fleet prune, the
 stand-down and the departure runs all answer without a line of new code. That chain is the reason
 this design is smaller than it looks.
 
-**Immovable hulls discard damage this design.** For a Vanguard station that is Stations §8.5's
-standing rule ("however it models damage, a Vanguard station's is discarded") — implemented here,
-permanently. For the Vandal base and the Stargate it is scope: a station's death drags a ledger,
+**A hull whose authored `maxHullPoints` is zero discards its damage this design**, which today is
+exactly the immovable set and is a better-shaped rule than testing `immovable` would have been: one
+column decides, it is the hull's property rather than the faction's, and a `static_assert` keeps the
+immovable rows on the right side of it. For a Vanguard station that is Stations §8.5's standing rule
+("however it models damage, a Vanguard station's is discarded") — implemented here, permanently, and
+with no station special case anywhere in the fire pass.
+
+For the Vandal base and the Stargate it is scope: a station's death drags a ledger,
 a garrison, a docked fleet's manifest and a layout mark behind it, and that is the
 station-destructibility design's page, not a side effect of the first gun (§14). The act is still
 stated — shooting a station makes an enemy, it just does not yet make a wreck. A protector that
@@ -299,9 +322,13 @@ their neighbours' hulls. The chase keeps its chassis — re-plan on `PURSUIT_REP
 drift, never per tick — and gains a stand-off: the destination becomes the point
 `ENGAGE_STANDOFF_FRACTION` of the hull's shortest **traversing** mount's range along the bearing
 from target to pursuer, so a gunship holds where *all* its turrets bear and the separation solver
-stops being the thing that ends every fight. A hull whose mounts are all bow-fixed takes no
-stand-off at all and is sent at the target itself, because its behavior comes from its arc: to
-satisfy §4's gate it must point at its quarry, so a fighter flies attack runs and overshoots
+stops being the thing that ends every fight. **Clamped to the span the pursuer already has**: a
+stand-off may shorten a chase and may never turn one into a withdrawal, or a Corvette 30 m from its
+quarry — well inside its own 180 m turrets — would back away to 144 m to reach a nominal range it
+was already in, and would oscillate against anything that closed. A hull whose mounts are all
+bow-fixed takes no stand-off at all and is sent at the target itself, because its behavior comes
+from its arc: to satisfy §4's gate it must point at its quarry, so a fighter flies attack runs and
+overshoots
 without one line written for attack runs. Unarmed combatants — there are none in the table today,
 but the Q-ship comment in `HullSpec.h` insists one stays expressible — shadow at the old range,
 which is the degenerate case of the same arithmetic.
@@ -316,65 +343,111 @@ doctrine, screening assignments are RoE work (§14).
 ### 9.1 Hull fraction in the record
 
 One byte, `hullFraction` (255 = whole), in the ship record beside `flags`: 47 → 48 bytes, and the
-fragment capacity re-derives itself the way `WorldSnapshot.h` promises. It is state that heals —
-the next update corrects a lost one — so it belongs in the record, ADR 0029's own test answered
-the record's way. Every subscribed ship carries it, hostiles included, which is what target bars
-read (§10.3). The exact points, the attacker, and every mount's state stay withheld with the rest
+fragment capacity re-derives itself the way `WorldSnapshot.h` promises — 22 ships to a fragment, and
+then 21. A hull that cannot be destroyed reads 255, because undamaged is the only honest answer for
+a thing with nothing to lose. It is state that heals — the next update corrects a lost one — so it
+belongs in the record, ADR 0029's own test answered the record's way. Every subscribed ship carries
+it, hostiles included, which is what the pips read and what a target bar will read (§10.3). The exact points, the attacker, and every mount's state stay withheld with the rest
 of the intent (Fleets §8.3 keeps withholding the threat's identity).
 
-### 9.2 The fire block
+### 9.2 The fire message
 
-A per-update datagram block — shots since the subscriber's last update where shooter or target is
-in its interest set: shooter entity, target entity, mount index; capped, oldest dropped first.
-Loss-tolerant on purpose, and the lane argument is worth recording (§16, slice 2 owes the ADR):
-ADR 0029 asks *"if this message is lost, does a later one make it right?"* — and a fire event's
-only consumers are a muzzle flash, a tracer and a turret slew. The authoritative consequences of
-the shot travel elsewhere and reliably: the fraction in the record, the death in the leave run. A
-lost flash is not a lie, so it takes the lane where late is worse than lost. Kill attribution on
-the wire — *who* destroyed you — is deliberately absent this design (§14); the leave run already
-says *that* you were destroyed, and attribution is a UI debt the cause door can carry later.
+One datagram of its own per update — shots since the subscriber last heard where shooter or target
+is in its interest set: shooter entity, target entity, mount index, seventeen bytes each and capped
+at 64. Over the cap the **oldest** are dropped: the newest gunfire is the gunfire a player is
+looking at.
+
+**Its own message rather than a block appended to the update**, which is where the word "block"
+would have put it, and the reason is duplication: the fleet status block rides *every* fragment so
+that it heals, and a list of events stamped on every fragment would draw every tracer once per
+fragment. A hundred-ship battle is five fragments, so that is a fivefold lie about how much shooting
+is happening — and the fix is not to pick one fragment, because which fragment a subscriber gets is
+exactly what loss decides.
+
+Loss-tolerant on purpose, and the lane argument is worth recording (ADR 0053): ADR 0029 asks *"if
+this message is lost, does a later one make it right?"* — and a fire event answers no, which by that
+question alone would put it on the reliable lane. But the question is a proxy for *what breaks if
+this is lost*, and a fire event's only consumers are a muzzle flash, a tracer and a turret slew. The
+authoritative consequences of the shot travel elsewhere and reliably: the fraction in the record,
+the death in the leave run, the standings flip and the roused fleet as simulation state. A lost
+flash is not a lie, so it takes the lane where late is worse than lost. Kill attribution on the
+wire — *who* destroyed you — is deliberately absent this design (§14); the leave run already says
+*that* you were destroyed, and attribution is a UI debt the cause door can carry later.
 
 ### 9.3 Format discipline
 
-`WORLD_STATE_FORMAT` bumps for the codec fields (§3.2, §7.1); the ALPN string bumps with the
-record and block changes so two builds disagree at the handshake, not in a misparse — both rules
-already written, both merely obeyed.
+`WORLD_STATE_FORMAT` bumps for the codec fields (§3.2, §7.1) — 5 → 6; the ALPN string bumps with
+the record's width and the new message kind, `outpost-3` → `outpost-4`, so two builds that disagree
+refuse at the handshake rather than misparse — both rules already written, both merely obeyed.
 
 ## 10. The view
 
-### 10.1 The rig finally pays
+### 10.1 The parts finally pay
 
-`NmoReader` validates submesh skeletons, clips and bone-parented markers and then flattens them
-away; `MeshData` grows what it already proved — named submeshes, bones, clips, and `parentBone`
-on markers — and the pose evaluator takes NmoFormat §7's licensed shortcut: the common turret is
-one rigid submesh riding one bone, a per-submesh world transform, no skinning. The Battleship's
-three turrets and the Corvette's two start turning the day this lands; hulls whose art has no
-turret submesh lose nothing.
+`NmoReader` validates every submesh, bone table, clip, key series and marker in a file and then
+`Expand` flattens the lot into one triangle soup and throws the structure away. `MeshData` keeps the
+half of it a consumer can use: **named submeshes** — a name hash, a vertex range, a marker run and
+their own bounds, an *index over* the soup rather than a second copy of it — and `parentBone` on
+markers, four bytes on a struct loaded once per hull.
+
+**Bones and clips stay validated-and-skipped**, because no shipped hull has one. Every hull in the
+game is named rigid submeshes with no skeleton, no clip and no skin buffer; the only file in the
+tree with a rig is the golden fixture, which exists to prove the reader against the format rather
+than to be flown. A table carried in a struct that nothing reads is a field before its consumer, and
+this tree keeps those out. The reader goes on proving the bytes, so the day a rigged hull is
+authored the slice that poses it picks them up with the argument for doing so in hand.
+
+What that costs is that a turret turns about its own **bind-pose centre** rather than about a bone,
+and that a turret and its barrels are separate named submeshes a consumer must turn together — so
+the binding from a mount to the parts that carry it is a client-side table read off submesh names,
+which is where ADR 0002 would have put it anyway. The Battleship's three turrets and the Corvette's
+two are addressable the day this lands, and start turning in slice 6; hulls whose art has no turret
+submesh lose nothing.
 
 ### 10.2 What a shot looks like
 
-From the fire block: muzzle flash at the mount's `Gun` marker (hull origin when unauthored, §3.1),
-a tracer or bolt to the target — drawn as long as the view likes, because the hit already
-happened and presentation owns time on its side of the wire — an impact flash on the target, and
-the turret submesh slewing toward the last target its mount was seen firing at, at the device's
-traverse rate for honesty and at nobody's expense when it drifts. All of it on the existing FX
-pipelines; nothing new in the renderer's contract.
+From the fire message: muzzle flash at the mount's `Gun` marker — the hull's origin when
+unauthored, which is every hull today (§3.1) — a tracer to the target, drawn as long as the view
+likes because the hit already happened and presentation owns time on its side of the wire, and an
+impact flash on the target. A tracer is a straight line between two frozen points: no ballistics, no
+lead, no travel time, since the line is a drawing of a shot rather than a simulation of one. It is
+drawn in the shooter's own livery, so who fired at whom is readable without a label, and a shot with
+one end off screen still draws — the end that is known is the interesting half.
+
+All of it on the existing FX pipelines, as `GlowSample`s beside the nav lights and the plume;
+nothing new in the renderer's contract. **The turret submesh slewing** toward the last target its
+mount was seen firing at, at the device's traverse rate for honesty and at nobody's expense when it
+drifts, is the one part that does need something new — a submesh-range draw and the hull drawn as
+its own complement — and it is slice 6 for exactly that reason.
 
 ### 10.3 Readouts, with restraint
 
 The fleet sheet's pip row reads each member's `hullFraction` — the column was placed for this
-(Fleets §9.3). A thin bar joins the selection bracket of the **ordered target only**: the player
-reads their own fleet on the sheet and their quarry on its bracket, and nobody else grows UI. The
-event log stays edge-triggered — `FLEET %d UNDER ATTACK` and `SHIP LOST` already exist; slice 4
-adds at most a completion edge (`TARGET DESTROYED`) and refuses per-hit lines, because an 8-entry
-ring in a firefight is exactly why the rising-edge rule exists.
+(Fleets §9.3) — one small bar per roster member, green through amber to red, and an outline for a
+member this client holds no record for, since a caller that could not tell those apart would draw a
+healthy pip for a ship it knows nothing about. Pips rather than percentages, because the question a
+commander asks the sheet is *is anything about to die*, and eight bars answer that in a glance where
+eight numbers do not.
+
+**A thin bar on the selection bracket of the ordered target is not built**, and is slice 6's: the
+player would read their own fleet on the sheet and their quarry on its bracket, and nobody else
+would grow UI. Nothing draws a bracket bar today, and the `HULL` and `SHIELD` bars in the HUD's stat
+panel are older scaffolding that still shows a hard-coded whole — they are not this readout and
+reading one of them off the record is the other half of the same slice.
+
+The event log stays edge-triggered — `FLEET %d UNDER ATTACK` and `SHIP LOST` already exist; slice 4
+adds one completion edge, `TARGET DESTROYED`, and refuses per-hit lines, because an 8-entry ring in
+a firefight is exactly why the rising-edge rule exists. That line may be missed when the shot that
+killed something never reached this client, and that is accepted: it is a flourish on the log rather
+than a fact the player is owed, and the ship still leaves with `SHIP LOST` either way.
 
 ## 11. The two answers owed to ADR 0050
 
 **Friendly fire: none, structurally.** A shot resolves against its acquired target and only ever
 lands there — hitscan has no bystanders — and §5.3 makes an own-faction target unacquirable at
 every priority, while `IssueFleetOrder` refuses an attack order naming the issuer's own ship the
-way it refuses a slot that is not theirs (ADR 0014: the simulation refusing is a property). The
+way it refuses a slot that is not theirs — `FleetOrderResult::RefusedFriendly`, a code of its own
+because `NoSuchTarget` would have been a lie (ADR 0014: the simulation refusing is a property). The
 day a splash weapon exists, *it* reopens this answer; a design with none does not pre-pay that
 bill.
 
@@ -408,19 +481,26 @@ is why devices are devices and not weapons. What this design guarantees it, and 
 Nothing in §16's slices touches any of that; this section exists so the mining designer reads one
 page and knows which half is already theirs.
 
-## 13. Numbers — a starting table, and the measurements that will replace it
+## 13. Numbers — the table, and the measurement that moved it
 
-Every number below is a starting point written to be measured against the targets beside it,
-`HullSpec.h`'s own discipline: the mesh fit is where they start, not what they are.
+Every number below started as a starting point written to be measured against the targets beside it,
+`HullSpec.h`'s own discipline: the mesh fit is where they start, not what they are. Slice 5 measured
+them, and the table is what it left behind.
 
 **Pacing targets** (the contract; the tables serve them):
-- one fighter under one peer's gun: dead in ~10 s — long enough to disengage, short enough to matter;
-- one fighter under a full fleet's focus: ~1.5 s — focus is lethal, screening is a job;
-- a Frigate under two fighters: ~40 s — fighters harass capitals, Bombers kill them;
-- a Battleship under a mixed eight-fleet: ~1.5 min — a capital is an event, not a target;
+- one fighter under one peer's gun: dead in ~10 s — long enough to disengage, short enough to
+  matter. **Met**;
+- ~~one fighter under a full fleet's focus: ~1.5 s~~ — focus is lethal, screening is a job.
+  **Corrected**: focus deletes a fighter in well under a second, and cannot do otherwise while the
+  first target holds (below);
+- ~~a Frigate under two fighters: ~40 s~~ — fighters harass capitals, Bombers kill them.
+  **Corrected**: the Frigate wins that fight. The second half of the sentence stands and measures at
+  17.3 s (below);
+- a Battleship under a mixed eight-fleet: ~1.5 min — a capital is an event, not a target. **Met at
+  81.6 s**, and only after both its numbers moved;
 - every range inside the leash (1000 m) and well inside interest (2000 m), so a fight never
   out-ranges the machinery that bounds it — the biggest gun at 420 m leaves the leash room to mean
-  something.
+  something. **Met by construction**.
 
 **Devices** (cooldowns in ticks, ADR 0045):
 
@@ -447,18 +527,19 @@ three turret submeshes and the Corvette's two are authored today):
 | Carrier | 4 × LightTurret | 5200 |
 | Stargate / Structure | — | damage discarded (§7.2) |
 
-Sanity against the targets: 60/6 dps = 10 s; 60 under eight fighters ≈ 1.25 s; 520/12 ≈ 43 s;
-a Bomber pair puts 30 dps on a Frigate ≈ 17 s, which is the Bomber's job description; the
-Battleship's 2400 under ~100 mixed-fleet dps ≈ 24 s — short of the 1.5 min target, so either its
-points rise toward 6000 or the target softens, and *that decision is taken by playing it*, slice 5's
-hand-back, not by this table.
+The arithmetic this table was first written against, kept because the measurement is only legible
+beside it: 60/6 dps = 10 s; 60 under eight fighters ≈ 1.25 s; 520/12 ≈ 43 s; a Bomber pair puts
+30 dps on a Frigate ≈ 17 s, which is the Bomber's job description; and the Battleship's *then* 2,400
+points under ~100 mixed-fleet dps ≈ 24 s — short of the 1.5 min target, so either its points rise
+toward 6,000 or the target softens, and *that decision is taken by playing it*, slice 5's hand-back,
+not by a table.
 
 **Slice 5 played it, and the two numbers in bold above are what it came back with**
 ([`Combat-slice-5.md`](Combat-slice-5.md) §2). The Battleship's points did not rise to 6,000 and
 could not: the matchup is bimodal, so raising them alone walks from a 45 s kill straight to the
 Battleship wiping all eight. Its *output* had to come down first — 70 damage a heavy turret killed a
-Corvette in 3.6 s, so the fleet lost its damage faster than it could spend it — and at 40 damage with
-3,800 points a mixed eight grinds it down in **81.6 s** against the 90 s target.
+Corvette in 3.6 s, so the fleet lost its damage faster than it could spend it — and at 40 damage
+with 3,800 points a mixed eight grinds it down in **81.6 s** against the 90 s target.
 
 **Two of the five targets are corrected rather than met**, and this is the correction. *A fighter
 under a fleet's focus* cannot be 1.5 s while *a fighter under one peer* is 10 s: the ratio between
@@ -469,8 +550,8 @@ fighter in 2.5 s, well before their 43 s of throughput lands. The sentence besid
 said "fighters harass capitals, **Bombers kill them**", and the second half measures at 17.3 s; the
 first half does not survive contact, and making it true would need a fighter that can trade with a
 Frigate, which breaks the first target. New `SimTuning.h` constants: `FIRE_ALIGN_RAD`,
-`ENGAGE_STANDOFF_FRACTION`, the fire-block cap, the gather's gunnery margin — each with the
-argued comment the file demands.
+`ENGAGE_STANDOFF_FRACTION` and the gather's gunnery margin, with the fire message's cap in
+`WorldSnapshot.h` beside the format it belongs to — each with the argued comment the file demands.
 
 ## 14. Deliberately left out, so nobody goes looking
 
@@ -532,35 +613,36 @@ One agent per slice, one slice per layer at a time; each retargets the sentences
    the despawn door, the stand-off in `PursueTarget`, the gather's gunnery term. Tests: same seed
    same battle to byte equality; fire results invariant under array order; mutual kill; the
    leash-and-alert dance with real guns; a protector killing its aggressor and docking home; an
-   attack order on a Vanguard station flipping the law and launching the garrison; immovable
-   damage discarded while the act states. ADR due: *combat resolves deterministically, and the
+   attack order on a Vanguard station flipping the law and launching the garrison; an indestructible
+   hull's damage discarded while the act states. ADR due: *combat resolves deterministically, and the
    fire pass states the acts* (completing 0041/0050).
    Work order: [`Combat-slice-1.md`](Combat-slice-1.md). **Landed and in review 2026-09-01**, with
    [ADR 0052](Decisions/0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md).
-2. **The combat wire** (`GameLogic` seam) — `hullFraction` in the record, the fire block,
+2. **The combat wire** (`GameLogic` seam) — `hullFraction` in the record, the fire message,
    receiver accessors, ALPN and format bumps. Tests beside the existing snapshot suite; ADR due:
    *fire events ride the datagram lane* (ADR 0029 applied).
    Work order: [`Combat-slice-2.md`](Combat-slice-2.md). **Landed and in review 2026-09-01**, with
-   [ADR 0053](Decisions/0053-fire-events-ride-the-datagram-lane.md).
-3. **The rig** (`NeuronClient`) — `MeshData` grows submeshes, bones, clips and marker
-   `parentBone`; the per-submesh pose shortcut; reader tests against the golden fixture, whose
-   turret has been waiting for exactly this slice. Parallel-safe with slice 4 by layer.
+   [ADR 0053](Decisions/0053-fire-events-ride-the-datagram-lane.md). The events took their own
+   message kind rather than a block in the fragment header (§9.2, and §2.3 there).
+3. **The parts** (`NeuronClient`) — `MeshData` grows named submeshes and marker `parentBone`;
+   reader tests against the golden fixture, whose turret has been waiting for exactly this slice.
+   Parallel-safe with slice 4 by layer, and beside slice 1 rather than under it.
    Work order: [`Combat-slice-3.md`](Combat-slice-3.md). **Landed and in review 2026-09-01**, and
-   narrower than this line reads: submeshes and marker `parentBone` landed, bones and clips did not,
-   because no shipped hull has one to pose (§2.6 there, and the correction at the top of this file).
-4. **The look and the readouts** (`Outpost`) — muzzle, tracer, impact off the fire block; turret
-   slew; pips and the target bar; the completion edge in the log; F6/F7 retire per decision 6.
-   Screenshots at two sizes, a fight and a quiet frame.
+   narrower than the design first asked: bones and clips stay validated-and-skipped, because no
+   shipped hull has one to pose (§10.1, and §2.6 there).
+4. **The look and the readouts** (`Outpost`) — muzzle, tracer and impact off the fire message; the
+   pip row; the completion edge in the log; F6/F7 retire per decision 6. Screenshots at two sizes, a
+   fight and a quiet frame.
    Work order: [`Combat-slice-4.md`](Combat-slice-4.md). **Landed and in review 2026-09-01, less the
-   turret slew**, which is cut out as slice 6 below: it needs a renderer entry point that does not
-   exist, and a screenshot is the only thing that can accept it. **The screenshots are owed**, and
-   are recorded as owed for the reason `Fleets.md` records its own three.
-5. **Content and the check** (`Tools/` + assets + tuning) — `Gun` markers authored (scriptable
-   offline), the mount-vs-marker consistency check beside `CheckProjectFiles.py`, and the
-   measured hand-back against §13's targets with the numbers that actually shipped.
-   Work order: [`Combat-slice-5.md`](Combat-slice-5.md). **Landed and in review 2026-09-01, as the
-   measurement and the retune alone**: the marker authoring and the cross-check move to slice 6,
-   because slice 3 found the position a `Gun` marker would carry is already exact in the art, and
+   turret slew and the target bar**, both cut out as slice 6 below: the slew needs a renderer entry
+   point that does not exist, and a screenshot is the only thing that can accept either. **The
+   screenshots are owed**, and are recorded as owed for the reason `Fleets.md` records its own three.
+5. **The measurement** (tuning tables) — the hand-back against §13's five pacing targets, and the
+   retune that follows from it.
+   Work order: [`Combat-slice-5.md`](Combat-slice-5.md). **Landed and in review 2026-09-01.** Two
+   numbers moved and two of the five targets were corrected rather than met (§13). The `Gun` marker
+   authoring and the mount-versus-marker check the design listed beside the measurement moved to
+   slice 6, because slice 3 found the position a marker would carry is already exact in the art and
    the thing that would read one is slice 6's binding (§3 there).
 
 6. **The turret turns, and the content it needs** (`NeuronClient` + `Outpost` + `Tools/`) — a
@@ -576,9 +658,13 @@ One agent per slice, one slice per layer at a time; each retargets the sentences
    which needs a place that can see the simulation's table and the game's art at once and has to
    choose between a generated table and a parse of `HullSpec.h`. `Tools/NmoShippedArtTest.py`
    (slice 3) already checks everything about the art that can be checked without the table.
+   The **target bar** slice 4 cut out is here too (§10.3): a thin condition bar on the ordered
+   target's selection bracket, and the HUD stat panel's `HULL` bar finally reading the record instead
+   of a hard-coded whole.
    **The screenshots slice 4 is accepted by are owed and are this slice's to pay**, since it is the
    one that changes what the same frames show.
 
-Dependencies: 1 → 2 → {3, 4} → 5, with 3 and 4 concurrent, and 6 after 3 and 4. After slice 1 the world is lethal in
-tests and under F-keys; after 2 a client knows; after 4 a player sees; after 5 the numbers are
-measured rather than guessed; after 6 the guns are geometry and content rather than scaffolding.
+Dependencies: 1 → {2, 3}, 2 → 4, 4 → 5, and 6 after 3 and 4 — slice 3 reads a mesh and depends on
+neither of the two before it. After slice 1 the world is lethal in tests and under F-keys; after 2
+a client knows; after 4 a player sees; after 5 the numbers are measured rather than guessed; after 6
+the guns are geometry and content rather than scaffolding.

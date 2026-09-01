@@ -8,7 +8,8 @@ the rest (design §10.1).
 the correction the shipped art forced — submeshes and marker `parentBone` landed, bones and clips did
 not — and why it makes the slice smaller rather than weaker. No decision record: nothing moved
 between libraries and no rule changed. What it hands slice 6 is a hull whose parts can be addressed
-by name, and what it hands slice 5 is the reason the `Gun` markers wait.
+by name, and what it hands slice 5 is the reason the `Gun` markers wait. Design §10.1 and §14 were
+amended to match in the pass that followed (ADR 0054); §2.6 below is what they said before.
 
 **Layer:** `NeuronClient` and `NeuronClientTests`.
 **Depends on:** nothing. It reads a format that has not changed and content that is already
@@ -102,9 +103,10 @@ reason narrowed to the one that is still true (§2.6).
 
 ### 2.6 The correction: the shipped hulls have no rig at all
 
-Design §10.1 says this slice makes `MeshData` grow "named submeshes, bones, clips, and `parentBone`
-on markers", and describes the shipped Battleship as carrying "three turret submeshes with barrel
-bones". **The bones are not there.** Read back from the committed content:
+Design §10.1 **as it stood when this order was written** said this slice makes `MeshData` grow
+"named submeshes, bones, clips, and `parentBone` on markers", and described the shipped Battleship
+as carrying "three turret submeshes with barrel bones". **The bones are not there.** Read back from
+the committed content:
 
 | Hull | Submeshes | Mesh bones | Clips | Skin buffers |
 |---|---|---|---|---|
@@ -131,10 +133,13 @@ So the design's plan and this order part company, and the order follows the cont
   that poses them picks them up with the argument for doing so in hand.
 
 This is a scope correction rather than a disagreement with the design's shape: the design wanted a
-turret that turns, and after this slice one can. What it costs is that a turret and its barrels are
-separate submeshes which slice 4 must turn together, and the binding between a mount and its
-geometry is a client-side table rather than something read out of a rig — which is where ADR 0002
-would have put it anyway.
+turret that turns, and after this slice one can be addressed and slice 6 turns it. Design §10.1 and
+§14 now say what landed, with this section the record of what they said before and why they changed
+(ADR 0054).
+
+What it costs is that a turret and its barrels are separate submeshes which slice 6 must turn
+together, and the binding between a mount and its geometry is a client-side table rather than
+something read out of a rig — which is where ADR 0002 would have put it anyway.
 
 ---
 

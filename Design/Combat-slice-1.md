@@ -227,6 +227,11 @@ resolves, is still valid under 2.8, and still satisfies the priority it was take
 scoring within noise of each other and restarts its traverse each time — and it is a tie-break,
 never a commitment.
 
+It landed as a **step in the walk rather than a short-circuit around it**, between the protector
+duty and the opportunistic sweep, and additionally requiring hostile standing so that an order which
+ends is an order the guns stop obeying. Design §5.2 now numbers it 4 and the opportunistic sweep 5,
+so *its* priority 4 is *this* order's held target and *its* 5 is this order's 4 (ADR 0054).
+
 Priorities 1–3 fire at the stated handle whatever the standing table says, because an ordered
 attack on a neutral is the player spending their own standing. Priority 4 fires only on
 `Standing::Hostile`, so nobody drifts into a war by parking near one. **No priority may resolve to
@@ -388,8 +393,9 @@ Landed 2026-09-01. Four things came back different, and they are recorded here r
 be found in the diff — three of them are the review gate doing its job on an order written before
 the code existed.
 
-1. **The pass runs last in the tick, not in the standing-intent slot** (§2.5). Opportunistic
-   acquisition reads the neighbour list, a `Neighbour` names a `ShipId`, and a `ShipId` is an array
+1. **The pass runs last in the tick, not in the standing-intent slot** (§2.5; design §5.1 was
+   amended to say so, ADR 0054). Opportunistic acquisition reads the neighbour list, a `Neighbour`
+   names a `ShipId`, and a `ShipId` is an array
    index that every despawn moves (ADR 0005). That list is trustworthy only between the gather that
    built it and the next despawn, and the standing-intent slot is outside that window: it runs before
    the gather, so it would read the previous tick's list with ids that this tick's dock pass has

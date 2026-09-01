@@ -780,6 +780,9 @@ configurations you built.
 - [ ] Moved a type between libraries, changed a dependency rule, added a project, or turned an
       alternative down that someone will propose again? There is a decision record for it (§9),
       the index lists it, and any sentence here it made false has changed.
+- [ ] Came back different from the design? The design is **amended in place** in this commit to say
+      what was built (ADR 0054), the work order records what changed on contact and why, and the
+      design's shape moved without its argument being retrofitted. No check catches this one.
 - [ ] The pull request answers its template: work order, layers touched, out of scope,
       assumptions, evidence.
 
