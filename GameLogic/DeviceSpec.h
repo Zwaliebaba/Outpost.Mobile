@@ -71,13 +71,21 @@ struct DeviceSpec
 //
 // The two fixed rows are the interesting ones. A fighter's gun and a bomber's cannon do not slew,
 // so the hull is the turret: they must point to shoot, which is what turns a chase into a pass.
+//
+// The HeavyTurret's damage is 40 and not the 70 this table shipped with, and it was measured rather
+// than argued (Design/Combat-slice-5.md 2.1). At 70 a Battleship put out 65.8 damage a second, which
+// killed an Interceptor in 0.9 s and a Corvette in 3.6 s -- so a fleet sent against one lost its own
+// damage faster than it could spend it, and the matchup had no middle: below about 3,000 hull points
+// the fleet won in 45 s, above it the Battleship wiped all eight and stood. Forty makes the capital
+// something a fleet grinds down over a minute and a quarter while losing ships doing it, which is
+// what "a capital is an event, not a target" was supposed to mean.
 inline constexpr DeviceSpec DEVICE_SPECS[DEVICE_COUNT] = {
   // kind                  range   cooldown  damage  traverse rad/s
   {DeviceKind::Gun, 160.0f, 30, 3, 0.0f},      // LightGun     -- 0.5 s, the fighter's bow gun
   {DeviceKind::Gun, 240.0f, 360, 90, 0.0f},    // StrikeCannon -- 6 s, the Bomber's whole argument
   {DeviceKind::Gun, 180.0f, 45, 5, 3.1416f},   // LightTurret  -- 180 deg/s: it tracks anything
   {DeviceKind::Gun, 280.0f, 90, 18, 1.0472f},  // MediumTurret -- 60 deg/s, the line weapon
-  {DeviceKind::Gun, 420.0f, 240, 70, 0.3142f}, // HeavyTurret  -- 18 deg/s, and that is the point
+  {DeviceKind::Gun, 420.0f, 240, 40, 0.3142f}, // HeavyTurret  -- 18 deg/s; 40 is measured, see below
 };
 
 // An unknown device resolves to a working one rather than to memory past the end of the table,

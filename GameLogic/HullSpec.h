@@ -215,6 +215,11 @@ struct HullSpec
 // radius, so slowing the capitals costs nothing there while giving the fleet the speed spread the
 // design asks for.
 inline constexpr HullSpec HULL_SPECS[HULL_COUNT] = {
+  // Hull points are measured against Design/Combat.md 13's pacing targets rather than chosen: the
+  // Battleship's 3,800 is what puts a mixed eight-fleet's kill at 81.6 s against a 90 s target, and
+  // it is sharply bounded on both sides -- 2,400 gives 35 s and 4,000 lets the Battleship win
+  // outright (Design/Combat-slice-5.md 2.1). Retune it and the fight changes character, not degree.
+  //
   // r         L        speed  accel  decel  turn rad/s  turn accel  auth   K   immov  collide  fights  hull pts  loadout
   {1.115f, 2.390f, 34.0f, 30.0f, 38.0f, 3.4907f, 12.2173f, 0.6f, 8, false, true, true, 60, LOADOUT_INTERCEPTOR},   // Interceptor
   {8.705f, 0.000f, 30.0f, 24.0f, 30.0f, 2.0944f, 7.3304f, 1.2f, 8, false, true, true, 150, LOADOUT_BOMBER},        // Bomber
@@ -222,7 +227,7 @@ inline constexpr HullSpec HULL_SPECS[HULL_COUNT] = {
   {11.400f, 5.800f, 24.0f, 12.0f, 16.0f, 0.7854f, 2.7053f, 2.4f, 8, false, true, false, 200, LOADOUT_NONE},        // Miner
   {10.405f, 11.910f, 28.0f, 14.0f, 18.0f, 0.5236f, 1.8326f, 3.0f, 12, false, true, true, 520, LOADOUT_FRIGATE},    // Frigate
   {23.105f, 5.605f, 22.0f, 9.0f, 12.0f, 0.3840f, 1.3090f, 3.6f, 10, false, true, false, 420, LOADOUT_NONE},        // Hauler
-  {21.640f, 18.735f, 24.0f, 8.0f, 11.0f, 0.2094f, 0.7330f, 5.0f, 14, false, true, true, 2400, LOADOUT_BATTLESHIP}, // Battleship
+  {21.640f, 18.735f, 24.0f, 8.0f, 11.0f, 0.2094f, 0.7330f, 5.0f, 14, false, true, true, 3800, LOADOUT_BATTLESHIP}, // Battleship
   {39.670f, 67.870f, 20.0f, 5.0f, 7.0f, 0.0873f, 0.3142f, 9.0f, 16, false, true, true, 5200, LOADOUT_CARRIER},     // Carrier
   {131.610f, 0.000f, 0.0f, 30.0f, 38.0f, 3.4907f, 12.2173f, 1.0f, 4, true, false, false, 0, LOADOUT_NONE},         // Stargate
   {251.180f, 0.590f, 0.0f, 30.0f, 38.0f, 3.4907f, 12.2173f, 1.0f, 4, true, true, false, 0, LOADOUT_NONE},          // Structure

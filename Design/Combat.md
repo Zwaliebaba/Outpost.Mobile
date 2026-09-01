@@ -1,13 +1,14 @@
 # Combat — mounts, gunnery, and the acts a shot states
 
 **Status: agreed with the owner on 2026-08-31 — the six decisions in §15 were put and taken the
-same day, each the recommended option.** Slices 1 to 4 landed on 2026-09-01 and are in review
+same day, each the recommended option.** Slices 1 to 5 landed on 2026-09-01 and are in review
 ([`Combat-slice-1.md`](Combat-slice-1.md),
 [ADR 0052](Decisions/0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md)); the
-world is lethal, says so on the wire, and draws it: muzzle flashes, tracers and impacts in the
-shooter's colours, condition pips on the fleet sheet, and F6/F7 retired because the simulation states
-its own acts now. What is left is the turret geometry turning (§16 slice 6) and the tuning pass
-(slice 5). **The screenshots slice 4 is accepted by are owed.**
+world is lethal, says so on the wire, draws it — muzzle flashes, tracers and impacts in the shooter's
+colours, condition pips on the fleet sheet, and F6/F7 retired because the simulation states its own
+acts now — and has been measured against §13's pacing targets and retuned twice on what that found
+(slice 5). What is left is slice 6: the turret geometry turning, and the marker authoring that waits
+on the binding it needs. **The screenshots slice 4 is accepted by are owed.**
 
 **A factual correction, taken on 2026-09-01:** §3.1 and §10.1 describe the shipped Battleship as
 carrying "three turret submeshes with barrel bones" and plan for `MeshData` to grow bones and clips.
@@ -415,7 +416,7 @@ Every number below is a starting point written to be measured against the target
 | StrikeCannon (fixed) | 240 | 360 (6 s) | 90 | hull's own turn | Bomber's argument; arc ±10° |
 | LightTurret | 180 | 45 (0.75 s) | 5 | 180 | tracks anything; the escort's tool |
 | MediumTurret | 280 | 90 (1.5 s) | 18 | 60 | the line weapon |
-| HeavyTurret | 420 | 240 (4 s) | 70 | 18 | loses a crossing fighter inside ~110 m by §4's arithmetic — on purpose |
+| HeavyTurret | 420 | 240 (4 s) | **40** | 18 | loses a crossing fighter inside ~110 m by §4's arithmetic — on purpose |
 
 **Loadouts and hull points** (mounts the shipped art can mostly already wear — the Battleship's
 three turret submeshes and the Corvette's two are authored today):
@@ -428,7 +429,7 @@ three turret submeshes and the Corvette's two are authored today):
 | Miner | — (the mining design arms it with tools) | 200 |
 | Frigate | 2 × MediumTurret | 520 |
 | Hauler | — | 420 |
-| Battleship | 3 × HeavyTurret, 2 × LightTurret | 2400 |
+| Battleship | 3 × HeavyTurret, 2 × LightTurret | **3800** |
 | Carrier | 4 × LightTurret | 5200 |
 | Stargate / Structure | — | damage discarded (§7.2) |
 
@@ -436,7 +437,24 @@ Sanity against the targets: 60/6 dps = 10 s; 60 under eight fighters ≈ 1.25 s;
 a Bomber pair puts 30 dps on a Frigate ≈ 17 s, which is the Bomber's job description; the
 Battleship's 2400 under ~100 mixed-fleet dps ≈ 24 s — short of the 1.5 min target, so either its
 points rise toward 6000 or the target softens, and *that decision is taken by playing it*, slice 5's
-hand-back, not by this table. New `SimTuning.h` constants: `FIRE_ALIGN_RAD`,
+hand-back, not by this table.
+
+**Slice 5 played it, and the two numbers in bold above are what it came back with**
+([`Combat-slice-5.md`](Combat-slice-5.md) §2). The Battleship's points did not rise to 6,000 and
+could not: the matchup is bimodal, so raising them alone walks from a 45 s kill straight to the
+Battleship wiping all eight. Its *output* had to come down first — 70 damage a heavy turret killed a
+Corvette in 3.6 s, so the fleet lost its damage faster than it could spend it — and at 40 damage with
+3,800 points a mixed eight grinds it down in **81.6 s** against the 90 s target.
+
+**Two of the five targets are corrected rather than met**, and this is the correction. *A fighter
+under a fleet's focus* cannot be 1.5 s while *a fighter under one peer* is 10 s: the ratio between
+one Interceptor's gun and eight Corvettes' is more than six to one, so the same hull cannot do both.
+Focus fire deletes a fighter in under a second, which was the intent; the number was aspirational.
+And *a Frigate under two fighters* is not 40 s but a fight the Frigate wins — its 24 dps kills each
+fighter in 2.5 s, well before their 43 s of throughput lands. The sentence beside the target already
+said "fighters harass capitals, **Bombers kill them**", and the second half measures at 17.3 s; the
+first half does not survive contact, and making it true would need a fighter that can trade with a
+Frigate, which breaks the first target. New `SimTuning.h` constants: `FIRE_ALIGN_RAD`,
 `ENGAGE_STANDOFF_FRACTION`, the fire-block cap, the gather's gunnery margin — each with the
 argued comment the file demands.
 
@@ -526,6 +544,10 @@ One agent per slice, one slice per layer at a time; each retargets the sentences
 5. **Content and the check** (`Tools/` + assets + tuning) — `Gun` markers authored (scriptable
    offline), the mount-vs-marker consistency check beside `CheckProjectFiles.py`, and the
    measured hand-back against §13's targets with the numbers that actually shipped.
+   Work order: [`Combat-slice-5.md`](Combat-slice-5.md). **Landed and in review 2026-09-01, as the
+   measurement and the retune alone**: the marker authoring and the cross-check move to slice 6,
+   because slice 3 found the position a `Gun` marker would carry is already exact in the art, and
+   the thing that would read one is slice 6's binding (§3 there).
 
 6. **The turret turns** (`NeuronClient` + `Outpost`) — a submesh-range draw on `SceneRenderer`, the
    hull drawn as its own complement, and a client-side table binding a hull's mounts to the parts
