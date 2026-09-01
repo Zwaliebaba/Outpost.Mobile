@@ -39,22 +39,6 @@ struct DespawnRecord
   DespawnCause cause = DespawnCause::Destroyed;
 };
 
-// One shot that landed, as the wire will state it.
-//
-// Entities rather than handles or ids, and taken while both ships are still live: a shot is read by
-// a subscriber several ticks after it happened, by which time either end of it may have been
-// despawned, and an id is an identity where a handle is a reference into one World (ADR 0047).
-//
-// The mount index is here because the view needs to know which muzzle to flash. It is the only
-// piece of a mount that ever reaches a client -- the aim, the cooldown and the held target stay
-// server-side as the intent they are (Design/Combat.md 3.2).
-struct ShotRecord
-{
-  EntityId shooter = INVALID_ENTITY_ID;
-  EntityId victim = INVALID_ENTITY_ID;
-  std::uint32_t mount = 0;
-};
-
 // The authoritative world. One dense array per entity kind, indexed by id -- no maps, no pointers
 // between entities, no iteration order that is not array order, because all three are how a
 // simulation stops reproducing itself.

@@ -163,6 +163,26 @@ inline constexpr EntityId ENTITY_SERIAL_MASK = (EntityId{1} << ENTITY_SERIAL_BIT
   return _entity & ENTITY_SERIAL_MASK;
 }
 
+// One shot that landed.
+//
+// It lives here rather than beside the despawn log it is modelled on, and the reason is the wire:
+// SnapshotWriter names this type, and a header that describes the seam must not have to include the
+// whole authoritative World to do it. ShipState.h is what both sides already share.
+//
+// Entities rather than handles or ids, and taken while both ships are still live: a shot is read by
+// a subscriber several ticks after it happened, by which time either end may have been despawned,
+// and an id is an identity where a handle is a reference into one World (ADR 0047).
+//
+// The mount index is here because the view needs to know which muzzle to flash. It is the only
+// piece of a mount that ever reaches a client -- the aim, the cooldown and the held target stay
+// server-side as the intent they are (Design/Combat.md 3.2).
+struct ShotRecord
+{
+  EntityId shooter = INVALID_ENTITY_ID;
+  EntityId victim = INVALID_ENTITY_ID;
+  std::uint32_t mount = 0;
+};
+
 enum class OrderState : std::uint8_t
 {
   Idle,
