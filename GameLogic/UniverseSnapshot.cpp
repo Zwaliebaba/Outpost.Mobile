@@ -116,7 +116,8 @@ static_assert(FIRE_HEADER_BYTES + MAX_FIRE_EVENTS * FIRE_EVENT_BYTES <= Neuron::
 // rather than a misread. The format byte is what makes a disagreement between two builds a refusal
 // too -- there is nothing to migrate from yet, and a version nobody checks is a version nobody has.
 constexpr std::uint32_t UNIVERSE_STATE_MAGIC = 0x54535550u; // 'PUST' little-endian: Persisted Universe STate
-constexpr std::uint8_t UNIVERSE_STATE_FORMAT = 6;           // 2: the fleet table. 3: its manifest. 4: its order. 5: its threat. 6: the guns
+constexpr std::uint8_t UNIVERSE_STATE_FORMAT =
+  7; // 2: the fleet table. 3: its manifest. 4: its order. 5: its threat. 6: the guns. 7: the plan stamp
 
 // An EntityId is a u64, which is exactly what a {slot, generation} pair cost. So identity became
 // global for no bytes at all: the ship record stays 47, a fragment stays 23 ships, and the order cap
@@ -1188,7 +1189,6 @@ void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _o
   // The four tables parallel to m_ships, in the same order, so none of them carries a count of its
   // own: they are the same length as m_ships by construction and a length that disagreed would be a
   // defect this format cannot express.
-  const std::uint32_t currentVersion = _universe.m_pathIslands.Version();
   for (const Universe::Route& route : _universe.m_routes)
   {
     out.U32(route.count);
@@ -1210,10 +1210,15 @@ void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _o
     // wall toward this route's point. Left out, a reload would reset every blocked counter and the
     // replayed universe would end orders on different ticks than the run that saved it.
     out.U32(route.blockedTicks);
+    // The island it was planned against, by the key that survives a run: a lowest path cell is a
+    // universe coordinate and means the same thing in every process (ADR 0059).
+    out.Bool(route.stamp.scopedToIsland);
+    out.I64(route.stamp.islandCellX);
+    out.I64(route.stamp.islandCellZ);
     // Whether it was planned against the architecture as it stands -- not the number that says so.
-    // A grid version is an epoch counter with no meaning outside the run that produced it, and a
-    // loaded universe's islands get whatever number their rebuild produces (work order 2.1).
-    out.Bool(route.gridVersion == currentVersion);
+    // A version is an epoch counter with no meaning outside the run that produced it, and a loaded
+    // universe's islands get whatever numbers their rebuild produces (work order 2.1).
+    out.Bool(_universe.m_pathIslands.IsStampCurrent(route.stamp));
     out.Bool(route.reachesDestination);
   }
 
@@ -1387,9 +1392,13 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
     route.requiredClearanceMetres = in.F32();
     route.cursor = in.U32();
     route.blockedTicks = in.U32();
-    // Held as the relation it was written as; the number it becomes is filled in below, once the
-    // islands this universe will actually route against have been rebuilt.
-    route.gridVersion = in.Bool() ? 1u : 0u;
+    // The key is read as it stands, because it means the same thing here. The currency is held as
+    // the relation it was written as; the number it becomes is filled in below, once the islands
+    // this universe will actually route against have been rebuilt.
+    route.stamp.scopedToIsland = in.Bool();
+    route.stamp.islandCellX = in.I64();
+    route.stamp.islandCellZ = in.I64();
+    route.stamp.version = in.Bool() ? 1u : 0u;
     route.reachesDestination = in.Bool();
     if (!in.Ok() || route.cursor > route.count)
       return false;
@@ -1632,7 +1641,35 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
 
   const std::uint32_t currentVersion = _outUniverse.m_pathIslands.Version();
   for (Universe::Route& route : _outUniverse.m_routes)
-    route.gridVersion = (route.gridVersion != 0) ? currentVersion : currentVersion - 1u;
+  {
+    if (route.stamp.version == 0)
+    {
+      // It was already stale when it was written, and it stays stale: unscoped against a version
+      // that cannot be the current one, so the next tick re-plans it exactly as the saving run's
+      // next tick would have.
+      route.stamp.scopedToIsland = false;
+      route.stamp.version = currentVersion - 1u;
+      continue;
+    }
+
+    if (!route.stamp.scopedToIsland)
+    {
+      route.stamp.version = currentVersion;
+      continue;
+    }
+
+    // It was current against the island with this key, and the same obstacles partition the same
+    // way, so that island is here. NO_ISLAND is the fail-closed answer if it somehow is not: an
+    // unscoped stale stamp, which re-plans, rather than a number that might match by accident.
+    const std::uint32_t version = _outUniverse.m_pathIslands.IslandVersion(route.stamp.islandCellX, route.stamp.islandCellZ);
+    if (version == PathIslands::NO_ISLAND)
+    {
+      route.stamp.scopedToIsland = false;
+      route.stamp.version = currentVersion - 1u;
+      continue;
+    }
+    route.stamp.version = version;
+  }
 
   return true;
 }

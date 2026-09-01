@@ -1,6 +1,6 @@
 # 0034 — A route's version is the whole world's, not its island's
 
-Status: accepted
+Status: superseded by [0059](0059-a-route-is-scoped-to-the-island-that-planned-it.md)
 Date: 2026-08-30
 
 ## Context
@@ -83,3 +83,18 @@ that did not change, and deleting them to add them back would have been churn.
 
 The measurement this wants is a replan count beside slice 4's rebuild figures, because the argument
 for keying islands by cell is a number and not a feeling. Slice 4 supplied the rebuild half.
+
+---
+
+> **Superseded on 2026-09-01 by [ADR 0059](0059-a-route-is-scoped-to-the-island-that-planned-it.md).**
+>
+> The measurement this record asked for in its last paragraph is what superseded it. A galaxy of
+> fifty-four systems made "building anywhere re-plans everything" the cost this record predicted,
+> and the design it named as eventually winning — key an island by its lowest occupied path cell —
+> is the one that landed. Its two named failure modes are each handled by half of the stamp a route
+> now carries: an island that vanished or merged upward loses its key, and one that grew keeps its
+> key and fails on its version.
+>
+> Everything above about **why an island index is not a handle** is unchanged and is why 0059 keys
+> by cell rather than by slot.
+

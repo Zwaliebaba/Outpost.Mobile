@@ -1879,7 +1879,7 @@ void Universe::PlanRoute(ShipId _id, const UniversePos& _destination, float _req
   Route& route = m_routes[_id];
 
   ++m_routePlans;
-  const bool complete = m_pathIslands.FindPath(ship.posUniverse, _destination, _requiredClearanceMetres, m_routeScratch);
+  const bool complete = m_pathIslands.FindPath(ship.posUniverse, _destination, _requiredClearanceMetres, m_routeScratch, route.stamp);
   route.destination = _destination;
   route.requiredClearanceMetres = _requiredClearanceMetres;
   route.count = std::min<std::uint32_t>(MAX_PATH_WAYPOINTS, static_cast<std::uint32_t>(m_routeScratch.size()));
@@ -1887,7 +1887,6 @@ void Universe::PlanRoute(ShipId _id, const UniversePos& _destination, float _req
     route.waypoint[at] = m_routeScratch[at];
   route.cursor = 0;
   route.legStart = ship.posUniverse;
-  route.gridVersion = m_pathIslands.Version();
   route.reachesDestination = complete;
   route.blockedTicks = 0;
 
@@ -1945,7 +1944,11 @@ void Universe::AdvanceRoute(ShipId _id)
   }
 
   // A route that was planned against architecture that has since changed is not a route any more.
-  if (route.gridVersion != m_pathIslands.Version())
+  //
+  // "Changed" is now scoped: architecture in another island is another island's business, so a
+  // station going up fifty kilometres away costs this route nothing (PathIslands::IsStampCurrent,
+  // ADR 0059).
+  if (!m_pathIslands.IsStampCurrent(route.stamp))
   {
     PlanRoute(_id, route.destination, route.requiredClearanceMetres);
     return;

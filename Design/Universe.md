@@ -9,7 +9,8 @@ all four candidate gate graphs.**
 with home exactly where it always was — a player can select a fleet, press `JUMP`, tap a gate and
 cross it, camera and all, the worlds, rocks and minimap marks on the far side are the far side's, and
 the universe no longer dies with the process. It is also no longer *made* by the process: `UniverseGen`
-writes one and `Outpost` runs it. What is left is **6** (the island-scoped replan).
+writes one and `Outpost` runs it. And building in one system no longer re-plans routes in the other
+fifty-three. **Every slice has landed.**
 
 Five sections changed on contact and say so where they stand: §3.4's separation arithmetic (a
 disc's, where the jitter is a square), §10's gate radius (a circle inside the structure, which
@@ -29,6 +30,8 @@ camera's answer changes.
 **Slice 5**: the save file, with [ADR 0057](Decisions/0057-the-save-is-a-versioned-file-and-a-refused-one-stops-the-boot.md).
 **Slice 5b**: genesis leaves the game for `Tools/UniverseGen`, with
 [ADR 0058](Decisions/0058-a-universe-is-authored-by-a-tool-not-by-the-program-that-runs-it.md).
+**Slice 6**: a route is scoped to the island that planned it, with
+[ADR 0059](Decisions/0059-a-route-is-scoped-to-the-island-that-planned-it.md), superseding 0034.
 This document is amended in place as its slices land (ADR 0054).
 
 The player-facing sentence: **the frontier stops being one system.** Today the universe is three
@@ -292,10 +295,12 @@ its subscribers are. One save file per shard falls out of one universe per shard
 
 Two honest consequences, named rather than discovered:
 
-- **The replan scope.** A route's version is the whole universe's (ADR 0034), so architecture
-  changing in any system re-plans every routed ship in the shard. That was tolerable at one
-  system and is the bite ADR 0034 predicted at fifty; slice 6 scopes the re-plan to the island
-  that changed and supersedes that record.
+- **The replan scope — closed by slice 6.** A route's version was the whole universe's (ADR 0034),
+  so architecture changing in any system re-planned every routed ship in the shard: tolerable at one
+  system, and the bite that record predicted at fifty. A route now carries the *key* of the island
+  that planned it — its lowest occupied path cell, which is world-fixed and survives a repartition —
+  and that island's version, so building in one system costs the other fifty-three nothing
+  ([ADR 0059](Decisions/0059-a-route-is-scoped-to-the-island-that-planned-it.md)).
 - **Cross-shard is the same door, later.** An intra-shard jump and a cross-shard handoff are
   both `DespawnShip(JumpedOut)` + `SpawnShipAs`; the cross-shard case moves the capture over a
   transport first. This design proves the door intra-shard and deliberately stops there — the
@@ -480,7 +485,7 @@ library where a suite could reach it (`Universe-slice-4b.md` §7).
 | 4b | [The scenery follows the camera](Universe-slice-4b.md): `Game::SystemAt`, per-system bodies and marks | `GameLogic`+`Outpost` | S | 4 | — **landed** |
 | 5 | [The save file](Universe-slice-5.md): header, atomic write, cadence in `Server.cfg`, restore-or-stop boot | `GameLogic`+`NeuronCore`+`Outpost` | M | 2 (3 in practice) | [ADR 0057](Decisions/0057-the-save-is-a-versioned-file-and-a-refused-one-stops-the-boot.md) — **landed** |
 | 5b | [Genesis moves into a tool](Universe-slice-5b.md): `UniverseGen` writes a universe, the game only loads one, and the starting content leaves the client header | `GameLogic`+`Tools/UniverseGen`+`Outpost` | M | 5 | [ADR 0058](Decisions/0058-a-universe-is-authored-by-a-tool-not-by-the-program-that-runs-it.md) — **landed** |
-| 6 | The replan scoped to its island | `GameLogic` | M | 2 | ADR: supersedes 0034 |
+| 6 | [The replan scoped to its island](Universe-slice-6.md): a route carries the key of the island that planned it | `GameLogic` | M | 2 | [ADR 0059](Decisions/0059-a-route-is-scoped-to-the-island-that-planned-it.md) — **landed** |
 
 **Acceptance texture, seeded now for the orders to expand**: slice 1 proved determinism (one
 seed, one galaxy, twice), pin stability under reroll, census monotonicity with survivors fixed
@@ -502,5 +507,6 @@ stops) is compiled by CI and demonstrated by nobody, which `Universe-slice-5.md`
 than implies; slice 5b made genesis provable at all — the census, the gate graph's integrity, the
 determinism and the round trip through the save file are seven rows in `StartingUniverseTests` where
 they used to be a thing you checked by launching the game — and proved the move byte-identical to the
-code it replaced over 900 ticks; slice 6 proves a static spawn in one system re-plans no route in
-another.
+code it replaced over 900 ticks; and slice 6 proves exactly what this line asked it to — a static
+spawn in one system re-plans no route in another — measured through `RoutePlanCount` rather than
+asserted, with the mutation that restores ADR 0034's behaviour turning that row red.

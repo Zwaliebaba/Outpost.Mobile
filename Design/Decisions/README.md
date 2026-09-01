@@ -68,7 +68,7 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0031](0031-listener-slots-are-recycled.md) | Listener slots are recycled, so backlog means concurrency | accepted |
 | [0032](0032-the-dialing-end-owns-the-lanes-stream.md) | The dialing end owns the reliable lane's stream | accepted |
 | [0033](0033-pathfinding-is-islands-on-a-world-fixed-lattice.md) | Pathfinding is islands of architecture, on a lattice fixed to the world | accepted |
-| [0034](0034-a-routes-version-is-the-whole-worlds.md) | A route's version is the whole world's, not its island's | accepted |
+| [0034](0034-a-routes-version-is-the-whole-worlds.md) | A route's version is the whole world's, not its island's | superseded by 0059 |
 | [0035](0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md) | Ship hulls are authored in GLB and converted to NMO, and ObjParser is deleted | accepted |
 | [0036](0036-a-liveried-surface-is-declared-and-the-combine-is-a-multiply.md) | A liveried surface is declared by its material, and the combine is a multiply | accepted |
 | [0037](0037-the-universe-layout-is-static-content-in-gamelogic.md) | The universe layout is static content in GameLogic | accepted |
@@ -93,3 +93,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0056](0056-a-jump-is-a-despawn-and-a-spawn-under-one-identity.md) | A jump is a despawn and a spawn under one identity, and a fleet crosses whole | accepted |
 | [0057](0057-the-save-is-a-versioned-file-and-a-refused-one-stops-the-boot.md) | The save is a versioned file, and a refused one stops the boot | accepted |
 | [0058](0058-a-universe-is-authored-by-a-tool-not-by-the-program-that-runs-it.md) | A universe is authored by a tool, not by the program that runs it | accepted |
+| [0059](0059-a-route-is-scoped-to-the-island-that-planned-it.md) | A route is scoped to the island that planned it (supersedes 0034) | accepted |

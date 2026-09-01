@@ -455,7 +455,8 @@ public:
 
     const Game::UniversePos from = Game::LocalPos(0.0f, -1500.0f);
     std::vector<Game::UniversePos> route;
-    Assert::IsFalse(islands.FindPath(from, Game::LocalPos(0.0f, 4500.0f), clearance, route),
+    Game::PlanStamp stamp;
+    Assert::IsFalse(islands.FindPath(from, Game::LocalPos(0.0f, 4500.0f), clearance, route, stamp),
                     L"a route across two islands reported itself finished");
     Assert::IsTrue(!route.empty(), L"a route across two islands produced no waypoints at all");
 
@@ -497,16 +498,17 @@ public:
 
     const float clearance = Game::HullSpecOf(Game::HullId::Corvette).BoundingRadiusMetres() + Game::PATH_CLEARANCE_MARGIN_METRES;
     std::vector<Game::UniversePos> route;
+    Game::PlanStamp stamp;
 
     // The neighbour still routes, which is the whole point: before islands, this universe had one grid
     // and it declined, so nothing in it routed at all.
-    Assert::IsTrue(islands.FindPath(Game::LocalPos(-6000.0f, -800.0f), Game::LocalPos(-6000.0f, 800.0f), clearance, route),
+    Assert::IsTrue(islands.FindPath(Game::LocalPos(-6000.0f, -800.0f), Game::LocalPos(-6000.0f, 800.0f), clearance, route, stamp),
                    L"the route round the lone station did not complete");
     Assert::IsTrue(route.size() > 1, L"the lone station did not force a route round it");
 
     // And a run through the declining island is the straight line it was before there was a planner,
     // which is the honest degradation rather than a refusal to move.
-    Assert::IsTrue(islands.FindPath(Game::LocalPos(5000.0f, -800.0f), Game::LocalPos(5000.0f, 800.0f), clearance, route),
+    Assert::IsTrue(islands.FindPath(Game::LocalPos(5000.0f, -800.0f), Game::LocalPos(5000.0f, 800.0f), clearance, route, stamp),
                    L"a run through a declining island refused");
     Assert::AreEqual(size_t{1}, route.size(), L"a declining island planned a route it has no grid for");
   }
@@ -555,6 +557,8 @@ public:
     const float clearance = Game::HullSpecOf(Game::HullId::Corvette).BoundingRadiusMetres() + Game::PATH_CLEARANCE_MARGIN_METRES;
     std::vector<Game::UniversePos> carried;
     std::vector<Game::UniversePos> rebuilt;
+    Game::PlanStamp stamp;
+    Game::PlanStamp freshStamp;
     for (int at = 0; at < 12; ++at)
     {
       const Game::UniversePos station = Game::LocalPos(static_cast<float>(at % 4) * 3000.0f, static_cast<float>(at / 4) * 3000.0f);
@@ -562,8 +566,8 @@ public:
       Game::Translate(from, 0.0f, -800.0f);
       Game::UniversePos to = station;
       Game::Translate(to, 0.0f, 800.0f);
-      const bool one = islands.FindPath(from, to, clearance, carried);
-      const bool other = afresh.FindPath(from, to, clearance, rebuilt);
+      const bool one = islands.FindPath(from, to, clearance, carried, stamp);
+      const bool other = afresh.FindPath(from, to, clearance, rebuilt, freshStamp);
       Assert::AreEqual(one, other, L"a carried grid and a fresh one disagreed about whether the route finished");
       Assert::AreEqual(carried.size(), rebuilt.size(), L"a carried grid and a fresh one produced routes of different lengths");
       for (size_t step = 0; step < carried.size(); ++step)
@@ -646,6 +650,207 @@ public:
                    L"an empty grid refused a route");
     Assert::AreEqual(size_t{1}, route.size(), L"an empty grid invented waypoints");
     Assert::AreEqual(500.0f, UniverseX(route[0]), 0.0f, L"an empty grid did not hand back the destination");
+  }
+  // --- the replan, scoped to its island (ADR 0059) -----------------------------------------------
+
+  // The property the slice exists for, at the level a player would feel it: a station going up in
+  // one system re-plans nothing in another.
+  //
+  // Before this, a route's version was the whole universe's, so building anywhere re-planned every
+  // routed ship in the shard -- tolerable at one system and the bite ADR 0034 predicted at fifty.
+  TEST_METHOD(ArchitectureInOneSystemReplansNoRouteInAnother)
+  {
+    Game::Universe universe;
+    const float radius = Game::HullSpecOf(Game::HullId::Structure).BoundingRadiusMetres();
+
+    // Two systems, far enough apart to be separate islands by construction.
+    const Game::UniversePos here = Game::LocalPos(0.0f, 0.0f);
+    const Game::UniversePos far0 = Game::LocalPos(60000.0f, 0.0f);
+    (void)universe.SpawnShip(here, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+    (void)universe.SpawnShip(far0, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+
+    // A ship routing past the far system's station, so its plan is scoped to that island.
+    Game::UniversePos start = far0;
+    Game::Translate(start, 0.0f, -900.0f);
+    Game::UniversePos finish = far0;
+    Game::Translate(finish, 0.0f, 900.0f);
+    const Game::ShipId traveller =
+      universe.SpawnShip(start, 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette), Game::FACTION_PLAYER);
+    const Game::ShipId ships[] = {traveller};
+    (void)universe.IssueMoveOrder(ships, finish, true, 1.0f);
+
+    for (int tick = 0; tick < 5; ++tick)
+      universe.Step();
+    Assert::AreEqual(size_t{2}, universe.PathIslandCount(), L"the two systems were not two islands");
+
+    const std::uint64_t before = universe.RoutePlanCount();
+
+    // Build in the OTHER system. The partition changes, the universe version moves, and every grid
+    // but that island's is left alone -- and now so is every route but that island's.
+    Game::UniversePos beside = here;
+    Game::Translate(beside, 700.0f, 0.0f);
+    (void)universe.SpawnShip(beside, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+    for (int tick = 0; tick < 5; ++tick)
+      universe.Step();
+
+    Assert::AreEqual(before, universe.RoutePlanCount(),
+                     L"building in one system re-planned a route in another -- the replan is not scoped");
+  }
+
+  // And the other half, which is what stops the row above from passing by never re-planning at all:
+  // building in the traveller's OWN system does re-plan it.
+  TEST_METHOD(ArchitectureInItsOwnSystemDoesReplan)
+  {
+    Game::Universe universe;
+    const Game::UniversePos here = Game::LocalPos(0.0f, 0.0f);
+    (void)universe.SpawnShip(here, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+    (void)universe.SpawnShip(Game::LocalPos(60000.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure),
+                             Game::FACTION_VANGUARD);
+
+    const Game::ShipId traveller =
+      universe.SpawnShip(Game::LocalPos(0.0f, -900.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette), Game::FACTION_PLAYER);
+    const Game::ShipId ships[] = {traveller};
+    (void)universe.IssueMoveOrder(ships, Game::LocalPos(0.0f, 900.0f), true, 1.0f);
+    for (int tick = 0; tick < 5; ++tick)
+      universe.Step();
+
+    const std::uint64_t before = universe.RoutePlanCount();
+    (void)universe.SpawnShip(Game::LocalPos(700.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure),
+                             Game::FACTION_VANGUARD);
+    for (int tick = 0; tick < 5; ++tick)
+      universe.Step();
+
+    Assert::IsTrue(universe.RoutePlanCount() > before, L"building in a route's own island did not re-plan it");
+  }
+
+  // The key survives a repartition, which is the whole reason it is a cell and not an index.
+  //
+  // Building something with a LOWER cell than everything else renumbers every island: the islands
+  // are ordered by where they sit, so the new one becomes island 0 and each old one moves up a slot.
+  // An index-keyed stamp would silently come to mean a different island here -- the ShipId failure
+  // of ADR 0005, with a ship flying into a station as its symptom.
+  TEST_METHOD(AStampSurvivesARepartition)
+  {
+    const float radius = Game::HullSpecOf(Game::HullId::Structure).BoundingRadiusMetres();
+    const std::vector<Game::PathGrid::Obstacle> two = {{Game::LocalPos(0.0f, 0.0f), radius}, {Game::LocalPos(0.0f, 60000.0f), radius}};
+    Game::PathIslands islands;
+    islands.Rebuild(two);
+
+    const float clearance = Game::HullSpecOf(Game::HullId::Corvette).BoundingRadiusMetres() + Game::PATH_CLEARANCE_MARGIN_METRES;
+    std::vector<Game::UniversePos> route;
+    Game::PlanStamp stamp;
+    (void)islands.FindPath(Game::LocalPos(0.0f, 59100.0f), Game::LocalPos(0.0f, 60900.0f), clearance, route, stamp);
+    Assert::IsTrue(stamp.scopedToIsland, L"a run meeting exactly one island was not scoped to it");
+    Assert::IsTrue(islands.IsStampCurrent(stamp), L"a fresh stamp was not current");
+
+    // A third station, below both, so every island is renumbered.
+    std::vector<Game::PathGrid::Obstacle> three = two;
+    three.push_back({Game::LocalPos(0.0f, -60000.0f), radius});
+    islands.Rebuild(three);
+    Assert::AreEqual(size_t{3}, islands.IslandCount(), L"the third station did not make a third island");
+    Assert::IsTrue(islands.IsStampCurrent(stamp), L"a repartition invalidated a stamp on an island that did not change");
+  }
+
+  // An island that GREW keeps its lowest cell, so the key alone would say it was unchanged. The
+  // version is the half that catches it, and this row is why both halves are there.
+  TEST_METHOD(AGrownIslandReplansItsOwnRoutes)
+  {
+    const float radius = Game::HullSpecOf(Game::HullId::Structure).BoundingRadiusMetres();
+    const std::vector<Game::PathGrid::Obstacle> two = {{Game::LocalPos(0.0f, 0.0f), radius}, {Game::LocalPos(0.0f, 60000.0f), radius}};
+    Game::PathIslands islands;
+    islands.Rebuild(two);
+
+    const float clearance = Game::HullSpecOf(Game::HullId::Corvette).BoundingRadiusMetres() + Game::PATH_CLEARANCE_MARGIN_METRES;
+    std::vector<Game::UniversePos> route;
+    Game::PlanStamp stamp;
+    (void)islands.FindPath(Game::LocalPos(-900.0f, 0.0f), Game::LocalPos(900.0f, 0.0f), clearance, route, stamp);
+    Assert::IsTrue(stamp.scopedToIsland, L"the run was not scoped to the island it met");
+
+    // A second station close enough to join that island. Its lowest cell is unchanged, because the
+    // newcomer sits above and to the east of it.
+    std::vector<Game::PathGrid::Obstacle> joined = two;
+    joined.push_back({Game::LocalPos(400.0f, 400.0f), radius});
+    islands.Rebuild(joined);
+    Assert::AreEqual(size_t{2}, islands.IslandCount(), L"the newcomer did not join the island it was placed beside");
+    Assert::IsFalse(islands.IsStampCurrent(stamp), L"a route planned against an island that grew was left current");
+  }
+
+  // An island that goes away entirely takes its key with it, and a stamp naming it fails closed.
+  TEST_METHOD(AVanishedIslandReplansItsRoutes)
+  {
+    const float radius = Game::HullSpecOf(Game::HullId::Structure).BoundingRadiusMetres();
+    const std::vector<Game::PathGrid::Obstacle> two = {{Game::LocalPos(0.0f, 0.0f), radius}, {Game::LocalPos(0.0f, 60000.0f), radius}};
+    const std::vector<Game::PathGrid::Obstacle> one = {{Game::LocalPos(0.0f, 0.0f), radius}};
+    Game::PathIslands islands;
+    islands.Rebuild(two);
+
+    const float clearance = Game::HullSpecOf(Game::HullId::Corvette).BoundingRadiusMetres() + Game::PATH_CLEARANCE_MARGIN_METRES;
+    std::vector<Game::UniversePos> route;
+    Game::PlanStamp stamp;
+    (void)islands.FindPath(Game::LocalPos(0.0f, 59100.0f), Game::LocalPos(0.0f, 60900.0f), clearance, route, stamp);
+    Assert::IsTrue(stamp.scopedToIsland, L"the run was not scoped to the island it met");
+
+    islands.Rebuild(one);
+    Assert::IsFalse(islands.IsStampCurrent(stamp), L"a stamp naming an island that no longer exists was left current");
+  }
+
+  // A plan no single island owns is checked against the whole partition, and both cases that fall
+  // there must: a run meeting NO island depends on the absence of architecture along it, and one
+  // meeting SEVERAL is aimed at the open water between two of them.
+  TEST_METHOD(AnUnscopedPlanReplansOnAnyChange)
+  {
+    const float radius = Game::HullSpecOf(Game::HullId::Structure).BoundingRadiusMetres();
+    const float clearance = Game::HullSpecOf(Game::HullId::Corvette).BoundingRadiusMetres() + Game::PATH_CLEARANCE_MARGIN_METRES;
+    std::vector<Game::UniversePos> route;
+
+    const std::vector<Game::PathGrid::Obstacle> lone = {{Game::LocalPos(0.0f, 0.0f), radius}};
+    const std::vector<Game::PathGrid::Obstacle> pair = {{Game::LocalPos(0.0f, 0.0f), radius}, {Game::LocalPos(0.0f, 3000.0f), radius}};
+    std::vector<Game::PathGrid::Obstacle> andFar = pair;
+    andFar.push_back({Game::LocalPos(90000.0f, 0.0f), radius});
+
+    Game::PathIslands islands;
+    islands.Rebuild(lone);
+
+    // Nothing in the way: open water, and the plan belongs to the absence of islands.
+    Game::PlanStamp clearRun;
+    Assert::IsTrue(islands.FindPath(Game::LocalPos(40000.0f, -900.0f), Game::LocalPos(40000.0f, 900.0f), clearance, route, clearRun),
+                   L"a run through open water did not reach its destination");
+    Assert::IsFalse(clearRun.scopedToIsland, L"a run that met no island was scoped to one");
+    Assert::IsTrue(islands.IsStampCurrent(clearRun), L"a fresh unscoped stamp was not current");
+
+    // Two islands in the way: the leg is aimed at the gap between them, so it belongs to both.
+    islands.Rebuild(pair);
+    Game::PlanStamp acrossTwo;
+    Assert::IsFalse(islands.FindPath(Game::LocalPos(0.0f, -1500.0f), Game::LocalPos(0.0f, 4500.0f), clearance, route, acrossTwo),
+                    L"a route across two islands reported itself finished");
+    Assert::IsFalse(acrossTwo.scopedToIsland, L"a run that met two islands was scoped to one of them");
+    Assert::IsTrue(islands.IsStampCurrent(acrossTwo), L"a fresh unscoped stamp was not current");
+
+    // Building anywhere invalidates both, which is the conservative direction and the right one.
+    islands.Rebuild(andFar);
+    Assert::IsFalse(islands.IsStampCurrent(clearRun), L"a new island left an open-water plan current");
+    Assert::IsFalse(islands.IsStampCurrent(acrossTwo), L"a new island left a two-island plan current");
+  }
+
+  // A rebuild that finds the same architecture must leave every stamp alone, scoped or not -- the
+  // gate that predates this slice, re-stated against the thing that replaced the version it guarded.
+  TEST_METHOD(AnUnchangedRebuildKeepsEveryStamp)
+  {
+    const float radius = Game::HullSpecOf(Game::HullId::Structure).BoundingRadiusMetres();
+    const std::vector<Game::PathGrid::Obstacle> same = {{Game::LocalPos(0.0f, 0.0f), radius}, {Game::LocalPos(0.0f, 60000.0f), radius}};
+    Game::PathIslands islands;
+    islands.Rebuild(same);
+
+    const float clearance = Game::HullSpecOf(Game::HullId::Corvette).BoundingRadiusMetres() + Game::PATH_CLEARANCE_MARGIN_METRES;
+    std::vector<Game::UniversePos> route;
+    Game::PlanStamp scoped;
+    (void)islands.FindPath(Game::LocalPos(-900.0f, 0.0f), Game::LocalPos(900.0f, 0.0f), clearance, route, scoped);
+    Game::PlanStamp unscoped;
+    (void)islands.FindPath(Game::LocalPos(40000.0f, -900.0f), Game::LocalPos(40000.0f, 900.0f), clearance, route, unscoped);
+
+    islands.Rebuild(same);
+    Assert::IsTrue(islands.IsStampCurrent(scoped), L"a rebuild on unchanged architecture invalidated a scoped stamp");
+    Assert::IsTrue(islands.IsStampCurrent(unscoped), L"a rebuild on unchanged architecture invalidated an unscoped stamp");
   }
 };
 } // namespace GameLogicTests

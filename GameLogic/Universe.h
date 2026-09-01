@@ -1090,7 +1090,11 @@ private:
     float requiredClearanceMetres = 0.0f;
     std::uint32_t count = 0;
     std::uint32_t cursor = 0;
-    std::uint32_t gridVersion = 0;
+    // What architecture this route was planned against (PathIslands::PlanStamp). It replaced a bare
+    // universe-wide version in slice 6: a route through one system's traffic was re-planned every
+    // time anything was built in any of fifty-three others, which is the bite ADR 0034 predicted and
+    // ADR 0059 fixes.
+    PlanStamp stamp;
     bool reachesDestination = true; // false means the list ran out and the rest is still to plan
 
     // Where the target was when a pursuit planned this route -- and only a pursuit writes it.

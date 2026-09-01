@@ -131,6 +131,7 @@ void PathIslands::Rebuild(std::span<const PathGrid::Obstacle> _obstacles)
   {
     m_islands.clear();
     m_islandBuilt.clear();
+    m_islandKey.clear();
     return;
   }
 
@@ -145,16 +146,31 @@ void PathIslands::Rebuild(std::span<const PathGrid::Obstacle> _obstacles)
   // benchmark is what caught that, which is why it is part of this slice.
   m_keptIslands.clear();
   m_keptBuilt.clear();
+  m_keptVersion.clear();
   m_keptIslands.swap(m_islands);
   m_keptBuilt.swap(m_islandBuilt);
+  // The versions ride along with the grids they belong to, because an island that keeps its grid
+  // must keep its version: that is the whole of the scoping. Taken from m_islandKey, which is the
+  // array being replaced below.
+  m_keptVersion.reserve(m_islandKey.size());
+  for (const PlanStamp& key : m_islandKey)
+    m_keptVersion.push_back(key.version);
   m_claimed.assign(m_keptIslands.size(), 0);
 
   const std::size_t count = m_memberStart.size() - 1;
   m_islands.resize(count);
   m_islandBuilt.resize(count);
+  m_islandKey.assign(count, PlanStamp{});
   m_rebuiltIslands = 0;
   for (std::size_t island = 0; island < count; ++island)
   {
+    // The key, from the same Found entry the order was taken from. Written before the claim below,
+    // because it names the island whether the grid is rebuilt or kept.
+    const Found& found = m_found[m_order[island]];
+    m_islandKey[island].islandCellX = found.cellX;
+    m_islandKey[island].islandCellZ = found.cellZ;
+    m_islandKey[island].scopedToIsland = true;
+
     m_islandScratch.clear();
     for (std::uint32_t at = m_memberStart[island]; at < m_memberStart[island + 1]; ++at)
       m_islandScratch.push_back(_obstacles[m_members[at]]);
@@ -177,19 +193,79 @@ void PathIslands::Rebuild(std::span<const PathGrid::Obstacle> _obstacles)
       m_claimed[kept] = 1;
       m_islands[island] = std::move(m_keptIslands[kept]);
       m_islandBuilt[island].swap(m_keptBuilt[kept]);
+      // Same obstacles, same grid, same version: a route planned against this island is still a
+      // route against this island, however much moved elsewhere in the universe. That sentence is
+      // the slice (ADR 0059).
+      m_islandKey[island].version = m_keptVersion[kept];
       continue;
     }
 
     ++m_rebuiltIslands;
     m_islands[island].Rebuild(m_islandScratch);
     m_islandBuilt[island] = m_islandScratch;
+    // Its obstacles are not the ones any surviving island held, so it is new or it grew, and either
+    // way every route planned against it is stale. Stamped with the version this rebuild took, which
+    // is unique to it because m_version only ever goes up.
+    m_islandKey[island].version = m_version;
   }
 }
 
+std::size_t PathIslands::FindIsland(std::int64_t _cellX, std::int64_t _cellZ) const noexcept
+{
+  // m_islandKey is in the order Partition sorted the islands into -- by cellZ, then cellX -- so the
+  // key is found without a scan. Ordered exactly as the comparator there: a binary search against a
+  // different order finds nothing, and reports itself as "everything re-plans" rather than as an
+  // error.
+  std::size_t low = 0;
+  std::size_t high = m_islandKey.size();
+  while (low < high)
+  {
+    const std::size_t mid = low + (high - low) / 2;
+    const PlanStamp& at = m_islandKey[mid];
+    if (at.islandCellZ < _cellZ || (at.islandCellZ == _cellZ && at.islandCellX < _cellX))
+      low = mid + 1;
+    else
+      high = mid;
+  }
+
+  if (low < m_islandKey.size() && m_islandKey[low].islandCellX == _cellX && m_islandKey[low].islandCellZ == _cellZ)
+    return low;
+  return m_islandKey.size();
+}
+
+std::uint32_t PathIslands::IslandVersion(std::int64_t _cellX, std::int64_t _cellZ) const noexcept
+{
+  const std::size_t at = FindIsland(_cellX, _cellZ);
+  return (at < m_islandKey.size()) ? m_islandKey[at].version : NO_ISLAND;
+}
+
+bool PathIslands::IsStampCurrent(const PlanStamp& _stamp) const noexcept
+{
+  if (!_stamp.scopedToIsland)
+    return _stamp.version == m_version;
+
+  // It vanished, or it merged into an island with a lower cell: either way this plan was made
+  // against architecture that is not there in that shape any more.
+  const std::size_t at = FindIsland(_stamp.islandCellX, _stamp.islandCellZ);
+  if (at >= m_islandKey.size())
+    return false;
+
+  // It is still here and still has its key. It must also still be the island it was -- an island
+  // that GREW keeps its lowest cell, and its routes are stale. It fails here because growing means
+  // its obstacle set changed, which means it was rebuilt, which means it carries a newer version.
+  return m_islandKey[at].version == _stamp.version;
+}
+
 bool PathIslands::FindPath(const UniversePos& _from, const UniversePos& _to, float _requiredClearanceMetres,
-                           std::vector<UniversePos>& _outWaypoints)
+                           std::vector<UniversePos>& _outWaypoints, PlanStamp& _outStamp)
 {
   _outWaypoints.clear();
+
+  // Unscoped until an island turns out to own the answer. Written first so that every early return
+  // below carries a stamp, rather than leaving the caller's previous one in place.
+  _outStamp = PlanStamp{};
+  _outStamp.version = m_version;
+
   if (m_islands.empty())
   {
     _outWaypoints.push_back(_to);
@@ -232,8 +308,14 @@ bool PathIslands::FindPath(const UniversePos& _from, const UniversePos& _to, flo
     return true;
   }
 
+  // Exactly one island in the way, so exactly one island owns this answer and the route can be
+  // scoped to it. Everything else in the universe may now change without costing this route a
+  // re-plan, which is what the slice is for.
   if (met == 1)
+  {
+    _outStamp = m_islandKey[first];
     return m_islands[first].FindPath(_from, _to, _requiredClearanceMetres, _outWaypoints);
+  }
 
   // More than one island in the way, and no single grid can plan the whole run: the first island
   // cannot see the second. So the first island plans a leg, and the route reports itself unfinished
