@@ -199,6 +199,7 @@ void Publisher::ApplyOrders(Universe& _universe)
           command.hasFacing = fleetOrder.hasFacing;
           command.station = _universe.ResolveEntity(fleetOrder.station);
           command.target = _universe.ResolveEntity(fleetOrder.target);
+          command.gate = _universe.ResolveEntity(fleetOrder.gate);
           (void)_universe.IssueFleetOrder(subscriber.faction, fleetOrder.slot, command);
         }
         else if (ReadLedgerRequest(message, ledgerRequest))
@@ -330,7 +331,8 @@ void Publisher::PublishOne(const Universe& _universe, Subscriber& _subscriber)
     const ShipHandle handle = _universe.HandleOfEntity(_entity);
     if (handle.generation != 0 && std::binary_search(subscribed.begin(), subscribed.end(), handle, HandleOrderBefore))
       return true;
-    return Names(m_destroyedScratch, _entity) || Names(m_dockedScratch, _entity) || Names(m_leftScratch, _entity);
+    return Names(m_destroyedScratch, _entity) || Names(m_dockedScratch, _entity) || Names(m_jumpedScratch, _entity) ||
+           Names(m_leftScratch, _entity);
   };
 
   m_fireScratch.clear();
@@ -354,7 +356,7 @@ void Publisher::PublishOne(const Universe& _universe, Subscriber& _subscriber)
 
   // The subscriber's faction is what the header's hostileMask is stated for. The publisher is the
   // only thing that knows whose view an update is; this is not a second authority check.
-  (void)_subscriber.writer.WriteInterest(_universe, m_sendScratch, m_leftScratch, m_destroyedScratch, m_dockedScratch,
+  (void)_subscriber.writer.WriteInterest(_universe, m_sendScratch, m_leftScratch, m_destroyedScratch, m_dockedScratch, m_jumpedScratch,
                                          *_subscriber.transport, _subscriber.faction);
 }
 
@@ -363,10 +365,11 @@ void Publisher::SplitTheLost(const Universe& _universe, Subscriber& _subscriber)
   const std::span<const ShipHandle> left = _subscriber.interest.Left();
   m_destroyedScratch.clear();
   m_dockedScratch.clear();
+  m_jumpedScratch.clear();
   m_departedScratch.clear();
 
-  // Three sets from two: a departure carries a cause, so this is where a death is told apart from a
-  // docking and both from a ship that merely flew out of range (ADR 0040).
+  // Four sets from two: a departure carries a cause, so this is where a death is told apart from a
+  // docking, from a jump, and all three from a ship that merely flew out of range (ADR 0040, 0056).
   //
   // This subscriber's own cursor, so two of them reading the same death both see it. The cursor
   // advances whether or not anything is sent, since a death nobody held has nobody to tell.
@@ -379,10 +382,22 @@ void Publisher::SplitTheLost(const Universe& _universe, Subscriber& _subscriber)
     if (!std::binary_search(left.begin(), left.end(), gone.handle, HandleOrderBefore))
       continue;
     m_departedScratch.push_back(gone.handle);
-    if (gone.cause == DespawnCause::Docked)
+    // Switched rather than tested against one cause, because the default branch is a DESTROY and a
+    // cause that fell through it would detonate a ship that is alive somewhere else. That is exactly
+    // what a jump did before this run existed (ADR 0056).
+    switch (gone.cause)
+    {
+    case DespawnCause::Docked:
       m_dockedScratch.push_back(gone.entity);
-    else
+      break;
+    case DespawnCause::JumpedOut:
+      m_jumpedScratch.push_back(gone.entity);
+      break;
+    case DespawnCause::Destroyed:
+    default:
       m_destroyedScratch.push_back(gone.entity);
+      break;
+    }
   }
   _subscriber.despawnCursor = _universe.DespawnHead();
 

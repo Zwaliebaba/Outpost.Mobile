@@ -209,7 +209,12 @@ enum class FleetOrderKind : std::uint8_t
   Dock,
   Attack,
   Stop,
-  Mine
+  Mine,
+
+  // Jump: fly to a gate and cross it, whole. Appended rather than inserted, because the wire reads
+  // this enum as a byte and a value that moved would make one build's Dock another's Attack
+  // (Design/Universe-slice-2.md 4).
+  Jump
 };
 
 // One ship, as the simulation sees it. Everything here is advanced only in Universe::Step, and there

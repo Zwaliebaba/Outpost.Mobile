@@ -68,6 +68,9 @@
     <ClCompile Include="GalaxyLayoutTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="JumpTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="PublisherTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

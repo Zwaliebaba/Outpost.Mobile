@@ -19,12 +19,18 @@ namespace Game
 //
 // Hostiles 4.4 opened this door "the width of one list and no wider" so that a client could stop
 // inferring a death from an absence; docking is the second cause through the same door rather than
-// a parallel mechanism beside it. Jump-out, wreck-and-salvage and capture are each one more
+// a parallel mechanism beside it. Wreck-and-salvage and capture are each one more
 // (Design/Archive/Stations.md 7.4, ADR 0040).
+//
+// JumpedOut is the third, and it is the one the door was named for: Universe.h has listed "jump-out"
+// as a future cause since Hostiles 4.4, and Design/Universe.md 6 is the design that walks through
+// it. A jumped ship is not dead and is not stored -- it is somewhere else, under the same identity,
+// which is why it needs a cause of its own rather than borrowing either of the two above (ADR 0056).
 enum class DespawnCause : std::uint8_t
 {
   Destroyed,
-  Docked
+  Docked,
+  JumpedOut
 };
 
 struct DespawnRecord
@@ -179,6 +185,39 @@ public:
     MountState mount[MAX_MOUNTS];
   };
 
+  // An index into the gate table. A bare index with no generation, exactly as StationId is: gates
+  // do not despawn this phase, so an index stays an index and needs no generation.
+  using GateId = std::uint32_t;
+  static constexpr GateId INVALID_GATE_ID = 0xFFFFFFFFu;
+
+  // What a gate is made with. All content, passed in by whoever makes the gate -- the shape
+  // StationDesc has, for its reason: what the composition root spawns is content, not tuning.
+  struct GateDesc
+  {
+    // The far gate, named by the identity that already survives leaving this universe (ADR 0047).
+    // An EntityId rather than a GateId because the day the far side is on another shard, an index
+    // into *this* universe's table means nothing -- and the field would have to change shape
+    // exactly when it is hardest to change (Design/Universe.md 5).
+    EntityId destination = INVALID_ENTITY_ID;
+
+    // Whose road this is. Read by nothing this phase; it is here so genesis can say what it means,
+    // exactly as StationDesc carried its garrison before the protector response existed.
+    FactionId ownerFaction = FACTION_VANGUARD;
+  };
+
+  // A gate: the structure ship, where it leads, and who owns it.
+  //
+  // ADR 0038's pattern re-run rather than cited: the ship keeps doing everything a Structure already
+  // does -- static index, obstacle set, record on the wire, a thing a tap can name -- and the row is
+  // what knows it is a road. Deliberately not a hull property, for the reason a station is not one:
+  // a Structure that is scenery and a Structure that is a gate must both be expressible.
+  struct Gate
+  {
+    ShipHandle structure;
+    EntityId destination = INVALID_ENTITY_ID;
+    FactionId ownerFaction = FACTION_VANGUARD;
+  };
+
   // An index into the fleet table. A bare index with no generation, exactly as StationId is: rows
   // do retire here, but nothing holds one across a tick -- an owner and a slot is the name that
   // survives a retirement, and it is the name the player reads off a button.
@@ -239,6 +278,7 @@ public:
     bool orderHasFacing = false; // Move
     ShipHandle orderStation;     // Dock
     ShipHandle orderTarget;      // Attack
+    ShipHandle orderGate;        // Jump: the near gate's structure
 
     // The defense (Design/Archive/Fleets.md 7). Who was last stated to have attacked a member, where that
     // act was stated, and how long the fleet stays roused by it.
@@ -524,6 +564,34 @@ public:
     return static_cast<std::uint32_t>(m_stations.size());
   }
 
+  // --- gates -------------------------------------------------------------------------------------
+
+  // Makes an existing structure ship a gate. Returns its id, an index into the gate table; gates do
+  // not despawn this phase, so the index is stable.
+  //
+  // Naming a ship that is not live returns INVALID_GATE_ID and makes no row. A destination that
+  // names nothing is accepted and makes a gate that leads nowhere: the jump pass refuses to move
+  // anybody through it rather than losing them, which is the fail-closed direction and is the one
+  // failure that pass must not have (Design/Universe-slice-2.md 4.6).
+  GateId MakeGate(ShipId _structure, const GateDesc& _desc);
+
+  // The gate a ship is, or INVALID_GATE_ID if it is not one. StationAt's shape and its reason:
+  // through Resolve rather than by comparing stored ids, because swap-and-pop moves ids (ADR 0005).
+  [[nodiscard]] GateId GateAt(ShipId _id) const noexcept;
+  [[nodiscard]] bool IsGate(ShipId _id) const noexcept
+  {
+    return GateAt(_id) != INVALID_GATE_ID;
+  }
+
+  // A gate's row. Server-side only, like a station's: where a road leads is the universe's to know
+  // and the snapshot's to withhold until a design gives a client a map. Exposed for tests and for a
+  // debug overlay.
+  [[nodiscard]] const Gate& GateOf(GateId _id) const noexcept;
+  [[nodiscard]] std::uint32_t GateCount() const noexcept
+  {
+    return static_cast<std::uint32_t>(m_gates.size());
+  }
+
   // --- fleets ------------------------------------------------------------------------------------
 
   // Makes a fleet in _slot for _ownerFaction out of ships that are already flying. Returns its id,
@@ -630,6 +698,7 @@ public:
     RefusedStanding,
     NoSuchTarget,
     RefusedFriendly,
+    NotAGate,
     Unsupported
   };
 
@@ -643,6 +712,7 @@ public:
     bool hasFacing = false;           // Move
     ShipId station = INVALID_SHIP_ID; // Dock: the station's structure
     ShipId target = INVALID_SHIP_ID;  // Attack
+    ShipId gate = INVALID_SHIP_ID;    // Jump: the near gate's structure
   };
 
   // Orders the fleet in _slot. This is the design's title sentence as a signature: an order names a
@@ -662,6 +732,10 @@ public:
   //                    have been a lie, and the gate is here rather than on the sheet for ADR 0014's
   //                    reason -- no mount may resolve to a friend, and neither may an order
   //                    (Design/Combat.md 11);
+  //   NotAGate         Jump: the named record is not a live gate row. There is no standing refusal
+  //                    beside it -- a gate takes anyone this phase, and inventing half a
+  //                    gate-standings design here would repeat the mistake the stations design
+  //                    declined (Design/Universe.md 6.1);
   //   Unsupported      Mine, which waits for a design that gives it meaning and something to mine.
   //
   // An accepted order replaces whatever standing order was there. Stop is the one kind that leaves
@@ -805,6 +879,19 @@ private:
   // parallel tables, so removing mid-iteration would make the visit order depend on who docked;
   // collection order is array order, which is deterministic (Design/Archive/Stations.md 10).
   void StepDockings();
+
+  // The jump pass, second in the standing-intent slot and beside the dock pass for its reason: it
+  // is the other pass that despawns, so applying its captures before the rest of the tick means they
+  // iterate repaired arrays, exactly as if the despawn had arrived from outside between ticks.
+  //
+  // Gather-then-apply, the dock pass's idiom and its argument: DespawnShip swap-and-pops the
+  // parallel tables, so an id collected during the walk names a different ship by the time the
+  // capture before it has been applied. Handles survive that; ids do not.
+  //
+  // Whole or not at all. The fleet moves on the tick every live member stands inside the gate, so a
+  // fleet is never half in one system and half in another -- which is a sentence the fleet row
+  // cannot say, and the reason the trickle was turned down (ADR 0056, Design/Universe.md 6.2).
+  void StepJumps();
 
   void StepPatrols();
 
@@ -1078,6 +1165,44 @@ private:
   // seeing: a patrol belongs to a ship, a station is a thing a ship happens to be. Nothing removes
   // from it this phase, so an index stays an index.
   std::vector<Station> m_stations;
+
+  // The gates. Indexed by GateId and not parallel to m_ships, for the difference the station table
+  // already draws: a patrol belongs to a ship, a gate is a thing a ship happens to be. Nothing
+  // removes from it this phase, so an index stays an index.
+  std::vector<Gate> m_gates;
+
+  // What the jump pass decided this tick, applied after its walk rather than during it -- the dock
+  // pass's Capture, carrying what the far side needs and nothing else. Everything is taken while the
+  // ship is still there, so applying needs no lookup at all.
+  //
+  // Damage rides across because a fleet that jumps out of a fight arrives in the state it left in;
+  // intent does not, because a route, a patrol and an aim are all things the far side re-derives
+  // (Design/Universe.md 6.3).
+  struct Jumper
+  {
+    ShipHandle ship;
+    EntityId entity = INVALID_ENTITY_ID;
+    std::uint32_t hullId = 0;
+    FactionId factionId = FACTION_PLAYER;
+    std::uint32_t hullPoints = 0;
+
+    // Where this ship is going, carried per jumper rather than per pass. Two fleets can cross
+    // through two different gates on one tick, and a single destination held on the pass would send
+    // the second fleet wherever the first one went.
+    UniversePos arrivalPos;
+    float headingRad = 0.0f;
+
+    // Which row to put the new handle back into. A jump despawns and respawns, so every member's
+    // handle dies and a fresh one takes its place -- and a fleet whose members were left holding the
+    // dead ones is a fleet StepFleets prunes to nothing and retires on the very tick it arrived.
+    //
+    // Named by owner and slot rather than by fleet index, because that pair is the name that
+    // survives a retirement where an index is not (Universe::FleetInSlot).
+    FactionId ownerFaction = FACTION_PLAYER;
+    std::uint8_t slot = 0;
+    std::uint32_t memberIndex = 0;
+  };
+  std::vector<Jumper> m_jumpScratch;
 
   // The fleets, of every faction. Dense and walked in array order like everything else here, and
   // deliberately NOT parallel to m_ships: a fleet is a thing ships belong to, where a patrol is

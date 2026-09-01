@@ -194,6 +194,7 @@ private:
   std::vector<EntityId> m_leftScratch;
   std::vector<EntityId> m_destroyedScratch;
   std::vector<EntityId> m_dockedScratch;
+  std::vector<EntityId> m_jumpedScratch;
   std::vector<ShipId> m_resolvedScratch;
   std::vector<std::uint8_t> m_messageScratch;
   FleetRoster m_rosterScratch; // one roster at a time, its vector kept so a quiet tick allocates nothing

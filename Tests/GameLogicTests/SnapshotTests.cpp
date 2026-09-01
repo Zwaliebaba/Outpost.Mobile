@@ -586,7 +586,7 @@ public:
     // Handles, not ids: the sent list is resolved against this universe to build records, which is the
     // one list on this call that is still server-side currency (ADR 0047).
     const Game::ShipHandle both[] = {universe.HandleOf(ours), universe.HandleOf(theirs)};
-    Assert::IsTrue(writer.WriteInterest(universe, both, {}, {}, {}, update) > 0, L"the interest update did not send");
+    Assert::IsTrue(writer.WriteInterest(universe, both, {}, {}, {}, {}, update) > 0, L"the interest update did not send");
     Game::SnapshotReceiver fromUpdate;
     for (const std::vector<std::uint8_t>& datagram : update.sent)
       (void)fromUpdate.Accept(datagram);
@@ -634,7 +634,7 @@ public:
     universe.Step();
     CaptureTransport update;
     const Game::ShipHandle all[] = {universe.HandleOf(ship), universe.HandleOf(scenery), universe.HandleOf(post)};
-    Assert::IsTrue(writer.WriteInterest(universe, all, {}, {}, {}, update) > 0, L"the interest update did not send");
+    Assert::IsTrue(writer.WriteInterest(universe, all, {}, {}, {}, {}, update) > 0, L"the interest update did not send");
     Game::SnapshotReceiver fromUpdate;
     for (const std::vector<std::uint8_t>& datagram : update.sent)
       (void)fromUpdate.Accept(datagram);
@@ -675,7 +675,7 @@ public:
     Assert::IsFalse(fromWhole.IsHostileToMe(Game::FACTION_VANGUARD), L"Write reported the Vanguard hostile before it was");
 
     CaptureTransport atBoot;
-    Assert::IsTrue(writer.WriteInterest(universe, held, {}, {}, {}, atBoot, Game::FACTION_PLAYER) > 0, L"the update did not send");
+    Assert::IsTrue(writer.WriteInterest(universe, held, {}, {}, {}, {}, atBoot, Game::FACTION_PLAYER) > 0, L"the update did not send");
     Game::SnapshotReceiver player;
     for (const std::vector<std::uint8_t>& datagram : atBoot.sent)
       (void)player.Accept(datagram);
@@ -687,7 +687,7 @@ public:
     universe.Step();
 
     CaptureTransport afterwards;
-    Assert::IsTrue(writer.WriteInterest(universe, held, {}, {}, {}, afterwards, Game::FACTION_PLAYER) > 0,
+    Assert::IsTrue(writer.WriteInterest(universe, held, {}, {}, {}, {}, afterwards, Game::FACTION_PLAYER) > 0,
                    L"the second update did not send");
     for (const std::vector<std::uint8_t>& datagram : afterwards.sent)
       (void)player.Accept(datagram);
@@ -697,7 +697,7 @@ public:
     // about the player, not about itself. One row of the table, never the table.
     universe.Step();
     CaptureTransport vandalLink;
-    Assert::IsTrue(writer.WriteInterest(universe, held, {}, {}, {}, vandalLink, Game::FACTION_VANDAL) > 0,
+    Assert::IsTrue(writer.WriteInterest(universe, held, {}, {}, {}, {}, vandalLink, Game::FACTION_VANDAL) > 0,
                    L"the Vandal update did not send");
     Game::SnapshotReceiver vandal;
     for (const std::vector<std::uint8_t>& datagram : vandalLink.sent)
@@ -737,7 +737,7 @@ public:
 
     CaptureTransport link;
     Game::SnapshotWriter writer;
-    Assert::IsTrue(writer.WriteInterest(universe, {}, left, destroyed, docked, link) > 0, L"the update did not send");
+    Assert::IsTrue(writer.WriteInterest(universe, {}, left, destroyed, docked, {}, link) > 0, L"the update did not send");
 
     Game::SnapshotReceiver receiver;
     FeedBothLanes(receiver, link);
@@ -1052,7 +1052,7 @@ public:
     Game::SnapshotReceiver receiver;
     CaptureTransport link;
     const Game::ShipHandle both[] = {universe.HandleOf(doomed), universe.HandleOf(departing)};
-    Assert::IsTrue(writer.WriteInterest(universe, both, {}, {}, {}, link) > 0, L"the first update did not send");
+    Assert::IsTrue(writer.WriteInterest(universe, both, {}, {}, {}, {}, link) > 0, L"the first update did not send");
     FeedBothLanes(receiver, link);
     Assert::AreEqual(static_cast<std::size_t>(2), receiver.Latest().ships.size(), L"the client did not take both ships");
     Assert::IsTrue(receiver.Destroyed().empty(), L"an update that killed nothing reported a death");
@@ -1081,7 +1081,7 @@ public:
 
     link.sent.clear();
     link.sentReliable.clear();
-    Assert::IsTrue(writer.WriteInterest(universe, {}, left, destroyed, {}, link) > 0, L"the second update did not send");
+    Assert::IsTrue(writer.WriteInterest(universe, {}, left, destroyed, {}, {}, link) > 0, L"the second update did not send");
     Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"the departures did not take the reliable lane");
     FeedBothLanes(receiver, link);
 
@@ -1284,7 +1284,7 @@ public:
     Game::SnapshotWriter writer;
     const std::array<Game::EntityId, 1> left{leavingEntity};
     const std::array<Game::EntityId, 1> destroyed{dyingEntity};
-    (void)writer.WriteInterest(universe, {}, left, destroyed, {}, server);
+    (void)writer.WriteInterest(universe, {}, left, destroyed, {}, {}, server);
     Assert::AreEqual(0u, writer.RefusedLeaveCount(), L"the lane refused the departure message");
 
     server.Poll();
@@ -1349,7 +1349,7 @@ public:
     CaptureTransport link;
     Game::SnapshotWriter writer;
     const std::array<Game::EntityId, 1> left{handle};
-    (void)writer.WriteInterest(universe, {}, left, {}, {}, link);
+    (void)writer.WriteInterest(universe, {}, left, {}, {}, {}, link);
     Assert::AreEqual(static_cast<std::size_t>(1), link.sentReliable.size(), L"the departure did not go on the reliable lane");
 
     Game::SnapshotReceiver receiver;
@@ -1369,11 +1369,11 @@ public:
     CaptureTransport withDepartures;
     Game::SnapshotWriter a;
     const std::array<Game::EntityId, 1> left{gone};
-    (void)a.WriteInterest(universe, {}, left, {}, {}, withDepartures);
+    (void)a.WriteInterest(universe, {}, left, {}, {}, {}, withDepartures);
 
     CaptureTransport withNone;
     Game::SnapshotWriter b;
-    (void)b.WriteInterest(universe, {}, {}, {}, {}, withNone);
+    (void)b.WriteInterest(universe, {}, {}, {}, {}, {}, withNone);
 
     Assert::AreEqual(withNone.sent.size(), withDepartures.sent.size(), L"a departure changed how many datagrams an update took");
     Assert::AreEqual(withNone.sent[0].size(), withDepartures.sent[0].size(), L"a departure changed the size of a snapshot fragment");
@@ -1394,7 +1394,7 @@ public:
 
     Game::SnapshotWriter writer;
     const std::array<Game::EntityId, 1> left{handle};
-    (void)writer.WriteInterest(universe, {}, left, {}, {}, link);
+    (void)writer.WriteInterest(universe, {}, left, {}, {}, {}, link);
     Assert::AreEqual(1u, writer.RefusedLeaveCount(), L"a refused departure was not counted");
     Assert::IsTrue(link.sentReliable.empty(), L"a refused lane still captured a message");
   }

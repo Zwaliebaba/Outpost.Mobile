@@ -5,12 +5,19 @@ same day, each the recommended option, in an interactive session run against a l
 shipped layout algorithm with its knobs exposed, and a working prototype of the galaxy lattice and
 all four candidate gate graphs.**
 
-**Slice 1 has landed**: `LayOutGalaxy` is in `GameLogic` with its twelve-row suite, and
+**Slices 1 and 2 have landed.** The galaxy exists and it is crossable: `LayOutGalaxy` lays the
+systems and their gate graph, and a fleet ordered at a gate crosses it whole, under the same
+identities, with its damage. Slice 3 — genesis, which puts gates in the universe — is ready to be
+ordered. Two sections changed on contact and say so where they stand: §3.4's separation arithmetic
+(a disc's, where the jitter is a square) and §10's gate radius (a circle inside the structure,
+which nothing could ever enter).
+
+**Slice 1**: `LayOutGalaxy` is in `GameLogic` with its twelve-row suite, and
 [ADR 0055](Decisions/0055-the-galaxy-is-one-seed-and-its-gates-are-the-relative-neighborhood-graph.md)
-carries the two decisions it took. Slice 2 is ready to be ordered. This document is amended in
-place as its slices land (ADR 0054), and §3.4 is the first section that changed on contact: the
-separation arithmetic it originally stated was a disc's, the suite caught it on the first run, and
-what stands there now is what shipped.
+carries the two decisions it took.
+**Slice 2**: gates, the `Jump` order, `StepJumps`, `JumpedOut` and the wire's fourth departure run
+are in, with [ADR 0056](Decisions/0056-a-jump-is-a-despawn-and-a-spawn-under-one-identity.md).
+This document is amended in place as its slices land (ADR 0054).
 
 The player-facing sentence: **the frontier stops being one system.** Today the universe is three
 planets from one seed, a government at each of them, one rival base, and nowhere else to go. After
@@ -222,7 +229,7 @@ the gate, through the same move machinery every order uses.
 ### 6.2 The pass
 
 The jump is **atomic at fleet grain**: the tick in which every live member of the fleet stands
-inside `GATE_RADIUS_METRES` of the gate structure, the whole fleet goes through together. Members
+inside the gate's capture range (`GateRangeMetres`, measured to the skins), the whole fleet goes through together. Members
 still flying in simply have not arrived yet; the fleet cruises at its slowest member's speed
 precisely so that arrival is a fleet-shaped event, and the door keeps that promise. A fleet never
 exists in two systems, which is a sentence the fleet row can say and the trickle alternative
@@ -236,8 +243,12 @@ entity, the hull, the faction, the damage — and the apply half despawns each m
 `DespawnShip` with the new cause **`JumpedOut`**, then spawns them through `SpawnShipAs` at the
 destination gate: same identities, fresh handles, hull damage carried, formed up clear of the
 gate on the exit bearing. The fleet row is rebuilt on the new handles in the same apply, its
-order set to `Idle` — the jump order completed — and its threat and alert cleared: **fleeing
-through a gate is escape**, and a leash anchored a galaxy away would never release.
+order set to `Idle` — the jump order completed — and its threat and alert cleared.
+
+That rebuild is not bookkeeping, and slice 2 found out why: every member's handle dies in the
+crossing, so a fleet left holding the dead ones is pruned to nothing by `StepFleets` at the end of
+the very tick it arrived — the ships would be there and the fleet would not. **Fleeing through a
+gate is escape**, and a leash anchored a galaxy away would never release.
 
 ### 6.3 What crosses, and what does not
 
@@ -339,9 +350,18 @@ game actually runs.
 | Planets per system | 2 + `Below(4)` → 2–5 | home keeps its authored 3 |
 | Orbit / radius bounds | the shipped `SystemDesc` defaults | unchanged, and the ceiling proof holds per system |
 | `GATE_RING_METRES` | 8 000 | outside the widest orbit (6 500), inside a short cruise |
-| `GATE_RADIUS_METRES` | 120 | a fleet-sized doorstep; generous against formation spread |
+| `GATE_CAPTURE_METRES` | 400, **to the skins** | below: a flat centre-to-centre radius cannot be satisfied at all |
+| `GATE_APPROACH_METRES` | 120 clear of the skin | comfortably inside the capture range, so arriving implies crossing |
 | `saveEveryTicks` | 18 000 (5 min at 60 Hz) | a `Server.cfg` default, not a constant |
 | Galaxy seed | one `constexpr` u64 beside `UNIVERSE_LAYOUT_SEED` | content, like every seed that places things |
+
+**The gate radius is measured to the hulls' skins, and this table said otherwise until slice 2
+built it.** It specified a flat `GATE_RADIUS_METRES` of 120 m, centre to centre. A Structure's centre
+sits 251 m from its own skin, so that is a circle *inside the building* — space the blocking pass
+exists to keep empty — and a fleet ordered through such a gate flies at it forever. The range is now
+derived per pair as `DockApproachRangeMetres` already is, both hulls' radii plus a margin, and it is
+wider than the docking one because a jump is atomic where a docking is one ship at a time: the
+doorstep has to hold a whole formation at once (`Universe-slice-2.md` §7, ADR 0056).
 
 **The shipped seed's census, measured** (galaxy seed `0x46726F6E74696572`, "Frontier", at the
 values above): **54 systems, 68 gate links, 5 chokepoints**, a widest crossing of **8 jumps** from
@@ -407,7 +427,7 @@ themselves, as 3 and 5 are in `Outpost`; 4 rides `NeuronClient` + `Outpost`.
 | # | Slice | Layer | Size | Depends on | ADR |
 |---|---|---|---|---|---|
 | 1 | [`LayOutGalaxy`](Universe-slice-1.md): lattice, walk, pins, per-system recipe, gate links | `GameLogic` | M | — | [ADR 0055](Decisions/0055-the-galaxy-is-one-seed-and-its-gates-are-the-relative-neighborhood-graph.md) — **landed** |
-| 2 | Gates and the jump door: gate table, `Jump` order, `StepJumps`, `JumpedOut`, codec, ALPN | `GameLogic` | M | 1 | ADR: a jump is a despawn and a spawn under one identity |
+| 2 | [Gates and the jump door](Universe-slice-2.md): gate table, `Jump` order, `StepJumps`, `JumpedOut`, codec, ALPN | `GameLogic` | M | 1 | [ADR 0056](Decisions/0056-a-jump-is-a-despawn-and-a-spawn-under-one-identity.md) — **landed** |
 | 3 | Genesis composes the galaxy: root lays out, spawns stations and gates, boot log | `Outpost` | S | 1, 2 | — |
 | 4 | The client crosses: `JUMP` on the sheet, gate marks, camera follow, per-system bodies | `NeuronClient`+`Outpost` | M | 3 | — |
 | 5 | The save file: header, atomic write, cadence in `Server.cfg`, restore-or-stop boot | `Outpost` | M | 2 (3 in practice) | ADR: the save is a versioned file, and a refused one stops the boot |
@@ -417,9 +437,10 @@ themselves, as 3 and 5 are in `Outpost`; 4 rides `NeuronClient` + `Outpost`.
 seed, one galaxy, twice), pin stability under reroll, census monotonicity with survivors fixed
 (§3.1), connectivity by union-find for every tested seed, and the separation bound as a property —
 twelve rows in `GalaxyLayoutTests`, and it also gained the row nothing predicted, that a distance
-tie leaves a link alone; slice 2 keeps both replay gates green with gates and jumps in the state, and adds the
-row: a fleet ordered through a gate arrives whole, once, in formation, with its damage and its
-identities and without its alert; slice 3's boot log states the galaxy
+tie leaves a link alone; slice 2 kept both replay gates green with gates and jumps in the state, and added the
+rows: a fleet ordered through a gate arrives whole, once, with its damage and its identities and
+without its alert; a gate that leads nowhere strands nobody; and a jumped ship reaches a subscriber
+as *jumped* rather than as *destroyed*; slice 3's boot log states the galaxy
 (`GALAXY | SEED … | N SYSTEMS | M GATES`) and home boots pixel-identical to today; slice 4 owes
 screenshots at two window sizes, on both sides of a jump; slice 5 saves, kills the process,
 restores, and replays to byte equality — and a truncated file stops the boot naming the reason;

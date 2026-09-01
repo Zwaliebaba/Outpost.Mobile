@@ -290,6 +290,69 @@ public:
                      static_cast<std::uint32_t>(reloaded.HostileMaskFor(Game::FACTION_PLAYER)), L"the standings table did not survive");
   }
 
+  // The gate table and the order that names one. Step reads both -- the jump pass resolves a
+  // destination through the table on every tick a fleet is crossing -- so a file that dropped them
+  // would reload a universe whose fleets stop at doors they were ordered through.
+  TEST_METHOD(TheGateTableSurvivesTheRoundTrip)
+  {
+    Game::Universe original;
+
+    const Game::UniversePos nearPos = Game::LocalPos(0.0f, 0.0f);
+    const Game::UniversePos farPos = Game::LocalPos(60000.0f, 0.0f);
+    const Game::ShipId nearShip =
+      original.SpawnShip(nearPos, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+    const Game::ShipId farShip =
+      original.SpawnShip(farPos, 1.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+
+    Game::Universe::GateDesc toFar;
+    toFar.destination = original.EntityIdOf(farShip);
+    const Game::Universe::GateId nearGate = original.MakeGate(nearShip, toFar);
+    Game::Universe::GateDesc toNear;
+    toNear.destination = original.EntityIdOf(nearShip);
+    toNear.ownerFaction = Game::FACTION_VANDAL;
+    (void)original.MakeGate(farShip, toNear);
+
+    // A fleet with a standing jump order, so orderGate is carrying something: comparing a null
+    // handle against a null handle would prove nothing.
+    std::vector<Game::ShipId> ships;
+    for (int at = 0; at < 2; ++at)
+    {
+      Game::UniversePos where = nearPos;
+      Game::Translate(where, 30.0f * static_cast<float>(at), 400.0f);
+      ships.push_back(original.SpawnShip(where, 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette), Game::FACTION_PLAYER));
+    }
+    (void)original.FormFleet(Game::FACTION_PLAYER, 0, ships);
+    Game::Universe::FleetCommand command;
+    command.kind = Game::FleetOrderKind::Jump;
+    command.gate = nearShip;
+    Assert::IsTrue(Game::Universe::FleetOrderResult::Ordered == original.IssueFleetOrder(Game::FACTION_PLAYER, 0, command),
+                   L"the jump order was refused, so there is no order to round-trip");
+
+    std::vector<std::uint8_t> saved;
+    Game::WriteUniverseState(original, saved);
+    Game::Universe reloaded;
+    Assert::IsTrue(Game::ReadUniverseState(saved, reloaded), L"the state did not load");
+
+    Assert::AreEqual(original.GateCount(), reloaded.GateCount(), L"the gate table did not survive");
+    const Game::Universe::Gate& before = original.GateOf(nearGate);
+    const Game::Universe::Gate& after = reloaded.GateOf(nearGate);
+    Assert::IsTrue(before.structure == after.structure, L"the gate's structure handle did not survive");
+    Assert::AreEqual(before.destination, after.destination, L"the gate's destination did not survive");
+    Assert::AreEqual(static_cast<std::uint32_t>(original.GateOf(1u).ownerFaction),
+                     static_cast<std::uint32_t>(reloaded.GateOf(1u).ownerFaction), L"a gate's owner did not survive");
+
+    const Game::Universe::FleetId id = reloaded.FleetInSlot(Game::FACTION_PLAYER, 0);
+    Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID, id, L"the fleet did not survive");
+    Assert::IsTrue(Game::FleetOrderKind::Jump == reloaded.FleetOf(id).orderKind, L"the standing jump order did not survive");
+    Assert::IsTrue(original.FleetOf(id).orderGate == reloaded.FleetOf(id).orderGate, L"the order's gate handle did not survive");
+
+    // And the whole-state comparison, which is what catches a field added to Universe and forgotten
+    // in the codec without any list here having to be kept in step.
+    std::vector<std::uint8_t> again;
+    Game::WriteUniverseState(reloaded, again);
+    Assert::IsTrue(saved == again, L"a reloaded universe does not write the bytes it was read from");
+  }
+
   TEST_METHOD(AMalformedStateIsRefusedAndChangesNothing)
   {
     // The same discipline SnapshotReceiver keeps, and AGENTS.md 5's rule for anything parsing

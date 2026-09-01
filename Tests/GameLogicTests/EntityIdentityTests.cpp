@@ -197,7 +197,7 @@ public:
       CaptureLink link;
       Game::SnapshotWriter writer;
       const Game::ShipHandle sent[] = {alpha.HandleOf(inAlpha)};
-      Assert::IsTrue(writer.WriteInterest(alpha, sent, {}, {}, {}, link) > 0, L"the first update did not send");
+      Assert::IsTrue(writer.WriteInterest(alpha, sent, {}, {}, {}, {}, link) > 0, L"the first update did not send");
       FeedBothLanes(client, link);
     }
     Assert::AreEqual(static_cast<std::size_t>(1), client.Latest().ships.size(), L"the client did not take the ship");
@@ -217,7 +217,7 @@ public:
       CaptureLink link;
       Game::SnapshotWriter writer;
       const Game::ShipHandle sent[] = {beta.HandleOf(inBeta)};
-      Assert::IsTrue(writer.WriteInterest(beta, sent, {}, {}, {}, link) > 0, L"the second update did not send");
+      Assert::IsTrue(writer.WriteInterest(beta, sent, {}, {}, {}, {}, link) > 0, L"the second update did not send");
       FeedBothLanes(client, link);
     }
 

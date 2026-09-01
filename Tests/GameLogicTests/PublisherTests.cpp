@@ -1,5 +1,7 @@
 #include "pch.h"
 
+#include <algorithm>
+
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 
 namespace GameLogicTests
@@ -136,6 +138,29 @@ void RunTick(Game::Universe& _universe, Game::Publisher& _publisher, Link& _link
     _link.DrainInto(*_receiver);
 }
 
+// A gate pair, each naming the other by identity. Built by hand rather than through genesis, which
+// does not exist until slice 3.
+struct GatePair
+{
+  Game::ShipId nearStructure = Game::INVALID_SHIP_ID;
+  Game::ShipId farStructure = Game::INVALID_SHIP_ID;
+};
+
+[[nodiscard]] GatePair MakeGatePair(Game::Universe& _universe, const Game::UniversePos& _nearPos, const Game::UniversePos& _farPos)
+{
+  GatePair pair;
+  pair.nearStructure = _universe.SpawnShip(_nearPos, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+  pair.farStructure = _universe.SpawnShip(_farPos, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+
+  Game::Universe::GateDesc toFar;
+  toFar.destination = _universe.EntityIdOf(pair.farStructure);
+  (void)_universe.MakeGate(pair.nearStructure, toFar);
+  Game::Universe::GateDesc toNear;
+  toNear.destination = _universe.EntityIdOf(pair.nearStructure);
+  (void)_universe.MakeGate(pair.farStructure, toNear);
+  return pair;
+}
+
 // How many of the messages drained this tick were rosters, and what the last one said.
 std::uint32_t CountRosters(const std::vector<std::vector<std::uint8_t>>& _messages, Game::FleetRoster& _outLast)
 {
@@ -156,6 +181,61 @@ std::uint32_t CountRosters(const std::vector<std::vector<std::uint8_t>>& _messag
 TEST_CLASS(PublisherTests)
 {
 public:
+  // The whole reason the jumped run exists. SplitTheLost routes every cause it does not recognise
+  // into DESTROYED, so before the fourth run a fleet crossing a gate detonated on every screen that
+  // watched it leave -- a ship that is alive in another system, drawn as a death (ADR 0056).
+  TEST_METHOD(AJumpedShipIsStatedAsJumpedAndNotAsDestroyed)
+  {
+    Game::Universe universe;
+    const Game::UniversePos nearPos = Game::LocalPos(0.0f, 0.0f);
+    const GatePair gates = MakeGatePair(universe, nearPos, Game::LocalPos(60000.0f, 0.0f));
+
+    std::vector<Game::ShipId> ships;
+    for (int at = 0; at < 2; ++at)
+    {
+      Game::UniversePos where = nearPos;
+      Game::Translate(where, 20.0f * static_cast<float>(at), 30.0f);
+      ships.push_back(universe.SpawnShip(where, 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette), Game::FACTION_PLAYER));
+    }
+    (void)universe.FormFleet(Game::FACTION_PLAYER, 0, ships);
+
+    std::vector<Game::EntityId> crossing;
+    for (const Game::ShipId ship : ships)
+      crossing.push_back(universe.EntityIdOf(ship));
+
+    Link link;
+    Game::Publisher publisher;
+    Game::Publisher::Desc desc;
+    desc.transport = &link.server;
+    // Wide enough to hold the near gate and the fleet, and far short of the far gate 60 km away --
+    // so the crossing genuinely leaves this subscriber's interest set.
+    desc.interest.radiusMetres = 3000.0f;
+    (void)publisher.Add(desc);
+
+    Game::SnapshotReceiver receiver;
+    for (std::uint64_t tick = 0; tick < 20; ++tick)
+      RunTick(universe, publisher, link, tick, &receiver);
+    Assert::IsTrue(receiver.Destroyed().empty(), L"something was called destroyed before anything happened");
+
+    Game::Universe::FleetCommand command;
+    command.kind = Game::FleetOrderKind::Jump;
+    command.gate = gates.nearStructure;
+    Assert::IsTrue(Game::Universe::FleetOrderResult::Ordered == universe.IssueFleetOrder(Game::FACTION_PLAYER, 0, command),
+                   L"the jump order was refused");
+
+    for (std::uint64_t tick = 20; tick < 80; ++tick)
+      RunTick(universe, publisher, link, tick, &receiver);
+
+    // Stated, and stated as the thing it was.
+    for (const Game::EntityId entity : crossing)
+    {
+      const std::span<const Game::EntityId> jumped = receiver.Jumped();
+      Assert::IsTrue(std::find(jumped.begin(), jumped.end(), entity) != jumped.end(), L"a jumped ship was never stated to have jumped");
+    }
+    Assert::IsTrue(receiver.Destroyed().empty(), L"a jump was stated as a death: the fleet would explode on screen");
+    Assert::IsTrue(receiver.Docked().empty(), L"a jump was stated as a docking");
+  }
+
   TEST_METHOD(AFireEventReachesBothEnds)
   {
     // A real battle rather than a hand-built log: the point of this row is that the shot the fire

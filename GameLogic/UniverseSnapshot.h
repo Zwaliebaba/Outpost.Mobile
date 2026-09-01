@@ -140,6 +140,7 @@ struct FleetOrder
   bool hasFacing = false;               // Move
   EntityId station = INVALID_ENTITY_ID; // Dock
   EntityId target = INVALID_ENTITY_ID;  // Attack
+  EntityId gate = INVALID_ENTITY_ID;    // Jump
 };
 
 // Who is in one fleet, as the owning client is told it.
@@ -250,15 +251,15 @@ public:
   // departure lists are ids because they name ships that are already gone, which is why the despawn
   // log carries one (ADR 0047).
   std::uint32_t WriteInterest(const Universe& _universe, std::span<const ShipHandle> _sent, std::span<const EntityId> _left,
-                              std::span<const EntityId> _destroyed, std::span<const EntityId> _docked, Neuron::Transport& _transport,
-                              FactionId _viewer = FACTION_PLAYER);
+                              std::span<const EntityId> _destroyed, std::span<const EntityId> _docked, std::span<const EntityId> _jumped,
+                              Neuron::Transport& _transport, FactionId _viewer = FACTION_PLAYER);
 
   // The leave and destroyed lists, as one message on the reliable lane. Public because a caller
   // that is not sending an interest update -- a subscriber leaving, a universe shutting down -- still
   // has departures to state. Returns false when the lane refused it, which is a full lane or one
   // that is not up yet, and never a partial send.
   bool WriteLeaves(std::uint64_t _tick, std::span<const EntityId> _left, std::span<const EntityId> _destroyed,
-                   std::span<const EntityId> _docked, Neuron::Transport& _transport);
+                   std::span<const EntityId> _docked, std::span<const EntityId> _jumped, Neuron::Transport& _transport);
 
   // The gunfire since this subscriber last heard, as one datagram. False when there was none to
   // send or the lane refused it; nothing is retried, because a lost muzzle flash is not a lie and a
@@ -412,6 +413,22 @@ public:
     m_docked.clear();
   }
 
+  // The handles the last applied departure message said had jumped out: gone from this system,
+  // alive somewhere else, under the same identity. The fourth run rather than a reuse of the docked
+  // one, and the reason is what a client does with it: a docking is a silent removal, a jump is a
+  // thing a player watched happen and should see. Without its own run a jump would arrive as a
+  // DESTROY -- SplitTheLost routes everything that is not a docking there -- and a fleet crossing a
+  // gate would explode on every screen that watched it leave (ADR 0056, ADR 0040).
+  [[nodiscard]] std::span<const EntityId> Jumped() const noexcept
+  {
+    return m_jumped;
+  }
+
+  void ClearJumped() noexcept
+  {
+    m_jumped.clear();
+  }
+
   // The gunfire the last messages carried. Accumulated across a drain and cleared by the consumer,
   // which is Destroyed()'s idiom and its reason: two fire messages in one pump must not leave the
   // first one's tracers undrawn.
@@ -452,8 +469,10 @@ private:
   std::vector<EntityId> m_leaveScratch;     // one departure message, read before any of it applies
   std::vector<EntityId> m_destroyedScratch; // the same, for the deaths in it
   std::vector<EntityId> m_dockedScratch;    // and for the dockings
+  std::vector<EntityId> m_jumpedScratch;    // and for the jumps
   std::vector<EntityId> m_destroyed;        // deaths since the consumer last cleared them
   std::vector<EntityId> m_docked;           // dockings since the consumer last cleared them
+  std::vector<EntityId> m_jumped;           // jumps since the consumer last cleared them
   std::vector<FireEvent> m_fire;            // gunfire since the consumer last cleared it
   std::vector<FireEvent> m_fireScratch;     // one message, read whole before any of it is kept
   std::uint64_t m_lastFireTick = 0;
