@@ -4,14 +4,17 @@ Implements slice 3 of [`Combat.md`](Combat.md) §16: `MeshData` stops discarding
 `NmoReader` has always validated, so that a later slice can move one part of a hull without moving
 the rest (design §10.1).
 
-**Status: scoped against the shipped art on 2026-09-01, and it is narrower than design §10.1
-assumed.** §2.6 states the correction and why it makes the slice smaller rather than weaker.
+**Status: landed 2026-09-01 and in review, and narrower than design §10.1 assumed.** §2.6 states
+the correction the shipped art forced — submeshes and marker `parentBone` landed, bones and clips did
+not — and why it makes the slice smaller rather than weaker. No decision record: nothing moved
+between libraries and no rule changed. What it hands slice 6 is a hull whose parts can be addressed
+by name, and what it hands slice 5 is the reason the `Gun` markers wait.
 
 **Layer:** `NeuronClient` and `NeuronClientTests`.
 **Depends on:** nothing. It reads a format that has not changed and content that is already
 committed; slices 1 and 2 are beside it rather than under it.
-**Blocks:** slice 4, which cannot turn a turret it cannot address, and slice 5, whose authored `Gun`
-markers need a submesh to belong to.
+**Blocks:** slice 6, which cannot turn a turret it cannot address, and whose `Gun` markers need a
+submesh to belong to. It blocked slice 4 when the slew was still in that order; §2.7 there moved it.
 
 ---
 

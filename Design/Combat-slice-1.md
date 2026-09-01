@@ -13,8 +13,10 @@ about this order; the decision record is
 **Depends on:** nothing unmerged. Every socket it calls is on `main` — `RecordHostileAct` and
 `RecordAggression` (ADRs 0050, 0041), `PursueTarget`, `HullSpec::combatant`, the despawn door
 (ADR 0040), and the fleet posture that already suspends and resumes a standing order.
-**Blocks:** slice 2, which puts the hull fraction and the fire block on the wire; slices 3 and 4,
-which cannot draw a shot nobody has fired; slice 5, whose measurement is of what this slice tunes.
+**Blocks:** slice 2, which puts the hull fraction and the fire block on the wire; slice 4, which
+cannot draw a shot nobody has fired; slice 5, whose measurement is of what this slice tunes. Not
+slice 3, which turned out to sit beside this one rather than under it, as its own depends-on line
+says.
 
 ---
 

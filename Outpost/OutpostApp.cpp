@@ -594,8 +594,11 @@ void OutpostApp::SpawnVanguardStations()
 }
 
 // Somebody else lives here: a station northeast of the fleet, and three Interceptors walking a ring
-// around it at a third of their top speed. They do nothing else -- no combat, no reaction to the
-// player -- and the ring is a metronome by the owner's brief (Design/Archive/Hostiles.md 6).
+// around it at a third of their top speed. Their guns work -- a mount acquires the nearest ship its
+// faction already holds hostile, which at this range is anything of the player's that comes close --
+// but their helms do not react to any of it: the ring stays a metronome by the owner's brief
+// (Design/Archive/Hostiles.md 6), because in this game senses live in the mounts and not in the helm
+// (Design/Combat.md 5.4).
 //
 // The base is a station row too, with no garrison: its patrol is not a garrison and does not
 // change, and what the row buys is one answer path for "may I dock here" -- the player is refused

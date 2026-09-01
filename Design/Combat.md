@@ -7,8 +7,9 @@ same day, each the recommended option.** Slices 1 to 5 landed on 2026-09-01 and 
 world is lethal, says so on the wire, draws it — muzzle flashes, tracers and impacts in the shooter's
 colours, condition pips on the fleet sheet, and F6/F7 retired because the simulation states its own
 acts now — and has been measured against §13's pacing targets and retuned twice on what that found
-(slice 5). What is left is slice 6: the turret geometry turning, and the marker authoring that waits
-on the binding it needs. **The screenshots slice 4 is accepted by are owed.**
+(slice 5). What is left is slice 6: the turret geometry turning, and the `Gun` markers and their
+consistency check, all three of which wait on the same binding between a mount and the part that
+carries it. **The screenshots slice 4 is accepted by are owed**, and slice 6 pays them.
 
 **A factual correction, taken on 2026-09-01:** §3.1 and §10.1 describe the shipped Battleship as
 carrying "three turret submeshes with barrel bones" and plan for `MeshData` to grow bones and clips.
@@ -18,6 +19,19 @@ real and so are the barrels — they are separate named submeshes — so a turre
 own bind-pose centre rather than about a bone. `Combat-slice-3.md` §2.6 has the table and the
 consequence, and the sections below keep their argument unamended, which is what this file does with
 a claim a slice overtakes.
+
+**Two more sentences the slices overtook, recorded the same way.** §1 and §9.2 call the fire
+events a "block"; they shipped as their own datagram message instead, because the fleet status block
+rides *every* fragment so that it heals, and a list of events stamped on every fragment would draw
+every tracer once per fragment ([`Combat-slice-2.md`](Combat-slice-2.md) §2.3). Only the word is
+wrong — the lane argument §9.2 makes is the one ADR 0053 records, untouched. And §1's "turrets slew
+and flash at authored `Gun` markers" is slice 6's sentence rather than slice 4's: the slew needs a
+submesh-range draw `SceneRenderer` does not have and a screenshot to accept it
+([`Combat-slice-4.md`](Combat-slice-4.md) §2.7), and the markers wait on the binding that would read
+one ([`Combat-slice-5.md`](Combat-slice-5.md) §3). What ships today is §3.1's own fallback rule — a
+mount without an authored marker draws its effects from the hull's origin — and §2's socket row
+naming "per-submesh skeletons and clips" retires with the bones above: what §10 will ride on is
+named submeshes and a client-side table.
 
 **One correction this document has already taken:** §8's stand-off reads the shortest range among
 a hull's *traversing* mounts rather than among all of them, so that a bow-fixed hull takes no
@@ -549,13 +563,22 @@ One agent per slice, one slice per layer at a time; each retargets the sentences
    because slice 3 found the position a `Gun` marker would carry is already exact in the art, and
    the thing that would read one is slice 6's binding (§3 there).
 
-6. **The turret turns** (`NeuronClient` + `Outpost`) — a submesh-range draw on `SceneRenderer`, the
-   hull drawn as its own complement, and a client-side table binding a hull's mounts to the parts
-   that carry them. It is a slice of its own because it is the only piece of this feature that
-   reaches into the D3D12 command list, and because slice 3 found the shipped hulls carry no rig:
-   the binding is a client table read off submesh names, which is where ADR 0002 would have put it.
-   A decision record is likely due for that table.
+6. **The turret turns, and the content it needs** (`NeuronClient` + `Outpost` + `Tools/`) — a
+   submesh-range draw on `SceneRenderer`, the hull drawn as its own complement, and a client-side
+   table binding a hull's mounts to the parts that carry them. It is a slice of its own because it
+   is the only piece of this feature that reaches into the D3D12 command list, and because slice 3
+   found the shipped hulls carry no rig: the binding is a client table read off submesh names, which
+   is where ADR 0002 would have put it. A decision record is likely due for that table.
+   It also inherits the two content items slice 5 lists beside its measurement and deliberately did
+   not do ([`Combat-slice-5.md`](Combat-slice-5.md) §3), because both wait on that same binding:
+   **the `Gun` markers**, authored where one table will read them rather than as a third copy of a
+   position the art and `HullSpec` already carry; and **the mount-versus-marker consistency check**,
+   which needs a place that can see the simulation's table and the game's art at once and has to
+   choose between a generated table and a parse of `HullSpec.h`. `Tools/NmoShippedArtTest.py`
+   (slice 3) already checks everything about the art that can be checked without the table.
+   **The screenshots slice 4 is accepted by are owed and are this slice's to pay**, since it is the
+   one that changes what the same frames show.
 
 Dependencies: 1 → 2 → {3, 4} → 5, with 3 and 4 concurrent, and 6 after 3 and 4. After slice 1 the world is lethal in
-tests and under F-keys; after 2 a client knows; after 4 a player sees; after 5 it is content, not
-scaffolding.
+tests and under F-keys; after 2 a client knows; after 4 a player sees; after 5 the numbers are
+measured rather than guessed; after 6 the guns are geometry and content rather than scaffolding.

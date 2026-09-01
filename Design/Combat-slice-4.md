@@ -5,8 +5,11 @@ off the fire block, damage on the fleet sheet, the completion edge in the log, a
 the two debug keys that stood in for acts the simulation now states for itself (design §10.2, §10.3,
 §6).
 
-**The turret slew is not in it.** It needs a renderer entry point that does not exist and a
-screenshot to accept, and it is cut out as slice 6 (§2.7).
+**Status: landed 2026-09-01 and in review, less the turret slew.** That needs a renderer entry
+point that does not exist and a screenshot to accept, and it is cut out as slice 6 (§2.7). Nothing
+else in this order changed on contact, and no decision record came due. **§4's screenshots are
+owed** — this session had no Windows, no D3D12 and no screen — and slice 6 pays them, being the
+slice that changes what the same two frames show.
 
 **Layer:** `Outpost`, plus two constants in its view tuning.
 **Depends on:** slice 2, for the fire events and the hull fraction; slice 3 is beside it, not under

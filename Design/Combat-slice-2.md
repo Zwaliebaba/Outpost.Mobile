@@ -12,8 +12,9 @@ check rather than what they forbid — and nothing else in this order changed on
 **Layer:** `GameLogic` (the wire seam) and `GameLogicTests`, plus one constant in `NeuronCore`.
 **Depends on:** slice 1, merged or on this branch — there is nothing to report until something
 fires and something loses hull points.
-**Blocks:** slices 3 and 4. The view cannot flash a muzzle, draw a tracer, slew a turret or fill a
-pip row for a shot the wire never mentioned.
+**Blocks:** slice 4, and slice 6 after it. The view cannot flash a muzzle, draw a tracer, slew a
+turret or fill a pip row for a shot the wire never mentioned. Not slice 3, which reads a mesh and
+never the wire.
 
 ---
 

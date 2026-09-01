@@ -118,11 +118,13 @@ inline constexpr float SHOCK_RING_MAX_RADIUS = 90.0f;  // scaled by the dead hul
 inline constexpr float SHOCK_RING_WIDTH_METRES = 2.5f; // held in metres as the ring grows, so the front stays a front
 inline constexpr Neuron::Rgba SHOCK_RING_COLOUR{1.0f, 0.86f, 0.62f, 0.6f};
 
-// A station exists in the game now (the hostile base below), but nothing can destroy one -- there is
-// no combat, and it cannot be selected, so F4 cannot reach it -- and so nothing sets
-// ShipExplosion::Spawn::shockRing on its own account yet. Until something can kill a station, every
-// death carries a ring, which is the only way the effect can be looked at. Whatever gives a station
-// a lifecycle sets the flag from the station and deletes this.
+// A station exists in the game now (the hostile base below), and it can be shot at, but nothing can
+// destroy one: a station is an immovable hull and an immovable hull discards its damage, which is
+// how Design/Archive/Stations.md 8.5's rule is spelled (Design/Combat.md 7.2). Nor can one be
+// selected, so F4 cannot reach it either. So nothing sets ShipExplosion::Spawn::shockRing on its own
+// account yet, and until something can kill a station every death carries a ring, which is the only
+// way the effect can be looked at. Whatever gives a station a lifecycle sets the flag from the
+// station and deletes this.
 inline constexpr bool SHOCK_RING_ON_EVERY_DEATH = true;
 
 // --- banking and thrusters ---------------------------------------------------------------------

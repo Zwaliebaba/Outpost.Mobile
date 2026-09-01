@@ -41,7 +41,7 @@ constexpr std::uint8_t KIND_FLEET_ORDER = 5;
 
 // Who is in a fleet, downward and reliably. It is not in the ship record and never will be:
 // a record is per-update and membership changes at human speed, so the roster is the delta and the
-// record stays 47 bytes (Design/Archive/Fleets.md 8.1).
+// record keeps the fixed width below (Design/Archive/Fleets.md 8.1).
 constexpr std::uint8_t KIND_FLEET_ROSTER = 6;
 
 // The one request/reply pair on this seam. A station's ledger is large, private, slow-changing and
@@ -92,14 +92,17 @@ constexpr std::uint32_t FLEET_BLOCK_MAX_BYTES = 1 + FLEET_SLOTS * FLEET_STATUS_B
 // which a docking never touches (Design/Archive/Stations-slice-3.md 2.1, ADR 0040).
 constexpr std::uint32_t LEAVE_HEADER_BYTES = 1 + 8 + 4 + 4 + 4;
 // handle, the sector pair, the local offsets, the prevPos delta, two angles, three floats, order,
-// faction, flags, hullId.
+// faction, flags, hullId, hullFraction.
 //
-// 47 bytes, from 83. What bought the 36 is below: positions moved onto a 0.125 m lattice, the
+// 48 bytes, from 83. What bought the 35 is below: positions moved onto a 0.125 m lattice, the
 // sector pair narrowed from i64 to i32 (ADR 0046), prevPos became a delta against posWorld rather
-// than a second whole position, and the two angles became turns16. At 1,152 bytes a datagram less a
-// 27-byte header that is 23 ship records per fragment against the 13 this replaces -- so a
-// hundred-ship update is 5 fragments instead of 8, which is what finding E1 cares about: at 2%
-// datagram loss it completes 90% of the time rather than 85% (Design/Archive/QuantizedWire-work-order.md).
+// than a second whole position, and the two angles became turns16. The record was 47 until combat
+// put a byte of hull fraction in it, which is the one place state that heals belongs
+// (Design/Combat.md 9.1) -- and the capacity below re-derived itself, which is the point of deriving
+// it. At 1,152 bytes a datagram less the header and the fleet block that rides every fragment, that
+// is 21 ship records per fragment against the 13 this replaces -- so a hundred-ship update is 5
+// fragments instead of 8, which is what finding E1 cares about: at 2% datagram loss it completes 90%
+// of the time rather than 85% (Design/Archive/QuantizedWire-work-order.md).
 constexpr std::uint32_t SHIP_RECORD_BYTES = 8 + 8 + 4 + 4 + 4 + 12 + 1 + 1 + 1 + 4 + 1;
 
 // kind, tick, count, then the events. Seventeen bytes each: two entities and a mount index narrowed

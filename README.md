@@ -93,11 +93,11 @@ move the camera, pinch and twist with two contacts to zoom and turn.
 
 So nobody goes looking: no economy, no audio, no save file, no mining, and no turret that turns —
 a hull's guns fire and its geometry holds still. Combat is here and is one number deep: hull points,
-one damage figure per device, and no shields, armour classes or resistances. Tuning is
-`constexpr` in `SimTuning.h`, `HullSpec.h` and `ViewTuning.h`; what a deployment may change without
-a rebuild lives in `Outpost/Assets/Server.cfg`. The networking is real QUIC over a real stack, and
-it is still one client in one process on `127.0.0.1` with a self-signed certificate the client does
-not validate.
+one damage figure per device, and no shields, armour classes or resistances. Tuning is `constexpr`
+in `SimTuning.h`, `HullSpec.h`, `DeviceSpec.h` and `ViewTuning.h`; what a deployment may change
+without a rebuild lives in `Outpost/Assets/Server.cfg`. The networking is real QUIC over a real
+stack, and it is still one client in one process on `127.0.0.1` with a self-signed certificate the
+client does not validate.
 
 ---
 
@@ -117,7 +117,7 @@ processes, nothing has to be rewritten to make it work.
 | Project | What it is |
 |---|---|
 | `NeuronCore/` | Engine primitives, headless and with zero game semantics: diagnostics, file IO, the frame clock, a seeded PCG32, and the `Transport` seam with its MsQuic implementation |
-| `GameLogic/` | The deterministic simulation, namespace `Game`: world, movement, collision, formation, pathfinding islands, the wire format and the publisher |
+| `GameLogic/` | The deterministic simulation, namespace `Game`: world, movement, collision, formation, pathfinding islands, gunnery, the wire format and the publisher |
 | `NeuronClient/` | Everything that names a graphics type: D3D12 device, scene and text renderers, the planet and star-field pipelines, the explosion FX, the content readers |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives |
 | `Outpost/` | The executable: composition root, presentation state, HUD, the fleet sheet and the station assembly screen, and `Outpost/Assets/` |

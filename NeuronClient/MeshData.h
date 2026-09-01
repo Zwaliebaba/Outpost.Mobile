@@ -102,9 +102,10 @@ struct MeshSubMesh
   }
 };
 
-// A mesh as it comes off disk: triangle soup, its bounds, and the markers its author placed on it.
-// Deliberately free of graphics API types, so a loader, a test and a tool can all hold one without
-// a device.
+// A mesh as it comes off disk: triangle soup, its bounds, the markers its author placed on it, and
+// the index of named parts over the soup that lets a consumer address one of them without a second
+// copy. Deliberately free of graphics API types, so a loader, a test and a tool can all hold one
+// without a device.
 struct MeshData
 {
   std::vector<MeshVertex> verts;

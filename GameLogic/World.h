@@ -410,11 +410,13 @@ public:
   //
   // There is no client message for this and there never will be. Aggression is a judgment about
   // acts the server observed; a client that could declare one could make anybody a criminal
-  // (Design/Archive/Stations.md 8.1). It arrives from outside the tick -- an adapter, the composition root,
-  // a test -- like any order.
+  // (Design/Archive/Stations.md 8.1). It arrives either from outside the tick -- an adapter, the
+  // composition root, a test -- like any order, or from StepMounts, which observes a landed shot and
+  // states what it saw (Design/Combat.md 6, ADR 0052). Those are the only two shapes a call can
+  // take, and a client message is neither.
   //
-  // A stale attacker handle is a no-op. Slice 4 adds the second half: the attacked station
-  // scrambles its garrison.
+  // A stale attacker handle is a no-op. The attacked station scrambles its garrison off the standing
+  // this sets, which is the half Design/Archive/Stations.md 8.2 owns.
   void RecordAggression(ShipHandle _attacker, StationId _station);
 
   // The server's judgment on a hostile act against a ship: the victim's fleet is roused against the
@@ -430,8 +432,11 @@ public:
   // still being shot, so the alert lights either way and the posture finds nothing to pursue and
   // stands down on its own.
   //
-  // It arrives from outside the tick -- an adapter, the composition root, a test -- like any order.
-  // Nothing inside Step states an act.
+  // It arrives either from outside the tick -- an adapter, the composition root, a test -- like any
+  // order, or from StepMounts on a landed hit. The sentence that used to stand here, "nothing inside
+  // Step states an act", was true until the fire pass gave the simulation something to observe;
+  // what is unchanged and load-bearing is that no CLIENT message states one, and none ever will
+  // (Design/Combat.md 6, ADR 0041, ADR 0052).
   void RecordHostileAct(ShipHandle _attacker, ShipHandle _victim);
 
   // --- stations ----------------------------------------------------------------------------------
@@ -1083,8 +1088,11 @@ private:
   // nothing. Reused, like every other scratch here.
   std::vector<ShipId> m_fleetShipScratch;
 
-  // Who holds whom hostile. Mutated only by RecordAggression, which arrives from outside the tick;
-  // read pointwise and never iterated, so no pass of Step depends on its contents in array order.
+  // Who holds whom hostile. Mutated only by RecordAggression -- from outside the tick, or from
+  // StepMounts, which is the last pass in it and states its acts after every mount has already
+  // chosen (Design/Combat.md 6). So a tick's reads of this table all precede that tick's writes, and
+  // it is read pointwise and never iterated, so no pass of Step depends on its contents in array
+  // order.
   StandingTable m_standings = DEFAULT_STANDINGS;
 
   std::vector<WorldPos> m_routeScratch;
