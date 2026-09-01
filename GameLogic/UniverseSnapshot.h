@@ -96,8 +96,14 @@ struct ShipSnapshot
   std::uint8_t hullFraction = 255;
 };
 
-// Bit 0 of ShipSnapshot::flags.
+// Bits of ShipSnapshot::flags.
+//
+// What a Structure *is* travels as a flag rather than being worked out from the hull table, and that
+// is the rule rather than an economy: a client that inferred "station" from "immovable" would be
+// making exactly the inference the flag exists to end -- and a gate is a Structure too, so the
+// inference would now be wrong as well as fragile (UniverseView::PickStation).
 inline constexpr std::uint8_t SHIP_FLAG_STATION = 0x01;
+inline constexpr std::uint8_t SHIP_FLAG_GATE = 0x02;
 
 // One shot, as a client is told about it: who fired, at what, and from which mount.
 //

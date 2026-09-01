@@ -9,12 +9,10 @@ all four candidate gate graphs.**
 it: 54 systems, 164 Vanguard stations and 136 gates, with home exactly where it always was. Slice 4
 — the client half, where a player can actually order a jump — is ready to be ordered.
 
-The galaxy exists and it is crossable: `LayOutGalaxy` lays the
-systems and their gate graph, and a fleet ordered at a gate crosses it whole, under the same
-identities, with its damage. Slice 3 — genesis, which puts gates in the universe — is ready to be
-ordered. Two sections changed on contact and say so where they stand: §3.4's separation arithmetic
-(a disc's, where the jitter is a square) and §10's gate radius (a circle inside the structure,
-which nothing could ever enter).
+Four sections changed on contact and say so where they stand: §3.4's separation arithmetic (a
+disc's, where the jitter is a square), §10's gate radius (a circle inside the structure, which
+nothing could ever enter), §10's gate ring (past the path grid's ceiling), and §9's scenery, which
+slice 4 deliberately did not finish.
 
 **Slice 1**: `LayOutGalaxy` is in `GameLogic` with its twelve-row suite, and
 [ADR 0055](Decisions/0055-the-galaxy-is-one-seed-and-its-gates-are-the-relative-neighborhood-graph.md)
@@ -327,7 +325,10 @@ The smallest client that makes the galaxy real, and no more:
   station tap. A gate is a record; a tap already knows how to name one.
 - **The camera crosses with the fleet.** A fleet that jumps while selected takes the camera to
   its arrival — the fleet-button fly-to that already exists, fired by the jump.
-- **Bodies and marks follow the system.** The view places worlds, rocks and station marks for
+- **Bodies and marks follow the system.** **Not in slice 4** — it is slice 4b, and the reason is in
+  `Universe-slice-4.md` §7: re-placing bodies is the F5 generate-and-upload bracket run mid-session,
+  which is GPU work no compiler in the authoring container can reach. Until it lands, a player who
+  crosses a gate sees the right *records* and the wrong *scenery*. The view places worlds, rocks and station marks for
   the system the camera is in, from the same layout both halves derive; the minimap keeps its
   4 km half-range and marks the local system's static content. The wink-out a `JumpedOut`
   departure draws may land as a plain removal first, stated as the placeholder it is.
@@ -440,7 +441,8 @@ themselves, as 3 and 5 are in `Outpost`; 4 rides `NeuronClient` + `Outpost`.
 | 1 | [`LayOutGalaxy`](Universe-slice-1.md): lattice, walk, pins, per-system recipe, gate links | `GameLogic` | M | — | [ADR 0055](Decisions/0055-the-galaxy-is-one-seed-and-its-gates-are-the-relative-neighborhood-graph.md) — **landed** |
 | 2 | [Gates and the jump door](Universe-slice-2.md): gate table, `Jump` order, `StepJumps`, `JumpedOut`, codec, ALPN | `GameLogic` | M | 1 | [ADR 0056](Decisions/0056-a-jump-is-a-despawn-and-a-spawn-under-one-identity.md) — **landed** |
 | 3 | [Genesis composes the galaxy](Universe-slice-3.md): root lays out, spawns stations and gates, boot log | `Outpost` | S | 1, 2 | — **landed** |
-| 4 | The client crosses: `JUMP` on the sheet, gate marks, camera follow, per-system bodies | `NeuronClient`+`Outpost` | M | 3 | — |
+| 4 | [The client crosses](Universe-slice-4.md): `JUMP` on the sheet, gate pick, silent removal, camera follow | `NeuronClient`+`Outpost` | M | 3 | — **landed** |
+| 4b | The scenery follows the camera: per-system bodies and marks | `NeuronClient`+`Outpost` | M | 4 | — |
 | 5 | The save file: header, atomic write, cadence in `Server.cfg`, restore-or-stop boot | `Outpost` | M | 2 (3 in practice) | ADR: the save is a versioned file, and a refused one stops the boot |
 | 6 | The replan scoped to its island | `GameLogic` | M | 2 | ADR: supersedes 0034 |
 

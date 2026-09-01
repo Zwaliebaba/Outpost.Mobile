@@ -486,7 +486,15 @@ void WriteShipRecord(ByteWriter& _out, const Universe& _universe, ShipId _id)
   _out.F32(ship.turnRateRadPerSec);
   _out.U8(static_cast<std::uint8_t>(ship.order));
   _out.U8(ship.factionId);
-  _out.U8(_universe.IsStation(_id) ? SHIP_FLAG_STATION : std::uint8_t{0});
+  // A ship is at most one of these today -- MakeStation and MakeGate are never called on the same
+  // structure -- but they are separate bits rather than a kind byte, so a thing that is both is
+  // expressible the day some design wants a gate you can dock at.
+  std::uint8_t flags = 0;
+  if (_universe.IsStation(_id))
+    flags |= SHIP_FLAG_STATION;
+  if (_universe.IsGate(_id))
+    flags |= SHIP_FLAG_GATE;
+  _out.U8(flags);
   _out.U32(ship.hullId);
 
   // 255ths of whole, and 255 for a hull that cannot be destroyed: an indestructible thing is

@@ -436,10 +436,20 @@ public:
     None,
     Move,
     Attack,
-    Dock
+    Dock,
+    Jump
   };
 
   void ArmFleetOrder(ArmedOrder _kind);
+
+  // The gate under a tap, or -1. PickStation's shape and its rule: by the record's own flag, never
+  // by the hull table -- a gate and a station are both Structures, so an inference from "immovable"
+  // would now be wrong as well as fragile (Game::SHIP_FLAG_GATE).
+  [[nodiscard]] int PickGate(float _xPx, float _yPx) const;
+
+  // Sends Jump at the gate to every selected fleet. No standing refusal to tell the truth about
+  // first, unlike docking: a gate takes anyone this phase (Design/Universe.md 6.1).
+  void IssueJumpOrder(std::size_t _gate);
 
   [[nodiscard]] ArmedOrder Armed() const noexcept
   {

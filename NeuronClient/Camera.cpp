@@ -84,6 +84,14 @@ void Camera::SetGoal(float _x, float _z) noexcept
   m_goal.z = _z;
 }
 
+void Camera::SnapGoal(float _x, float _z) noexcept
+{
+  m_goal.x = _x;
+  m_goal.z = _z;
+  m_target.x = _x;
+  m_target.z = _z;
+}
+
 void Camera::Follow(float _leadX, float _leadZ, float _dtSec) noexcept
 {
   const float follow = HalfLifeBlend(_dtSec, m_desc.followHalfLife);

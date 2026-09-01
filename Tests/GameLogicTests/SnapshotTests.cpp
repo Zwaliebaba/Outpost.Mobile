@@ -646,6 +646,39 @@ public:
                      L"scenery came back flagged over WriteInterest");
   }
 
+  // A gate is a Structure too, so the client cannot tell one from a station or from scenery by the
+  // hull table -- it reads the record's own flag, and the record has to carry one. Without this bit
+  // the JUMP verb has nothing to pick (UniverseView::PickGate, Design/Universe-slice-4.md 4).
+  TEST_METHOD(AGateIsFlaggedOnTheWire)
+  {
+    Game::Universe universe;
+    const Game::ShipId scenery = SpawnAt(universe, 400.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+    const Game::ShipId post = SpawnAt(universe, 900.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+    const Game::ShipId road = SpawnAt(universe, 1500.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+    const Game::ShipId farSide = SpawnAt(universe, 60000.0f, 0.0f, Game::HullId::Structure, Game::FACTION_VANGUARD);
+    (void)universe.MakeStation(post, Game::Universe::StationDesc{});
+    Game::Universe::GateDesc desc;
+    desc.destination = universe.EntityIdOf(farSide);
+    (void)universe.MakeGate(road, desc);
+    universe.Step();
+
+    CaptureTransport whole;
+    Game::SnapshotWriter writer;
+    Assert::IsTrue(writer.Write(universe, whole) > 0, L"the full snapshot did not send");
+    Game::SnapshotReceiver got;
+    for (const std::vector<std::uint8_t>& datagram : whole.sent)
+      (void)got.Accept(datagram);
+
+    Assert::AreEqual(static_cast<std::uint32_t>(Game::SHIP_FLAG_GATE),
+                     static_cast<std::uint32_t>(Find(got.Latest(), universe.EntityIdOf(road))->flags), L"the gate's flag did not survive");
+    // And the three that are not gates stay unflagged as one, or a client would offer JUMP at a
+    // station -- or, worse, at a rock.
+    Assert::AreEqual(static_cast<std::uint32_t>(Game::SHIP_FLAG_STATION),
+                     static_cast<std::uint32_t>(Find(got.Latest(), universe.EntityIdOf(post))->flags), L"a station came back as a gate");
+    Assert::AreEqual(static_cast<std::uint32_t>(0), static_cast<std::uint32_t>(Find(got.Latest(), universe.EntityIdOf(scenery))->flags),
+                     L"scenery came back as a gate");
+  }
+
   // The client must not infer its standing, and there is nothing to infer from anyway: an order
   // datagram is fire-and-forget, so a refused dock would otherwise be ships that simply never go
   // (Design/Archive/Stations.md 4.3).
