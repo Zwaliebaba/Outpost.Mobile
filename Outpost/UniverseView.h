@@ -512,11 +512,19 @@ public:
     return m_bodies.size();
   }
 
-  // The marks, from the composition root at boot. Nothing removes one: stations do not despawn this
-  // phase, and a mark is content rather than state.
+  // The marks, from the composition root. Content rather than state -- but content that belongs to
+  // ONE system, so crossing a gate replaces the set rather than adding to it. Before the galaxy this
+  // was add-only and said "nothing removes one"; against a 4 km minimap half-range and a guaranteed
+  // 57 km between stars, a mark left behind for another system draws pinned to the edge forever,
+  // which is a lie about where the government is (Design/Universe-slice-4b.md 4).
   void AddStationMark(const StationMark& _mark)
   {
     m_stationMarks.push_back(_mark);
+  }
+
+  void ClearStationMarks() noexcept
+  {
+    m_stationMarks.clear();
   }
 
   [[nodiscard]] std::span<const StationMark> StationMarks() const noexcept

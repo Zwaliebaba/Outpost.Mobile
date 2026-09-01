@@ -207,6 +207,26 @@ struct GalaxyLayout
 // read past the end of somebody's table.
 [[nodiscard]] SystemLayout LayOutGalaxySystem(const SystemSite& _site, const GalaxyDesc& _desc, std::span<const SystemPin> _pins);
 
+// Which system a point is in: the index of the nearest star.
+//
+// Nearest rather than "inside a radius", and the difference is that this function always has an
+// answer. A radius leaves a band between systems where nothing is in anything, and a caller in that
+// band -- a camera panned into the void, a fleet mid-crossing -- would have to invent a rule of its
+// own. Stars are at least MinimumStarSeparationMetres apart by construction, so inside a system the
+// nearest star is the obvious one and no threshold has to be tuned to say so.
+//
+// Ties keep the lower index, which is stable rather than arbitrary: the comparison is strict, so a
+// point exactly between two stars belongs to the earlier one on every machine and every run.
+//
+// Returns 0 on an empty galaxy, which cannot arise from LayOutGalaxy -- ring 0 is always laid --
+// but is the fail-closed answer for a caller holding a default-constructed layout.
+//
+// Here rather than in the client because it is a question about the galaxy, not about a view: a
+// server deciding which system a position belongs to asks exactly this, and the client's copy would
+// have been the second opinion ADR 0037 exists to prevent. It is also the half of the client's
+// scenery machinery that a suite can actually reach (Design/Universe-slice-4b.md 4).
+[[nodiscard]] std::uint32_t SystemAt(std::span<const SystemSite> _systems, const UniversePos& _at) noexcept;
+
 // Where the gate that leads to _to stands, inside _from's system.
 //
 // On the bearing from one star to the other, at gateRingMetres. Both ends derive from the same two

@@ -5,16 +5,15 @@ same day, each the recommended option, in an interactive session run against a l
 shipped layout algorithm with its knobs exposed, and a working prototype of the galaxy lattice and
 all four candidate gate graphs.**
 
-**Slices 1 to 4 have landed.** The galaxy exists, the game boots into it — 54 systems, 164 Vanguard
-stations and 136 gates, with home exactly where it always was — and a player can select a fleet,
-press `JUMP`, tap a gate and cross it, camera and all. What is left is **slice 4b** (the scenery
-follows the camera: after a crossing the records are right and the worlds and marks are still the
-old system's), then **5** (the save file) and **6** (the island-scoped replan).
+**Slices 1 to 4b have landed.** The galaxy exists, the game boots into it — 54 systems, 164 Vanguard
+stations and 136 gates, with home exactly where it always was — a player can select a fleet, press
+`JUMP`, tap a gate and cross it, camera and all, and the worlds, rocks and minimap marks on the far
+side are the far side's. What is left is **5** (the save file) and **6** (the island-scoped replan).
 
 Four sections changed on contact and say so where they stand: §3.4's separation arithmetic (a
 disc's, where the jitter is a square), §10's gate radius (a circle inside the structure, which
 nothing could ever enter), §10's gate ring (past the path grid's ceiling), and §9's scenery, which
-slice 4 deliberately did not finish.
+slice 4 deliberately did not finish and 4b did.
 
 **Slice 1**: `LayOutGalaxy` is in `GameLogic` with its twelve-row suite, and
 [ADR 0055](Decisions/0055-the-galaxy-is-one-seed-and-its-gates-are-the-relative-neighborhood-graph.md)
@@ -22,7 +21,9 @@ carries the two decisions it took.
 **Slice 2**: gates, the `Jump` order, `StepJumps`, `JumpedOut` and the wire's fourth departure run
 are in, with [ADR 0056](Decisions/0056-a-jump-is-a-despawn-and-a-spawn-under-one-identity.md).
 **Slice 3**: genesis builds the galaxy at boot. **Slice 4**: the sheet's fifth command, the gate
-pick, the silent removal and the camera that crosses with the fleet.
+pick, the silent removal and the camera that crosses with the fleet. **Slice 4b**: `Game::SystemAt`
+answers which system a point is in, and the client rebuilds its worlds, rocks and marks when the
+camera's answer changes.
 This document is amended in place as its slices land (ADR 0054).
 
 The player-facing sentence: **the frontier stops being one system.** Today the universe is three
@@ -329,16 +330,20 @@ The smallest client that makes the galaxy real, and no more:
   station tap. A gate is a record; a tap already knows how to name one.
 - **The camera crosses with the fleet.** A fleet that jumps while selected takes the camera to
   its arrival — the fleet-button fly-to that already exists, fired by the jump.
-- **Bodies and marks follow the system.** **Not in slice 4** — it is slice 4b, and the reason is in
-  `Universe-slice-4.md` §7: re-placing bodies is the F5 generate-and-upload bracket run mid-session,
-  which is GPU work no compiler in the authoring container can reach. Until it lands, a player who
-  crosses a gate sees the right *records* and the wrong *scenery*. The view places worlds, rocks and station marks for
-  the system the camera is in, from the same layout both halves derive; the minimap keeps its
-  4 km half-range and marks the local system's static content. The wink-out a `JumpedOut`
-  departure draws may land as a plain removal first, stated as the placeholder it is.
-- **The sky may stay one sky this phase** — stated as an assumption rather than discovered: a
-  per-system sky seeded from the system seed is a later nicety, and F5's semantics (looks
-  reroll, places never) do not change either way.
+- **Bodies and marks follow the system**, landed in slice 4b. The view places worlds, rocks and
+  station marks for the system the camera is in, from the same layout both halves derive; the
+  minimap keeps its 4 km half-range and marks the local system's static content. Which system that
+  is turned out to belong in `GameLogic` rather than the client — `Game::SystemAt`, the nearest star
+  to a point — because a server asking the same question would otherwise need its own copy, and
+  because that is the only half of it a suite can reach (`Universe-slice-4b.md` §7). The trigger is
+  where the camera **is**, not that a jump happened, so a galaxy map or a reloaded save gets it
+  free. The wink-out a `JumpedOut` departure draws landed as a plain removal, stated as the
+  placeholder it is.
+- **The sky stays one sky**, and slice 4b turned that from an assumption into an argument: a
+  crossing moves the camera from one system's gate ring to the other's — 43 km at the guaranteed
+  minimum, 117 km on the shipped lattice pitch — and a background that visibly turned over at that
+  range would be claiming the galaxy is a few hundred kilometres across. A per-system sky is a later nicety and
+  F5's semantics (looks reroll, places never) do not change either way.
 
 The galaxy *map* — the screen where the graph is a picture and a destination is a tap — belongs
 on the HUD function rail whose screens are not built yet, and it is deliberately not in slice 4.
@@ -438,7 +443,10 @@ Put and taken 2026-09-01, in two rounds against the live workbench; each with wh
 
 One slice, one branch, one pull request; work orders are cut from here one at a time, when a
 slice is actually next. Slices 1, 2 and 6 share the GameLogic layer and are serial among
-themselves, as 3 and 5 are in `Outpost`; 4 rides `NeuronClient` + `Outpost`.
+themselves, as 3 and 5 are in `Outpost`; 4 rides `NeuronClient` + `Outpost`. Slice 4b was cut from
+4 on contact rather than planned, and it crossed a layer while being built: written as client work,
+landed as `GameLogic`+`Outpost`, because its one piece of real logic belonged in the simulation
+library where a suite could reach it (`Universe-slice-4b.md` §7).
 
 | # | Slice | Layer | Size | Depends on | ADR |
 |---|---|---|---|---|---|
@@ -446,7 +454,7 @@ themselves, as 3 and 5 are in `Outpost`; 4 rides `NeuronClient` + `Outpost`.
 | 2 | [Gates and the jump door](Universe-slice-2.md): gate table, `Jump` order, `StepJumps`, `JumpedOut`, codec, ALPN | `GameLogic` | M | 1 | [ADR 0056](Decisions/0056-a-jump-is-a-despawn-and-a-spawn-under-one-identity.md) — **landed** |
 | 3 | [Genesis composes the galaxy](Universe-slice-3.md): root lays out, spawns stations and gates, boot log | `Outpost` | S | 1, 2 | — **landed** |
 | 4 | [The client crosses](Universe-slice-4.md): `JUMP` on the sheet, gate pick, silent removal, camera follow | `NeuronClient`+`Outpost` | M | 3 | — **landed** |
-| 4b | The scenery follows the camera: per-system bodies and marks | `NeuronClient`+`Outpost` | M | 4 | — |
+| 4b | [The scenery follows the camera](Universe-slice-4b.md): `Game::SystemAt`, per-system bodies and marks | `GameLogic`+`Outpost` | S | 4 | — **landed** |
 | 5 | The save file: header, atomic write, cadence in `Server.cfg`, restore-or-stop boot | `Outpost` | M | 2 (3 in practice) | ADR: the save is a versioned file, and a refused one stops the boot |
 | 6 | The replan scoped to its island | `GameLogic` | M | 2 | ADR: supersedes 0034 |
 
@@ -459,6 +467,9 @@ rows: a fleet ordered through a gate arrives whole, once, with its damage and it
 without its alert; a gate that leads nowhere strands nobody; and a jumped ship reaches a subscriber
 as *jumped* rather than as *destroyed*; slice 3's boot log states the galaxy
 (`GALAXY | 54 SYSTEMS | 136 GATES`) and home boots pixel-identical to today; slice 4 owes
-screenshots at two window sizes, on both sides of a jump; slice 5 saves, kills the process,
+screenshots at two window sizes, on both sides of a jump; slice 4b added the four rows that pin
+`SystemAt` — every system owns its own star, every planet and gate of a system resolves to it, a tie
+keeps the lower index, an empty galaxy answers zero — the second of which is what now bounds
+`gateRingMetres` against the lattice pitch from a second direction; slice 5 saves, kills the process,
 restores, and replays to byte equality — and a truncated file stops the boot naming the reason;
 slice 6 proves a static spawn in one system re-plans no route in another.

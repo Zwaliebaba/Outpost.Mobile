@@ -59,6 +59,18 @@ constexpr AxialStep RING_STEPS[6] = {{-1, 1}, {-1, 0}, {0, -1}, {1, -1}, {1, 0},
   const double dz = static_cast<double>(OffsetZ(_a.starPos, _b.starPos));
   return dx * dx + dz * dz;
 }
+
+// The same accumulation for a loose point, and for the same reason: a galaxy spans about 1.8e6 m,
+// where the SQUARE of a distance lands in a part of the float range whose step is 262 144, so two
+// stars differing by centimetres at that range would compare equal. Game::DistanceSquared is the
+// float one and is right everywhere it is used -- inside a sector, where the numbers are small --
+// and wrong here for the one reason this file already had to write down once.
+[[nodiscard]] double PointDistanceSquared(const UniversePos& _a, const UniversePos& _b) noexcept
+{
+  const double dx = static_cast<double>(OffsetX(_a, _b));
+  const double dz = static_cast<double>(OffsetZ(_a, _b));
+  return dx * dx + dz * dz;
+}
 } // namespace
 
 GalaxyLayout LayOutGalaxy(std::uint64_t _seed, const UniversePos& _origin, const GalaxyDesc& _desc, std::span<const SystemPin> _pins)
@@ -160,6 +172,30 @@ SystemLayout LayOutGalaxySystem(const SystemSite& _site, const GalaxyDesc& _desc
 
   LayOutPlanets(rng, _site.starPos, desc, layout);
   return layout;
+}
+
+std::uint32_t SystemAt(std::span<const SystemSite> _systems, const UniversePos& _at) noexcept
+{
+  if (_systems.empty())
+    return 0;
+
+  // A linear scan over a table in the dozens. The lattice is regular enough that the cell could be
+  // solved for arithmetically, and that solution would be wrong at exactly the point it mattered:
+  // a drawn cell's jitter and a missing neighbour both move which star is nearest, so the cell a
+  // point sits in and the system it belongs to are not the same question.
+  std::uint32_t nearest = 0;
+  double nearestSq = PointDistanceSquared(_at, _systems[0].starPos);
+  for (std::size_t at = 1; at < _systems.size(); ++at)
+  {
+    // Strictly closer, so a tie keeps the lower index rather than taking the later one.
+    const double distanceSq = PointDistanceSquared(_at, _systems[at].starPos);
+    if (distanceSq < nearestSq)
+    {
+      nearestSq = distanceSq;
+      nearest = static_cast<std::uint32_t>(at);
+    }
+  }
+  return nearest;
 }
 
 UniversePos GateSite(const SystemSite& _from, const SystemSite& _to, const GalaxyDesc& _desc) noexcept

@@ -373,5 +373,84 @@ public:
         Assert::IsTrue(cells.insert({site.cellQ, site.cellR}).second, L"the spiral walk visited a cell twice");
     }
   }
+
+  // SystemAt is the client's "which system am I in", and it is here rather than in the composition
+  // root so that this row can exist at all (Design/Universe-slice-4b.md 4).
+  //
+  // The property is total: EVERY system's own star answers with that system, over the shipped
+  // galaxy, so no cell has a neighbour close enough to steal its own centre. A rule that got one
+  // system wrong would put the wrong worlds on screen for anybody standing in it.
+  TEST_METHOD(EverySystemOwnsItsOwnStar)
+  {
+    const Game::SystemPin pins[] = {ShippedPin()};
+    const Game::GalaxyLayout galaxy = Game::LayOutGalaxy(GALAXY_SEED, Game::LocalPos(0.0f, 0.0f), Game::GalaxyDesc{}, pins);
+    Assert::IsTrue(galaxy.systems.size() > 1, L"a one-system galaxy would prove nothing here");
+
+    for (std::size_t at = 0; at < galaxy.systems.size(); ++at)
+      Assert::AreEqual(static_cast<std::uint32_t>(at), Game::SystemAt(galaxy.systems, galaxy.systems[at].starPos),
+                       L"a system's own star did not resolve to that system");
+  }
+
+  // And total over the part of a system a player can actually be in: every planet site and every
+  // gate site of every system resolves to the system it belongs to.
+  //
+  // This is the row that would catch a gate ring pushed out past half the lattice pitch -- a gate
+  // is the furthest from its star that anything authored gets, and a gate on the wrong side of the
+  // midpoint would flip the scenery the moment a fleet arrived at it.
+  TEST_METHOD(EveryPlaceInASystemResolvesToIt)
+  {
+    const Game::SystemPin pins[] = {ShippedPin()};
+    const Game::GalaxyDesc desc;
+    const Game::GalaxyLayout galaxy = Game::LayOutGalaxy(GALAXY_SEED, Game::LocalPos(0.0f, 0.0f), desc, pins);
+
+    for (std::size_t at = 0; at < galaxy.systems.size(); ++at)
+    {
+      const std::uint32_t index = static_cast<std::uint32_t>(at);
+      const Game::SystemLayout system = Game::LayOutGalaxySystem(galaxy.systems[at], desc, pins);
+      for (const Game::PlanetSite& site : system.planets)
+        Assert::AreEqual(index, Game::SystemAt(galaxy.systems, site.posUniverse), L"a planet resolved to the wrong system");
+    }
+
+    for (const Game::GateLink& link : galaxy.links)
+    {
+      const Game::SystemSite& a = galaxy.systems[link.systemA];
+      const Game::SystemSite& b = galaxy.systems[link.systemB];
+      Assert::AreEqual(link.systemA, Game::SystemAt(galaxy.systems, Game::GateSite(a, b, desc)), L"a gate resolved to the wrong system");
+      Assert::AreEqual(link.systemB, Game::SystemAt(galaxy.systems, Game::GateSite(b, a, desc)), L"a gate resolved to the wrong system");
+    }
+  }
+
+  // The answer is a fact about the point, not about the order it was asked in, and a tie is
+  // resolved rather than left to the machine.
+  //
+  // Two stars, a point exactly between them: the lower index wins, both ways round. That is what
+  // makes the scenery stable for a camera parked on the midline instead of rebuilding every frame
+  // on whichever way the last rounding fell.
+  TEST_METHOD(ATieKeepsTheLowerSystem)
+  {
+    Game::SystemSite left;
+    left.starPos = Game::LocalPos(-40000.0f, 0.0f);
+    Game::SystemSite right;
+    right.starPos = Game::LocalPos(40000.0f, 0.0f);
+
+    const Game::SystemSite forwards[] = {left, right};
+    const Game::SystemSite backwards[] = {right, left};
+    const Game::UniversePos midpoint = Game::LocalPos(0.0f, 0.0f);
+
+    Assert::AreEqual(0u, Game::SystemAt(forwards, midpoint), L"a tie did not keep the lower index");
+    Assert::AreEqual(0u, Game::SystemAt(backwards, midpoint), L"a tie did not keep the lower index");
+
+    // Either side of the midline, though, it answers by distance and not by index.
+    Assert::AreEqual(0u, Game::SystemAt(forwards, Game::LocalPos(-1.0f, 0.0f)), L"a point nearer the left star did not pick it");
+    Assert::AreEqual(1u, Game::SystemAt(forwards, Game::LocalPos(1.0f, 0.0f)), L"a point nearer the right star did not pick it");
+  }
+
+  // An empty galaxy answers 0 rather than reading past the end of a span. It cannot come out of
+  // LayOutGalaxy -- ring 0 is always laid -- but a caller holding a default-constructed layout is
+  // one boot-order change away, and the fail-closed answer costs a branch.
+  TEST_METHOD(AnEmptyGalaxyAnswersZero)
+  {
+    Assert::AreEqual(0u, Game::SystemAt({}, Game::LocalPos(0.0f, 0.0f)), L"an empty galaxy did not answer zero");
+  }
 };
 } // namespace GameLogicTests

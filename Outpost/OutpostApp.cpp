@@ -377,6 +377,18 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
   // _centreY is the height of the body's centre, so a caller says where a world sits rather than
   // deriving it from a radius the seed chose. A rock passes its own radius and so rests on the
   // fleet's plane; a world passes a depth well below it (ViewTuning.h).
+  //
+  // Everything in this scene is placed around the local system's star, not around the universe
+  // origin. They were the same point until there was a second system -- home is pinned at lattice
+  // cell (0, 0) and a pinned system takes no jitter, so its star IS the origin -- which is why this
+  // used to be LocalPos of a bearing and a distance, and why a world in any other system would have
+  // been drawn a whole system away from the one it belongs to (Design/Universe-slice-4b.md 4).
+  //
+  // The boot scene does not move: Translate on a default UniversePos carries exactly the two floats
+  // LocalPos carries and stores the same two remainders, so while the anchor is the origin the
+  // result is bit-identical.
+  const Game::UniversePos anchor = m_layout.starPos;
+
   const auto place = [&](BodyClass bodyClass, std::uint64_t _bodySeed, float _radiusMetres, float _bearingRad, float _distanceMetres,
                          float _centreY, bool _asteroid, bool _textured)
   {
@@ -437,7 +449,8 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
       return;
 
     view.textured = _textured;
-    view.centre = Game::LocalPos(std::sin(_bearingRad) * _distanceMetres, std::cos(_bearingRad) * _distanceMetres);
+    view.centre = anchor;
+    Game::Translate(view.centre, std::sin(_bearingRad) * _distanceMetres, std::cos(_bearingRad) * _distanceMetres);
     view.centreY = _centreY;
     // The sphere the frustum test uses. A textured body is the sphere BuildSphere emitted and nothing
     // more -- unit directions scaled by the radius -- so the radius is the whole of it. A generated
@@ -519,6 +532,51 @@ void OutpostApp::BuildSky(std::uint64_t _seed)
   m_skyRenderer.UploadField(m_gpu, sky);
 
   DebugTrace("sky: {} billboards generated in {} ms\n", sky.verts.size() / 6, m_clock.ElapsedMs(startQpc, m_clock.Now()));
+}
+
+std::uint32_t OutpostApp::SystemAtCamera() const noexcept
+{
+  // Where the camera is looking, as a universe position: the view owns that conversion, because it
+  // owns the origin the render space is measured from (UniverseView::UniversePosAt). What that
+  // point is IN is the galaxy's question and is answered in GameLogic, where a suite can reach it
+  // (Game::SystemAt, ADR 0055).
+  const Game::UniversePos eye = m_view.UniversePosAt(m_camera.Target().x, m_camera.Target().z);
+  return Game::SystemAt(m_galaxy.systems, eye);
+}
+
+void OutpostApp::RebuildLocalSystemScenery()
+{
+  m_layout = Game::LayOutGalaxySystem(m_galaxy.systems[m_localSystem], STARTING_GALAXY, GALAXY_PINS);
+
+  // The marks are replaced, not added to: they belong to one system, and the minimap's half-range is
+  // 4 km against a guaranteed 57 km between stars, so a mark left behind for the system the camera
+  // came from draws pinned to the edge forever.
+  m_view.ClearStationMarks();
+  for (const Game::PlanetSite& site : m_layout.planets)
+    m_view.AddStationMark({site.posUniverse, Game::FACTION_VANGUARD});
+
+  // The scene is released before the next one is built, which is what stops a crossing leaking the
+  // system it left -- F5's bracket exactly, copies first for its reason (ADR 0044).
+  m_view.ClearBodies();
+  m_bodyRenderer.FreeAllBodies();
+
+  m_gpu.BeginCopies();
+  m_gpu.BeginUploads();
+  // The system's own seed, so a system looks the same every time it is entered. BODY_START_SEED is
+  // home's and F5's; a system that borrowed it would wear home's rocks.
+  //
+  // The sky is NOT rebuilt with the bodies, which is where this parts company with F5. F5 rerolls
+  // the neighborhood and the sky is the far half of it; a gate crossing moves the camera from one
+  // system's gate ring to the other's -- 43 km at the guaranteed minimum, 117 km on the shipped
+  // pitch -- and a background that visibly turned over at that range would be claiming the galaxy
+  // is a few hundred kilometres across. The sky is the same sky from every system in it.
+  SpawnStartingBodies(m_galaxy.systems[m_localSystem].systemSeed);
+  m_gpu.SubmitCopies();
+  m_gpu.ExecuteAndWait();
+  m_bodyRenderer.DiscardStaging();
+
+  m_log.PushFormat(EventLog::Severity::Info, 0.0f, "SYSTEM | %u | %u WORLDS", m_localSystem,
+                   static_cast<unsigned>(m_layout.planets.size()));
 }
 
 // F5. A different scene each press, and the same different scene after a restart: what the seed is
@@ -613,10 +671,11 @@ void OutpostApp::SpawnVanguardStations()
         m_universe.SpawnShip(site.posUniverse, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
       m_universe.MakeStation(structure, desc);
 
-      // Only the local system's marks. A mark is static content the view holds forever and draws
-      // clamped to the minimap's edge, so marking all fifty-odd systems would pin a ring of azure
-      // diamonds to the border and say nothing. The day the camera crosses a gate it re-marks, and
-      // that day is slice 4's (Design/Universe.md 9).
+      // Only the local system's marks. A mark draws clamped to the minimap's edge when it is off
+      // the map, so marking all fifty-odd systems would pin a ring of azure diamonds to the border
+      // and say nothing. The set is not static any more: RebuildLocalSystemScenery replaces it
+      // whenever the camera changes systems, which is why AddStationMark has a ClearStationMarks
+      // beside it (Design/Universe-slice-4b.md 4).
       if (local)
         m_view.AddStationMark({site.posUniverse, Game::FACTION_VANGUARD});
     }
@@ -946,6 +1005,32 @@ void OutpostApp::Run()
     m_view.UpdateFocus(dtSec);
     m_hud.UpdatePulse(dtSec);
     m_sheet.Update(m_view);
+
+    // The scenery follows the camera across a gate.
+    //
+    // Driven by where the camera IS rather than by the jump itself, and that is the load-bearing
+    // choice: a jump is one way to arrive in another system, and the day there is a second -- a
+    // galaxy map that flies you somewhere, a spectator following a fleet, a save reloaded
+    // elsewhere -- this already covers it. It is also the only formulation that cannot get out of
+    // step, because the question it asks is a fact about the camera rather than a memory of an
+    // event.
+    //
+    // Here rather than in Update, and that placement is the whole of it: UpdateFocus is the last
+    // thing in a frame that moves the camera, and it is what SNAPS across a crossing. Asked in
+    // Update the answer would be one frame stale, and that frame renders the new system's ships with
+    // the old system's worlds -- tens of kilometres behind the camera and so outside the frustum
+    // entirely, which reads as the arrival flashing empty. Asked here it cannot: nothing moves the
+    // camera between this line and Render.
+    //
+    // Once per frame and free at this scale: fifty-four squared distances, against a lattice whose
+    // stars are 56 926 m apart, so the answer is never ambiguous anywhere a player can be
+    // (Game::SystemAt, Design/Universe-slice-4b.md 4).
+    const std::uint32_t here = SystemAtCamera();
+    if (here != m_localSystem)
+    {
+      m_localSystem = here;
+      RebuildLocalSystemScenery();
+    }
 
     Render();
   }

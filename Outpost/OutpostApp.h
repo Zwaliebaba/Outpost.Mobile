@@ -77,6 +77,18 @@ private:
   // trace at the call site is where a regression in it would show.
   void BuildSky(std::uint64_t _seed);
   void ReseedBodies();
+
+  // Which system the camera is standing in. Two lines: where the camera is looking, which only the
+  // view can say, and what is there, which is Game::SystemAt's.
+  [[nodiscard]] std::uint32_t SystemAtCamera() const noexcept;
+
+  // Re-lays the local system and rebuilds everything drawn from it: the worlds, the rocks and the
+  // minimap's station marks.
+  //
+  // The bodies go through the same free-and-upload bracket F5 uses, for its reason: a body's
+  // vertices are a copy recorded into one command list, and the scene being replaced has to be
+  // released or every crossing leaks the system it left (ADR 0044).
+  void RebuildLocalSystemScenery();
   void SpawnHostileBase();
 
   // One Vanguard station at every planet site of every system in the galaxy: the structure ship,
