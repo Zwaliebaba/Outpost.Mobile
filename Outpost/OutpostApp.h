@@ -79,9 +79,17 @@ private:
   void ReseedBodies();
   void SpawnHostileBase();
 
-  // One Vanguard station at every planet site of the starting system: the structure ship, then the
-  // row that makes it a station (Design/Archive/Stations.md 5.3, 6.1).
+  // One Vanguard station at every planet site of every system in the galaxy: the structure ship,
+  // then the row that makes it a station (Design/Archive/Stations.md 5.3, 6.1). The government is
+  // everywhere, which is what makes a gate worth flying through.
   void SpawnVanguardStations();
+
+  // A gate at each end of every link in the galaxy's graph, each naming the other by identity.
+  //
+  // Two passes, and it has to be two: a gate names its far side by EntityId, and the far side does
+  // not exist until it is spawned. So every structure is spawned first and the rows are made after,
+  // when both ends can be named (Design/Universe-slice-3.md 4).
+  void SpawnGates();
   [[nodiscard]] std::uint32_t OwnShipCount() const noexcept;
   void Update();
   void Render();
@@ -129,6 +137,17 @@ private:
   // is handed the sites as spawn positions and never sees the generator (Design/Archive/Stations.md 5, 10).
   // F5 rebuilds the bodies from it and never re-rolls it, so a debug key cannot move a station.
   Game::SystemLayout m_layout;
+
+  // The galaxy, laid out once at boot beside the starting system. Static content on the same terms
+  // (ADR 0037, ADR 0055): the universe is handed positions and seeds as spawn input and never sees
+  // the generator, and F5 does not reach it.
+  Game::GalaxyLayout m_galaxy;
+
+  // Which system the camera is in. Home at boot, and nothing moves it yet -- the client half of
+  // crossing a gate is slice 4's. It is here now because the station marks and the bodies both ask
+  // it which system they are placing, and answering "home" in two places would be two places to
+  // change (Design/Universe.md 9).
+  std::uint32_t m_localSystem = 0;
 
   // Which faction this client is. Session identity, which nothing below the composition root can
   // know: it decides what the overview colors green, what may be selected, and what counts as a

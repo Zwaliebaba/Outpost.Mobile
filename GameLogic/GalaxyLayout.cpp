@@ -4,6 +4,7 @@
 #include "Pcg32.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 
 namespace Game
@@ -159,6 +160,25 @@ SystemLayout LayOutGalaxySystem(const SystemSite& _site, const GalaxyDesc& _desc
 
   LayOutPlanets(rng, _site.starPos, desc, layout);
   return layout;
+}
+
+UniversePos GateSite(const SystemSite& _from, const SystemSite& _to, const GalaxyDesc& _desc) noexcept
+{
+  const float bearing = GateHeadingRad(_from, _to);
+  UniversePos site = _from.starPos;
+  // Through Translate, because localX is an offset inside a sector and a system near a boundary
+  // would otherwise leave the invariant behind -- LayOutPlanets' rule, unchanged.
+  Translate(site, std::sin(bearing) * _desc.gateRingMetres, std::cos(bearing) * _desc.gateRingMetres);
+  return site;
+}
+
+float GateHeadingRad(const SystemSite& _from, const SystemSite& _to) noexcept
+{
+  const float dx = OffsetX(_from.starPos, _to.starPos);
+  const float dz = OffsetZ(_from.starPos, _to.starPos);
+  // Two stars are at least MinimumStarSeparationMetres apart by construction, so this is never the
+  // atan2(0, 0) whose answer is a platform's opinion rather than a value.
+  return std::atan2(dx, dz);
 }
 
 void LinkGates(std::span<const SystemSite> _systems, std::vector<GateLink>& _outLinks)

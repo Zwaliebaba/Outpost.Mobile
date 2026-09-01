@@ -386,6 +386,20 @@ inline constexpr Game::SystemDesc STARTING_SYSTEM{.pinFirstPlanet = true,
                                                   .firstPlanetBearingRad = BODY_START_PLANET_BEARING_DEG * (DirectX::XM_PI / 180.0f),
                                                   .firstPlanetOrbitMetres = BODY_START_PLANET_DISTANCE_METRES};
 
+// --- the galaxy ---------------------------------------------------------------------------------
+
+// Where every other system is, from one seed (Game::LayOutGalaxy, ADR 0055). Its own seed beside
+// UNIVERSE_LAYOUT_SEED for that constant's reason: F5 must not reach it, and a debug key that moved
+// a star would be a debug key changing the universe.
+inline constexpr std::uint64_t GALAXY_SEED = 0x46726F6E74696572ull; // "Frontier"
+inline constexpr Game::GalaxyDesc STARTING_GALAXY{};
+
+// The one authored place in the galaxy: the starting system, at the lattice origin, laid out from
+// the seed and the description the game has always booted on. The galaxy grows around the scene the
+// player already knows; nothing about home changes but the map it sits on (Design/Universe.md 3.2).
+inline constexpr Game::SystemPin HOME_PIN{.cellQ = 0, .cellR = 0, .systemSeed = UNIVERSE_LAYOUT_SEED, .desc = STARTING_SYSTEM};
+inline constexpr Game::SystemPin GALAXY_PINS[]{HOME_PIN};
+
 // **The world wears a picture rather than a generated surface.** BodyMeshBuilder::BuildSphere makes
 // a smooth sphere and PlanetPS samples Terrain\Planet1.dds off the direction, so neither the height
 // field, the colour ramp nor the wire-frame outline runs for it. Everything that decides what a

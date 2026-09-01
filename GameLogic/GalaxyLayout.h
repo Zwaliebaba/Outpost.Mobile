@@ -119,6 +119,20 @@ struct GalaxyDesc
   std::uint32_t minPlanetCount = 2;
   std::uint32_t maxPlanetCount = 5;
 
+  // How far from its star a gate stands, on the bearing toward the system it leads to.
+  //
+  // Outside the widest orbit (6 500 m), so a gate never stands in a planet's lap -- and bounded
+  // above by the path grid's ceiling, which is what actually decides it. A system's static span is
+  // twice this plus two grid margins, and PathIslands DECLINES to build past
+  // PATH_GRID_MAX_CELLS_PER_AXIS *quietly*: the symptom is ships that stop routing, a long way from
+  // here. Design/Universe.md 10 specified 8 000, which is 532 cells against a ceiling of 512
+  // (Design/Universe-slice-3.md 7).
+  //
+  // It lives in this struct rather than in the composition root precisely so the bound is a
+  // GameLogicTests assertion instead of a hope: the executable layer has no suite
+  // (ADR 0037's argument, re-run).
+  float gateRingMetres = 7000.0f;
+
   // The orbit and radius bands an unpinned system's planets are drawn within. Its planetCount and
   // its pin fields are not read: a galaxy's system draws its own count, and pinFirstPlanet is a
   // property of an authored system rather than of a drawn one.
@@ -192,6 +206,18 @@ struct GalaxyLayout
 // though it were drawn, which is the fail-closed direction: a system with planets in it beats a
 // read past the end of somebody's table.
 [[nodiscard]] SystemLayout LayOutGalaxySystem(const SystemSite& _site, const GalaxyDesc& _desc, std::span<const SystemPin> _pins);
+
+// Where the gate that leads to _to stands, inside _from's system.
+//
+// On the bearing from one star to the other, at gateRingMetres. Both ends derive from the same two
+// positions, so the pair faces each other without either being told where the other put its gate --
+// which is what lets a client and a server place gates independently and agree.
+[[nodiscard]] UniversePos GateSite(const SystemSite& _from, const SystemSite& _to, const GalaxyDesc& _desc) noexcept;
+
+// The heading a gate faces: away from its own star, along the road. A fleet arriving through it is
+// set down on this bearing, which is what keeps arrivals clear of the structure and pointed into
+// the system rather than back at the door.
+[[nodiscard]] float GateHeadingRad(const SystemSite& _from, const SystemSite& _to) noexcept;
 
 // The gate links over a set of systems: the relative neighborhood graph.
 //

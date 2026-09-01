@@ -191,9 +191,19 @@ void OutpostApp::Init(HINSTANCE _instance)
   // spawn input: the station spawns, the body placements and the minimap's marks all read m_layout
   // and none of them re-rolls it (Design/Archive/Stations.md 5.3). The fleet keeps the ids it has by being
   // spawned first; the stations follow, then the base.
-  m_layout = Game::LayOutSystem(UNIVERSE_LAYOUT_SEED, Game::UniversePos{}, STARTING_SYSTEM);
+  // The galaxy first, then the system the player is standing in, taken out of it rather than laid
+  // out beside it -- so home is the galaxy's home and not a second opinion about where it is.
+  m_galaxy = Game::LayOutGalaxy(GALAXY_SEED, Game::UniversePos{}, STARTING_GALAXY, GALAXY_PINS);
+  for (std::size_t at = 0; at < m_galaxy.systems.size(); ++at)
+  {
+    if (m_galaxy.systems[at].pin != Game::INVALID_PIN_INDEX)
+      m_localSystem = static_cast<std::uint32_t>(at);
+  }
+  m_layout = Game::LayOutGalaxySystem(m_galaxy.systems[m_localSystem], STARTING_GALAXY, GALAXY_PINS);
+
   SpawnStartingFleet();
   SpawnVanguardStations();
+  SpawnGates();
   SpawnHostileBase();
 
   // The bodies, last, and all in one bracket. The outline texture and every body's vertices are
@@ -237,6 +247,10 @@ void OutpostApp::Init(HINSTANCE _instance)
   // Every station row, the Vandal base included: the line says the grid spawned what the layout
   // described, and the base is a row in the same table (Design/Archive/Stations.md 6.1, 9.4).
   m_log.PushFormat(EventLog::Severity::Info, 0.0f, "STATIONS ONLINE | %u", m_universe.StationCount());
+  // What genesis actually built, so a boot that laid out a different galaxy says so rather than
+  // being discovered later by a fleet that cannot get anywhere.
+  m_log.PushFormat(EventLog::Severity::Info, 0.0f, "GALAXY | %u SYSTEMS | %u GATES", static_cast<unsigned>(m_galaxy.systems.size()),
+                   m_universe.GateCount());
 
   m_window.Show();
 }
@@ -585,12 +599,62 @@ void OutpostApp::SpawnVanguardStations()
   desc.launchEveryTicks = VANGUARD_LAUNCH_EVERY_TICKS;
   desc.targetCap = VANGUARD_TARGET_CAP;
 
-  for (const Game::PlanetSite& site : m_layout.planets)
+  for (std::size_t at = 0; at < m_galaxy.systems.size(); ++at)
   {
-    const Game::ShipId structure =
-      m_universe.SpawnShip(site.posUniverse, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
-    m_universe.MakeStation(structure, desc);
-    m_view.AddStationMark({site.posUniverse, Game::FACTION_VANGUARD});
+    // Home is already laid out; every other system is laid out here, from its own seed alone. The
+    // layout is not kept: what the universe needs is the positions, and what the view needs is the
+    // local system's, which is m_layout (ADR 0055).
+    const bool local = at == m_localSystem;
+    const Game::SystemLayout system = local ? m_layout : Game::LayOutGalaxySystem(m_galaxy.systems[at], STARTING_GALAXY, GALAXY_PINS);
+
+    for (const Game::PlanetSite& site : system.planets)
+    {
+      const Game::ShipId structure =
+        m_universe.SpawnShip(site.posUniverse, 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
+      m_universe.MakeStation(structure, desc);
+
+      // Only the local system's marks. A mark is static content the view holds forever and draws
+      // clamped to the minimap's edge, so marking all fifty-odd systems would pin a ring of azure
+      // diamonds to the border and say nothing. The day the camera crosses a gate it re-marks, and
+      // that day is slice 4's (Design/Universe.md 9).
+      if (local)
+        m_view.AddStationMark({site.posUniverse, Game::FACTION_VANGUARD});
+    }
+  }
+}
+
+// A gate at each end of every link, each naming the other by the identity that already survives
+// leaving a universe (ADR 0047, ADR 0056).
+//
+// Two passes, and it has to be two: the row carries the far gate's EntityId, and the far gate does
+// not exist while the near one is being spawned. So the structures go down first and the rows are
+// made once both ends can be named.
+void OutpostApp::SpawnGates()
+{
+  // One entry per end of every link, in link order, so the pairing below is arithmetic rather than
+  // a search: ends 2i and 2i+1 are the two halves of link i.
+  std::vector<Game::ShipId> ends;
+  ends.reserve(m_galaxy.links.size() * 2u);
+
+  for (const Game::GateLink& link : m_galaxy.links)
+  {
+    const Game::SystemSite& a = m_galaxy.systems[link.systemA];
+    const Game::SystemSite& b = m_galaxy.systems[link.systemB];
+    ends.push_back(m_universe.SpawnShip(Game::GateSite(a, b, STARTING_GALAXY), Game::GateHeadingRad(a, b),
+                                        static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD));
+    ends.push_back(m_universe.SpawnShip(Game::GateSite(b, a, STARTING_GALAXY), Game::GateHeadingRad(b, a),
+                                        static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD));
+  }
+
+  for (std::size_t at = 0; at + 1 < ends.size(); at += 2)
+  {
+    Game::Universe::GateDesc toB;
+    toB.destination = m_universe.EntityIdOf(ends[at + 1]);
+    (void)m_universe.MakeGate(ends[at], toB);
+
+    Game::Universe::GateDesc toA;
+    toA.destination = m_universe.EntityIdOf(ends[at]);
+    (void)m_universe.MakeGate(ends[at + 1], toA);
   }
 }
 

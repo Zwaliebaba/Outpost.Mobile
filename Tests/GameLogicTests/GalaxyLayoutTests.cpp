@@ -250,12 +250,17 @@ public:
   {
     const Game::GalaxyDesc desc;
 
-    const float systemSpanMetres = 2.0f * desc.systemBounds.maxOrbitMetres + 2.0f * Game::PATH_GRID_MARGIN_METRES;
+    // Measured against the GATES, not the planets: a gate stands further out than any orbit, so it
+    // is the gates that decide a system's static span. Counting only orbits is what let
+    // Design/Universe.md 10 specify a gate ring of 8 000 m -- 532 cells against a ceiling of 512
+    // (Design/Universe-slice-3.md 7).
+    const float widestMetres = std::max(desc.gateRingMetres, desc.systemBounds.maxOrbitMetres);
+    const float systemSpanMetres = 2.0f * widestMetres + 2.0f * Game::PATH_GRID_MARGIN_METRES;
     const int cells = static_cast<int>(std::ceil(systemSpanMetres / Game::PATH_CELL_SIZE_METRES));
     Assert::IsTrue(cells < Game::PATH_GRID_MAX_CELLS_PER_AXIS,
                    L"a system is wider than one path grid may be: the grid would decline and ships would stop routing");
 
-    const float clearMetres = Game::MinimumStarSeparationMetres(desc) - 2.0f * desc.systemBounds.maxOrbitMetres;
+    const float clearMetres = Game::MinimumStarSeparationMetres(desc) - 2.0f * widestMetres;
     Assert::IsTrue(clearMetres > 2.0f * Game::PATH_GRID_MARGIN_METRES,
                    L"two systems' architecture can reach each other: their islands would merge");
   }

@@ -5,7 +5,11 @@ same day, each the recommended option, in an interactive session run against a l
 shipped layout algorithm with its knobs exposed, and a working prototype of the galaxy lattice and
 all four candidate gate graphs.**
 
-**Slices 1 and 2 have landed.** The galaxy exists and it is crossable: `LayOutGalaxy` lays the
+**Slices 1, 2 and 3 have landed.** The galaxy exists, it is crossable, and the game now boots into
+it: 54 systems, 164 Vanguard stations and 136 gates, with home exactly where it always was. Slice 4
+— the client half, where a player can actually order a jump — is ready to be ordered.
+
+The galaxy exists and it is crossable: `LayOutGalaxy` lays the
 systems and their gate graph, and a fleet ordered at a gate crosses it whole, under the same
 identities, with its damage. Slice 3 — genesis, which puts gates in the universe — is ready to be
 ordered. Two sections changed on contact and say so where they stand: §3.4's separation arithmetic
@@ -349,11 +353,18 @@ game actually runs.
 | Density | 0.55 | unevenness without emptiness; retunable without moving anyone (§3.1) |
 | Planets per system | 2 + `Below(4)` → 2–5 | home keeps its authored 3 |
 | Orbit / radius bounds | the shipped `SystemDesc` defaults | unchanged, and the ceiling proof holds per system |
-| `GATE_RING_METRES` | 8 000 | outside the widest orbit (6 500), inside a short cruise |
+| `GalaxyDesc::gateRingMetres` | 7 000 | outside the widest orbit (6 500); **8 000 breaks the path grid** — see below |
 | `GATE_CAPTURE_METRES` | 400, **to the skins** | below: a flat centre-to-centre radius cannot be satisfied at all |
 | `GATE_APPROACH_METRES` | 120 clear of the skin | comfortably inside the capture range, so arriving implies crossing |
 | `saveEveryTicks` | 18 000 (5 min at 60 Hz) | a `Server.cfg` default, not a constant |
 | Galaxy seed | one `constexpr` u64 beside `UNIVERSE_LAYOUT_SEED` | content, like every seed that places things |
+
+**The gate ring is 7 000 m, not the 8 000 this table first specified.** A gate stands further from
+its star than any planet, so it decides a system's static span — and at 8 000 m that span is 532
+cells against a path-grid ceiling of 512. `PathIslands` declines past its ceiling *quietly*, so the
+symptom would have been ships that stop routing, a long way from this number. It now lives in
+`GalaxyDesc` rather than in the composition root, so the bound is a test rather than a hope
+(`Universe-slice-3.md` §7).
 
 **The gate radius is measured to the hulls' skins, and this table said otherwise until slice 2
 built it.** It specified a flat `GATE_RADIUS_METRES` of 120 m, centre to centre. A Structure's centre
@@ -428,7 +439,7 @@ themselves, as 3 and 5 are in `Outpost`; 4 rides `NeuronClient` + `Outpost`.
 |---|---|---|---|---|---|
 | 1 | [`LayOutGalaxy`](Universe-slice-1.md): lattice, walk, pins, per-system recipe, gate links | `GameLogic` | M | — | [ADR 0055](Decisions/0055-the-galaxy-is-one-seed-and-its-gates-are-the-relative-neighborhood-graph.md) — **landed** |
 | 2 | [Gates and the jump door](Universe-slice-2.md): gate table, `Jump` order, `StepJumps`, `JumpedOut`, codec, ALPN | `GameLogic` | M | 1 | [ADR 0056](Decisions/0056-a-jump-is-a-despawn-and-a-spawn-under-one-identity.md) — **landed** |
-| 3 | Genesis composes the galaxy: root lays out, spawns stations and gates, boot log | `Outpost` | S | 1, 2 | — |
+| 3 | [Genesis composes the galaxy](Universe-slice-3.md): root lays out, spawns stations and gates, boot log | `Outpost` | S | 1, 2 | — **landed** |
 | 4 | The client crosses: `JUMP` on the sheet, gate marks, camera follow, per-system bodies | `NeuronClient`+`Outpost` | M | 3 | — |
 | 5 | The save file: header, atomic write, cadence in `Server.cfg`, restore-or-stop boot | `Outpost` | M | 2 (3 in practice) | ADR: the save is a versioned file, and a refused one stops the boot |
 | 6 | The replan scoped to its island | `GameLogic` | M | 2 | ADR: supersedes 0034 |
@@ -441,7 +452,7 @@ tie leaves a link alone; slice 2 kept both replay gates green with gates and jum
 rows: a fleet ordered through a gate arrives whole, once, with its damage and its identities and
 without its alert; a gate that leads nowhere strands nobody; and a jumped ship reaches a subscriber
 as *jumped* rather than as *destroyed*; slice 3's boot log states the galaxy
-(`GALAXY | SEED … | N SYSTEMS | M GATES`) and home boots pixel-identical to today; slice 4 owes
+(`GALAXY | 54 SYSTEMS | 136 GATES`) and home boots pixel-identical to today; slice 4 owes
 screenshots at two window sizes, on both sides of a jump; slice 5 saves, kills the process,
 restores, and replays to byte equality — and a truncated file stops the boot naming the reason;
 slice 6 proves a static spawn in one system re-plans no route in another.
