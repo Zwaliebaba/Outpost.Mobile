@@ -115,6 +115,15 @@ public:
     float ageSec = 0.0f;
   };
 
+  // One jump crossing being drawn: the wink-out where a hull left, or the wink-in where its
+  // identity re-entered (ADR 0056). Frozen at the spot it happened, on GunShot's terms exactly.
+  struct JumpFlash
+  {
+    DirectX::XMFLOAT3 posWorld{0.0f, 0.0f, 0.0f};
+    float headingRad = 0.0f; // the streak lies along the way the hull was pointed
+    float ageSec = 0.0f;
+  };
+
   struct ExhaustView
   {
     DirectX::XMFLOAT3 local{0.0f, 0.0f, 0.0f}; // nozzle position in mesh space
@@ -218,6 +227,14 @@ public:
   {
     Game::UniversePos posUniverse;
     Game::FactionId faction = Game::FACTION_VANGUARD;
+  };
+
+  // A gate of the layout, on StationMark's terms exactly: static content, not a record. Every gate
+  // stands at gateRingMetres -- 7 km, past both the interest radius and the minimap's half-range --
+  // so without a mark nothing on screen ever says the system has doors (GalaxyLayout.h).
+  struct GateMark
+  {
+    Game::UniversePos posUniverse;
   };
 
   // One per order, at the point that was tapped rather than one per ship. A move order's is the
@@ -490,6 +507,11 @@ public:
   // one that does not arm anything.
   void IssueStopOrder();
 
+  // A move order at a point on the view plane, for the minimap: the HUD knows where a tap on the map
+  // lands and this is the one thing a map tap can mean. Through the same IssueMoveOrder every ground
+  // tap takes, so the marker, the log line and the empty-selection rule cannot diverge.
+  void OrderMoveAt(float _viewX, float _viewZ);
+
   // Where the view reports what the player did. Optional: with no log nothing is reported.
   void SetEventLog(EventLog& _log) noexcept
   {
@@ -562,6 +584,31 @@ public:
     return m_stationMarks;
   }
 
+  // The gate marks, on the station marks' contract: content that belongs to ONE system, replaced by
+  // the composition root whenever the camera changes systems.
+  void AddGateMark(const GateMark& _mark)
+  {
+    m_gateMarks.push_back(_mark);
+  }
+
+  void ClearGateMarks() noexcept
+  {
+    m_gateMarks.clear();
+  }
+
+  [[nodiscard]] std::span<const GateMark> GateMarks() const noexcept
+  {
+    return m_gateMarks;
+  }
+
+  // The live order markers, for the minimap: an order often lands outside the camera's own view --
+  // a map tap's usually does -- and a tap with no visible answer reads as a tap that did not work.
+  // The scene draws these as ground rings; the map draws them as fading crosses.
+  [[nodiscard]] std::span<const OrderMarker> Markers() const noexcept
+  {
+    return m_markers;
+  }
+
   // Whether _faction holds this client hostile, as of the last update header that arrived. The one
   // reading of the mask in the executable: the livery table, the overview and the contact count all
   // ask this rather than inferring a relation from an identity (Design/Archive/Stations.md 4.3).
@@ -621,10 +668,12 @@ private:
   void DrawFeedback(Neuron::SceneRenderer& _renderer, Neuron::GpuDevice& _gpu, const Neuron::SceneFrame& _frame);
 
   // Where a screen ray meets record _index's hull, as a distance along the ray, or a negative
-  // number for a miss. Against the oriented box of the hull as drawn. The two pickers below are two
-  // filters over it and nothing else, so they cannot disagree about what a hull is.
-  [[nodiscard]] float RayHitDistance(std::size_t _index, const DirectX::XMFLOAT3& _origin,
-                                     const DirectX::XMFLOAT3& _direction) const noexcept;
+  // number for a miss. Against the oriented box of the hull as drawn, widened by _padding: the
+  // pickers below are filters over it and nothing else, so they cannot disagree about what a hull
+  // is -- only about how much slack a tap deserves, which is a structure-versus-ship question
+  // (INPUT_STRUCTURE_PICK_PADDING).
+  [[nodiscard]] float RayHitDistance(std::size_t _index, const DirectX::XMFLOAT3& _origin, const DirectX::XMFLOAT3& _direction,
+                                     float _padding) const noexcept;
 
   // Own hulls only: what may be selected, and therefore ordered.
   [[nodiscard]] int PickShip(float _xPx, float _yPx) const;
@@ -793,6 +842,17 @@ private:
   // The shots being drawn, oldest first, capped at MAX_DRAWN_SHOTS.
   std::vector<GunShot> m_shots;
 
+  // The jump winks being drawn, and the identities whose arrival this client still watches for: a
+  // jump preserves the entity (ADR 0056), so the record that re-enters IS the ship that left, and
+  // matching on it keys the arrival flash without the wire saying anything new.
+  std::vector<JumpFlash> m_jumpFlashes;
+  struct JumpWatch
+  {
+    Game::EntityId entity = Game::INVALID_ENTITY_ID;
+    float ageSec = 0.0f;
+  };
+  std::vector<JumpWatch> m_jumpWatches;
+
   // Who this client's own ships have shot at lately, so that a death can be attributed to the
   // player without the wire ever stating a killer (ADR 0053 keeps attribution off it). Entity and
   // the age of the last shot at it; pruned by GUN_KILL_CREDIT_SEC.
@@ -880,6 +940,7 @@ private:
   std::uint32_t m_bodyTriangles = 0;
 
   std::vector<StationMark> m_stationMarks;
+  std::vector<GateMark> m_gateMarks;
 
   // Which slots are selected. The whole of the selection: five bools against the five vectors of
   // remembered ids the control groups needed, because the server states the membership now.
@@ -924,7 +985,5 @@ private:
   int m_hoverShip = -1;
   bool m_boxActive = false;
   float m_boxX0Px = 0.0f, m_boxY0Px = 0.0f, m_boxX1Px = 0.0f, m_boxY1Px = 0.0f;
-  bool m_orderDragActive = false;
-  float m_orderX0Px = 0.0f, m_orderY0Px = 0.0f, m_orderX1Px = 0.0f, m_orderY1Px = 0.0f;
 };
 } // namespace Outpost

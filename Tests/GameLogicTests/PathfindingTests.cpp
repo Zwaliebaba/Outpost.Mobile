@@ -661,7 +661,6 @@ public:
   TEST_METHOD(ArchitectureInOneSystemReplansNoRouteInAnother)
   {
     Game::Universe universe;
-    const float radius = Game::HullSpecOf(Game::HullId::Structure).BoundingRadiusMetres();
 
     // Two systems, far enough apart to be separate islands by construction.
     const Game::UniversePos here = Game::LocalPos(0.0f, 0.0f);

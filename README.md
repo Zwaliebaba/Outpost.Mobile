@@ -71,9 +71,9 @@ combatants answer, and the fight runs itself. Their helms are still a metronome 
 whatever happens — because guns react in this game and courses do not.
 
 The government is here too. The galaxy is laid out from one seed — 54 systems joined by 136 gates,
-with home where it always was — and at every planet of every system stands a Core Vanguard Command
-station — azure in the scene, a hollow diamond on the minimap from the first frame, and the place
-your ships can dock. The Vanguard takes anyone who has
+with home where it always was — and one Core Vanguard Command station stands in every system, on its
+first planet's bearing and pulled in toward the star: azure in the scene, a hollow diamond on the
+minimap from the first frame, and the place your ships can dock. The Vanguard takes anyone who has
 not attacked it; order an attack on one of its ships or its stations and it stops taking you — the
 law turns red across the map, and the provoked station launches Corvette protectors that hunt the
 aggressor until it dies.

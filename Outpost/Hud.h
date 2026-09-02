@@ -131,8 +131,8 @@ public:
   // while the minimap, the bottom bar and the fleet buttons are underneath the screen and must not
   // take a press through it. A modal that swallows its own switch is a modal you can only leave with
   // Escape (Design/GalaxyMap-slice-1.md 7).
-  [[nodiscard]] bool HandlePointer(const Neuron::PointerEvent& _event, UniverseView& _view, int& _outOpenSheet, bool _railOnly,
-                                   float _dpiScale, std::uint32_t _widthPx, std::uint32_t _heightPx);
+  [[nodiscard]] bool HandlePointer(const Neuron::PointerEvent& _event, UniverseView& _view, const Neuron::Camera& _camera,
+                                   int& _outOpenSheet, bool _railOnly, float _dpiScale, std::uint32_t _widthPx, std::uint32_t _heightPx);
 
   // Which rail button is lit, or -1. The rail is a set of toggles and the screens they open are the
   // composition root's, so the button's state is read from here rather than the screen's state being
@@ -158,6 +158,7 @@ public:
     m_captured = false;
     m_pressedRail = -1;
     m_pressedFleet = -1;
+    m_pressedMinimap = false;
   }
 
 private:
@@ -223,6 +224,7 @@ private:
   std::int64_t m_downQpc = 0;
   int m_pressedRail = -1;
   int m_pressedFleet = -1;
+  bool m_pressedMinimap = false;
   int m_activeRail = -1;
 
   // The under-attack pulse's clock, and the edge it is read against.

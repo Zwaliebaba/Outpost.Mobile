@@ -38,8 +38,8 @@ inline constexpr float HOME_PLANET_BEARING_DEG = -23.0f;
 inline constexpr float HOME_PLANET_ORBIT_METRES = 3500.0f;
 
 // The starting system's seed. Its own, kept apart from whatever seeds the client's *looks*, because
-// a debug key that rerolled how a world looks must never move where it is: a station stands on every
-// site, so a moved site is a moved universe.
+// a debug key that rerolled how a world looks must never move where it is: the system's station
+// derives from its first planet's site, so a moved site is a moved universe.
 inline constexpr std::uint64_t HOME_SYSTEM_SEED = 0x53797331ull; // "Sys1"
 
 // Every other SystemDesc field keeps its default on purpose -- the defaults are the shipped numbers,
@@ -75,6 +75,23 @@ inline constexpr std::uint32_t VANGUARD_PROTECTOR_COMPLEMENT = 3;
 inline constexpr std::uint32_t VANGUARD_LAUNCH_EVERY_TICKS = 90;
 inline constexpr std::uint32_t VANGUARD_TARGET_CAP = 4;
 
+// Where a system's one Vanguard station stands: on the first planet's bearing, pulled in to this
+// fraction of its orbit. One station per system rather than one per planet keeps the opening scene
+// legible, and the pull puts home's station about 1,575 m out -- inside the 2 km interest radius,
+// so the first frame holds it as a live record beside the fleet instead of only a mark 3.5 km away.
+// The client's minimap mark derives from this same function (OutpostApp::MarkLocalStations), which
+// is what keeps the picture and the row in agreement (ADR 0055's rule, applied to a station).
+inline constexpr float VANGUARD_STATION_ORBIT_FRACTION = 0.45f;
+
+[[nodiscard]] inline UniversePos VanguardStationSite(const SystemLayout& _system)
+{
+  // No shipped layout is planetless (minPlanetCount is 2), but a default-constructed layout should
+  // place a station at the star rather than read past an end.
+  if (_system.planets.empty())
+    return _system.starPos;
+  return Lerp(_system.starPos, _system.planets.front().posUniverse, VANGUARD_STATION_ORBIT_FRACTION);
+}
+
 // --- the hostile base ------------------------------------------------------------------------------
 
 // The station sits 1,202 m out on the diagonal: inside the 2,000 m interest radius, so the base is
@@ -91,9 +108,16 @@ inline constexpr float HOSTILE_PATROL_RING_METRES = 400.0f;
 inline constexpr float HOSTILE_PATROL_CRUISE_MPS = 10.0f; // 29 % of an Interceptor's maximum: a lap in about 4.2 minutes
 inline constexpr std::uint32_t HOSTILE_PATROL_COUNT = 3;
 
-// Everything above, spawned into _outUniverse: the player's fleet in slot 1, a Vanguard station at
-// every planet site of every system, a gate at each end of every link, and the hostile base with its
-// patrol.
+// The hull both ends of every gate are spawned on, named once because it is spawned in two places:
+// SpawnGates builds a whole galaxy into one universe, and BuildStartingGalaxy builds each end into
+// the universe of the shard its system belongs to, which no single-universe function can do. The
+// name is what keeps the two in step -- and it exists because they fell out of step: the hull moved
+// from Structure to Stargate on one path and not the other, and the partitioned build went on
+// spawning doors that looked like stations (Design/CrossShard-slice-1.md).
+inline constexpr HullId GATE_HULL = HullId::Stargate;
+
+// Everything above, spawned into _outUniverse: the player's fleet in slot 1, a Vanguard station in
+// every system, a gate at each end of every link, and the hostile base with its patrol.
 //
 // A pure function of its arguments, called once, before the first tick. Nothing here draws -- the
 // randomness is all upstream in _galaxy, which the caller laid out from a seed it named -- so two

@@ -26,12 +26,16 @@ namespace
   const float closingSquared = relativeX * relativeX + relativeZ * relativeZ;
 
   // Zero relative velocity is not an edge case: it is a formation flying in company, which is the
-  // most ordinary arrangement the game has. The separation then never changes, so the closest
-  // approach is now and it is the current distance. Dividing here instead produces a NaN in the
-  // most common situation on the board.
-  float timeToClosest = 0.0f;
-  if (closingSquared > 1e-8f)
-    timeToClosest = std::max(0.0f, -(_neighbour.offsetX * relativeX + _neighbour.offsetZ * relativeZ) / closingSquared);
+  // most ordinary arrangement the game has -- and it is NOT a threat, however close the pair sits.
+  // The separation between the two never changes, so there is nothing to steer around; scoring it
+  // as an imminent contact instead (a time-to-closest of zero) was this function breaking the
+  // sentence above, and the bug a player reported as a squeezed formation rocking back and forth
+  // at a crawl: both hulls shed speed for ever and wove around corrections that could never
+  // resolve, because the threat was their spacing itself. Not converging is ignored, exactly as
+  // promised; the separation solve owns actual contact (owner report, 2026-09-02).
+  if (closingSquared <= 1e-8f)
+    return 0.0f;
+  const float timeToClosest = std::max(0.0f, -(_neighbour.offsetX * relativeX + _neighbour.offsetZ * relativeZ) / closingSquared);
   if (timeToClosest >= horizonSec)
     return 0.0f;
 

@@ -145,6 +145,19 @@ void SceneRenderer::CreateScenePipeline(GpuDevice& _gpu)
   pso.InputLayout.pInputElementDescs = SCENE_INSTANCED_ELEMENTS;
   pso.InputLayout.NumElements = static_cast<UINT>(std::size(SCENE_INSTANCED_ELEMENTS));
   check_hresult(_gpu.Device()->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(m_instancedPso.put())));
+
+  // The blended overlay pass the format has always named (Design/Archive/NmoFormat.md 5.5), over the
+  // instanced path: the same shaders and layout, the decal pipeline's blend and depth rule --
+  // tested so the world occludes a translucent part, never written so two of them blend instead of
+  // fighting -- and called after every opaque draw of the frame, exactly as the decals are.
+  pso.BlendState.RenderTarget[0].BlendEnable = TRUE;
+  pso.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+  pso.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+  pso.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+  pso.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+  pso.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+  pso.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+  check_hresult(_gpu.Device()->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(m_blendedPso.put())));
 }
 
 void SceneRenderer::CreateDecalPipelines(GpuDevice& _gpu)
@@ -246,9 +259,11 @@ void SceneRenderer::BeginScene(GpuDevice& _gpu, const SceneFrame& _frame)
   cmd->SetGraphicsRoot32BitConstants(0, 16, &_frame.viewProj, 16);
 
   // Everything after baseColour, which is also per draw.
+  // cameraPos.w is the pass's alpha, read back by ScenePS: 1 here for the opaque pass, and the
+  // material's own during a blended draw, which puts it back when it is done.
   const float shading[8] = {
     _frame.lightDir.x,  _frame.lightDir.y,  _frame.lightDir.z,  _frame.ambient,
-    _frame.cameraPos.x, _frame.cameraPos.y, _frame.cameraPos.z, 0.0f,
+    _frame.cameraPos.x, _frame.cameraPos.y, _frame.cameraPos.z, 1.0f,
   };
   cmd->SetGraphicsRoot32BitConstants(1, 8, shading, 4);
 }
@@ -326,7 +341,41 @@ void SceneRenderer::DrawMeshInstanced(GpuDevice& _gpu, MeshHandle _mesh, std::sp
   const std::uint32_t mesh = m_meshSlots.SlotOf(_mesh);
   if (mesh == HandleStore::INVALID_SLOT || m_meshes[mesh].vertexCount == 0 || _instances.empty())
     return;
+  DrawInstancedRun(_gpu, mesh, _instances, 0, m_meshes[mesh].vertexCount, m_instancedPso.get());
+}
 
+void SceneRenderer::DrawMeshInstancedRange(GpuDevice& _gpu, MeshHandle _mesh, std::span<const MeshInstance> _instances,
+                                           std::uint32_t _firstVertex, std::uint32_t _vertexCount)
+{
+  const std::uint32_t mesh = m_meshSlots.SlotOf(_mesh);
+  if (mesh == HandleStore::INVALID_SLOT || _vertexCount == 0 || _instances.empty() ||
+      _firstVertex + _vertexCount > m_meshes[mesh].vertexCount)
+    return;
+  DrawInstancedRun(_gpu, mesh, _instances, _firstVertex, _vertexCount, m_instancedPso.get());
+}
+
+void SceneRenderer::DrawMeshInstancedBlended(GpuDevice& _gpu, MeshHandle _mesh, std::span<const MeshInstance> _instances,
+                                             std::uint32_t _firstVertex, std::uint32_t _vertexCount, float _alpha)
+{
+  const std::uint32_t mesh = m_meshSlots.SlotOf(_mesh);
+  if (mesh == HandleStore::INVALID_SLOT || _vertexCount == 0 || _instances.empty() ||
+      _firstVertex + _vertexCount > m_meshes[mesh].vertexCount)
+    return;
+
+  // The pass's alpha rides cameraPos.w (Scene.hlsli), set for this draw and put back after it: the
+  // opaque pipelines read the same constant, and a stale fraction left here would turn the next
+  // opaque draw translucent with nothing naming why.
+  ID3D12GraphicsCommandList* cmd = _gpu.CommandList();
+  const float alpha = std::clamp(_alpha, 0.0f, 1.0f);
+  cmd->SetGraphicsRoot32BitConstants(1, 1, &alpha, 11);
+  DrawInstancedRun(_gpu, mesh, _instances, _firstVertex, _vertexCount, m_blendedPso.get());
+  const float opaque = 1.0f;
+  cmd->SetGraphicsRoot32BitConstants(1, 1, &opaque, 11);
+}
+
+void SceneRenderer::DrawInstancedRun(GpuDevice& _gpu, std::uint32_t _meshSlot, std::span<const MeshInstance> _instances,
+                                     std::uint32_t _firstVertex, std::uint32_t _vertexCount, ID3D12PipelineState* _pso)
+{
   const std::uint32_t wanted = static_cast<std::uint32_t>(_instances.size());
   const std::uint32_t count = std::min(wanted, MAX_INSTANCES - m_instanceOffset);
   if (count < wanted)
@@ -349,12 +398,12 @@ void SceneRenderer::DrawMeshInstanced(GpuDevice& _gpu, MeshHandle _mesh, std::sp
   instanceView.SizeInBytes = static_cast<UINT>(count * sizeof(MeshInstance));
   instanceView.StrideInBytes = sizeof(MeshInstance);
 
-  const D3D12_VERTEX_BUFFER_VIEW views[2] = {m_meshes[mesh].vbv, instanceView};
+  const D3D12_VERTEX_BUFFER_VIEW views[2] = {m_meshes[_meshSlot].vbv, instanceView};
 
   ID3D12GraphicsCommandList* cmd = _gpu.CommandList();
-  cmd->SetPipelineState(m_instancedPso.get());
+  cmd->SetPipelineState(_pso);
   cmd->IASetVertexBuffers(0, 2, views);
-  cmd->DrawInstanced(m_meshes[mesh].vertexCount, count, 0, 0);
+  cmd->DrawInstanced(_vertexCount, count, _firstVertex, 0);
 
   m_instanceOffset += count;
 }

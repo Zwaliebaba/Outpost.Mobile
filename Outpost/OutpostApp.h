@@ -123,9 +123,9 @@ private:
   // ever called between ticks, beside the save, and for the same reason.
   void WriteTickStats();
 
-  // The local system's planets, as minimap marks. The stations they stand for are in the save file;
-  // the marks are not, because a mark is a picture rather than a record. Rebuilt at boot and again
-  // whenever the camera changes systems (Design/Archive/Universe-slice-4b.md 4).
+  // The local system's station and gates, as minimap marks. The rows they stand for are in the save
+  // file; the marks are not, because a mark is a picture rather than a record. Rebuilt at boot and
+  // again whenever the camera changes systems (Design/Archive/Universe-slice-4b.md 4).
   void MarkLocalStations();
 
   [[nodiscard]] std::uint32_t OwnShipCount() const noexcept;

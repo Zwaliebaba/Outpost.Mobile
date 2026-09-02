@@ -1470,23 +1470,20 @@ public:
     Assert::AreEqual(Game::FLEET_ALERT_TICKS, universe.FleetOf(fleet).alertTicks, L"the act did not light the alert");
     Assert::IsTrue(universe.FleetOf(fleet).threat == raiderHandle, L"the fleet is not roused against its attacker");
 
-    for (int tick = 0; tick < 200; ++tick)
+    for (int tick = 0; tick < 150; ++tick)
       universe.Step();
 
-    // The Corvette turns on the raider; the Miner keeps flying the order it was given, and does not
-    // flee -- fleeing is a judgment about where safety is, which is a sense this design has none of.
-    //
-    // "Turns on" is read as gunfire rather than as distance, and that change is this phase's rather
-    // than this row's. The raider was spawned on top of the Miner, which is well inside a Corvette's
-    // 180 m turrets, so the combatant is already where its guns bear and a pursuit that closed
-    // further would be one that had learned nothing (Design/Archive/Combat.md 8). What says it turned is
-    // that the raider is losing hull points, and nothing but this fleet is shooting at it.
+    // The guns answer, and nobody turns. The threat is the mounts' first priority, so the raider is
+    // losing hull points and nothing but this fleet is shooting at it -- but the fleet is FLYING an
+    // explicit order, which outranks the chase (owner decision, 2026-09-02,
+    // CombatTests::TheDefenseDoesNotSuspendATravelOrder): both members keep the order, and the
+    // combatant keeps the fleet's pace, where a chase would have zeroed the cap to run at the
+    // hull's own speed. The chase itself, and the return from it, are the held-ground rows below.
     Assert::IsTrue(universe.Ship(raider).hullPoints < Game::HullSpecOf(Game::HullId::Interceptor).maxHullPoints,
                    L"the combatant did not turn its guns on the attacker");
-    Assert::AreEqual(0.0f, universe.Ship(corvette).orderSpeedCapMetresPerSec, 0.0f, L"a chase was held to the fleet's cruising pace");
+    Assert::IsTrue(universe.Ship(corvette).orderSpeedCapMetresPerSec > 0.0f, L"a travelling combatant dropped the fleet's pace to chase");
     Assert::AreEqual(Game::OrderState::Moving, universe.Ship(miner).order, L"the non-combatant abandoned its order");
-    Assert::IsTrue(Game::Distance(universe.Ship(miner).posUniverse, point) < Game::Distance(universe.Ship(corvette).posUniverse, point),
-                   L"the non-combatant is not the one still going where it was sent");
+    Assert::AreEqual(Game::OrderState::Moving, universe.Ship(corvette).order, L"the combatant abandoned the order it was flying");
   }
 
   TEST_METHOD(AnActOnAShipInNoFleetIsIgnored)
@@ -1567,50 +1564,60 @@ public:
 
   TEST_METHOD(ACombatantReturnsToItsOrder)
   {
-    // What standing down has to mean when the fleet was in the middle of something. Pursuit
-    // overwrote the combatant's route destination with the target's position, so patience -- which
-    // re-issues a member to its own route destination -- would send it back to where its quarry used
-    // to be. The stand-down re-lowers the standing order instead, and this is the test that says the
+    // What standing down has to mean when the fleet still holds an order. Pursuit overwrote the
+    // combatant's route destination with the target's position, so patience -- which re-issues a
+    // member to its own route destination -- would send it back to where its quarry used to be. The
+    // stand-down re-lowers the standing order instead, and this is the test that says the
     // difference is real (Fleets.md 7.2's amendment).
+    //
+    // The fleet has ARRIVED before the ambush lands, deliberately: a fleet still flying an explicit
+    // order no longer suspends it for the defense at all (owner decision, 2026-09-02,
+    // CombatTests::TheDefenseDoesNotSuspendATravelOrder), so the posture this row needs -- a
+    // combatant off chasing while the order stands in the row -- only arises on held ground now.
     Game::Universe universe;
     const Game::Universe::StationId station = MakeStationAt(universe, 0.0f, 0.0f);
     const Game::Universe::FleetId fleet = MixedFleet(universe, station, 0);
     const Game::ShipId corvette = CombatantOf(universe, fleet);
     const Game::ShipId miner = NonCombatantOf(universe, fleet);
 
-    const Game::UniversePos point = Game::LocalPos(1600.0f, 0.0f);
+    const Game::UniversePos point = Game::LocalPos(800.0f, 0.0f);
     Assert::AreEqual(Code(Game::Universe::FleetOrderResult::Ordered),
                      Code(universe.IssueFleetOrder(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 0, MoveTo(point))),
                      L"the fleet order was refused");
-    for (int tick = 0; tick < 200; ++tick)
+    for (int tick = 0; tick < 2600; ++tick)
       universe.Step();
+    Assert::AreEqual(Game::OrderState::Idle, universe.Ship(corvette).order, L"the fleet never arrived, so this proves nothing");
 
-    // Struck once, and the raider then sits still well inside the leash: only the alert running out
-    // can end this, which is what puts the stand-down on a schedule the test can wait for.
-    Game::UniversePos ambush = universe.Ship(miner).posUniverse;
-    Game::Translate(ambush, -300.0f, 0.0f);
+    // Struck from half a kilometre off to the side. On held ground the defense suspends the
+    // combatant: it chases, its guns kill the 60-point raider inside five seconds of bearing on it,
+    // and the threat dying is the stand-down -- the same clearing the alert's timeout reaches.
+    Game::UniversePos ambush = point;
+    Game::Translate(ambush, 0.0f, 500.0f);
     const Game::ShipId raider =
       universe.SpawnShip(ambush, 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
     universe.RecordHostileAct(universe.HandleOf(raider), universe.HandleOf(miner));
 
-    for (std::uint32_t tick = 0; tick < Game::FLEET_ALERT_TICKS / 2; ++tick)
+    bool turned = false;
+    for (std::uint32_t tick = 0; tick < Game::FLEET_ALERT_TICKS && !turned; ++tick)
+    {
       universe.Step();
-    Assert::IsTrue(Game::Distance(universe.Ship(corvette).posUniverse, universe.Ship(raider).posUniverse) < 400.0f,
-                   L"the combatant never turned on the raider, so this proves nothing");
+      turned = Game::Distance(universe.Ship(corvette).posUniverse, ambush) < 400.0f;
+    }
+    Assert::IsTrue(turned, L"the combatant never turned on the raider, so this proves nothing");
 
-    for (std::uint32_t tick = 0; tick < Game::FLEET_ALERT_TICKS; ++tick)
+    for (std::uint32_t tick = 0; tick < Game::FLEET_ALERT_TICKS + 1; ++tick)
       universe.Step();
-    Assert::IsTrue(universe.FleetOf(fleet).threat.generation == 0, L"the alert never burned out");
+    Assert::IsTrue(universe.FleetOf(fleet).threat.generation == 0, L"the engagement never ended");
     Assert::IsTrue(universe.FleetOf(fleet).orderKind == Game::FleetOrderKind::Move, L"the defense ate the standing order");
 
-    // And it goes to the fleet's order, not back to the raider it was shadowing.
-    for (int tick = 0; tick < 4000; ++tick)
+    // And it goes back to the fleet's order, not to where its quarry stood.
+    for (int tick = 0; tick < 2000; ++tick)
       universe.Step();
     const float spacing = Game::SlotSpacingMetres(Game::HullSpecOf(Game::HullId::Miner).BoundingRadiusMetres());
     Assert::IsTrue(Game::Distance(universe.Ship(corvette).posUniverse, point) < 4.0f * spacing,
                    L"a combatant that stood down did not resume its fleet's order");
-    Assert::IsTrue(Game::Distance(universe.Ship(corvette).posUniverse, universe.Ship(raider).posUniverse) > 1000.0f,
-                   L"a combatant that stood down went back to where its quarry was");
+    Assert::IsTrue(Game::Distance(universe.Ship(corvette).posUniverse, ambush) > 300.0f,
+                   L"a combatant that stood down stayed where its quarry was");
   }
 
   TEST_METHOD(TheAlertDecays)

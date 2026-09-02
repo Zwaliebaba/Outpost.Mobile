@@ -191,6 +191,10 @@ inline constexpr float INPUT_DRAG_THRESHOLD_PX = 6.0f;
 inline constexpr float INPUT_TAP_MAX_DURATION_MS = 320.0f;
 inline constexpr float INPUT_DOUBLE_TAP_WINDOW_MS = 300.0f;
 inline constexpr float INPUT_PICK_PADDING = 1.15f;
+// Structures take none of that slack: the padding that keeps a fighter tappable adds tens of metres
+// around a 250 m station, and a tap that lands beside one is a move order the player meant, not a
+// dock (PickStation, PickGate).
+inline constexpr float INPUT_STRUCTURE_PICK_PADDING = 1.0f;
 
 // --- the sky -----------------------------------------------------------------------------------
 // A procedurally generated star field, drawn before anything else and never tested against depth
@@ -448,10 +452,13 @@ inline constexpr float GUN_TRACER_SEC = 0.33f;
 // The beads a tracer is drawn as. They ride the same glow billboards a running light does, so the
 // tracer costs no pipeline, no shader and nothing in the renderer's contract -- which is the whole
 // reason this half of the slice could land without the other (Design/Archive/Combat-slice-4.md 1).
-inline constexpr int GUN_TRACER_BEADS = 6;
-inline constexpr float GUN_TRACER_RADIUS_METRES = 0.9f;
-inline constexpr float GUN_MUZZLE_RADIUS_METRES = 3.2f;
-inline constexpr float GUN_IMPACT_RADIUS_METRES = 2.4f;
+// Sized to read at fleet zoom rather than at a hull's: the guns reach 160-420 m (DeviceSpec.h), and
+// at the camera heights a fight is watched from, the sub-metre beads this shipped with were under a
+// pixel -- gunfire the wire reported and the frame technically drew, and nobody ever saw.
+inline constexpr int GUN_TRACER_BEADS = 10;
+inline constexpr float GUN_TRACER_RADIUS_METRES = 2.5f;
+inline constexpr float GUN_MUZZLE_RADIUS_METRES = 8.0f;
+inline constexpr float GUN_IMPACT_RADIUS_METRES = 6.0f;
 
 // The most shots drawn at once. A fleet of eight Corvettes fires sixteen turrets at 0.75 s each, so
 // a busy second is about twenty on screen; sixty is headroom past anything this envelope holds, and
@@ -496,6 +503,23 @@ inline constexpr float TURRET_STOWED_RAD = 0.0087f;
 // authored -- which is a lie about a ship too far away to see a turret on, and never a lie about
 // what was hit.
 inline constexpr std::size_t MAX_POSED_HULLS = 24;
+
+// --- the jump wink -------------------------------------------------------------------------------
+// The look a JumpedOut departure draws, and its mirror on the arrival: an azure flash that blooms
+// and dies where the hull was, riding the same glow billboards the tracers do, so a crossing reads
+// as an event instead of a record quietly leaving the snapshot (Design/Archive/Universe.md 9's
+// placeholder, paid). Presentation only, aged on the tracers' real-time clock. The arrival is keyed
+// by identity, which a jump preserves (ADR 0056): the far side blinks the moment the same entity
+// re-enters this client's view.
+inline constexpr float JUMP_FLASH_SEC = 0.9f;
+inline constexpr float JUMP_FLASH_RADIUS_METRES = 14.0f; // the bloom at birth; JUMP_FLASH_EXPAND scales its death
+inline constexpr float JUMP_FLASH_EXPAND = 3.0f;
+inline constexpr float JUMP_FLASH_STREAK_METRES = 22.0f; // how far the fore-aft streak reaches at birth
+inline constexpr Neuron::Rgba JUMP_FLASH_COLOUR{0.55f, 0.8f, 1.0f, 1.0f};
+
+// How long an identity that jumped out is watched for before the expectation is let go: the far
+// side reaches this client only when its own interest does, and a spectator's jumper never will.
+inline constexpr float JUMP_ARRIVAL_WATCH_SEC = 5.0f;
 
 // --- HUD ---------------------------------------------------------------------------------------
 // Flat and square-cornered: no blur, no glow, no gradients. Sizes are in px at 96 DPI and scale

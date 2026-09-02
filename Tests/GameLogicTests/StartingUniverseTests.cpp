@@ -35,10 +35,10 @@ public:
     Game::Universe universe;
     Game::BuildStartingUniverse(galaxy, 0, universe);
 
-    // 3 fleet + 164 Vanguard stations + 136 gates + 1 hostile station + 3 patrol.
-    Assert::AreEqual(307u, universe.ShipCount(), L"the shipped universe is not 307 ships");
+    // 3 fleet + 54 Vanguard stations + 136 gates + 1 hostile station + 3 patrol.
+    Assert::AreEqual(197u, universe.ShipCount(), L"the shipped universe is not 197 ships");
     Assert::AreEqual(136u, universe.GateCount(), L"the shipped universe is not 136 gates -- two per link");
-    Assert::AreEqual(165u, universe.StationCount(), L"the shipped universe is not 165 stations -- 164 Vanguard and one Vandal");
+    Assert::AreEqual(55u, universe.StationCount(), L"the shipped universe is not 55 stations -- one Vanguard per system and one Vandal");
     Assert::AreEqual(1u, universe.FleetCount(), L"the shipped universe does not hold exactly the player's fleet");
     Assert::AreEqual(static_cast<std::uint32_t>(galaxy.links.size()) * 2u, universe.GateCount(),
                      L"the gate count and the link count have come apart");

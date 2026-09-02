@@ -827,6 +827,8 @@ bool Expand(const Cursor& _cursor, const MeshView& _mesh, MeshData& _outMesh)
     // A submesh has exactly one material, so the flag is read once here and written to every vertex
     // the submesh emits: no name matching, no lookup, no heuristic (Design/Archive/NmoFormat.md 5.5).
     const float race = (material.renderFlags & static_cast<std::uint32_t>(NmoRenderFlags::RaceTinted)) != 0 ? 1.0f : 0.0f;
+    part.renderFlags = material.renderFlags;
+    part.alpha = material.baseColour.w;
     const BufferView& indexBuffer = _mesh.indexBuffers[record.indexBufferIndex];
     const BufferView& vertexBuffer = _mesh.vertexBuffers[record.vertexBufferIndex];
 

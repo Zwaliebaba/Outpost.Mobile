@@ -30,5 +30,9 @@ float4 main(VsOut i) : SV_Target
   // than a hue: under liveries a mint-green selected hull reads as a different faction, and the
   // player's own livery might be mint. Selection is a brightness and a ring; identity is a hue.
   lit = lerp(lit, float3(1.0, 1.0, 1.0), saturate(i.tint.w));
-  return float4(lit, 1.0);
+
+  // cameraPos.w carries the pass's alpha: 1 from BeginScene for the opaque pass, the material's own
+  // from DrawMeshInstancedBlended for the blended one. One shader serves both passes, which is what
+  // let the blended overlay arrive without a second pixel stage (Design/Archive/NmoFormat.md 5.5).
+  return float4(lit, cameraPos.w);
 }
