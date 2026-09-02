@@ -164,6 +164,14 @@ format-1 fixture loads through file 1->2 and state 7->8 and replays to byte equa
 The census is conserved across every count, which is the claim that a partition cuts the galaxy up
 rather than changing it.
 
+**What CI caught that nothing here did.** Run 245 was red on clang-tidy alone -- the build and the
+whole suite passed -- with one finding: `OccupiedShardCount` is `noexcept` and counted occupancy into
+a `std::vector<bool>` sized by the shard count, which allocates, and `bugprone-exception-escape`
+refused it. The comment above the line even claimed "no allocation", which is the tell: it was
+reasoning about the *bitset* being small rather than about `vector` being a `vector`. It now counts
+distinct answers by looking back over the systems already walked, which is quadratic in the system
+count -- 54 here -- allocates nothing, and gives identical numbers at every count from 1 to 14.
+
 **The gap:** nothing here ran on MSVC, and nothing here ran a second process. The first is CI's to
 answer and is the gate. The second is not a gap in this slice — no universe with a gate whose ends
 are in two `Universe`s is written by anything yet, and the day one is, is slice 2's.

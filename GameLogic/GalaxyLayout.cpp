@@ -281,15 +281,22 @@ std::uint32_t OccupiedShardCount(std::span<const SystemSite> _systems, const Gal
   if (_desc.shardCount <= 1u)
     return _systems.empty() ? 0u : 1u;
 
-  // A bitset over shards rather than a count of distinct answers, so this is one pass and no
-  // allocation for any count a deployment can name.
-  std::vector<bool> held(_desc.shardCount, false);
-  for (const SystemSite& site : _systems)
-    held[ShardOfSystem(site, _desc)] = true;
-
+  // Distinct answers, counted by looking back rather than by marking a bitset over shards. The
+  // bitset was one line shorter and was a std::vector<bool>, which allocates -- and this function is
+  // noexcept, so clang-tidy refused it (bugprone-exception-escape, run 245). A shard count is
+  // deployment configuration and a bound this function does not get to assume; the number of
+  // SYSTEMS is bounded by the galaxy and is what the work is actually proportional to, so the
+  // quadratic pass over 54 of them is both smaller than the allocation would have been and cannot
+  // throw.
   std::uint32_t occupied = 0;
-  for (const bool any : held)
-    occupied += any ? 1u : 0u;
+  for (std::size_t at = 0; at < _systems.size(); ++at)
+  {
+    const ShardId mine = ShardOfSystem(_systems[at], _desc);
+    bool first = true;
+    for (std::size_t before = 0; before < at && first; ++before)
+      first = ShardOfSystem(_systems[before], _desc) != mine;
+    occupied += first ? 1u : 0u;
+  }
   return occupied;
 }
 
