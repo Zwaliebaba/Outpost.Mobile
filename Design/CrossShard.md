@@ -7,13 +7,16 @@ landed ([`CrossShard-slice-1.md`](CrossShard-slice-1.md), [`CrossShard-slice-2.m
 [ADR 0063](Decisions/0063-the-partition-is-a-function-of-the-layout.md),
 [ADR 0065](Decisions/0065-a-handoff-is-at-least-once-delivery-onto-an-idempotent-apply.md),
 [ADR 0066](Decisions/0066-an-acknowledgement-means-durable-not-delivered.md));
-slice 5 is listed in §8 and waits on a headless process no design in this tree owns. §2 and §4 are amended to
+slice 5 has moved to [`ShardServer.md`](ShardServer.md), which is the design the headless process it
+waited on now has. §2 and §4 are amended to
 say what was built. **All three of §9's ways this design could be wrong have now been answered by
 measurement**, and none of them was.**
 
-Slice 5 waits on something no design in this tree owns yet: a headless process. The seam, the
-configuration file and the shard in the save are all in place (§1), and what is missing is a root
-that runs a universe without a window.
+Slice 5 waited on something no design in this tree owned: a headless process. **It has one now** —
+[`ShardServer.md`](ShardServer.md), drafted 2026-09-02 on the owner's decision that a root eight
+slices depend on should not be built as a side effect of one of them. The seam, the configuration
+file and the shard in the save were all in place (§1); what was missing was a root that runs a
+universe without a window, and that is a composition root rather than a system.
 
 [ADR 0056](Decisions/0056-a-jump-is-a-despawn-and-a-spawn-under-one-identity.md) chose the jump's
 shape for what it would make true later, and said so:
@@ -165,7 +168,10 @@ The question this design exists to answer badly if it does not answer it deliber
 
 - **A gate to a shard that is not answering refuses the jump**, at the order, with the fleet where it
   was. That is `FleetOrderResult`'s existing shape — a refusal a player reads, not a fleet that
-  vanishes.
+  vanishes. **Not built yet**: a link has no opinion about reachability until there is a real
+  connection to lose, so this lands with [`ShardServer.md`](ShardServer.md) §7 slice 4, by the
+  owner's decision of 2026-09-02. Until then a fleet ordered at an unreachable shard waits safely in
+  the outbox, which is the paragraph below and is not wrong — only silent.
 - **A fleet already in the outbox waits.** It is not lost: it is in the file. When the far shard
   returns, it arrives.
 - **A shard never invents the far side's state to keep playing.** The alternative is two universes
@@ -192,7 +198,7 @@ to watch two at once. Nothing here forecloses it.
 | 2 | [The outbox, the inbox, `SpawnShipAs` refusing a live entity, and **two `Universe`s handed off between in one process**](CrossShard-slice-2.md) — **landed**: one branch in `StepJumps`, a `Handoff` the wire will carry unchanged, and a drain in entity order | `GameLogic` | L | 1 | [0065](Decisions/0065-a-handoff-is-at-least-once-delivery-onto-an-idempotent-apply.md) |
 | 3 | [Both in the state codec, so a shard that dies mid-handoff still holds the ship](CrossShard-slice-3.md) — **landed**: state format 9, the sequence saved with them, and a format-8 fixture | `GameLogic` | M | 2 | — |
 | 4 | [The handoff on the wire: a message on the reliable lane, the ack, the re-send](CrossShard-slice-4.md) — **landed**: `ShardLink`, kinds 11 and 12, and an ack that means durable | `GameLogic` | L | 3 | [0066](Decisions/0066-an-acknowledgement-means-durable-not-delivered.md) |
-| 5 | Two shard processes, and a client that follows its camera across | `Outpost` | L | 4 | — |
+| 5 | Two shard processes, and a client that follows its camera across — **moved to [`ShardServer.md`](ShardServer.md) §7 slices 4 and 5**, because the root it needs is shared with seven phase-2 slices and belongs to a design of its own | `Server`+`Outpost` | L | 4 | — |
 
 **Slice 2 is where the design is proved, and it is deliberately not on a wire.** Two universes in one
 process, handing off through the same calls a wire will later carry, is the tree's own pattern: QUIC

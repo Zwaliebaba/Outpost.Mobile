@@ -186,8 +186,10 @@ phase is the one that writes the design.
 
 ### Phase 2 — the shard (not cut)
 
-What a second player and a second machine need. Every slice here waits on the headless run loop
-and the dedicated-server root, which belong to no plan yet.
+What a second player and a second machine need. Every slice here waits on the headless run loop and
+the dedicated-server root, which **now have a design**: [`ShardServer.md`](ShardServer.md), drafted
+2026-09-02 precisely because eight slices across two designs were waiting on the same missing
+executable. Its slice 1 is the one that unblocks this phase.
 
 | # | Slice | Layer | Size | Depends on | Items | ADR |
 |---|---|---|---|---|---|---|
