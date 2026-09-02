@@ -207,9 +207,8 @@ void OutpostApp::Init(HINSTANCE _instance)
   }
   if (restored == RestoreResult::Refused)
   {
-    ThrowBootFailure("the saved universe was refused",
-                     "Universe.sav is present and is not a universe this build can read; move it aside and run "
-                     "UniverseGen to write a new one");
+    const std::string reason = m_restoreRefusal + "; move it aside and run UniverseGen to write a new one";
+    ThrowBootFailure("the saved universe was refused", reason.c_str());
   }
 
   // The places the file's contents stand in. Laid out rather than stored, because a galaxy is a pure
@@ -596,13 +595,69 @@ OutpostApp::RestoreResult OutpostApp::RestoreUniverse()
 
   const Neuron::ByteBuffer file = Neuron::BinaryFile::ReadFile(Game::UNIVERSE_SAVE_FILE);
   if (file.empty())
-    return RestoreResult::Refused; // present and unreadable, or present and empty; neither is a universe
+  {
+    m_restoreRefusal = "Universe.sav is present and could not be read, or is empty";
+    return RestoreResult::Refused;
+  }
 
   Game::SaveHeader header;
   if (!Game::ReadSaveFile(file, header, m_universe))
+  {
+    // The reader changed nothing, so it cannot say which format it refused; the bytes are peeked
+    // for the sentence, because "not a universe this build can read" is a diagnosis only when it
+    // names the byte (AGENTS.md 5).
+    std::uint8_t fileFormat = 0;
+    std::uint8_t stateFormat = 0;
+    if (Game::PeekSaveFormats(file, fileFormat, stateFormat))
+    {
+      // Widened before formatting: a uint8_t is a char to std::format, and the sentence would carry
+      // a control character where it should carry a seven.
+      m_restoreRefusal =
+        std::format("Universe.sav is file format {} and state format {}; this build reads file formats {} to {} and "
+                    "state formats {} to {}",
+                    static_cast<unsigned>(fileFormat), static_cast<unsigned>(stateFormat),
+                    static_cast<unsigned>(Game::SAVE_FILE_FORMAT_OLDEST), static_cast<unsigned>(Game::SAVE_FILE_FORMAT),
+                    static_cast<unsigned>(Game::UNIVERSE_STATE_FORMAT_OLDEST), static_cast<unsigned>(Game::UNIVERSE_STATE_FORMAT));
+    }
+    else
+    {
+      m_restoreRefusal = "Universe.sav is present and is not a universe: the magic is wrong or the file is torn";
+    }
     return RestoreResult::Refused;
+  }
 
   m_galaxySeed = header.galaxySeed;
+
+  // Which format the universe came out of, on every restore, and when it was an older one, the fact
+  // that this run migrated it -- the next save writes the current format over the file that was
+  // read. The file read is kept beside the save under its format's name, once and never overwritten,
+  // because a reader that misread an older field produces a universe that loads, saves thirty
+  // seconds later, and has by then destroyed the only file that could show what the field was
+  // (Design/SaveMigration-work-order.md 1.4). A copy of an ACCEPTED file decides nothing for the
+  // player, which is what ADR 0057's refusal of moving a REFUSED one aside was about.
+  m_log.PushFormat(EventLog::Severity::Info, 0.0f, "SAVE | FORMAT %u", static_cast<unsigned>(header.stateFormat));
+  if (header.stateFormat < Game::UNIVERSE_STATE_FORMAT || header.fileFormat < Game::SAVE_FILE_FORMAT)
+  {
+    const std::wstring sidecar = Game::UniverseSaveSidecarName(header.stateFormat);
+    if (Neuron::FileSys::Exists(sidecar))
+    {
+      m_log.PushFormat(EventLog::Severity::Info, 0.0f, "SAVE | MIGRATED %u -> %u | KEPT ALREADY", static_cast<unsigned>(header.stateFormat),
+                       static_cast<unsigned>(Game::UNIVERSE_STATE_FORMAT));
+    }
+    else if (Neuron::BinaryFile::WriteFileAtomic(sidecar, file))
+    {
+      m_log.PushFormat(EventLog::Severity::Info, 0.0f, "SAVE | MIGRATED %u -> %u | KEPT Universe.sav.%u",
+                       static_cast<unsigned>(header.stateFormat), static_cast<unsigned>(Game::UNIVERSE_STATE_FORMAT),
+                       static_cast<unsigned>(header.stateFormat));
+    }
+    else
+    {
+      // Alert for SaveUniverse's reason: the one file that could show what a misread field was is
+      // the one that did not get kept, and the player is the only one who can move it aside.
+      m_log.PushFormat(EventLog::Severity::Alert, 0.0f, "SAVE | MIGRATED %u -> %u | KEEP REFUSED",
+                       static_cast<unsigned>(header.stateFormat), static_cast<unsigned>(Game::UNIVERSE_STATE_FORMAT));
+    }
+  }
 
   // From the file's own tick, so the first periodic save falls a whole period after the restore
   // rather than immediately -- a game reloaded and quit again should not rewrite the file it just

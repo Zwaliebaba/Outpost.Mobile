@@ -195,3 +195,60 @@ yesterday's build means to tomorrow's.
   sidecar. The row becomes `GameLogic` + `Outpost`, in this order's commit.
 - `.gitattributes` has no rule for `.sav`; Git detects the file as binary by content. Adding
   `*.sav binary` beside the existing rules is allowed and not required.
+
+---
+
+## 7. What changed on contact, and what is deliberately not here
+
+**The sidecar is written at restore, not before the first save.** §1.4 said "before the first save
+of the run", which a flag on the app would have had to enforce. At restore the bytes are still in
+hand and nothing has happened yet, so the copy is taken there; "before the first save" is then
+true by construction rather than by a flag, which is the same shape slice 5 chose for the shutdown
+save.
+
+**A refused boot now names the bytes.** ADR 0057's reader changes nothing when it refuses, so the
+sentence "not a universe this build can read" could not say which build. `Game::PeekSaveFormats`
+reads the two format bytes behind both magics without parsing anything else, and the boot failure
+says `file format 1 and state format 9; this build reads … 7 to 7`. Small, and the one line a
+player with a file from a newer build actually needs.
+
+**The identity row is the regeneration path.** `TheNewestFixtureIsTheToolsOutput` compares the
+committed fixture with what `WriteSaveFile` produces for the shipped galaxy, and on a mismatch
+writes the correct bytes into the test log as base64 behind a `FIXTURE-BASE64|` marker. That is
+how the fixture in this slice was going to be obtained if the local build below had disagreed
+with MSVC, and it is how anyone with nothing but CI regenerates one.
+
+**The fixture was written on Linux, by clang, from `GameLogic` compiled behind a shim for the
+NeuronCore umbrella** — the same `LayOutGalaxy`, `BuildStartingUniverse` and `WriteSaveFile` the
+tool calls, with contraction off and SSE2 only, which is what `/fp:precise` on x64 amounts to. It
+prints the census the tool would (54 systems, 136 gates, 165 stations, 307 ships, 1 fleet, 124,438
+bytes). Whether it is byte-identical to what MSVC's Debug|x64 build writes is exactly what the
+identity row decides on CI, and if it is not, the log carries the MSVC bytes and the fixture is
+replaced in a commit that says so. The order's acceptance line "a fresh `UniverseGen 0` at the
+finished commit is byte-identical to the fixture" is therefore checked by CI on every commit that
+does not move the format, rather than once by hand.
+
+**Not here, as ordered:** no bump, no gate, no field, no change to a written byte. The generator's
+output before and after this slice's codec change hashes the same, which is the proof the window
+was added without moving anything (§8).
+
+## 8. What was verified, and how — and the honest gap
+
+**Compiled and run here, on Linux, with clang 18 behind a shim for `NeuronCore.h`:**
+
+- Every `GameLogic` source compiles, before and after the change.
+- The generator built from the changed `GameLogic` writes 124,438 bytes whose SHA-256 equals the
+  committed fixture's, which was written from the unchanged tree: the format did not move.
+- `python Build/CheckFormat.py` and `python Build/CheckProjectFiles.py` pass.
+
+**Compiled by CI and run by nobody here:** the four suites, `Outpost`, and clang-tidy. The rows
+this slice adds to `UniverseStateTests` — the two-ended window refusal for both bytes, the fixture
+that loads, counts, re-saves idempotently and replays 600 ticks, and the identity row — have not
+been executed on any machine at the time this section is written; CI-green is the gate the owner
+accepted on 2026-09-02, and this section is amended with the run's outcome. The mutation check in
+§5 (a local bump to 8 with one gated field) cannot be run here either, for the same reason, and
+is owed by the first slice that actually bumps.
+
+**The disk half** — the `SAVE | FORMAT` line, the sidecar, the refusal sentence — is `Outpost`,
+compiled by CI and demonstrated by nobody, as slice 5's was. It cannot be exercised until slice 3
+bumps the format.

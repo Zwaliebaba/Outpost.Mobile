@@ -532,13 +532,44 @@ struct SaveHeader
 {
   std::uint64_t galaxySeed = 0;
   ShardId shard = 0;
+
+  // What the file was READ at, filled by ReadSaveFile and ignored by WriteSaveFile, which always
+  // writes the current bytes. A boot reads these to say which format it restored and to notice that
+  // it migrated one; a test reads them to prove a fixture was taken at the format its name claims
+  // (Design/SaveMigration-work-order.md 1.2).
+  std::uint8_t fileFormat = 0;
+  std::uint8_t stateFormat = 0;
 };
+
+// The state's format: what WriteUniverseState writes, and the newest byte ReadUniverseState accepts.
+// Bumped whenever a field is added to what Step reads. The list is the history of the bumps, and
+// the rule since slice 1 of the game design plan is that the commit bumping this to N+1 commits the
+// fixture Tests/GameLogicTests/Assets/UniverseFormatN.sav, written by UniverseGen at its parent
+// commit, so that the reader below is proven against a file and not against itself.
+//
+// 2: the fleet table. 3: its manifest. 4: its order. 5: its threat. 6: the guns. 7: the plan stamp.
+inline constexpr std::uint8_t UNIVERSE_STATE_FORMAT = 7;
+
+// The oldest format ReadUniverseState still accepts. A file in a format between this and the
+// current one is read with every later field gated on the byte the file carries and defaulted where
+// the file predates it, and is a current universe the moment the read returns; the next save writes
+// it at UNIVERSE_STATE_FORMAT. This is the whole of migration: no reader per format, no rewrite
+// step, no transform table (ADR 0061). Moving this byte retires a format and deletes its fixture,
+// and only a decision record moves it.
+//
+// 7 rather than 1 because formats 1 to 6 never had a file on disk to keep: the save file arrived at
+// format 7 (Design/Universe-slice-5.md), and OLDEST starts where a file first existed.
+inline constexpr std::uint8_t UNIVERSE_STATE_FORMAT_OLDEST = 7;
+static_assert(UNIVERSE_STATE_FORMAT_OLDEST <= UNIVERSE_STATE_FORMAT, "the oldest accepted state format is newer than the one written");
 
 // 'VASU' little-endian: Universe SAVe. Distinct from UNIVERSE_STATE_MAGIC because these are two
 // formats and not one: this byte says how to find the state, the state's own says how to read it,
-// and bumping either need not bump the other.
+// and bumping either need not bump the other. The same window applies: ReadSaveFile accepts a file
+// format from SAVE_FILE_FORMAT_OLDEST to SAVE_FILE_FORMAT, for the state format's reason.
 inline constexpr std::uint32_t SAVE_FILE_MAGIC = 0x55534156u;
 inline constexpr std::uint8_t SAVE_FILE_FORMAT = 1;
+inline constexpr std::uint8_t SAVE_FILE_FORMAT_OLDEST = 1;
+static_assert(SAVE_FILE_FORMAT_OLDEST <= SAVE_FILE_FORMAT, "the oldest accepted file format is newer than the one written");
 
 // magic 4 + format 1 + galaxy seed 8 + shard 2 + state length 8.
 inline constexpr std::size_t SAVE_HEADER_BYTES = 23;
@@ -564,12 +595,26 @@ inline constexpr const wchar_t* UNIVERSE_SAVE_FILE = L"Universe.sav";
 // short is caught here, before the body parser allocates anything at all.
 //
 // Read refuses -- and changes NEITHER out-parameter -- on a buffer too short for the header, the
-// wrong magic, a format byte this build does not know, a length that disagrees with the buffer, a
-// state the state codec refuses, or a header shard that disagrees with the state's. It never throws
-// and never asserts, which is AGENTS.md 5's rule for anything parsing content: what a refusal MEANS
-// is the caller's business, and for the composition root it means the boot stops (ADR 0057).
+// wrong magic, a format byte outside the window this build reads, a length that disagrees with the
+// buffer, a state the state codec refuses, or a header shard that disagrees with the state's. It
+// never throws and never asserts, which is AGENTS.md 5's rule for anything parsing content: what a
+// refusal MEANS is the caller's business, and for the composition root it means the boot stops
+// (ADR 0057).
 void WriteSaveFile(const Universe& _universe, const SaveHeader& _header, std::vector<std::uint8_t>& _outBytes);
 [[nodiscard]] bool ReadSaveFile(std::span<const std::uint8_t> _bytes, SaveHeader& _outHeader, Universe& _outUniverse);
+
+// The two format bytes of a file, without parsing it. For the sentence a refused boot prints: a
+// file ReadSaveFile refuses has changed nothing, so nothing else can say which format it was in.
+// Answers false when either magic is wrong or the buffer is too short to hold both bytes, and then
+// writes neither out-parameter.
+[[nodiscard]] bool PeekSaveFormats(std::span<const std::uint8_t> _bytes, std::uint8_t& _outFileFormat, std::uint8_t& _outStateFormat);
+
+// Where a boot that migrated a file keeps the file it migrated from: the save's own name plus the
+// state format it was in, "Universe.sav.7". One function beside UNIVERSE_SAVE_FILE for the same
+// reason that constant is here -- two programs that disagreed about the name would keep two
+// different files. GameLogic still opens nothing; the composition root does the write
+// (Design/SaveMigration-work-order.md 1.4).
+[[nodiscard]] std::wstring UniverseSaveSidecarName(std::uint8_t _stateFormat);
 
 // Orders travel the other way. Written by the client half, read and applied by the server half.
 //

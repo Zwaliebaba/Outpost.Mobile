@@ -344,6 +344,17 @@ The save is the state codec given a file:
   save would have landed on top of the file nobody could read. `Neuron::FileSys::Exists` exists for
   that one distinction (ADR 0057).
 
+- **A reader that accepts a window of formats**, added by slice 1 of
+  [`GameDesignPlan.md`](GameDesignPlan.md) and not in this design as written. The writer writes one
+  format; the reader accepts any from `UNIVERSE_STATE_FORMAT_OLDEST` to the current, reading every
+  field a later format added behind a gate on the byte the file carries and defaulting it where the
+  file predates it, so a file in an older format is a current universe the moment the read returns
+  and the next save writes it forward. A fixture per retired format, written by `UniverseGen` at
+  the commit before the bump, is what proves the reader against a file rather than against itself;
+  a boot that migrated a file keeps the file it read beside the save, under its format's name,
+  once; and a format is retired only by a decision record ([ADR 0061](Decisions/0061-the-save-is-migrated-on-read.md)).
+  The refusal above is unchanged for a format outside the window.
+
 The shot log stays out of the file, as it already is by design: a reloaded universe with no
 tracers pending is the correct picture of one that has just resumed.
 

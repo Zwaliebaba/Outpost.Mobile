@@ -103,7 +103,8 @@ private:
   };
 
   // Reads Universe.sav into m_universe, and the galaxy seed it was laid out from into m_galaxySeed.
-  // Touches neither on anything but Restored.
+  // Touches neither on anything but Restored; on Refused it leaves the sentence for the boot failure
+  // in m_restoreRefusal, naming the format bytes when the file has them to name.
   [[nodiscard]] RestoreResult RestoreUniverse();
 
   // Writes the universe to Universe.sav, atomically. Logs and carries on if the disk refuses: a
@@ -186,6 +187,10 @@ private:
   // The tick the last save was taken at, so the cadence is a distance rather than a modulo -- see
   // the call site in Run.
   std::uint64_t m_lastSaveTick = 0;
+
+  // Why RestoreUniverse answered Refused, for the boot failure's sentence. A refused read changes
+  // nothing, so the sentence is composed where the bytes are still in hand.
+  std::string m_restoreRefusal;
 
   // Reused across saves rather than allocated per save: at 300 ships this is tens of kilobytes and
   // the save runs inside a frame.

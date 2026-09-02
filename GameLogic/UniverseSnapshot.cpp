@@ -111,13 +111,16 @@ constexpr std::uint32_t FIRE_HEADER_BYTES = 1 + 8 + 2;
 constexpr std::uint32_t FIRE_EVENT_BYTES = 8 + 8 + 1;
 static_assert(FIRE_HEADER_BYTES + MAX_FIRE_EVENTS * FIRE_EVENT_BYTES <= Neuron::MAX_DATAGRAM_BYTES,
               "a full fire message must fit one datagram, or the cap is meaningless");
-// The saved state's magic and format byte. Not a KIND_* value: a state buffer is not a datagram and
-// never meets SnapshotReceiver::Accept, so the magic is what turns feeding it to one into a refusal
-// rather than a misread. The format byte is what makes a disagreement between two builds a refusal
-// too -- there is nothing to migrate from yet, and a version nobody checks is a version nobody has.
+// The saved state's magic. Not a KIND_* value: a state buffer is not a datagram and never meets
+// SnapshotReceiver::Accept, so the magic is what turns feeding it to one into a refusal rather than
+// a misread. The format byte beside it on the wire is UNIVERSE_STATE_FORMAT in the header, and what
+// a build does with a byte older than its own is read with it: a format inside the window is
+// migrated on read, and one outside it is refused, because a version nobody checks is a version
+// nobody has.
 constexpr std::uint32_t UNIVERSE_STATE_MAGIC = 0x54535550u; // 'PUST' little-endian: Persisted Universe STate
-constexpr std::uint8_t UNIVERSE_STATE_FORMAT =
-  7; // 2: the fleet table. 3: its manifest. 4: its order. 5: its threat. 6: the guns. 7: the plan stamp
+
+// The byte after the magic, in both the state and the file. Where PeekSaveFormats looks.
+constexpr std::size_t FORMAT_BYTE_OFFSET = 4;
 
 // An EntityId is a u64, which is exactly what a {slot, generation} pair cost. So identity became
 // global for no bytes at all: the ship record stays 47, a fragment stays 23 ships, and the order cap
@@ -1346,7 +1349,17 @@ void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _o
 bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUniverse)
 {
   ByteReader in(_bytes);
-  if (in.U32() != UNIVERSE_STATE_MAGIC || in.U8() != UNIVERSE_STATE_FORMAT)
+  const std::uint32_t magic = in.U32();
+  // Held for the whole read, because it is what every field added by a later format is gated on:
+  // a field written from format N onwards is read as
+  //
+  //   value = (format >= N) ? in.U32() : <the value it had before it existed>;
+  //
+  // at the point in the stream where it lives, and nowhere else. That gate is the entire migration
+  // (ADR 0061), and there is none yet -- the first lands with the first bump after this reader
+  // learned the window, which is why the byte is kept and not yet consulted.
+  [[maybe_unused]] const std::uint8_t format = in.U8();
+  if (magic != UNIVERSE_STATE_MAGIC || format < UNIVERSE_STATE_FORMAT_OLDEST || format > UNIVERSE_STATE_FORMAT)
     return false;
 
   const std::uint64_t tick = in.U64();
@@ -1702,10 +1715,13 @@ void WriteSaveFile(const Universe& _universe, const SaveHeader& _header, std::ve
 bool ReadSaveFile(std::span<const std::uint8_t> _bytes, SaveHeader& _outHeader, Universe& _outUniverse)
 {
   ByteReader in(_bytes);
-  if (in.U32() != SAVE_FILE_MAGIC || in.U8() != SAVE_FILE_FORMAT)
+  const std::uint32_t magic = in.U32();
+  const std::uint8_t fileFormat = in.U8();
+  if (magic != SAVE_FILE_MAGIC || fileFormat < SAVE_FILE_FORMAT_OLDEST || fileFormat > SAVE_FILE_FORMAT)
     return false;
 
   SaveHeader header;
+  header.fileFormat = fileFormat;
   header.galaxySeed = in.U64();
   header.shard = static_cast<ShardId>(in.U16());
   const std::uint64_t stateBytes = in.U64();
@@ -1732,9 +1748,33 @@ bool ReadSaveFile(std::span<const std::uint8_t> _bytes, SaveHeader& _outHeader, 
   if (loaded.Shard() != header.shard)
     return false;
 
+  // The state codec has already checked this byte's magic and window, so it is read as a fact here
+  // rather than parsed a second time.
+  header.stateFormat = _bytes[SAVE_HEADER_BYTES + FORMAT_BYTE_OFFSET];
+
   _outHeader = header;
   _outUniverse = std::move(loaded);
   return true;
+}
+
+bool PeekSaveFormats(std::span<const std::uint8_t> _bytes, std::uint8_t& _outFileFormat, std::uint8_t& _outStateFormat)
+{
+  if (_bytes.size() <= SAVE_HEADER_BYTES + FORMAT_BYTE_OFFSET)
+    return false;
+  ByteReader file(_bytes);
+  if (file.U32() != SAVE_FILE_MAGIC)
+    return false;
+  ByteReader state(_bytes.subspan(SAVE_HEADER_BYTES));
+  if (state.U32() != UNIVERSE_STATE_MAGIC)
+    return false;
+  _outFileFormat = _bytes[FORMAT_BYTE_OFFSET];
+  _outStateFormat = _bytes[SAVE_HEADER_BYTES + FORMAT_BYTE_OFFSET];
+  return true;
+}
+
+std::wstring UniverseSaveSidecarName(std::uint8_t _stateFormat)
+{
+  return std::wstring(UNIVERSE_SAVE_FILE) + L"." + std::to_wstring(static_cast<unsigned>(_stateFormat));
 }
 
 // kind, orderId, station handle, handleCount -- 17 bytes, against the move order's 38.

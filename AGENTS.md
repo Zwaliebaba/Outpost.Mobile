@@ -91,8 +91,10 @@ purpose.
 
 **Deliberately not here yet**, so nobody goes looking for it: no audio, no economy, no shields or
 armour classes past the one hull number, no turret that turns -- a hull's guns fire and its geometry
-holds still -- and no save *file* — a `Universe` can be written out, read back and replayed to byte
-equality (`UniverseStateTests`), but the codec is bytes in memory and no format versions it. The
+holds still. The save is a versioned file now: `UniverseGen` writes one, the boot restores it or
+stops (ADR 0057), and a file in an older format is migrated on read — every field a later format
+added is read behind a gate on the byte the file carries, back to `UNIVERSE_STATE_FORMAT_OLDEST`,
+and a fixture per retired format under `Tests/GameLogicTests/Assets/` is what proves it (ADR 0061). The
 content pipeline is still NMO and DDS, with `Tools/DdsBake.py` baking the DDS half's mips and BC
 compression offline. Tuning is `constexpr` in `SimTuning.h`, `HullSpec.h`, `DeviceSpec.h` and
 `ViewTuning.h` (§5); what a *deployment* may change without a rebuild — the port, the backlog, one
@@ -777,6 +779,11 @@ configurations you built.
 - [ ] Added a field to `Universe` that `Step` reads? `WriteUniverseState` carries it, or `ReadUniverseState`
       rebuilds it. `UniverseStateTests::ASavedUniverseReplaysToTheSameRun` compares two whole states and
       goes red if neither happened.
+- [ ] Bumped `UNIVERSE_STATE_FORMAT` or `SAVE_FILE_FORMAT`? The new field is read behind a gate on the
+      format the reader took and defaulted where the file predates it; the previous format's fixture,
+      `Tests/GameLogicTests/Assets/UniverseFormat<N>.sav`, is `UniverseGen 0` run at the parent commit
+      and is committed with its row in `FIXTURES` green; and `UNIVERSE_STATE_FORMAT_OLDEST` did not
+      move (ADR 0061).
 - [ ] New engine setting? It is MSVC-native (§6) — literal, per `Configuration|Platform`, no
       custom MSBuild — and it went into all nine `.vcxproj` files identically, for every
       configuration, with `python Build/CheckProjectFiles.py` agreeing.
