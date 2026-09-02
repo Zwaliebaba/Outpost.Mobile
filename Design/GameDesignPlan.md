@@ -1,6 +1,16 @@
 # The game design plan — the review as slices, under the pillars
 
-**Status: drafted 2026-09-02; phase 0 is cut, every slice has its work order, and nothing has landed.** This plan converts
+**Status: drafted 2026-09-02. Phase 0 is complete — all five slices landed on
+`claude/multi-agent-game-design-review-8qu6h8` the same day and are CI-green (Debug|x64, run 240),
+under the owner's decision of 2026-09-02 that CI-green is the gate and the Windows checks each order
+names are waived.** Nothing in phase 1 is cut, and the four decisions in §4 are open.
+
+Two of the five came back red first and both are recorded where they happened: the matchup table was
+drafted on the wrong toolchain and CI's log carried the right numbers
+([`MatchupMatrix-work-order.md`](MatchupMatrix-work-order.md) §7-8), and the owner key's first
+version lost a fleet through a gate because a faction converted silently to an owner
+([`OwnerKey-work-order.md`](OwnerKey-work-order.md) §8). Slice 1's fixture row and slice 5's matrix
+each did the job they were built for on the slice that came after them. This plan converts
 [`GameDesignReview.md`](GameDesignReview.md) (tree at `caf9814`) into ordered work in the shape
 `Design/README.md` defines: one slice, one branch, one pull request. It is filtered through
 [ADR 0060](Decisions/0060-the-game-is-its-own-benchmark.md), the owner's pillars of 2026-09-02, so
@@ -95,11 +105,11 @@ Cut now. Five slices, no feature, each leaving one door.
 
 | # | Slice | Layer | Size | Depends on | Items | ADR |
 |---|---|---|---|---|---|---|
-| 1 | [The save migrates forward](SaveMigration-work-order.md) | `GameLogic` + `Outpost` | M | — | E14 (migration half) | ADR |
-| 2 | [The wire is laid once: the status collision, a flags byte, a reserved byte, a dropped-send log line](FleetStatus-work-order.md) | `GameLogic` + `Outpost` | M | 1 | C1 slice 0, cross-cutting | |
-| 3 | [An owner key beside the faction, with one owner](OwnerKey-work-order.md) | `GameLogic` + `Outpost` | M | 1, 2 | E1 (key half) | ADR |
-| 4 | [The tick is measured: a per-tick statistics block beside the save](TickTelemetry-work-order.md) | `Outpost` | S | — | C5 slice 0, E7 counters | |
-| 5 | [The matchup matrix test pins the balance](MatchupMatrix-work-order.md) | `Tests/GameLogicTests` | S | — | C13 slice 0 | |
+| 1 | [The save migrates forward](SaveMigration-work-order.md) | `GameLogic` + `Outpost` | M | — | E14 (migration half) | [ADR 0061](Decisions/0061-the-save-is-migrated-on-read.md) — **landed** |
+| 2 | [The wire is laid once: the status collision, a flags byte, a reserved byte, a dropped-send log line](FleetStatus-work-order.md) | `GameLogic` + `Outpost` | M | 1 | C1 slice 0, cross-cutting | — **landed** |
+| 3 | [An owner key beside the faction, with one owner](OwnerKey-work-order.md) | `GameLogic` + `Outpost` | M | 1, 2 | E1 (key half) | [ADR 0062](Decisions/0062-an-owner-is-not-a-faction-and-not-an-entity.md) — **landed** |
+| 4 | [The tick is measured: a per-tick statistics block beside the save](TickTelemetry-work-order.md) | `Outpost` | S | — | C5 slice 0, E7 counters | — **landed** |
+| 5 | [The matchup matrix test pins the balance](MatchupMatrix-work-order.md) | `Tests/GameLogicTests` | S | — | C13 slice 0 | — **landed** |
 
 Three rounds, serial between them. Round one is slices 1 and 5: the codec and a test file that
 touches nothing else. Round two is slice 2 alone, because the state reader and the wire's fleet
