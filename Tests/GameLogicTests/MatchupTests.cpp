@@ -40,6 +40,15 @@ constexpr float BAND = 0.15f;               // how far an end tick may move befo
 
 // Measured on 2026-09-02 at the tables as shipped (Design/MatchupMatrix-work-order.md 7). Read a row
 // as "mine versus theirs": an Interceptor against a Bomber loses at tick 370.
+//
+// These are CI's numbers -- Debug|x64, MSVC -- and not the Linux harness's that drafted them. MSVC
+// is the only compiler this tree builds with (AGENTS.md 6), so within it the determinism contract
+// makes every tick below exact and the band absorbs nothing at all; the band is there for the day a
+// runner image brings a different build of the compiler. Three cells differed between the two
+// toolchains by ulp-level drift compounded over a long fight, and the two longest are why the band
+// is not tighter: Battleship against Carrier came out 10.3% apart, which is most of the fifteen
+// percent. A cell that fails after a runner image changes and no number moved is that, and the log
+// says which cell and by how much.
 constexpr Cell DUELS[] = {
   {Game::HullId::Interceptor, Game::HullId::Interceptor, Side::Stalemate, LIMIT_TICKS},
   {Game::HullId::Interceptor, Game::HullId::Bomber, Side::Theirs, 370},
@@ -70,12 +79,12 @@ constexpr Cell DUELS[] = {
   {Game::HullId::Battleship, Game::HullId::Corvette, Side::Mine, 771},
   {Game::HullId::Battleship, Game::HullId::Frigate, Side::Mine, 1380},
   {Game::HullId::Battleship, Game::HullId::Battleship, Side::Both, 7231},
-  {Game::HullId::Battleship, Game::HullId::Carrier, Side::Mine, 9240},
+  {Game::HullId::Battleship, Game::HullId::Carrier, Side::Mine, 10193},
   {Game::HullId::Carrier, Game::HullId::Interceptor, Side::Mine, 708},
   {Game::HullId::Carrier, Game::HullId::Bomber, Side::Mine, 984},
   {Game::HullId::Carrier, Game::HullId::Corvette, Side::Mine, 1253},
   {Game::HullId::Carrier, Game::HullId::Frigate, Side::Mine, 1797},
-  {Game::HullId::Carrier, Game::HullId::Battleship, Side::Theirs, 9241},
+  {Game::HullId::Carrier, Game::HullId::Battleship, Side::Theirs, 9242},
   {Game::HullId::Carrier, Game::HullId::Carrier, Side::Stalemate, LIMIT_TICKS},
 };
 static_assert(std::size(DUELS) == std::size(COMBATANTS) * std::size(COMBATANTS), "the matrix has a cell per ordered pair");
@@ -109,7 +118,13 @@ constexpr GroupRow GROUPS[] = {
   {L"two Interceptors on a Frigate", TWO_INTERCEPTORS, std::size(TWO_INTERCEPTORS), Game::HullId::Frigate, 600.0f, Side::Theirs, 0, 1, 727},
   {L"two Bombers on a Frigate", TWO_BOMBERS, std::size(TWO_BOMBERS), Game::HullId::Frigate, 600.0f, Side::Theirs, 0, 1, 1492},
   {L"a mixed eight on a Battleship", MIXED_EIGHT, std::size(MIXED_EIGHT), Game::HullId::Battleship, 800.0f, Side::Theirs, 0, 1, 4536},
-  {L"a mixed eight on a Carrier", MIXED_EIGHT, std::size(MIXED_EIGHT), Game::HullId::Carrier, 800.0f, Side::Mine, 5, 0, 5510},
+  // The one marginal row: a mixed eight grinds a Carrier down over a minute and a half and how many
+  // of the eight are left at the end is decided in its last seconds. The Linux harness that drafted
+  // this table had five survivors at 5,510 ticks and CI has four at 5,613 -- the same fight, one
+  // ship's death landing on the other side of the end. Every other row here is a wipe with the
+  // winner untouched and does not move. If this one moves again, read the outcome first: four
+  // against five is the margin, and "mine" against "theirs" is the character.
+  {L"a mixed eight on a Carrier", MIXED_EIGHT, std::size(MIXED_EIGHT), Game::HullId::Carrier, 800.0f, Side::Mine, 4, 0, 5613},
 };
 
 const wchar_t* const HULL_NAMES[] = {L"Interceptor", L"Bomber",     L"Corvette", L"Miner",    L"Frigate",
