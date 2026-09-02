@@ -115,5 +115,8 @@
     <None Include="Assets\UniverseFormat7.sav">
       <Filter>Assets</Filter>
     </None>
+    <None Include="Assets\UniverseFormat8.sav">
+      <Filter>Assets</Filter>
+    </None>
   </ItemGroup>
 </Project>

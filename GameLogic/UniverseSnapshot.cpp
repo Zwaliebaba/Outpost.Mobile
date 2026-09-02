@@ -1176,6 +1176,59 @@ void ReadShipState(ByteReader& _in, ShipState& _outShip)
 }
 } // namespace
 
+// A handoff queue: a count and then each entry, field by field.
+//
+// Field by field and never as a struct. A Handoff has a u8 between two u32s and would carry three
+// bytes of padding into the file, which two identical universes could differ in -- the argument
+// Route already makes about waypoints past its count, one type over.
+void WriteHandoffQueue(ByteWriter& _out, const std::vector<Universe::Handoff>& _queue)
+{
+  _out.U32(static_cast<std::uint32_t>(_queue.size()));
+  for (const Universe::Handoff& handoff : _queue)
+  {
+    _out.U64(handoff.entity);
+    _out.U64(handoff.gate);
+    _out.U32(handoff.hullId);
+    _out.U8(handoff.factionId);
+    _out.U32(handoff.hullPoints);
+    _out.U64(handoff.owner);
+    _out.U8(handoff.ownerFaction);
+    _out.U8(handoff.slot);
+    _out.U32(handoff.memberIndex);
+    _out.U32(handoff.crossingCount);
+    _out.U64(handoff.sequence);
+  }
+}
+
+// The same shape back, bounded like every other count in this format: the smallest entry is larger
+// than a byte, so Remaining() is a sound ceiling on a corrupt length.
+[[nodiscard]] bool ReadHandoffQueue(ByteReader& _in, std::vector<Universe::Handoff>& _outQueue)
+{
+  const std::uint32_t count = _in.U32();
+  if (!_in.Ok() || count > _in.Remaining())
+    return false;
+  _outQueue.resize(count);
+  for (Universe::Handoff& handoff : _outQueue)
+  {
+    handoff.entity = _in.U64();
+    handoff.gate = _in.U64();
+    handoff.hullId = _in.U32();
+    handoff.factionId = _in.U8();
+    handoff.hullPoints = _in.U32();
+    handoff.owner = _in.U64();
+    handoff.ownerFaction = _in.U8();
+    handoff.slot = _in.U8();
+    handoff.memberIndex = _in.U32();
+    handoff.crossingCount = _in.U32();
+    handoff.sequence = _in.U64();
+    // The same bounds the fleet block checks, for the same reason: a slot or a faction past its
+    // limit is an invariant corrupted rather than a value, and it would index past a table later.
+    if (handoff.factionId >= FACTION_LIMIT || handoff.ownerFaction >= FACTION_LIMIT || handoff.slot >= FLEET_SLOTS)
+      return false;
+  }
+  return _in.Ok();
+}
+
 void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _outBytes)
 {
   _outBytes.clear();
@@ -1359,6 +1412,14 @@ void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _o
     out.Pos(fleet.threatAnchorPos);
     out.U32(fleet.alertTicks);
   }
+
+  // The cross-shard queues, from format 9. Saved because ADR 0065's recoverability is a claim about
+  // a FILE: a shard that dies after the despawn and before the send still has the ship, in its
+  // outbox, in its save -- and without this it does not, which makes at-least-once delivery
+  // at-most-once (Design/CrossShard.md 4, Design/CrossShard-slice-3.md 1).
+  out.U64(_universe.m_nextHandoff);
+  WriteHandoffQueue(out, _universe.m_outbox);
+  WriteHandoffQueue(out, _universe.m_inbox);
 }
 
 bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUniverse)
@@ -1656,6 +1717,19 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
   if (!in.Ok())
     return false;
 
+  // The cross-shard queues, from format 9. A format-8 file loads with both empty and the sequence at
+  // its initial value, which is exactly what that file meant: it was written by a build that could
+  // not have had anything in them (ADR 0061's gate).
+  std::uint64_t nextHandoff = 1;
+  std::vector<Universe::Handoff> outbox;
+  std::vector<Universe::Handoff> inbox;
+  if (format >= 9)
+  {
+    nextHandoff = in.U64();
+    if (!in.Ok() || !ReadHandoffQueue(in, outbox) || !ReadHandoffQueue(in, inbox))
+      return false;
+  }
+
   // Committed, and not before. From here nothing can fail.
   _outUniverse.m_tick = tick;
   _outUniverse.m_shard = shard;
@@ -1674,6 +1748,9 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
   _outUniverse.m_stations = std::move(stations);
   _outUniverse.m_gates = std::move(gates);
   _outUniverse.m_fleets = std::move(fleets);
+  _outUniverse.m_nextHandoff = nextHandoff;
+  _outUniverse.m_outbox = std::move(outbox);
+  _outUniverse.m_inbox = std::move(inbox);
 
   // The two inverses of the slot table, rebuilt rather than read. m_entityRows is sorted by id
   // because that is the invariant its binary search rests on, and building it by walking the slots

@@ -581,8 +581,8 @@ struct SaveHeader
 // commit, so that the reader below is proven against a file and not against itself.
 //
 // 2: the fleet table. 3: its manifest. 4: its order. 5: its threat. 6: the guns. 7: the plan stamp.
-// 8: the owner, on a fleet and on a ledger row.
-inline constexpr std::uint8_t UNIVERSE_STATE_FORMAT = 8;
+// 8: the owner, on a fleet and on a ledger row. 9: the cross-shard handoff queues.
+inline constexpr std::uint8_t UNIVERSE_STATE_FORMAT = 9; // 9: the handoff queues
 
 // The oldest format ReadUniverseState still accepts. A file in a format between this and the
 // current one is read with every later field gated on the byte the file carries and defaulted where

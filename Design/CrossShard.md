@@ -1,11 +1,12 @@
 # Cross-shard — the same door, with a wire in the middle
 
 **Status: agreed with the owner on 2026-09-02, as drafted — the design had no open decisions to
-put, and §9 states what would make it wrong rather than leaving a question. Slices 1 and 2 have
+put, and §9 states what would make it wrong rather than leaving a question. Slices 1 to 3 have
 landed ([`CrossShard-slice-1.md`](CrossShard-slice-1.md), [`CrossShard-slice-2.md`](CrossShard-slice-2.md),
+[`CrossShard-slice-3.md`](CrossShard-slice-3.md),
 [ADR 0063](Decisions/0063-the-partition-is-a-function-of-the-layout.md),
 [ADR 0065](Decisions/0065-a-handoff-is-at-least-once-delivery-onto-an-idempotent-apply.md));
-slices 3 to 5 are listed in §8 and are cut one at a time, when each is next. §2 and §4 are amended to
+slices 4 and 5 are listed in §8 and are cut one at a time, when each is next. §2 and §4 are amended to
 say what was built. **All three of §9's ways this design could be wrong have now been answered by
 measurement**, and none of them was.**
 
@@ -113,8 +114,8 @@ The shape this design proposes, **and which slice 2 built**
 1. **An outbox on the departing shard**, written in the same tick as the despawn, and part of the
    saved state. A shard that dies after the despawn and before the send still has the ship, in its
    file, in the outbox — which is the property that makes "lost" recoverable rather than final.
-   **It is in memory as of slice 2 and joins the state codec in slice 3**, so that recoverability is
-   a property of this design and not yet of the build.
+   **True as of slice 3**: `UNIVERSE_STATE_FORMAT` 9 carries both queues and the handoff sequence, and
+   a shard killed mid-crossing reloads with its outbox intact and delivers from it.
 2. **An inbox on the arriving shard**, drained at a tick boundary in entity order.
 3. **`SpawnShipAs` refuses an entity that is already live**, so a replayed handoff is a no-op rather
    than a duplicate.
@@ -181,7 +182,7 @@ to watch two at once. Nothing here forecloses it.
 |---|---|---|---|---|---|
 | 1 | [`ShardOfSystem`, the shard count in `GalaxyDesc` and the save header, and `UniverseGen` writing one file per shard](CrossShard-slice-1.md) — **landed**: a q-column block split, `SAVE_FILE_FORMAT` 1 → 2, `BuildStartingGalaxy` building every shard in one pass so a gate can name the shard it leads to | `GameLogic`+`Tools` | M | — | [0063](Decisions/0063-the-partition-is-a-function-of-the-layout.md) |
 | 2 | [The outbox, the inbox, `SpawnShipAs` refusing a live entity, and **two `Universe`s handed off between in one process**](CrossShard-slice-2.md) — **landed**: one branch in `StepJumps`, a `Handoff` the wire will carry unchanged, and a drain in entity order | `GameLogic` | L | 1 | [0065](Decisions/0065-a-handoff-is-at-least-once-delivery-onto-an-idempotent-apply.md) |
-| 3 | Both in the state codec, so a shard that dies mid-handoff still holds the ship | `GameLogic` | M | 2 | — |
+| 3 | [Both in the state codec, so a shard that dies mid-handoff still holds the ship](CrossShard-slice-3.md) — **landed**: state format 9, the sequence saved with them, and a format-8 fixture | `GameLogic` | M | 2 | — |
 | 4 | The handoff on the wire: a message on the reliable lane, the ack, the re-send | `NeuronCore`+`GameLogic` | L | 3 | — |
 | 5 | Two shard processes, and a client that follows its camera across | `Outpost` | L | 4 | — |
 
