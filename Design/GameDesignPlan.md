@@ -1,6 +1,6 @@
 # The game design plan — the review as slices, under the pillars
 
-**Status: drafted 2026-09-02; phase 0 is cut and nothing has landed.** This plan converts
+**Status: drafted 2026-09-02; phase 0 is cut, slice 1 has its work order, and nothing has landed.** This plan converts
 [`GameDesignReview.md`](GameDesignReview.md) (tree at `caf9814`) into ordered work in the shape
 `Design/README.md` defines: one slice, one branch, one pull request. It is filtered through
 [ADR 0060](Decisions/0060-the-game-is-its-own-benchmark.md), the owner's pillars of 2026-09-02, so
@@ -95,7 +95,7 @@ Cut now. Five slices, no feature, each leaving one door.
 
 | # | Slice | Layer | Size | Depends on | Items | ADR |
 |---|---|---|---|---|---|---|
-| 1 | The save migrates forward | `GameLogic` + `Tools/UniverseGen` | M | — | E14 (migration half) | ADR |
+| 1 | [The save migrates forward](SaveMigration-work-order.md) | `GameLogic` + `Outpost` | M | — | E14 (migration half) | ADR |
 | 2 | The wire is laid once: the status collision, a flags byte, a reserved byte, a dropped-send log line | `GameLogic` + `Outpost` | M | — | C1 slice 0, cross-cutting | |
 | 3 | An owner key beside the faction, with one owner | `GameLogic` | M | 1 | E1 (key half) | ADR |
 | 4 | The tick is measured: a per-tick statistics block beside the save | `NeuronServer` + `Outpost` | S | — | C5 slice 0, E7 counters | |
@@ -105,13 +105,13 @@ Slices 1, 2, 4 and 5 share no files and can run in parallel; 3 waits for 1 becau
 save format and is the first bump the migration rule must carry.
 
 **Slice 1 — the save migrates forward.** ADR 0057 refuses an unknown format and never falls to
-genesis, and that stays. This slice adds beside it: a reader per known older format in
-`ReadUniverseState`, or a forward-rewrite step in `UniverseGen` that reads format N-1 and writes N,
-whichever the work order argues is cheaper to keep honest across the six bumps already landed and
-the dozen the review schedules. Acceptance: a fixture saved at the previous format loads and
-replays to byte equality against the same universe saved at the current one; an unknown format
-still stops the boot naming the file. This is the highest-leverage slice in the plan: without it
-every table after it deletes the live universe.
+genesis, and that stays. This slice adds beside it a window of accepted formats in
+`ReadUniverseState`, every later field read behind a gate on the format the reader took, a fixture
+per retired format written by `UniverseGen` at the commit before the bump, and a sidecar copy of
+the file a boot migrated from. The work order is
+[`SaveMigration-work-order.md`](SaveMigration-work-order.md); the tool turned out to change nothing
+and the root gains two lines, so the layer is `GameLogic` + `Outpost`. This is the
+highest-leverage slice in the plan: without it every table after it deletes the live universe.
 
 **Slice 2 — the wire is laid once.** `FLEET_STATUS_LAUNCHING = 6` collides with
 `FleetOrderKind::Jump = 6` (`GameLogic/UniverseSnapshot.h:212-220`; `ShipState.h:205-218`), and a
