@@ -164,7 +164,7 @@ Passes that spawn or despawn are gather-then-apply (`Universe.h:888-895`; `Unive
 are in array order, cadences are tick metronomes like `launchEveryTicks` (`Universe.h:112`;
 `Universe.cpp:1337`). The galaxy is one seed and economic geography is appended draws after the
 planet loop (ADR 0037, 0055, 0058). A shard is one Universe and no design ever needs a distributed
-transaction (`Design/Universe.md:285-288`; `Design/CrossShard.md:94-96`): a book, an escrow and a
+transaction (`Design/Archive/Universe.md:285-288`; `Design/CrossShard.md:94-96`): a book, an escrow and a
 fill are scoped to the station that hosts them.
 
 ### 1. Owner identity finer than faction, and admitting an owner after genesis [Missing] [P0] [EVE]
@@ -220,7 +220,7 @@ already carry `U64`/`I64` (`GameLogic/UniverseSnapshot.cpp:286-292, :399`). The 
 `UNIVERSE_STATE_FORMAT = 7`, bumped once per added table (`UniverseSnapshot.cpp:119-120`;
 `Universe.h:55-58`), and the interest-update header (`UniverseSnapshot.cpp:63-84`) carries
 kind through `hostileMask` plus the fleet status block and no balance. Declared: README.md:92-94,
-AGENTS.md:92, `Design/Archive/Fleets.md:1018-1020`, `Design/Universe.md:425-426`. Two refuter
+AGENTS.md:92, `Design/Archive/Fleets.md:1018-1020`, `Design/Archive/Universe.md:425-426`. Two refuter
 corrections fold in: alloy is a material and belongs in the item table (item 4), not a second
 currency; and the wallet's shard home must be chosen (item 15) before the row lands.
 
@@ -256,7 +256,7 @@ hull with a side-table row (resource, remaining units), placed by LayOutSystem s
 where it is, which today they do not". The galaxy generator draws occupancy, jitter and planets only
 — `SystemSite` is starPos, cell, systemSeed, pin (`GameLogic/GalaxyLayout.h:47-55`) and
 `GalaxyLayout.cpp:166-173` spends the seed on planet count and orbits — so nothing makes one
-system richer than another (`Design/Universe.md:137-147, :202-207, :425-426`). Three costs the
+system richer than another (`Design/Archive/Universe.md:137-147, :202-207, :425-426`). Three costs the
 refuter named: there is no unowned `FactionId` and `Standing::Neutral` is a relation
 (`GameLogic/ShipState.h:18-31, :60`); a new `HullId` grows `hullCounts[HULL_COUNT]`, which sizes the
 ledger reply (`GameLogic/UniverseSnapshot.h:183-187`); and `Step` walks every record, skipping
@@ -298,7 +298,7 @@ Miner and Hauler are `LOADOUT_NONE` (`GameLogic/HullSpec.h:90-141, :227, :229`).
 owner, garrison, targets and docked rows and no stock (`GameLogic/Universe.h:96-100, :125-143`);
 `LedgerReply` is `hullCounts[HULL_COUNT]`, "the array IS the format"
 (`GameLogic/UniverseSnapshot.h:178-187`). What crosses a jump is entity, hull, faction and damage
-(`GameLogic/Universe.h:1201-1207`; `Universe.cpp:1149, :1174-1181`; `Design/Universe.md:268-273`;
+(`GameLogic/Universe.h:1201-1207`; `Universe.cpp:1149, :1174-1181`; `Design/Archive/Universe.md:268-273`;
 `Design/CrossShard.md:105-112`), so a full Hauler would arrive empty by ADR 0056's own rule.
 `Design/Combat.md:474-480` hands "cargo, unloading into a ledger, and the meaning of a full hold" to
 a mining design that does not exist (`Design/Archive/Stations.md:861-863`;
@@ -446,7 +446,7 @@ and one point/station/target/gate (`GameLogic/Universe.h:245-296`;
 `Design/Archive/Fleets.md:1024-1025` "Order queues and waypoints. One standing order"), and
 `Fleets.md:216` is the Miner+Hauler+escorts doctrine that needs more than one. A full Miner
 therefore has no way to drop ore and go back, which is the whole of Homeworld's harvester feel; and
-a trade run across a mean of 4.07 crossings (`Design/Universe.md:413-414`) is babysat jump by jump,
+a trade run across a mean of 4.07 crossings (`Design/Archive/Universe.md:413-414`) is babysat jump by jump,
 with "dock at that station" excluded even from `Design/GalaxyMap.md:112-113`'s draft (`:3`
 "drafted, not yet agreed"; `:81-95` §4.3 the route on the fleet row; `:133-140` slice 3
 undelivered). The loop technically closes without this (a full Miner docks, a new fleet is
@@ -564,7 +564,7 @@ not know which system it is in — `Station` and `GateDesc` carry no system inde
 a nearest-star linear scan (`GameLogic/Universe.h:125-144, :197-206`;
 `GalaxyLayout.cpp:177-199`). `StationDesc` is owner plus garrison (`Universe.h:105-116`), and the
 per-station tick cadence a replenishment metronome copies is `launchEveryTicks` (`Universe.h:112`;
-`Universe.cpp:312, :1337`). `Design/Universe.md:8, :204-207, :412-416` names "54 systems, 164
+`Universe.cpp:312, :1337`). `Design/Archive/Universe.md:8, :204-207, :412-416` names "54 systems, 164
 Vanguard stations" and "routes worth knowing the day anything is traded"; ADR 0015 puts NPC intent
 inside the tick; ADR 0055:28-30 makes a profile from the system seed retunable without a reroll.
 Player-to-player exchange is EVE's centre; Homeworld has no exchange, though a resource-rich system
@@ -864,7 +864,7 @@ ships stay interpolated. Nothing in GameLogic changes.
 ### 5. Measure the tick, then govern it: a stated, replicated simulation-rate ratio (time dilation) in place of the silent catch-up drop [Change] [P0] [EVE]
 
 ADR 0045 buys capacity by putting fewer entities in a shard
-(`Design/Decisions/0045-the-tick-rate-is-fixed-at-60-hz.md:36-41`; `Design/Universe.md:429` "one
+(`Design/Decisions/0045-the-tick-rate-is-fixed-at-60-hz.md:36-41`; `Design/Archive/Universe.md:429` "one
 universe, one thread, 60 Hz"), but a thousand-player fight is one neighbourhood in one shard and
 interest management cannot thin it. When Step plus Publish overruns 16.7 ms the only behaviour in
 the tree is `maxCatchUpSec = 0.25`: time past it is dropped and "the world runs slow for a moment
@@ -982,11 +982,11 @@ thing to revisit"; `MmoScalabilityReview.md:234-243` U5 names both loops;
 serialisation — and `WriteShipRecord` runs inside each subscriber's `WriteInterest`
 (`UniverseSnapshot.cpp:466`), so N subscribers sharing one fight do the lattice conversion N times.
 `SaveUniverse` serialises the whole universe and writes the file inside the frame loop every 1800
-ticks (`Outpost/OutpostApp.cpp:1014-1018, :614-620`; `Design/Universe-slice-5.md:109-111`
+ticks (`Outpost/OutpostApp.cpp:1014-1018, :614-620`; `Design/Archive/Universe-slice-5.md:109-111`
 discusses cadence, never the write's cost). Without this the governor (item 5) dilates for egress
 rather than for simulation. ADR 0009 already made the wire a view record rather than the ship,
 which is exactly the seam that lets publishing read a frozen copy while the next tick runs;
-`Publisher.h:33-35` puts it outside the replay contract and `Design/Universe.md:429`'s "one
+`Publisher.h:33-35` puts it outside the replay contract and `Design/Archive/Universe.md:429`'s "one
 thread" is about the simulation. ADR 0022:41-42 confines primitives to the two transport files and
 says a fifth file needs a record. A Homeworld skirmish with a handful of subscribers stays
 single-threaded, so the worker count is a Server.cfg number.
@@ -1373,7 +1373,7 @@ items can proceed in parallel because they share no files, they sit on adjacent 
 same number.
 
 1. **C1 slice 0 — the LAUNCHING/Jump collision and the one status-block re-lay** (P0, both).
-   A work order, no design: `Design/FleetStatus-work-order.md`, budgeting the kind byte, the flags
+   A work order, no design: `Design/Archive/FleetStatus-work-order.md`, budgeting the kind byte, the flags
    byte and the stance byte at once, amending `Design/Combat.md` 9.3 for the ALPN bump.
 2. **C5 slice 0 and E7's counters — telemetry** (P0, both). New `Design/Telemetry.md`: per-tick
    Step and Publish timing, subscriber and record counts, economy counters, one log beside
@@ -1391,7 +1391,7 @@ same number.
    a departure from EVE's single wallet. Lands with the E14 migration rule (below) in the same
    format bump.
 4. **E14 (migration rule half) — a reader per older format** (pulled forward to P0 in effect).
-   Amendment to ADR 0057's consequences and to `Design/Universe.md` §11; the input-log recovery
+   Amendment to ADR 0057's consequences and to `Design/Archive/Universe.md` §11; the input-log recovery
    half stays P1.
 5. **E3 — resource sites and geography** (P0, both). New `Design/Mining.md` §1-3 (the design
    `Combat.md` 12 and `Fleets.md` 6.6 both owe): `HullId::Asteroid`, the ownerless-record rule,
@@ -1402,7 +1402,7 @@ same number.
    the second flags byte. Names ADR 0053.
 6. **E4 — items, cargo and stock** (P0, both). `Design/Economy.md` §3: the `ItemId` table,
    `cargoKind`/`cargoUnits`, `holdUnits`, `ItemStack`, the widened ledger reply and the assets
-   reply; amends `Design/Universe.md` 6.3 and `Design/CrossShard.md` §5 so cargo crosses in the
+   reply; amends `Design/Archive/Universe.md` 6.3 and `Design/CrossShard.md` §5 so cargo crosses in the
    `Jumper`.
 7. **E5 — the Mine order** (P0, both). `Design/Mining.md` §4-6 as C10's first row: `MiningLaser`,
    `LOADOUT_MINER`, the Mine branch, the transfer in `StepMounts`, MINE on the sheet.
@@ -1416,7 +1416,7 @@ same number.
    (class effectiveness, engage range, arcs, speeds, the Battleship's lights) and a new record on
    ADR 0052's opacity argument; the Carrier's hangar as its own section naming ADR 0038:61.
 10. **C8 — publish off the tick thread, the quadratic loops, save on a worker** (P0, EVE). New
-    `Design/PublisherWorkers.md` with a record naming ADR 0022 and `Design/Universe.md` 11.
+    `Design/PublisherWorkers.md` with a record naming ADR 0022 and `Design/Archive/Universe.md` 11.
 11. **C7 — the per-subscriber budget** (P0, EVE). Amendment to `Design/Archive/Collision-slice-6`
     3.5's drop-whole rule (as a new record, since the design is archived) and to ADR 0053's
     newest-gunfire rule; `bytesPerUpdate` in Server.cfg.
@@ -1518,7 +1518,7 @@ on purpose rather than discovered in a diff.
   and E1 depend on them; the fixed-tick-under-load story cannot be measured until a shard process
   exists, and every EVE item is keyed on a placeholder owner until a session says who is asking.
 - **Everything the economy panel found is declared absent by the tree itself** (README.md:92;
-  AGENTS.md:92-93; `Design/Universe.md:425-426`; `Design/Archive/Fleets.md:1018-1020`;
+  AGENTS.md:92-93; `Design/Archive/Universe.md:425-426`; `Design/Archive/Fleets.md:1018-1020`;
   `Design/Combat.md:474-480`) and handed to a mining design and a station-menu design that do not
   exist under `Design/`. The gap is honest; the risk is that each panel keeps deferring to the
   other's unwritten design while the one seam they share — an owner, a wallet, an item — has no

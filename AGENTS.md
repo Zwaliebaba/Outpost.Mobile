@@ -19,7 +19,8 @@ of it that arrived here described a different repository entirely and every rule
 therefore unverifiable. Keep it that way: if a change makes a sentence below false, the sentence
 changes in the same commit.
 
-**Built and tested.** Five projects and four test suites, Debug|x64, gating in CI (§6). The game
+**Built and tested.** Six projects — four libraries, the executable and the `UniverseGen` tool — and four test
+suites, Debug|x64, gating in CI (§6). The game
 is played at **fleet** grain: a fleet is the unit of command and nothing smaller can be held (ADR
 0049), and a fleet belongs to an **owner** -- an account, not a faction -- as does every row in a
 station's ledger (ADR 0062). There is one owner today, named `OWNER_LOCAL` because there is no login
@@ -115,10 +116,10 @@ positions are datagrams and heal themselves, while departures, orders and fleet 
 reliable lane and cannot be lost. There is one order that moves ships and it names a **fleet** rather
 than a list of them (ADR 0049), so its size does not depend on how many ships it moves. A station's ledger takes neither shape: it is *asked for*, and the
 request/reply pair is the only one on this seam (ADR 0051). The seam serves N subscribers now rather
-than one: `Game::Publisher` holds a table of them, each with its own interest set, writer, faction,
+than one: `Game::Publisher` holds a table of them, each with its own interest set, writer, issuer -- an owner and a faction (ADR 0062) --
 phase, order budget, despawn cursor and last-sent fleet rosters (ADR 0030). What remains missing is the far end — this executable adds exactly one entry,
-there is no second machine to be on the other side of it, and no decided way to tell a headless
-build what to be.
+there is no second machine to be on the other side of it, and no headless process yet -- `Server.cfg` is
+how one would be told what to be (ADR 0043), and nothing reads it but this executable.
 The client sees the universe through the seam, filtered to what one subscriber can see (§2).
 Where the HUD shows a number the simulation does not yet have, it is a placeholder supplied by the
 composition root, and it says so at the definition.
@@ -329,11 +330,11 @@ does not have.
 | `GameLogic/` | The deterministic simulation, namespace `Game`. `Universe`, `ShipState`, `UniversePos`, `HullSpec`, `DeviceSpec` (what a gun is; `HullSpec` says where a hull carries one), `Movement`, `Collision`, `SpatialIndex`, `PathGrid`, `Formation`, `Patrol`, `SimTuning`, `InterestSet`, `PathIslands` (the architecture partitioned into islands, one `PathGrid` over each, ADR 0033), `UniverseLayout` (a solar system's star and planet sites from a seed — static content both halves read, ADR 0037, and the library's only randomness), `UniverseSnapshot` (the wire format, ADR 0008) and `Publisher` (the fan-out to N subscribers, ADR 0030). Depends on NeuronCore only. |
 | `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, the explosion's `FxRenderer`/`MeshShatter`/`SpriteParticles` and the `GlowBillboards` the thruster plume is built with, `ViewCulling` (the camera's frustum and the sphere test everything drawn is gated on), the planet pipeline (`CubeSphere`, `Noise3`, `BodyDesc`/`BodyParams`/`BodyField`, `BodyMeshBuilder`, `BodyRenderer`, `ColourRamp` — see [`Design/Archive/PlanetRenderer.md`](Design/Archive/PlanetRenderer.md)), the star field (`SkyField`, `SkyRenderer`, `SkyVertex` — [`Design/Archive/Skybox.md`](Design/Archive/Skybox.md)), and the content readers `DdsImage`, `NmoFile`/`NmoReader`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
-| `Outpost/` | The executable: composition root, presentation state, the HUD and its event log, the modal `AssemblyScreen` a station long-press opens, boot and shutdown ordering. `Outpost/Assets/` is the content the MSIX package deploys. |
+| `Outpost/` | The executable: composition root, presentation state, the HUD and its event log, the modal `AssemblyScreen` a station long-press opens, boot and shutdown ordering, and `TickStats` -- what a tick cost, timed here because the simulation may not read a clock. `Outpost/Assets/` is the content the MSIX package deploys. |
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
 | `NeuronClient/Shaders/` | HLSL (§3). DXC compiles it, as shader model 6.7 DXIL, into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
 | `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). |
-| `Tools/` | Content tools, stdlib Python only: the NMO ship-mesh codec and Blender add-on (`BlenderNmo/`), the OBJ→NMO converter (`ObjToNmo.py`), the DDS mip-and-BC baker (`DdsBake.py`), and their tests (`Nmo*Test.py` — the codec test needs bare python3, the Blender one the `bpy` wheel, and `NmoShippedArtTest.py` reads the shipping hulls in `Outpost/Assets/Meshes/` to assert what the game's art guarantees a consumer: every part named, bounded and collision-free under FNV-1a, which is what lets a client address one part of a hull, [`Design/Combat-slice-3.md`](Design/Combat-slice-3.md) §2.6). None of the three runs in CI, so run the one your change touches by hand. [`Design/Archive/NmoFormat.md`](Design/Archive/NmoFormat.md) is the format; nothing here is engine code, and no `.vcxproj` names it. The shipping corpus is *not* converted here: the hulls are authored as GLB in `Art/Meshes/` and converted by `Art/Meshes/GlbToNmo.py`, which sits beside them because that is where an artist looks for it ([ADR 0035](Design/Decisions/0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md)). `ObjToNmo.py` stays as the OBJ path's record and the Blender test's fixture source. |
+| `Tools/` | `UniverseGen/`, the C++ console tool that writes `Universe.sav` (ADR 0058) and the one program allowed `argv` (§5); and the content tools, stdlib Python only: the NMO ship-mesh codec and Blender add-on (`BlenderNmo/`), the OBJ→NMO converter (`ObjToNmo.py`), the DDS mip-and-BC baker (`DdsBake.py`), and their tests (`Nmo*Test.py` — the codec test needs bare python3, the Blender one the `bpy` wheel, and `NmoShippedArtTest.py` reads the shipping hulls in `Outpost/Assets/Meshes/` to assert what the game's art guarantees a consumer: every part named, bounded and collision-free under FNV-1a, which is what lets a client address one part of a hull, [`Design/Combat-slice-3.md`](Design/Combat-slice-3.md) §2.6). None of the three runs in CI, so run the one your change touches by hand. [`Design/Archive/NmoFormat.md`](Design/Archive/NmoFormat.md) is the format; nothing here is engine code, and no `.vcxproj` names it. The shipping corpus is *not* converted here: the hulls are authored as GLB in `Art/Meshes/` and converted by `Art/Meshes/GlbToNmo.py`, which sits beside them because that is where an artist looks for it ([ADR 0035](Design/Decisions/0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md)). `ObjToNmo.py` stays as the OBJ path's record and the Blender test's fixture source. |
 | `Design/` | Designs with a slice still open, `Screenprints/`, `Archive/` for designs whose slices have all landed and for the work orders that landed them, and `Design/Decisions/` — the architecture decision records (§9). An archived design is still the document its area is reviewed against and is cited from code as before; `Design/` itself is the list of what is unfinished. Its `README.md` says which document is which and how a slice moves from a design into the tree (§7). |
 | `.github/` | CI (§6) and the pull request template every slice answers (§7). |
 
@@ -516,7 +517,7 @@ macro of that shape appears.
   the same standard. Nothing here may *need* C++23 to build even so; if something does, it goes
   behind a feature test, because the pin is a decision that will be revisited and a feature test
   survives that. Do not turn conformance off to make something compile. **These are spelled in
-  every `.vcxproj`, per configuration and identically** (§6): change one and you are changing nine,
+  every `.vcxproj`, per configuration and identically** (§6): change one and you are changing ten,
   or you have introduced the drift the guard exists to catch.
 - **Math is DirectXMath, used natively** — no wrapper types, functions, or aliases. Store
   `XMFLOAT2/3/4`, `XMFLOAT4X4`; compute in `XMVECTOR`/`XMMATRIX` as locals and parameters. Never a
@@ -634,13 +635,13 @@ tree to the Visual Studio 2026 toolset on purpose. Two things about it are worth
 change it:
 
 - v143 will not build this tree as spelled, so a machine with only Visual Studio 2022 needs the
-  pin changed — deliberately, in all nine projects, not worked around with a condition.
+  pin changed — deliberately, in all ten projects, not worked around with a condition.
 - Leaving `PlatformToolset` empty is **not** the portable fallback it looks like.
   `Microsoft.Cpp.Default.props` drops all the way to `v100` and the build stops with `MSB8020`
   naming Visual Studio 2010, on a runner that has 2026 installed. That is measured, not read: it is
   what a CI run did.
 
-The cost of all this is duplication — nine projects, four configurations each, the same
+The cost of all this is duplication — ten projects, four configurations each, the same
 values written out longhand. That is the deliberate trade, and it is checked rather than trusted:
 [`Build/CheckProjectFiles.py`](Build/CheckProjectFiles.py) reads the settings that must agree out
 of every project's XML and fails the build, before anything is compiled, if one has drifted. It
@@ -676,7 +677,7 @@ build or a test failed. Three things about it are worth knowing before you read 
 well-formed XML, that every source file is registered in both its `.vcxproj` and its `.filters`
 and that nothing listed is missing from disk, that file names are unique repo-wide, and that no
 engine project names the game, that no graphics header reaches the headless libraries, and that
-the settings which must agree across the nine projects (§6) do agree.
+the settings which must agree across the ten projects (§6) do agree.
 Each of those fails, unguarded, at a point that names something other than the mistake — the step
 exists because a `--` inside an XML comment cost a CI run and reported as nine identical `MSB4024`
 errors, none of which mentioned the comment. Run it yourself before you push; it takes no arguments
@@ -787,7 +788,7 @@ configurations you built.
       and is committed with its row in `FIXTURES` green; and `UNIVERSE_STATE_FORMAT_OLDEST` did not
       move (ADR 0061).
 - [ ] New engine setting? It is MSVC-native (§6) — literal, per `Configuration|Platform`, no
-      custom MSBuild — and it went into all nine `.vcxproj` files identically, for every
+      custom MSBuild — and it went into all ten `.vcxproj` files identically, for every
       configuration, with `python Build/CheckProjectFiles.py` agreeing.
 - [ ] It builds — Debug at minimum — and you said which configurations you actually built.
 - [ ] Tests for the layer you touched were run, and you said which.

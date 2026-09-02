@@ -1,15 +1,15 @@
 # The game design plan — the review as slices, under the pillars
 
-**Status: drafted 2026-09-02. Phase 0 is complete — all five slices landed on
+**Status: drafted 2026-09-02. Phase 0 is complete and its work orders are in `Archive/` — all five slices landed on
 `claude/multi-agent-game-design-review-8qu6h8` the same day and are CI-green (Debug|x64, run 240),
 under the owner's decision of 2026-09-02 that CI-green is the gate and the Windows checks each order
 names are waived.** Nothing in phase 1 is cut, and the four decisions in §4 are open.
 
 Two of the five came back red first and both are recorded where they happened: the matchup table was
 drafted on the wrong toolchain and CI's log carried the right numbers
-([`MatchupMatrix-work-order.md`](MatchupMatrix-work-order.md) §7-8), and the owner key's first
+([`MatchupMatrix-work-order.md`](Archive/MatchupMatrix-work-order.md) §7-8), and the owner key's first
 version lost a fleet through a gate because a faction converted silently to an owner
-([`OwnerKey-work-order.md`](OwnerKey-work-order.md) §8). Slice 1's fixture row and slice 5's matrix
+([`OwnerKey-work-order.md`](Archive/OwnerKey-work-order.md) §8). Slice 1's fixture row and slice 5's matrix
 each did the job they were built for on the slice that came after them. This plan converts
 [`GameDesignReview.md`](GameDesignReview.md) (tree at `caf9814`) into ordered work in the shape
 `Design/README.md` defines: one slice, one branch, one pull request. It is filtered through
@@ -105,11 +105,11 @@ Cut now. Five slices, no feature, each leaving one door.
 
 | # | Slice | Layer | Size | Depends on | Items | ADR |
 |---|---|---|---|---|---|---|
-| 1 | [The save migrates forward](SaveMigration-work-order.md) | `GameLogic` + `Outpost` | M | — | E14 (migration half) | [ADR 0061](Decisions/0061-the-save-is-migrated-on-read.md) — **landed** |
-| 2 | [The wire is laid once: the status collision, a flags byte, a reserved byte, a dropped-send log line](FleetStatus-work-order.md) | `GameLogic` + `Outpost` | M | 1 | C1 slice 0, cross-cutting | — **landed** |
-| 3 | [An owner key beside the faction, with one owner](OwnerKey-work-order.md) | `GameLogic` + `Outpost` | M | 1, 2 | E1 (key half) | [ADR 0062](Decisions/0062-an-owner-is-not-a-faction-and-not-an-entity.md) — **landed** |
-| 4 | [The tick is measured: a per-tick statistics block beside the save](TickTelemetry-work-order.md) | `Outpost` | S | — | C5 slice 0, E7 counters | — **landed** |
-| 5 | [The matchup matrix test pins the balance](MatchupMatrix-work-order.md) | `Tests/GameLogicTests` | S | — | C13 slice 0 | — **landed** |
+| 1 | [The save migrates forward](Archive/SaveMigration-work-order.md) | `GameLogic` + `Outpost` | M | — | E14 (migration half) | [ADR 0061](Decisions/0061-the-save-is-migrated-on-read.md) — **landed** |
+| 2 | [The wire is laid once: the status collision, a flags byte, a reserved byte, a dropped-send log line](Archive/FleetStatus-work-order.md) | `GameLogic` + `Outpost` | M | 1 | C1 slice 0, cross-cutting | — **landed** |
+| 3 | [An owner key beside the faction, with one owner](Archive/OwnerKey-work-order.md) | `GameLogic` + `Outpost` | M | 1, 2 | E1 (key half) | [ADR 0062](Decisions/0062-an-owner-is-not-a-faction-and-not-an-entity.md) — **landed** |
+| 4 | [The tick is measured: a per-tick statistics block beside the save](Archive/TickTelemetry-work-order.md) | `Outpost` | S | — | C5 slice 0, E7 counters | — **landed** |
+| 5 | [The matchup matrix test pins the balance](Archive/MatchupMatrix-work-order.md) | `Tests/GameLogicTests` | S | — | C13 slice 0 | — **landed** |
 
 Three rounds, serial between them. Round one is slices 1 and 5: the codec and a test file that
 touches nothing else. Round two is slice 2 alone, because the state reader and the wire's fleet
@@ -122,40 +122,42 @@ genesis, and that stays. This slice adds beside it a window of accepted formats 
 `ReadUniverseState`, every later field read behind a gate on the format the reader took, a fixture
 per retired format written by `UniverseGen` at the commit before the bump, and a sidecar copy of
 the file a boot migrated from. The work order is
-[`SaveMigration-work-order.md`](SaveMigration-work-order.md); the tool turned out to change nothing
+[`SaveMigration-work-order.md`](Archive/SaveMigration-work-order.md); the tool turned out to change nothing
 and the root gains two lines, so the layer is `GameLogic` + `Outpost`. This is the
 highest-leverage slice in the plan: without it every table after it deletes the live universe.
 
-**Slice 2 — the wire is laid once.** `FLEET_STATUS_LAUNCHING = 6` collides with
-`FleetOrderKind::Jump = 6` (`GameLogic/UniverseSnapshot.h:212-220`; `ShipState.h:205-218`), and a
-Jump with nothing left to launch draws as LAUNCHING on both readers. Fix it by widening the status
-kind to a byte, moving LAUNCHING to a flags byte that also carries JUMPING and leaves room for a
-cargo-full bit, and adding a reserved stance byte written zero; add a second, reserved ship-record
-flags byte in the same ALPN bump so E3's site flag, C7's fired bit and C10's effect flags do not
-ration six bits three ways later. Both readers gain a JUMPING case. One ALPN bump per Combat.md
-9.3, one `SnapshotTests` update, and a `JumpTests` assertion on the status byte. Also: a refused
-reliable send in `UniverseView` logs ORDER DROPPED instead of nothing. No `OrderReply`; that is §4
-decision 1.
+**Slice 2 — the wire is laid once.** `FLEET_STATUS_LAUNCHING = 6` collided with
+`FleetOrderKind::Jump = 6`, so a fleet holding a jump order drew as LAUNCHING on both readers. The
+status byte became a kind byte, a flags byte (launching, engaged, under attack, five bits reserved)
+and a reserved stance byte; both readers gained the `JUMPING` case they never had, the view's one
+status accessor split in two, a refused reliable send logs `ORDER DROPPED`, and the ALPN moved to
+`outpost-6` with no state-format bump. Two things the sketch asked for did not land, and the order
+argues both: no second flags byte on the ship record (six bits free, seven wanted, the shortage a
+phase-4 item's, against a cost paid per ship per update), and `JUMPING` is a kind rather than a
+flag because a jump has no state in between. The work order is
+[`Archive/FleetStatus-work-order.md`](Archive/FleetStatus-work-order.md).
 
-**Slice 3 — an owner key beside the faction.** Add `OwnerId`, a global 64-bit serial in a
-different namespace from ADR 0047's shard-scoped `EntityId`, to `DockedShip`, `Fleet` and
-`Publisher::Desc`, beside the faction and never replacing it. Every gate that means *ownership*
-(`LedgerFor`, `ComposeFleet`, `CanTakeSlot`, the order authority check) compares the owner; every
-gate that means *standing* keeps comparing the faction. The composition root supplies one constant
-owner and there is no login, no `AdmitOwner` and no wallet. Save format bump, carried by slice 1.
-Acceptance: two owners in one faction hold separate ledgers and separate five-slot tables in one
-universe, pinned by a test; every existing suite still passes with the single owner. ADR: the owner
-is not a faction and not an entity, naming 0013, 0039 and 0047. This is the one slice a foundation
-argument could talk the owner out of; the answer is that the tree has already ruled three times
-that a player is not a faction, and every P0 economy item keys on whichever id exists the day it
-lands.
+**Slice 3 — an owner key beside the faction.** `OwnerId`, a `u64` in its own namespace, on the
+fleet row, the ledger row and — found on contact — the docking in flight, since a ship has no owner
+and the order that asked is the only place one was ever written. Authority calls take an
+`Issuer{owner, faction}` pair, ownership gates compare the owner, standing gates keep the faction,
+and `IssueDockOrder` takes the pair too (its gate is still the faction; the row it writes is the
+owner's). The state format moved to 8 and the two fields read behind a gate on the file's byte,
+which was slice 1's reader's first real use: the format-7 fixture loads, keeps its census, comes
+back owned by `OWNER_LOCAL`, and replays. CI caught the one thing the local checks could not — the
+jump pass looked its fleet up by the faction, and a `u8` converts to a `u64` in silence — so the
+jumper carries the owner and a faction may no longer stand in for one at compile time.
+[ADR 0062](Decisions/0062-an-owner-is-not-a-faction-and-not-an-entity.md); the work order is
+[`Archive/OwnerKey-work-order.md`](Archive/OwnerKey-work-order.md).
 
-**Slice 4 — the tick is measured.** A statistics block the composition root samples: `Step` and
-`Publish` wall time per tick, subscriber count, records and fire events sent, and a reserved
-section for the economy counters E7 will fill. Sampled on the save cadence and written beside
-`Universe.sav`, read by the HUD's debug readout. Nothing in the review's scale track (the governor,
-the byte budget, the worker publisher) has an input without it, and the free repair and the
-garrison cannot be shown to be farms without it either.
+**Slice 4 — the tick is measured.** `TickStats` in `Outpost` — and only `Outpost`, since a wall
+clock is the first thing `GameLogic`'s determinism list forbids and the tick's two halves are run by
+the adapter in the executable, not by `ServerHost`. The step and the publish are timed separately,
+the window's means and worst go to `Universe.stats` beside the save on their own `statsEveryTicks`
+cadence and reset, and the `F1` readout gained the line. No counter went into the publisher: records
+and fire events sent are numbers item C7's byte budget will decide with, and it adds them where it
+reads them. The work order is
+[`Archive/TickTelemetry-work-order.md`](Archive/TickTelemetry-work-order.md).
 
 **Slice 5 — the matchup matrix test.** Combat slice 5's harness, which is not in the tree, brought
 into `GameLogicTests` as a table: hull against hull at the review's range bands, expected outcome

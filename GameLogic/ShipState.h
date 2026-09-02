@@ -37,7 +37,7 @@ inline constexpr FactionId FACTION_VANGUARD = 2;
 // eight of them because the wire's hostileMask is a byte; an owner is an ACCOUNT, there are as many
 // as there are players, and no client is ever told one. Making a player a faction would have meant
 // ten thousand rows in a table that is quadratic in its own size, which ADR 0013, 0039 and 0047 each
-// refused in turn without putting anything in its place (Design/OwnerKey-work-order.md).
+// refused in turn without putting anything in its place (Design/Archive/OwnerKey-work-order.md).
 //
 // A u64 and a namespace of its own, deliberately not ADR 0047's shard-scoped EntityId: an account
 // outlives every shard it has ever had a ship on, and an entity does not outlive one.
@@ -248,7 +248,7 @@ enum class FleetOrderKind : std::uint8_t
 
   // Jump: fly to a gate and cross it, whole. Appended rather than inserted, because the wire reads
   // this enum as a byte and a value that moved would make one build's Dock another's Attack
-  // (Design/Universe-slice-2.md 4).
+  // (Design/Archive/Universe-slice-2.md 4).
   Jump
 };
 

@@ -23,10 +23,10 @@ The player-facing sentence: **the frontier stops fitting in one process.**
 - **A jump is `DespawnShip(JumpedOut)` + `SpawnShipAs`** under one identity, with hull damage carried
   and every intent re-derived on the far side (ADR 0056).
 - **`StepJumps` already builds the payload.** Its `Jumper` — entity, hull, faction, hull points,
-  arrival position, heading, and the fleet owner, slot and member index — is exactly what a handoff
+  arrival position, heading, and the fleet's owner — an `OwnerId` since ADR 0062, not its faction — with its faction, slot and member index — is exactly what a handoff
   has to carry. It was written to survive a despawn within one universe, and that is the same
   problem.
-- **QUIC with a reliable lane**, an ALPN that has been bumped five times, and a boot that fails
+- **QUIC with a reliable lane**, an ALPN that has been bumped six times, and a boot that fails
   rather than falling back (ADR 0028).
 - **`ConfigureShard`**, a save file that records its shard, and a reader that refuses a file whose
   header and body disagree about it (ADR 0057).
@@ -106,7 +106,11 @@ list. Cross-shard, the members arrive in a universe that has no such row.
 
 The fleet is therefore re-formed on the far side, from the owner and slot each `Jumper` already
 carries — which is precisely why slice 2 of the universe design put them there, and it did that to
-survive a *local* despawn. The same three fields do both jobs.
+survive a *local* despawn. The same three fields do both jobs. The owner is an `OwnerId` since ADR
+0062 and no longer the faction, which is what the far side looks the slot up by — and the first
+version of that key lost a fleet through a gate for exactly this reason
+([`Archive/OwnerKey-work-order.md`](Archive/OwnerKey-work-order.md) §8), so the field this section
+leans on has already been tested by the thing it exists for.
 
 What does not survive: anything the fleet row holds that is not owner, slot and membership — its
 order, its threat, its alert. All of it is intent, and all of it is re-derived, which is the rule

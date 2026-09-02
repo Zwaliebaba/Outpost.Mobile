@@ -1,13 +1,13 @@
 # Work order — the save migrates forward
 
-Slice 1 of [`GameDesignPlan.md`](GameDesignPlan.md), phase 0. One slice, `GameLogic` with a test
+Slice 1 of [`GameDesignPlan.md`](../GameDesignPlan.md), phase 0. One slice, `GameLogic` with a test
 fixture and two lines in the composition root, and the head of the whole plan: every later slice
 that adds a table to `Universe` bumps `UNIVERSE_STATE_FORMAT`, and today a bump deletes the live
-universe at the next boot — [ADR 0057](Decisions/0057-the-save-is-a-versioned-file-and-a-refused-one-stops-the-boot.md)
+universe at the next boot — [ADR 0057](../Decisions/0057-the-save-is-a-versioned-file-and-a-refused-one-stops-the-boot.md)
 refuses an unknown format and never falls to genesis, which is right, and `UniverseSnapshot.cpp:117`
 says why nothing softens it: "there is nothing to migrate from yet". After this slice there is.
 
-The finding it retires is the migration half of E14 in [`GameDesignReview.md`](GameDesignReview.md)
+The finding it retires is the migration half of E14 in [`GameDesignReview.md`](../GameDesignReview.md)
 §Economy 14, pulled forward to phase 0 by the review's cross-cutting section: six format bumps
 landed in three days, the plan schedules a dozen more, and each one is a wipe until a reader
 carries the format before it.
@@ -81,7 +81,7 @@ yesterday's build means to tomorrow's.
    - AGENTS.md's "and no save *file* — … no format versions it" sentence is already false since
      Universe slice 5 and is re-trued here, because this slice is about exactly that sentence's
      subject.
-   - `Design/Universe.md` §8 gains a bullet, amended in place per ADR 0054: a reader per known older
+   - `Design/Archive/Universe.md` §8 gains a bullet, amended in place per ADR 0054: a reader per known older
      format, a fixture per retired one, the sidecar, and where `OLDEST` may move.
    - `GameDesignPlan.md`'s status block and its slice-1 row: landed, and the layer corrected (§6).
 

@@ -15,7 +15,7 @@ namespace
 // (k, 0) and applying these k times each closes it in exactly 6k cells.
 //
 // The order is part of what a seed means: it decides which cell each of the ring's draws lands on,
-// so reordering this table reseeds every system outside ring 0 (Design/Universe-slice-1.md 4.1).
+// so reordering this table reseeds every system outside ring 0 (Design/Archive/Universe-slice-1.md 4.1).
 struct AxialStep
 {
   std::int32_t q;
@@ -48,7 +48,7 @@ constexpr AxialStep RING_STEPS[6] = {{-1, 1}, {-1, 0}, {0, -1}, {1, -1}, {1, 0},
 // in float too. What it could change is the shape of the map, by a link nobody meant. This runs
 // once at boot over a table in the dozens, so the double costs nothing and removes the question --
 // and, measured rather than assumed, the suite does NOT catch the float version
-// (Design/Universe-slice-1.md 7): it is insurance against a map that is slightly wrong, not a fix
+// (Design/Archive/Universe-slice-1.md 7): it is insurance against a map that is slightly wrong, not a fix
 // for one that is broken.
 //
 // Symmetric exactly, which is what the connectivity theorem needs: OffsetX negates exactly under a

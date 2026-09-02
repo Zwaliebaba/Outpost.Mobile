@@ -36,8 +36,8 @@ five fleets, and everything below follows from that. You can:
 - **Attack** by tapping a hostile record, and **dock** by tapping a station. A station whose owner
   holds you hostile refuses before the order is even sent.
 - **Read a fleet** by holding its button: a sheet over the bar names the fleet, what it is doing,
-  the hulls in it, and its four commands — `MOVE`, `ATTACK`, `DOCK`, `STOP`. The first three arm the
-  next universe tap, which is how the verbs get names a tap alone could never teach.
+  the hulls in it, and its five commands — `MOVE`, `ATTACK`, `DOCK`, `JUMP`, `STOP`. All but `STOP`
+  arm the next universe tap, which is how the verbs get names a tap alone could never teach.
 - **Compose a fleet** by holding a station you are docked at: the assembly screen lists what you
   have inside, you draft up to eight hulls out of it into a free slot, and `LAUNCH` pours them out
   of the dock one at a time and forms them up outside. Docking a fleet dismantles it back into the
@@ -52,6 +52,9 @@ five fleets, and everything below follows from that. You can:
   turret genuinely loses a fighter crossing close aboard and holds one at three hundred metres.
   Muzzle flashes and tracers in the shooter's own colours say who fired at whom, the fleet sheet's
   condition pips say how much is left, and a hull at zero shatters. Nothing rolls dice.
+- **Jump.** `JUMP` on the sheet, then a gate: the fleet flies to it and crosses whole or not at all,
+  keeping every identity and every point of damage, and the camera crosses with it. The far side's
+  worlds, rocks and minimap marks are the far side's.
 - **Read the universe** through the HUD: minimap with the sector pair, your fleets' digits on it
   wherever they are, contact count, event log, and a function rail whose screens are not built yet.
 
@@ -62,9 +65,10 @@ armed, and they shoot: fly a fleet inside a hundred and sixty metres of one and 
 combatants answer, and the fight runs itself. Their helms are still a metronome — they walk the ring
 whatever happens — because guns react in this game and courses do not.
 
-The government is here too. The starting solar system is laid out from a seed, and at each of its
-three planets stands a Core Vanguard Command station — azure in the scene, a hollow diamond on the
-minimap from the first frame, and the place your ships can dock. The Vanguard takes anyone who has
+The government is here too. The galaxy is laid out from one seed — 54 systems joined by 136 gates,
+with home where it always was — and at every planet of every system stands a Core Vanguard Command
+station — azure in the scene, a hollow diamond on the minimap from the first frame, and the place
+your ships can dock. The Vanguard takes anyone who has
 not attacked it; order an attack on one of its ships or its stations and it stops taking you — the
 law turns red across the map, and the provoked station launches Corvette protectors that hunt the
 aggressor until it dies.
@@ -91,13 +95,20 @@ move the camera, pinch and twist with two contacts to zoom and turn.
 
 ### Deliberately not here yet
 
-So nobody goes looking: no economy, no audio, no save file, no mining, and no turret that turns —
+So nobody goes looking: no economy, no audio, no mining, no login — one player, whose owner key is
+the constant `OWNER_LOCAL` until a session says who is asking — and no turret that turns —
 a hull's guns fire and its geometry holds still. Combat is here and is one number deep: hull points,
 one damage figure per device, and no shields, armour classes or resistances. Tuning is `constexpr`
 in `SimTuning.h`, `HullSpec.h`, `DeviceSpec.h` and `ViewTuning.h`; what a deployment may change
 without a rebuild lives in `Outpost/Assets/Server.cfg`. The networking is real QUIC over a real
 stack, and it is still one client in one process on `127.0.0.1` with a self-signed certificate the
 client does not validate.
+
+**The save survives the build.** `Universe.sav` is a versioned file: a boot restores it or stops
+naming why, and a file in an older format is migrated on read rather than refused, with the file it
+was read from kept beside it (ADR 0057, 0061). What the tick costs — the step and the publish,
+timed separately — is written beside it as `Universe.stats` on its own cadence, and `F1` shows the
+same numbers.
 
 **The universe is authored, not discovered.** `Tools/UniverseGen` writes a `Universe.sav` and
 `Outpost` runs what it finds beside itself; a first checkout has to run the tool once before the game
@@ -128,6 +139,7 @@ processes, nothing has to be rewritten to make it work.
 | `NeuronClient/` | Everything that names a graphics type: D3D12 device, scene and text renderers, the planet and star-field pipelines, the explosion FX, the content readers |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives |
 | `Outpost/` | The executable: composition root, presentation state, HUD, the fleet sheet and the station assembly screen, and `Outpost/Assets/` |
+| `Tools/UniverseGen/` | The console tool that writes `Universe.sav` — the one thing in the tree that authors a universe (ADR 0058) |
 
 The simulation ticks at a fixed rate, is bit-identical across two runs of the same seed, and depends
 on nothing but `NeuronCore`. The client sees the universe only as snapshots that arrived over the wire,

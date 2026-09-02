@@ -97,7 +97,7 @@ void PoseOf(const Game::Universe& _universe, std::vector<Game::UniversePos>& _ou
 // disk. The census the tool printed for it is recorded here beside the name, so a reader that
 // mis-parses an older layout into a plausible universe fails on a count rather than passing.
 //
-// The rule (Design/SaveMigration-work-order.md 1.3): the commit that bumps UNIVERSE_STATE_FORMAT
+// The rule (Design/Archive/SaveMigration-work-order.md 1.3): the commit that bumps UNIVERSE_STATE_FORMAT
 // to N+1 adds UniverseFormatN.sav to this table and to the project file, and its row is green in
 // that same commit. Nothing is removed from here except by the decision record that moves
 // UNIVERSE_STATE_FORMAT_OLDEST.
@@ -520,7 +520,7 @@ public:
     reloaded.Step();
     Assert::AreEqual(static_cast<std::uint64_t>(1), reloaded.Tick(), L"a reloaded empty universe would not step");
   }
-  // --- the save file (Design/Universe-slice-5.md) ----------------------------------------------
+  // --- the save file (Design/Archive/Universe-slice-5.md) ----------------------------------------------
 
   // The header round-trips, and the file it fronts is still the state codec's own bytes.
   TEST_METHOD(ASaveFileCarriesItsHeader)
@@ -622,7 +622,7 @@ public:
     // save at the current format and be the same universe afterwards -- twice, so that migrating a
     // migrated file is a no-op -- and replay against its own reload to byte equality, which is the
     // standing replay gate applied to a migrated universe rather than to a built one
-    // (Design/SaveMigration-work-order.md 4).
+    // (Design/Archive/SaveMigration-work-order.md 4).
     for (const Fixture& fixture : FIXTURES)
     {
       const Neuron::ByteBuffer file = ReadFixture(fixture.name);

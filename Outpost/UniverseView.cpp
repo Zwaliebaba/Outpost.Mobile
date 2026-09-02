@@ -318,7 +318,7 @@ void UniverseView::ExplodeTheLost(std::uint64_t _tick)
   //
   // What it does NOT do yet is draw anything. A wink-out belongs here and is a look rather than a
   // mechanism; it is left out on purpose and said so, so nobody mistakes a plain removal for the
-  // finished effect (Design/Universe.md 9).
+  // finished effect (Design/Archive/Universe.md 9).
   const std::span<const Game::EntityId> jumped = m_receiver.Jumped();
   int ownJumped = 0;
   int crossedSlot = -1;
@@ -580,7 +580,7 @@ const char* UniverseView::FleetActivity(int _slot) const noexcept
   case static_cast<std::uint8_t>(Game::FleetOrderKind::Mine):
     return "MINING";
   // Never drawn until this slice: Jump shared its value with LAUNCHING, so a jumping fleet said it
-  // was launching (Design/FleetStatus-work-order.md).
+  // was launching (Design/Archive/FleetStatus-work-order.md).
   case static_cast<std::uint8_t>(Game::FleetOrderKind::Jump):
     return "JUMPING";
   default:
@@ -1164,7 +1164,7 @@ void UniverseView::IssueJumpOrder(std::size_t _gate)
 
   // No standing check before this one, and that is not an omission: a gate takes anyone this phase,
   // so an affordance that refused would be telling a truth the simulation does not hold
-  // (Design/Universe.md 6.1). The day gates can be owned, this is where the refusal goes -- beside
+  // (Design/Archive/Universe.md 6.1). The day gates can be owned, this is where the refusal goes -- beside
   // IssueDockOrder's, and with the simulation's gate still standing behind it.
   Game::FleetOrder order;
   order.kind = Game::FleetOrderKind::Jump;

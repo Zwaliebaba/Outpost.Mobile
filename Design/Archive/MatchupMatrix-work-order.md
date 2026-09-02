@@ -1,10 +1,10 @@
 # Work order — the matchup matrix test pins the balance
 
-Slice 5 of [`GameDesignPlan.md`](GameDesignPlan.md), phase 0. One slice, `Tests/GameLogicTests`
+Slice 5 of [`GameDesignPlan.md`](../GameDesignPlan.md), phase 0. One slice, `Tests/GameLogicTests`
 only, and independent of every other phase-0 slice: it adds a file to the suite and touches no
 library.
 
-The finding it retires is the first half of C13 in [`GameDesignReview.md`](GameDesignReview.md)
+The finding it retires is the first half of C13 in [`GameDesignReview.md`](../GameDesignReview.md)
 §Combat 13: the instrument that measured combat slice 5 was "a standalone harness" in no file under
 `Tests/` or `Tools/`, the window it found is narrow enough that 3,800 versus 4,000 hull points flips
 who wins, and the suite pins one pacing assertion, one determinism test and one tracking number

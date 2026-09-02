@@ -23,7 +23,7 @@ namespace Game
 // (Design/Archive/Stations.md 7.4, ADR 0040).
 //
 // JumpedOut is the third, and it is the one the door was named for: Universe.h has listed "jump-out"
-// as a future cause since Hostiles 4.4, and Design/Universe.md 6 is the design that walks through
+// as a future cause since Hostiles 4.4, and Design/Archive/Universe.md 6 is the design that walks through
 // it. A jumped ship is not dead and is not stored -- it is somewhere else, under the same identity,
 // which is why it needs a cause of its own rather than borrowing either of the two above (ADR 0056).
 enum class DespawnCause : std::uint8_t
@@ -84,7 +84,7 @@ public:
     // Who this ship is docking FOR, carried from the order to the ledger row it becomes. A ship has
     // a faction and no owner (ADR 0013), so without this the row could only be attributed by
     // guessing, and a guess would put every hull a player ever docked into one faction-wide pile --
-    // which is exactly what slice 3 exists to stop (Design/OwnerKey-work-order.md).
+    // which is exactly what slice 3 exists to stop (Design/Archive/OwnerKey-work-order.md).
     OwnerId owner = OWNER_NOBODY;
     bool active = false;
   };
@@ -106,7 +106,7 @@ public:
     // Whose hull this is. The faction is what it FLIES AS when it launches -- its identity on the
     // wire, ADR 0013 -- and the owner is who may draw it back out. They were one byte until slice 3
     // of Design/GameDesignPlan.md, which meant one ledger for every player who shared a faction
-    // (Design/OwnerKey-work-order.md).
+    // (Design/Archive/OwnerKey-work-order.md).
     FactionId factionId = FACTION_PLAYER;
     OwnerId owner = OWNER_NOBODY;
   };
@@ -209,7 +209,7 @@ public:
     // The far gate, named by the identity that already survives leaving this universe (ADR 0047).
     // An EntityId rather than a GateId because the day the far side is on another shard, an index
     // into *this* universe's table means nothing -- and the field would have to change shape
-    // exactly when it is hardest to change (Design/Universe.md 5).
+    // exactly when it is hardest to change (Design/Archive/Universe.md 5).
     EntityId destination = INVALID_ENTITY_ID;
 
     // Whose road this is. Read by nothing this phase; it is here so genesis can say what it means,
@@ -412,7 +412,7 @@ public:
   // on the next Step that needs it.
   //
   // A universe that has spawned something since its last tick is not yet at rest, and the state
-  // codec's contract is a universe at rest (Design/Universe.md 8). The distinction is invisible in
+  // codec's contract is a universe at rest (Design/Archive/Universe.md 8). The distinction is invisible in
   // the bytes and decisive afterwards: a route's currency is written as a RELATION to the island
   // version, not as the version itself, so a universe whose islands have not been built yet writes
   // "current" for routes that its own next tick is about to invalidate. Read back, those routes are
@@ -421,7 +421,7 @@ public:
   // So: anything that spawns into a universe and then writes it must call this in between. Genesis
   // does (BuildStartingUniverse); a running game never needs to, because Step settles as it goes.
   // Found by StartingUniverseTests::AGeneratedUniverseSurvivesTheSaveFile, which is the only caller
-  // in the tree that ever saved at tick zero (Design/Universe-slice-5b.md 7).
+  // in the tree that ever saved at tick zero (Design/Archive/Universe-slice-5b.md 7).
   void SettleDerivedState();
 
   [[nodiscard]] ShardId Shard() const noexcept
@@ -603,7 +603,7 @@ public:
   // Naming a ship that is not live returns INVALID_GATE_ID and makes no row. A destination that
   // names nothing is accepted and makes a gate that leads nowhere: the jump pass refuses to move
   // anybody through it rather than losing them, which is the fail-closed direction and is the one
-  // failure that pass must not have (Design/Universe-slice-2.md 4.6).
+  // failure that pass must not have (Design/Archive/Universe-slice-2.md 4.6).
   GateId MakeGate(ShipId _structure, const GateDesc& _desc);
 
   // The gate a ship is, or INVALID_GATE_ID if it is not one. StationAt's shape and its reason:
@@ -656,7 +656,7 @@ public:
   // u8, so a faction passed here would convert silently and compare a 0 against an owner that is
   // never 0 -- which is exactly what happened once: the jump pass looked its fleet up by
   // ownerFaction, found nothing, and the crossing fleet retired on the tick it arrived. Two suites
-  // caught it and no compiler did (Design/OwnerKey-work-order.md 6).
+  // caught it and no compiler did (Design/Archive/OwnerKey-work-order.md 6).
   FleetId FleetInSlot(FactionId, std::uint8_t) const = delete;
 
   // The fleet a ship is in, or INVALID_FLEET_ID. StationAt's shape and StationAt's reason: through
@@ -773,7 +773,7 @@ public:
   //   NotAGate         Jump: the named record is not a live gate row. There is no standing refusal
   //                    beside it -- a gate takes anyone this phase, and inventing half a
   //                    gate-standings design here would repeat the mistake the stations design
-  //                    declined (Design/Universe.md 6.1);
+  //                    declined (Design/Archive/Universe.md 6.1);
   //   Unsupported      Mine, which waits for a design that gives it meaning and something to mine.
   //
   // An accepted order replaces whatever standing order was there. Stop is the one kind that leaves
@@ -928,7 +928,7 @@ private:
   //
   // Whole or not at all. The fleet moves on the tick every live member stands inside the gate, so a
   // fleet is never half in one system and half in another -- which is a sentence the fleet row
-  // cannot say, and the reason the trickle was turned down (ADR 0056, Design/Universe.md 6.2).
+  // cannot say, and the reason the trickle was turned down (ADR 0056, Design/Archive/Universe.md 6.2).
   void StepJumps();
 
   void StepPatrols();
@@ -1164,7 +1164,7 @@ private:
 
     // Whose the hull is, carried from the docking order rather than derived here: the order knew
     // who asked, and by the time a ship is captured that is the only place it was ever written
-    // (Design/OwnerKey-work-order.md).
+    // (Design/Archive/OwnerKey-work-order.md).
     OwnerId owner = OWNER_NOBODY;
 
     // A garrison ship coming home writes no ledger row: a garrison is not a guest, and the hull
@@ -1225,7 +1225,7 @@ private:
   //
   // Damage rides across because a fleet that jumps out of a fight arrives in the state it left in;
   // intent does not, because a route, a patrol and an aim are all things the far side re-derives
-  // (Design/Universe.md 6.3).
+  // (Design/Archive/Universe.md 6.3).
   struct Jumper
   {
     ShipHandle ship;

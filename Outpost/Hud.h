@@ -36,7 +36,7 @@ public:
     // What the tick itself costs, from the composition root's own clock (Outpost/TickStats.h). On
     // the screen for the reason every other number here is: the step and the publish scale with
     // different things, and a shard that is falling behind looks exactly like one that is not until
-    // you read them (Design/TickTelemetry-work-order.md 1.4).
+    // you read them (Design/Archive/TickTelemetry-work-order.md 1.4).
     double stepMs = 0.0;
     double publishMs = 0.0;
     double stepWorstMs = 0.0;

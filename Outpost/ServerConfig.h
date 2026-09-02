@@ -56,7 +56,7 @@ struct ServerConfig
   // How often the tick's own cost is written beside the save, in ticks. Separate from the save's
   // cadence and not derived from it: a shard being tuned wants the numbers far more often than it
   // wants a save, and the two have nothing to do with each other beyond both being between-ticks
-  // work. 0 writes no file and costs no sampling (Design/TickTelemetry-work-order.md 1.5).
+  // work. 0 writes no file and costs no sampling (Design/Archive/TickTelemetry-work-order.md 1.5).
   std::uint32_t statsEveryTicks = 1800;
 };
 

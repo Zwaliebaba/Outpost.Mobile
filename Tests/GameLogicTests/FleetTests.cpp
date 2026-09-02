@@ -7,7 +7,7 @@ namespace GameLogicTests
 namespace
 {
 // One owner per faction, which is what every row here means: these suites were written when the key
-// WAS the faction, and this keeps each of them saying exactly what it said (Design/OwnerKey-work-order.md).
+// WAS the faction, and this keeps each of them saying exactly what it said (Design/Archive/OwnerKey-work-order.md).
 [[nodiscard]] Game::Issuer IssuerFor(Game::FactionId _faction)
 {
   return Game::Issuer{(_faction == Game::FACTION_PLAYER) ? Game::OWNER_LOCAL : Game::OwnerId{_faction} + 1u, _faction};
@@ -1061,7 +1061,7 @@ public:
 
     // And somebody else's slot 1. The gate is one comparison, and this is the thing it refuses.
     // Another owner as well as another faction, since the gate compares the owner now
-    // (Design/OwnerKey-work-order.md).
+    // (Design/Archive/OwnerKey-work-order.md).
     const Game::FactionId other = static_cast<Game::FactionId>(3);
     const Game::Issuer theirIssuer{Game::OwnerId{7}, other};
     const Game::ShipId theirs =
@@ -1834,7 +1834,7 @@ public:
     // are held hostile by the same enemies, and who nonetheless have their own hulls and their own
     // five slots. This was unrepresentable while the key was the faction -- the two would have
     // shared one ledger and one slot table, or one of them would have had to be a different faction
-    // and therefore a different side in every fight (Design/OwnerKey-work-order.md).
+    // and therefore a different side in every fight (Design/Archive/OwnerKey-work-order.md).
     Game::Universe universe;
     const Game::Universe::StationId station = MakeStationAt(universe, 0.0f, 0.0f);
 

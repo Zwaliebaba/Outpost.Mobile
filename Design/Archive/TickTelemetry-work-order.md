@@ -1,9 +1,9 @@
 # Work order — the tick is measured
 
-Slice 4 of [`GameDesignPlan.md`](GameDesignPlan.md), phase 0, round three. One slice, `Outpost`
+Slice 4 of [`GameDesignPlan.md`](../GameDesignPlan.md), phase 0, round three. One slice, `Outpost`
 alone, and it shares no file with slice 3, so the two run together.
 
-The finding it retires is the first half of C5 in [`GameDesignReview.md`](GameDesignReview.md)
+The finding it retires is the first half of C5 in [`GameDesignReview.md`](../GameDesignReview.md)
 §Combat 5, joined with the counters half of E7. Both panels asked for the same instrument and
 neither owned it: a per-tick statistics block the composition root samples. Nothing in the review's
 scale track has an input without it — not the governor, not the byte budget, not the inflation
@@ -51,7 +51,7 @@ It adds no feature and changes no simulation. It measures what the tick already 
    ADR 0043's exact reason, and it is separate from the save's cadence because a shard being tuned
    wants the numbers far more often than it wants a save.
 
-6. **Prose in the same commit**: `Design/Universe.md` §8 gains a sentence naming the sidecar beside
+6. **Prose in the same commit**: `Design/Archive/Universe.md` §8 gains a sentence naming the sidecar beside
    the save, since that section owns what lands next to `Universe.sav`.
 
 ## 2. Out of scope

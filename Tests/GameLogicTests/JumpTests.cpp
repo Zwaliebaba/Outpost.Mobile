@@ -131,7 +131,7 @@ public:
     // Two on the doorstep and one genuinely far away, formed into one fleet. Spawning all three at
     // the gate and *intending* one to be outside is what the first draft of this row did, and it
     // tested nothing: every member was already inside, so a per-ship crossing passed it
-    // (Design/Universe-slice-2.md 7).
+    // (Design/Archive/Universe-slice-2.md 7).
     std::vector<Game::ShipId> ships;
     for (int at = 0; at < 2; ++at)
     {
@@ -151,7 +151,7 @@ public:
 
     // Positions, not a ship count. A jump despawns and respawns, so the count is identical either
     // way and cannot see a crossing at all -- which a mutation that crossed one ship at a time
-    // survived until this row was rewritten (Design/Universe-slice-2.md 7).
+    // survived until this row was rewritten (Design/Archive/Universe-slice-2.md 7).
     std::vector<Game::EntityId> crossing;
     for (const Game::ShipId ship : ships)
       crossing.push_back(universe.EntityIdOf(ship));
@@ -325,7 +325,7 @@ public:
   }
 
   // The one failure this pass must not have. A gate that leads nowhere holds the fleet; it does not
-  // eat it (Design/Universe-slice-2.md 4.6).
+  // eat it (Design/Archive/Universe-slice-2.md 4.6).
   TEST_METHOD(AJumpThroughAStaleGateStrandsNobody)
   {
     Game::Universe universe;

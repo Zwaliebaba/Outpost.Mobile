@@ -1,6 +1,6 @@
 # Work order — the wire is laid once
 
-Slice 2 of [`GameDesignPlan.md`](GameDesignPlan.md), phase 0, round two. One slice, `GameLogic` and
+Slice 2 of [`GameDesignPlan.md`](../GameDesignPlan.md), phase 0, round two. One slice, `GameLogic` and
 `Outpost`, and it waits for slice 1 because it edits the same codec files.
 
 Two things are owed. **A shipping display bug**: `FLEET_STATUS_LAUNCHING = 6` and

@@ -1567,14 +1567,14 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
     // The destination is deliberately not checked against this universe's entities. A gate whose far
     // side is not here is exactly what a half-loaded shard looks like, and the jump pass already
     // refuses to move anybody through one -- so the fail-closed behaviour is the pass's, and a check
-    // here would turn a recoverable universe into a refused load (Design/Universe-slice-2.md 4.6).
+    // here would turn a recoverable universe into a refused load (Design/Archive/Universe-slice-2.md 4.6).
     if (!in.Ok() || gate.ownerFaction >= FACTION_LIMIT)
       return false;
   }
 
   // Bounded against what is left in the buffer rather than by an exact ceiling. It was
   // FACTION_LIMIT * FLEET_SLOTS -- every slot of every faction -- and that was exact only while a
-  // fleet's owner was a faction. Owners are u64 and unbounded by design (Design/OwnerKey-work-order.md),
+  // fleet's owner was a faction. Owners are u64 and unbounded by design (Design/Archive/OwnerKey-work-order.md),
   // so the most fleets a universe may hold is the most a player base may have, and the honest bound
   // is the one every other count in this codec uses: a fleet row is more than a byte, so a count
   // past Remaining() is a corrupt file however many players a shard carries.

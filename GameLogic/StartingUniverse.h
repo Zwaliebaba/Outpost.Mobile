@@ -26,7 +26,7 @@ namespace Game
 //
 // The values are unchanged from what the game shipped with. A universe generated from this header
 // is byte-identical to the one genesis used to build at boot, which is the property that made the
-// move safe to make (Design/Universe-slice-5b.md 8).
+// move safe to make (Design/Archive/Universe-slice-5b.md 8).
 
 // --- the starting system -------------------------------------------------------------------------
 
@@ -57,7 +57,7 @@ inline constexpr GalaxyDesc STARTING_GALAXY{};
 
 // The one authored place in the galaxy: the starting system, at the lattice origin, laid out from the
 // seed and the description the game has always booted on. The galaxy grows around the scene the
-// player already knows; nothing about home changes but the map it sits on (Design/Universe.md 3.2).
+// player already knows; nothing about home changes but the map it sits on (Design/Archive/Universe.md 3.2).
 inline constexpr SystemPin HOME_PIN{.cellQ = 0, .cellR = 0, .systemSeed = HOME_SYSTEM_SEED, .desc = STARTING_SYSTEM};
 inline constexpr SystemPin GALAXY_PINS[]{HOME_PIN};
 

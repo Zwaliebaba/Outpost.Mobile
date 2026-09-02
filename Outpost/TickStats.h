@@ -11,7 +11,7 @@ namespace Outpost
 // in this block is a wall-clock duration, and a wall clock is the first thing GameLogic.h's
 // determinism list forbids: "no wall clock -- the only time in here is TICK_DT and the tick count".
 // The root may read a clock and does so every frame; the simulation may not, and measuring it must
-// not become the reason that stops being true (Design/TickTelemetry-work-order.md 1.1).
+// not become the reason that stops being true (Design/Archive/TickTelemetry-work-order.md 1.1).
 //
 // Two spans, because the tick has two halves that scale differently and the review's scale track
 // asks about them separately: the step is the simulation and grows with entities, the publish is

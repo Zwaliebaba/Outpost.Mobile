@@ -20,7 +20,7 @@ namespace
 // It used to be four private methods on OutpostApp, in an executable with no suite, exercised only
 // by launching the game and looking at it. Slice 5b moved it here because a tool and a program both
 // need it (ADR 0058) -- and this file is the second reason the move was worth making
-// (Design/Universe-slice-5b.md 7).
+// (Design/Archive/Universe-slice-5b.md 7).
 TEST_CLASS(StartingUniverseTests)
 {
 public:

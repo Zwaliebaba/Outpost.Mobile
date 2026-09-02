@@ -9,7 +9,7 @@ namespace GameLogicTests
 namespace
 {
 // One owner per faction, which is what every row here means: these suites were written when the key
-// WAS the faction, and this keeps each of them saying exactly what it said (Design/OwnerKey-work-order.md).
+// WAS the faction, and this keeps each of them saying exactly what it said (Design/Archive/OwnerKey-work-order.md).
 [[nodiscard]] Game::Issuer IssuerFor(Game::FactionId _faction)
 {
   return Game::Issuer{(_faction == Game::FACTION_PLAYER) ? Game::OWNER_LOCAL : Game::OwnerId{_faction} + 1u, _faction};
@@ -250,7 +250,7 @@ public:
     // value no FleetOrderKind uses" -- and then Jump was appended to the enum as 6, so a fleet
     // holding a jump order wrote 6 and both readers drew LAUNCHING. Seven rows in JumpTests covered
     // what a jump DOES and not one covered what it SHOWS, and the collision lived in the gap
-    // (Design/FleetStatus-work-order.md).
+    // (Design/Archive/FleetStatus-work-order.md).
     //
     // It sits here rather than in JumpTests because the status block is decoded here: this is the
     // only suite with a publisher, a receiver and a wire between them.
@@ -829,7 +829,7 @@ public:
     Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).flags & Game::FLEET_FLAG_ENGAGED),
                      L"a fleet with nothing to chase is still engaged");
     // The room this block was re-laid to leave. Zero on the wire and zero on read, so the day one of
-    // them carries something this row says what it was (Design/FleetStatus-work-order.md 5).
+    // them carries something this row says what it was (Design/Archive/FleetStatus-work-order.md 5).
     Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).stance), L"the reserved stance byte came back set");
     constexpr std::uint8_t RESERVED_FLAGS =
       static_cast<std::uint8_t>(~(Game::FLEET_FLAG_LAUNCHING | Game::FLEET_FLAG_ENGAGED | Game::FLEET_FLAG_UNDER_ATTACK));

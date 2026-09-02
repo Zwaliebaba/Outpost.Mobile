@@ -40,7 +40,7 @@ public:
   // read" -- ReadFile answers both with an empty buffer, and for content that is the right answer,
   // since a missing texture and an unreadable one are equally missing. For a save it is not: absent
   // means start a new universe and unreadable must NOT, so the caller has to be able to ask the two
-  // questions separately (Design/Universe-slice-5.md 7, ADR 0057).
+  // questions separately (Design/Archive/Universe-slice-5.md 7, ADR 0057).
   [[nodiscard]] static bool Exists(const std::wstring& _fileName);
 
 protected:

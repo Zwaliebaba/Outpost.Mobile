@@ -28,7 +28,7 @@ bool WriteTickStatsFile(const TickStats& _stats)
 
   text += "# What the tick cost over the last window. Written by the composition root on the stats\n";
   text += "# cadence and reset each time, so this is one window and not a total since boot.\n";
-  text += "# Milliseconds. Nothing reads this file yet (Design/TickTelemetry-work-order.md).\n";
+  text += "# Milliseconds. Nothing reads this file yet (Design/Archive/TickTelemetry-work-order.md).\n";
   line("tick", std::to_string(_stats.tick));
   line("ticksInWindow", std::to_string(_stats.ticks));
   line("stepMeanMs", number(_stats.StepMeanMs()));

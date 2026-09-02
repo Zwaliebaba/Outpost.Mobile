@@ -54,7 +54,7 @@ public:
     // Both halves, because they decide different things: the owner is whose fleets and whose ledger
     // rows these are, and the faction is what the world holds this subscriber to be. A session will
     // supply the owner; until there is one, the composition root names the single player
-    // (Design/OwnerKey-work-order.md).
+    // (Design/Archive/OwnerKey-work-order.md).
     Issuer issuer{OWNER_LOCAL, FACTION_PLAYER};
 
     // Its own, so a spectator or a distant region can be given a different one without touching

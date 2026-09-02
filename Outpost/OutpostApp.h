@@ -94,7 +94,7 @@ private:
   // Three answers and not two, because "there is no file" and "there is a file I cannot read" must
   // lead to opposite places: the first is a first boot and the second stops the program. Collapsing
   // them is the one mistake this file must not make -- a refused save quietly replaced by a fresh
-  // universe is a player's game deleted by a bug in reading it (Design/Universe.md 8, ADR 0057).
+  // universe is a player's game deleted by a bug in reading it (Design/Archive/Universe.md 8, ADR 0057).
   enum class RestoreResult
   {
     Absent,   // no file: this is a first boot and genesis runs
@@ -111,7 +111,7 @@ private:
   // running game should not end because a save did, and the previous save is still there.
   //
   // Only ever called between ticks. The state codec's contract is a universe at rest, and a save
-  // taken mid-Step would be a universe that never existed (Design/Universe.md 8).
+  // taken mid-Step would be a universe that never existed (Design/Archive/Universe.md 8).
   void SaveUniverse();
 
   // Writes what the ticks since the last sample cost to Universe.stats and resets the window. Only
@@ -120,7 +120,7 @@ private:
 
   // The local system's planets, as minimap marks. The stations they stand for are in the save file;
   // the marks are not, because a mark is a picture rather than a record. Rebuilt at boot and again
-  // whenever the camera changes systems (Design/Universe-slice-4b.md 4).
+  // whenever the camera changes systems (Design/Archive/Universe-slice-4b.md 4).
   void MarkLocalStations();
 
   [[nodiscard]] std::uint32_t OwnShipCount() const noexcept;
@@ -179,7 +179,7 @@ private:
   // Which system the camera is in. Home at boot, and nothing moves it yet -- the client half of
   // crossing a gate is slice 4's. It is here now because the station marks and the bodies both ask
   // it which system they are placing, and answering "home" in two places would be two places to
-  // change (Design/Universe.md 9).
+  // change (Design/Archive/Universe.md 9).
   std::uint32_t m_localSystem = 0;
 
   // The seed the galaxy on screen was laid out from, taken from the save header at boot. The

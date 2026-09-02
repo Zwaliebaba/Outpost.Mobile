@@ -382,7 +382,7 @@ refuse at the handshake rather than misparse — both rules already written, bot
 
 The ALPN is `outpost-6` as of slice 2 of [`GameDesignPlan.md`](GameDesignPlan.md), which re-laid the
 fleet status block: a kind byte, a flags byte and a reserved stance byte where there was one byte
-holding all three ([`FleetStatus-work-order.md`](FleetStatus-work-order.md)). The rule is unchanged
+holding all three ([`FleetStatus-work-order.md`](Archive/FleetStatus-work-order.md)). The rule is unchanged
 and this is it being obeyed a sixth time. What that slice did *not* do is bump the state format: the
 block rides the snapshot header and no field of `Universe` moved, which is the distinction ADR 0057
 drew between the two version bytes and the first time it has paid.
@@ -568,7 +568,7 @@ of one, attack orders both ways — and it is not the harness slice 5 measured w
 are not the ones above: under mutual orders two Interceptors never land a hit on each other, and a
 mixed eight of two each loses to the Battleship. Neither is corrected here; the matrix records what
 the tables do, and the retune that changes it is the review's C13
-([`MatchupMatrix-work-order.md`](MatchupMatrix-work-order.md) §7).
+([`MatchupMatrix-work-order.md`](Archive/MatchupMatrix-work-order.md) §7).
 
 ## 14. Deliberately left out, so nobody goes looking
 

@@ -7,7 +7,7 @@ namespace GameLogicTests
 namespace
 {
 // One owner per faction, which is what every row here means: these suites were written when the key
-// WAS the faction, and this keeps each of them saying exactly what it said (Design/OwnerKey-work-order.md).
+// WAS the faction, and this keeps each of them saying exactly what it said (Design/Archive/OwnerKey-work-order.md).
 [[nodiscard]] Game::Issuer IssuerFor(Game::FactionId _faction)
 {
   return Game::Issuer{(_faction == Game::FACTION_PLAYER) ? Game::OWNER_LOCAL : Game::OwnerId{_faction} + 1u, _faction};

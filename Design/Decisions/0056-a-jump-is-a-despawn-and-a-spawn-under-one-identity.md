@@ -5,7 +5,7 @@ Date: 2026-09-01
 
 ## Context
 
-[`Design/Universe.md`](../Universe.md) §6 needs a fleet to cross between systems. Three questions
+[`Design/Archive/Universe.md`](../Archive/Universe.md) §6 needs a fleet to cross between systems. Three questions
 had to be answered before any of it could be built, and each is one a reasonable person proposes
 again: **what a crossing does to a ship**, **whether a fleet crosses together**, and **what a client
 is told**.
@@ -81,11 +81,11 @@ detonated on every screen that watched it leave. The ALPN bumps to `outpost-5`.
 - **A gate that leads nowhere strands nobody.** If the destination does not resolve to a live gate,
   the pass moves no one and the order stands — the fleet waits at the door. Losing a fleet into a
   broken gate is the one failure this pass must not have, and it is the fail-closed direction.
-- **`GATE_CAPTURE_METRES` is measured to the skins, per pair.** `Design/Universe.md` §10 specified a
+- **`GATE_CAPTURE_METRES` is measured to the skins, per pair.** `Design/Archive/Universe.md` §10 specified a
   flat 120 m centre to centre; a Structure's centre is 251 m from its own skin, so that radius is a
   circle *inside the building* which the blocking pass keeps empty. A fleet ordered through such a
   gate flies at it forever. The range is now `DockApproachRangeMetres`' shape — both hulls' radii
-  plus a margin — and the design says so (`Design/Universe-slice-2.md` §7).
+  plus a margin — and the design says so (`Design/Archive/Universe-slice-2.md` §7).
 - **Nothing spawns a gate yet.** Slice 2 ships the mechanism and its suite; the composition root is
   untouched and the game boots exactly as it did. Genesis is slice 3's.
 - **The despawn log's cause enum is now three wide and the wire's departure runs four.** Any future

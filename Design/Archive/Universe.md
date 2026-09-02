@@ -1,5 +1,10 @@
 # Universe — the galaxy, its gates, and the shard that carries it
 
+**Moved to `Archive/` on 2026-09-02 with its eight work orders, every slice landed** — the rule in
+`Design/README.md`, paid for with the retarget of every citation in the same commit. §8 was amended
+twice after the move was due, by phase 0 of [`../GameDesignPlan.md`](../GameDesignPlan.md): the
+reader migrates an older format (ADR 0061) and the tick writes `Universe.stats` beside the save.
+
 **Status: agreed with the owner on 2026-09-01 — the eight decisions in §12 were put and taken the
 same day, each the recommended option, in an interactive session run against a live workbench: the
 shipped layout algorithm with its knobs exposed, and a working prototype of the galaxy lattice and
@@ -19,19 +24,19 @@ slice 4 deliberately did not finish and 4b did, and §8's header, which was a by
 able to tell a torn file from a whole one.
 
 **Slice 1**: `LayOutGalaxy` is in `GameLogic` with its twelve-row suite, and
-[ADR 0055](Decisions/0055-the-galaxy-is-one-seed-and-its-gates-are-the-relative-neighborhood-graph.md)
+[ADR 0055](../Decisions/0055-the-galaxy-is-one-seed-and-its-gates-are-the-relative-neighborhood-graph.md)
 carries the two decisions it took.
 **Slice 2**: gates, the `Jump` order, `StepJumps`, `JumpedOut` and the wire's fourth departure run
-are in, with [ADR 0056](Decisions/0056-a-jump-is-a-despawn-and-a-spawn-under-one-identity.md).
+are in, with [ADR 0056](../Decisions/0056-a-jump-is-a-despawn-and-a-spawn-under-one-identity.md).
 **Slice 3**: genesis builds the galaxy at boot. **Slice 4**: the sheet's fifth command, the gate
 pick, the silent removal and the camera that crosses with the fleet. **Slice 4b**: `Game::SystemAt`
 answers which system a point is in, and the client rebuilds its worlds, rocks and marks when the
 camera's answer changes.
-**Slice 5**: the save file, with [ADR 0057](Decisions/0057-the-save-is-a-versioned-file-and-a-refused-one-stops-the-boot.md).
+**Slice 5**: the save file, with [ADR 0057](../Decisions/0057-the-save-is-a-versioned-file-and-a-refused-one-stops-the-boot.md).
 **Slice 5b**: genesis leaves the game for `Tools/UniverseGen`, with
-[ADR 0058](Decisions/0058-a-universe-is-authored-by-a-tool-not-by-the-program-that-runs-it.md).
+[ADR 0058](../Decisions/0058-a-universe-is-authored-by-a-tool-not-by-the-program-that-runs-it.md).
 **Slice 6**: a route is scoped to the island that planned it, with
-[ADR 0059](Decisions/0059-a-route-is-scoped-to-the-island-that-planned-it.md), superseding 0034.
+[ADR 0059](../Decisions/0059-a-route-is-scoped-to-the-island-that-planned-it.md), superseding 0034.
 This document is amended in place as its slices land (ADR 0054).
 
 The player-facing sentence: **the frontier stops being one system.** Today the universe is three
@@ -300,7 +305,7 @@ Two honest consequences, named rather than discovered:
   system, and the bite that record predicted at fifty. A route now carries the *key* of the island
   that planned it — its lowest occupied path cell, which is world-fixed and survives a repartition —
   and that island's version, so building in one system costs the other fifty-three nothing
-  ([ADR 0059](Decisions/0059-a-route-is-scoped-to-the-island-that-planned-it.md)).
+  ([ADR 0059](../Decisions/0059-a-route-is-scoped-to-the-island-that-planned-it.md)).
 - **Cross-shard is the same door, later.** An intra-shard jump and a cross-shard handoff are
   both `DespawnShip(JumpedOut)` + `SpawnShipAs`; the cross-shard case moves the capture over a
   transport first. This design proves the door intra-shard and deliberately stops there — the
@@ -345,18 +350,18 @@ The save is the state codec given a file:
   that one distinction (ADR 0057).
 
 - **A reader that accepts a window of formats**, added by slice 1 of
-  [`GameDesignPlan.md`](GameDesignPlan.md) and not in this design as written. The writer writes one
+  [`GameDesignPlan.md`](../GameDesignPlan.md) and not in this design as written. The writer writes one
   format; the reader accepts any from `UNIVERSE_STATE_FORMAT_OLDEST` to the current, reading every
   field a later format added behind a gate on the byte the file carries and defaulting it where the
   file predates it, so a file in an older format is a current universe the moment the read returns
   and the next save writes it forward. A fixture per retired format, written by `UniverseGen` at
   the commit before the bump, is what proves the reader against a file rather than against itself;
   a boot that migrated a file keeps the file it read beside the save, under its format's name,
-  once; and a format is retired only by a decision record ([ADR 0061](Decisions/0061-the-save-is-migrated-on-read.md)).
+  once; and a format is retired only by a decision record ([ADR 0061](../Decisions/0061-the-save-is-migrated-on-read.md)).
   The refusal above is unchanged for a format outside the window.
 
 - **A statistics sidecar beside it**, `Universe.stats`, added by slice 4 of
-  [`GameDesignPlan.md`](GameDesignPlan.md) and not in this design as written. It is what the tick
+  [`GameDesignPlan.md`](../GameDesignPlan.md) and not in this design as written. It is what the tick
   cost over the last window — the step and the publish timed separately, their means and their
   worst — written as text on its own `statsEveryTicks` cadence and reset each time. It is not part
   of the save and nothing reads it back: a refused write is logged and forgotten, where a refused
@@ -496,14 +501,14 @@ library where a suite could reach it (`Universe-slice-4b.md` §7).
 
 | # | Slice | Layer | Size | Depends on | ADR |
 |---|---|---|---|---|---|
-| 1 | [`LayOutGalaxy`](Universe-slice-1.md): lattice, walk, pins, per-system recipe, gate links | `GameLogic` | M | — | [ADR 0055](Decisions/0055-the-galaxy-is-one-seed-and-its-gates-are-the-relative-neighborhood-graph.md) — **landed** |
-| 2 | [Gates and the jump door](Universe-slice-2.md): gate table, `Jump` order, `StepJumps`, `JumpedOut`, codec, ALPN | `GameLogic` | M | 1 | [ADR 0056](Decisions/0056-a-jump-is-a-despawn-and-a-spawn-under-one-identity.md) — **landed** |
+| 1 | [`LayOutGalaxy`](Universe-slice-1.md): lattice, walk, pins, per-system recipe, gate links | `GameLogic` | M | — | [ADR 0055](../Decisions/0055-the-galaxy-is-one-seed-and-its-gates-are-the-relative-neighborhood-graph.md) — **landed** |
+| 2 | [Gates and the jump door](Universe-slice-2.md): gate table, `Jump` order, `StepJumps`, `JumpedOut`, codec, ALPN | `GameLogic` | M | 1 | [ADR 0056](../Decisions/0056-a-jump-is-a-despawn-and-a-spawn-under-one-identity.md) — **landed** |
 | 3 | [Genesis composes the galaxy](Universe-slice-3.md): root lays out, spawns stations and gates, boot log | `Outpost` | S | 1, 2 | — **landed** |
 | 4 | [The client crosses](Universe-slice-4.md): `JUMP` on the sheet, gate pick, silent removal, camera follow | `NeuronClient`+`Outpost` | M | 3 | — **landed** |
 | 4b | [The scenery follows the camera](Universe-slice-4b.md): `Game::SystemAt`, per-system bodies and marks | `GameLogic`+`Outpost` | S | 4 | — **landed** |
-| 5 | [The save file](Universe-slice-5.md): header, atomic write, cadence in `Server.cfg`, restore-or-stop boot | `GameLogic`+`NeuronCore`+`Outpost` | M | 2 (3 in practice) | [ADR 0057](Decisions/0057-the-save-is-a-versioned-file-and-a-refused-one-stops-the-boot.md) — **landed** |
-| 5b | [Genesis moves into a tool](Universe-slice-5b.md): `UniverseGen` writes a universe, the game only loads one, and the starting content leaves the client header | `GameLogic`+`Tools/UniverseGen`+`Outpost` | M | 5 | [ADR 0058](Decisions/0058-a-universe-is-authored-by-a-tool-not-by-the-program-that-runs-it.md) — **landed** |
-| 6 | [The replan scoped to its island](Universe-slice-6.md): a route carries the key of the island that planned it | `GameLogic` | M | 2 | [ADR 0059](Decisions/0059-a-route-is-scoped-to-the-island-that-planned-it.md) — **landed** |
+| 5 | [The save file](Universe-slice-5.md): header, atomic write, cadence in `Server.cfg`, restore-or-stop boot | `GameLogic`+`NeuronCore`+`Outpost` | M | 2 (3 in practice) | [ADR 0057](../Decisions/0057-the-save-is-a-versioned-file-and-a-refused-one-stops-the-boot.md) — **landed** |
+| 5b | [Genesis moves into a tool](Universe-slice-5b.md): `UniverseGen` writes a universe, the game only loads one, and the starting content leaves the client header | `GameLogic`+`Tools/UniverseGen`+`Outpost` | M | 5 | [ADR 0058](../Decisions/0058-a-universe-is-authored-by-a-tool-not-by-the-program-that-runs-it.md) — **landed** |
+| 6 | [The replan scoped to its island](Universe-slice-6.md): a route carries the key of the island that planned it | `GameLogic` | M | 2 | [ADR 0059](../Decisions/0059-a-route-is-scoped-to-the-island-that-planned-it.md) — **landed** |
 
 **Acceptance texture, seeded now for the orders to expand**: slice 1 proved determinism (one
 seed, one galaxy, twice), pin stability under reroll, census monotonicity with survivors fixed

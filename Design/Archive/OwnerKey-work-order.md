@@ -1,10 +1,10 @@
 # Work order — an owner key beside the faction
 
-Slice 3 of [`GameDesignPlan.md`](GameDesignPlan.md), phase 0, round three. One slice, `GameLogic`
+Slice 3 of [`GameDesignPlan.md`](../GameDesignPlan.md), phase 0, round three. One slice, `GameLogic`
 with the composition root following, and it waits for slices 1 and 2 because it bumps the state
 format the first repaired and edits the codec the second re-laid.
 
-The finding it retires is the key half of E1 in [`GameDesignReview.md`](GameDesignReview.md)
+The finding it retires is the key half of E1 in [`GameDesignReview.md`](../GameDesignReview.md)
 §Economy 1. Every ownership fact in the tree is a `FactionId`: the ledger row, the fleet's owner and
 its five slots, the subscriber, the standing gate — and `FactionId` is a `u8` with `FACTION_LIMIT`
 of 8, tied to the wire's `hostileMask`. So a second player would be a second faction or would share
@@ -59,9 +59,12 @@ own rule is that none of them may land keyed on a faction where an owner field w
    subscriber's `Issuer` rather than its faction. `UniverseSimulation::Connect` supplies
    `OWNER_LOCAL` — the placeholder the login will replace, named as one.
 
-5. **Prose in the same commit**: ADR 0013's consequences gain a sentence naming this record; the
-   rulebook's "what is actually here" says a fleet has an owner; `Design/Universe.md` §8 needs no
-   change beyond the format number, which its own bullet already covers.
+5. **Prose in the same commit**: the rulebook's "what is actually here" says a fleet has an owner,
+   and the decisions index names this record beside ADR 0013. ADR 0013 itself is not edited: a
+   record is append-only (`Decisions/README.md`), and 0062's own context is where it is named —
+   this line first said 0013 would gain a sentence, which the rules do not allow, and is corrected
+   rather than quietly dropped. `Design/Archive/Universe.md` §8 needs no change beyond the format number,
+   which its own bullet already covers.
 
 6. **A decision record**: an owner is not a faction and not an entity.
 

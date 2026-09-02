@@ -365,11 +365,11 @@ inline constexpr std::uint32_t FLEET_ALERT_TICKS = 600; // ten seconds
 
 // How far clear of the two hulls' SKINS every member of a fleet must be before the fleet crosses.
 //
-// Clear of the skins, and that is the whole content of this constant. Design/Universe.md 10 specified
+// Clear of the skins, and that is the whole content of this constant. Design/Archive/Universe.md 10 specified
 // a flat 120 m measured centre to centre, and that number cannot be satisfied by anything: a
 // Structure's centre sits 251 m from its own skin, so a 120 m radius is a circle *inside the
 // building*, and the blocking pass projects traffic out of exactly that space. A fleet ordered
-// through such a gate flies at it forever (Design/Universe-slice-2.md 7).
+// through such a gate flies at it forever (Design/Archive/Universe-slice-2.md 7).
 //
 // So the gate range is derived per pair, which is the shape DOCK_CAPTURE_METRES already has and for
 // its reason: the hull table spans a 3.4 m Interceptor and a 107 m Carrier against a 251 m gate, and

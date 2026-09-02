@@ -213,7 +213,7 @@ struct FleetStatus
   // "the first value no FleetOrderKind uses", which stopped being true the day Jump was appended as
   // 6 -- so a fleet holding a Jump order drew as LAUNCHING on both readers. A byte also has room for
   // the verbs the order grammar is scheduled to grow, where three bits had one value left
-  // (Design/FleetStatus-work-order.md).
+  // (Design/Archive/FleetStatus-work-order.md).
   std::uint8_t kind = 0;
 
   // Everything that is true ALONGSIDE the kind rather than instead of it, which is why a launching
@@ -261,7 +261,7 @@ public:
   // _viewer is who this is written FOR, and it takes both halves because the header states both: the
   // hostileMask is that viewer's faction's standing, and the fleet status block is that viewer's
   // OWNER's five slots. They were one byte until slice 3 of Design/GameDesignPlan.md, which is why
-  // this parameter grew rather than gained a neighbour (Design/OwnerKey-work-order.md).
+  // this parameter grew rather than gained a neighbour (Design/Archive/OwnerKey-work-order.md).
   //
   // It is defaulted because Write is the whole-universe path -- a benchmark and a test harness, with
   // no subscriber to speak of -- while WriteInterest is always written for somebody, and Publisher is
@@ -546,13 +546,13 @@ void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _o
 //
 // The seed is here because the client-visible galaxy derives from it: a binary whose compiled
 // GALAXY_SEED has moved on still boots the universe the file holds, laid out from this seed, and a
-// shard and its clients never disagree about where anything is (Design/Universe.md 8).
+// shard and its clients never disagree about where anything is (Design/Archive/Universe.md 8).
 //
 // The shard is here as well as in the state, and that duplication is deliberate: a header exists to
 // be readable WITHOUT decoding the body, so a launcher can ask which shard a file belongs to for
 // the price of fifteen bytes. The reader cross-checks the two and refuses a file where they
 // disagree, which is what stops a second source of truth becoming a second answer
-// (Design/Universe-slice-5.md 7).
+// (Design/Archive/Universe-slice-5.md 7).
 struct SaveHeader
 {
   std::uint64_t galaxySeed = 0;
@@ -561,7 +561,7 @@ struct SaveHeader
   // What the file was READ at, filled by ReadSaveFile and ignored by WriteSaveFile, which always
   // writes the current bytes. A boot reads these to say which format it restored and to notice that
   // it migrated one; a test reads them to prove a fixture was taken at the format its name claims
-  // (Design/SaveMigration-work-order.md 1.2).
+  // (Design/Archive/SaveMigration-work-order.md 1.2).
   std::uint8_t fileFormat = 0;
   std::uint8_t stateFormat = 0;
 };
@@ -584,7 +584,7 @@ inline constexpr std::uint8_t UNIVERSE_STATE_FORMAT = 8;
 // and only a decision record moves it.
 //
 // 7 rather than 1 because formats 1 to 6 never had a file on disk to keep: the save file arrived at
-// format 7 (Design/Universe-slice-5.md), and OLDEST starts where a file first existed.
+// format 7 (Design/Archive/Universe-slice-5.md), and OLDEST starts where a file first existed.
 inline constexpr std::uint8_t UNIVERSE_STATE_FORMAT_OLDEST = 7;
 static_assert(UNIVERSE_STATE_FORMAT_OLDEST <= UNIVERSE_STATE_FORMAT, "the oldest accepted state format is newer than the one written");
 
@@ -610,7 +610,7 @@ inline constexpr std::size_t SAVE_HEADER_BYTES = 23;
 // A bare name, so FileSys::ResolvePath puts it under <exe>\Assets\. That is wrong for a real
 // install -- a read-only program directory cannot be saved into -- and it is deliberately one
 // constant, so the day there is a writable data directory this line moves and nothing else does
-// (Design/Universe-slice-5.md 6).
+// (Design/Archive/Universe-slice-5.md 6).
 inline constexpr const wchar_t* UNIVERSE_SAVE_FILE = L"Universe.sav";
 
 // The state codec given a file.
@@ -639,7 +639,7 @@ void WriteSaveFile(const Universe& _universe, const SaveHeader& _header, std::ve
 // state format it was in, "Universe.sav.7". One function beside UNIVERSE_SAVE_FILE for the same
 // reason that constant is here -- two programs that disagreed about the name would keep two
 // different files. GameLogic still opens nothing; the composition root does the write
-// (Design/SaveMigration-work-order.md 1.4).
+// (Design/Archive/SaveMigration-work-order.md 1.4).
 [[nodiscard]] std::wstring UniverseSaveSidecarName(std::uint8_t _stateFormat);
 
 // Orders travel the other way. Written by the client half, read and applied by the server half.

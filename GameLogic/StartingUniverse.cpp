@@ -29,7 +29,7 @@ void SpawnStartingFleet(Universe& _universe)
   }
 
   // The single player this build has, which genesis has to name because there is no login to ask
-  // (Design/OwnerKey-work-order.md). A grep for OWNER_LOCAL finds every place that assumes one.
+  // (Design/Archive/OwnerKey-work-order.md). A grep for OWNER_LOCAL finds every place that assumes one.
   (void)_universe.FormFleet(Issuer{OWNER_LOCAL, FACTION_PLAYER}, 0, ships);
 }
 

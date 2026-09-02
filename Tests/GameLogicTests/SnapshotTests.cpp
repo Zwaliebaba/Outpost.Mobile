@@ -648,7 +648,7 @@ public:
 
   // A gate is a Structure too, so the client cannot tell one from a station or from scenery by the
   // hull table -- it reads the record's own flag, and the record has to carry one. Without this bit
-  // the JUMP verb has nothing to pick (UniverseView::PickGate, Design/Universe-slice-4.md 4).
+  // the JUMP verb has nothing to pick (UniverseView::PickGate, Design/Archive/Universe-slice-4.md 4).
   TEST_METHOD(AGateIsFlaggedOnTheWire)
   {
     Game::Universe universe;
@@ -867,7 +867,7 @@ public:
     // One past the LAST kind, named by the same symbol the reader bounds itself with, so the two
     // move together. Spelled Mine + 1 until Jump was appended after Mine -- at which point this line
     // was corrupting the message into a perfectly valid order and asserting that it would not decode
-    // (Design/Universe-slice-2.md 7).
+    // (Design/Archive/Universe-slice-2.md 7).
     std::vector<std::uint8_t> corrupt = link.sentReliable[0];
     corrupt[6] = static_cast<std::uint8_t>(Game::FleetOrderKind::Jump) + 1;
     Game::FleetOrder never;

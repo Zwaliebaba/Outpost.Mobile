@@ -7,14 +7,14 @@ namespace GameLogicTests
 namespace
 {
 // One owner per faction, which is what every row here means: these suites were written when the key
-// WAS the faction, and this keeps each of them saying exactly what it said (Design/OwnerKey-work-order.md).
+// WAS the faction, and this keeps each of them saying exactly what it said (Design/Archive/OwnerKey-work-order.md).
 [[nodiscard]] Game::Issuer IssuerFor(Game::FactionId _faction)
 {
   return Game::Issuer{(_faction == Game::FACTION_PLAYER) ? Game::OWNER_LOCAL : Game::OwnerId{_faction} + 1u, _faction};
 }
 
 // The matchup matrix: every combatant hull against every other under the shipped tables, with the
-// outcome of each cell written down (Design/MatchupMatrix-work-order.md). It moves no number. It is
+// outcome of each cell written down (Design/Archive/MatchupMatrix-work-order.md). It moves no number. It is
 // the instrument combat slice 5 measured with and did not commit, brought into the suite so that a
 // retune which changes a fight's character -- who wins, or how long it takes by more than the band
 // -- fails a test rather than a play session (Design/GameDesignReview.md, Combat 13).
@@ -45,7 +45,7 @@ constexpr int LIMIT_TICKS = 60 * 180;       // three minutes; the longest decide
 constexpr float DUEL_APART_METRES = 600.0f; // outside every device range, inside the leash
 constexpr float BAND = 0.15f;               // how far an end tick may move before the cell fails
 
-// Measured on 2026-09-02 at the tables as shipped (Design/MatchupMatrix-work-order.md 7). Read a row
+// Measured on 2026-09-02 at the tables as shipped (Design/Archive/MatchupMatrix-work-order.md 7). Read a row
 // as "mine versus theirs": an Interceptor against a Bomber loses at tick 370.
 //
 // These are CI's numbers -- Debug|x64, MSVC -- and not the Linux harness's that drafted them. MSVC

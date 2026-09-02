@@ -331,7 +331,7 @@ public:
   //
   // Two accessors and not one. There was one, returning "the status byte", and a byte that meant
   // both a kind and a set of flags is how a kind value and a flag value came to be the same number
-  // for a while (Design/FleetStatus-work-order.md 7).
+  // for a while (Design/Archive/FleetStatus-work-order.md 7).
   [[nodiscard]] std::uint8_t FleetStatusKind(int _slot) const noexcept
   {
     return IsFleetHeld(_slot) ? m_receiver.FleetStatusOf(static_cast<std::uint8_t>(_slot)).kind : std::uint8_t{0};
@@ -457,7 +457,7 @@ public:
   [[nodiscard]] int PickGate(float _xPx, float _yPx) const;
 
   // Sends Jump at the gate to every selected fleet. No standing refusal to tell the truth about
-  // first, unlike docking: a gate takes anyone this phase (Design/Universe.md 6.1).
+  // first, unlike docking: a gate takes anyone this phase (Design/Archive/Universe.md 6.1).
   void IssueJumpOrder(std::size_t _gate);
 
   [[nodiscard]] ArmedOrder Armed() const noexcept
@@ -525,7 +525,7 @@ public:
   // ONE system, so crossing a gate replaces the set rather than adding to it. Before the galaxy this
   // was add-only and said "nothing removes one"; against a 4 km minimap half-range and a guaranteed
   // 57 km between stars, a mark left behind for another system draws pinned to the edge forever,
-  // which is a lie about where the government is (Design/Universe-slice-4b.md 4).
+  // which is a lie about where the government is (Design/Archive/Universe-slice-4b.md 4).
   void AddStationMark(const StationMark& _mark)
   {
     m_stationMarks.push_back(_mark);

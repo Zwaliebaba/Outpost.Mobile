@@ -221,7 +221,7 @@ void OutpostApp::Init(HINSTANCE _instance)
   //
   // From m_galaxySeed, which came out of the save header, and NEVER from a compiled constant: the
   // ships in the file were spawned into the galaxy that seed lays out and no other, so a build whose
-  // own idea of the seed had moved on would draw stations inside stars (Design/Universe.md 8).
+  // own idea of the seed had moved on would draw stations inside stars (Design/Archive/Universe.md 8).
   m_galaxy = Game::LayOutGalaxy(m_galaxySeed, Game::UniversePos{}, Game::STARTING_GALAXY, Game::GALAXY_PINS);
   for (std::size_t at = 0; at < m_galaxy.systems.size(); ++at)
   {
@@ -422,7 +422,7 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
   // origin. They were the same point until there was a second system -- home is pinned at lattice
   // cell (0, 0) and a pinned system takes no jitter, so its star IS the origin -- which is why this
   // used to be LocalPos of a bearing and a distance, and why a world in any other system would have
-  // been drawn a whole system away from the one it belongs to (Design/Universe-slice-4b.md 4).
+  // been drawn a whole system away from the one it belongs to (Design/Archive/Universe-slice-4b.md 4).
   //
   // The boot scene does not move: Translate on a default UniversePos carries exactly the two floats
   // LocalPos carries and stores the same two remainders, so while the anchor is the origin the
@@ -633,7 +633,7 @@ OutpostApp::RestoreResult OutpostApp::RestoreUniverse()
   // read. The file read is kept beside the save under its format's name, once and never overwritten,
   // because a reader that misread an older field produces a universe that loads, saves thirty
   // seconds later, and has by then destroyed the only file that could show what the field was
-  // (Design/SaveMigration-work-order.md 1.4). A copy of an ACCEPTED file decides nothing for the
+  // (Design/Archive/SaveMigration-work-order.md 1.4). A copy of an ACCEPTED file decides nothing for the
   // player, which is what ADR 0057's refusal of moving a REFUSED one aside was about.
   m_log.PushFormat(EventLog::Severity::Info, 0.0f, "SAVE | FORMAT %u", static_cast<unsigned>(header.stateFormat));
   if (header.stateFormat < Game::UNIVERSE_STATE_FORMAT || header.fileFormat < Game::SAVE_FILE_FORMAT)
@@ -1078,7 +1078,7 @@ void OutpostApp::Run()
     //
     // Once per frame and free at this scale: fifty-four squared distances, against a lattice whose
     // stars are 56 926 m apart, so the answer is never ambiguous anywhere a player can be
-    // (Game::SystemAt, Design/Universe-slice-4b.md 4).
+    // (Game::SystemAt, Design/Archive/Universe-slice-4b.md 4).
     const std::uint32_t here = SystemAtCamera();
     if (here != m_localSystem)
     {
@@ -1088,7 +1088,7 @@ void OutpostApp::Run()
 
     // The periodic save, here because here is between ticks: Advance ran every tick this frame was
     // owed and the next one cannot start until the next Advance, so the universe is at rest, which
-    // is the codec's whole contract (Design/Universe.md 8).
+    // is the codec's whole contract (Design/Archive/Universe.md 8).
     //
     // A distance since the last save, not a modulo of the tick. A frame that advances four ticks
     // steps straight over any single tick the modulo would have matched, so the save would be
@@ -1103,7 +1103,7 @@ void OutpostApp::Run()
 
     // Beside the save and for the save's reason: between ticks. It writes a window and resets, so
     // a file is what the last statsEveryTicks ticks cost rather than a mean since boot that stops
-    // moving after ten minutes (Design/TickTelemetry-work-order.md).
+    // moving after ten minutes (Design/Archive/TickTelemetry-work-order.md).
     if (m_config.statsEveryTicks != 0 && m_universe.Tick() - m_lastStatsTick >= m_config.statsEveryTicks)
       WriteTickStats();
 
@@ -1113,7 +1113,7 @@ void OutpostApp::Run()
   // Once at clean shutdown, and "clean" means precisely this: the loop above returned rather than
   // threw. Putting it in Shutdown instead would save on the way out of a FAILED boot too -- wWinMain
   // calls Shutdown from both catch blocks -- which would write a half-built universe over a good
-  // file, or, worse, over the very file that had just been refused (Design/Universe-slice-5.md 7).
+  // file, or, worse, over the very file that had just been refused (Design/Archive/Universe-slice-5.md 7).
   SaveUniverse();
 }
 

@@ -49,7 +49,7 @@ public:
     desc.transport = &_transport;
     // Both halves of who this subscriber is. The owner is a placeholder for what a login will
     // supply and is named as one: OWNER_LOCAL is the single player this build has, and a grep for it
-    // finds every place that assumes there is only one (Design/OwnerKey-work-order.md).
+    // finds every place that assumes there is only one (Design/Archive/OwnerKey-work-order.md).
     desc.issuer = Game::Issuer{m_subscriberOwner, m_subscriberFaction};
     desc.interest.radiusMetres = _config.interestRadiusMetres;
     desc.interest.updateEveryTicks = _config.interestUpdateEveryTicks;
@@ -67,7 +67,7 @@ public:
     // must not become a reason to touch it: orders in, tick, publish. The split is where the two
     // halves genuinely divide -- everything before SetCentre is the simulation, everything from it
     // is the seam -- because they scale with different things and the review asks about them
-    // separately (Design/TickTelemetry-work-order.md 1.2).
+    // separately (Design/Archive/TickTelemetry-work-order.md 1.2).
     const TickStats::Clock::time_point began = TickStats::Clock::now();
     m_publisher.ApplyOrders(m_universe);
     m_universe.Step();
