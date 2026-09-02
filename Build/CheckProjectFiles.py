@@ -380,6 +380,49 @@ def check_package_paths(problems):
                 break
 
 
+# A header whose implementation calls into a NuGet package, and the package a project must therefore
+# carry to LINK it. Including the header is free -- no header in this tree names an MsQuic type, which
+# is Design/Archive/QuicTransport.md 3's whole point -- but a project that odr-uses what is behind it
+# pulls QuicApi.obj out of NeuronCore.lib, and that object needs msquic.lib.
+#
+# Server.vcxproj is why this exists. It compiled and passed every check here, and failed at LINK with
+# two unresolved MsQuic symbols, because slice 2 was the first thing in it to call QuicApi::Open.
+PACKAGE_BACKED_HEADERS = {
+    'Microsoft.Native.Quic.MsQuic.Schannel': ('QuicApi.h', 'QuicListener.h', 'QuicTransport.h'),
+}
+
+
+def check_native_packages(problems):
+    """A project that LINKS and names a package-backed header carries that package.
+
+    Static libraries are exempt and correctly so: a .lib is not linked, so an unresolved symbol in it
+    is the business of whoever links it. Transitive includes are not counted either -- GameLogic
+    publishes ServerConfig.h, which includes QuicListener.h for one default, and every test suite that
+    reaches the umbrella would otherwise be told to carry MsQuic it never calls.
+    """
+    for name, directory in projects():
+        project = os.path.join(directory, '%s.vcxproj' % name)
+        if not os.path.isfile(project):
+            continue
+        project_text = read(project)
+        if '<ConfigurationType>StaticLibrary</ConfigurationType>' in project_text:
+            continue
+        config = os.path.join(directory, 'packages.config')
+        declared = read(config) if os.path.isfile(config) else ''
+        for package, headers in sorted(PACKAGE_BACKED_HEADERS.items()):
+            named = sorted(h for h in headers
+                           if any('#include "%s"' % h in read(os.path.join(directory, source))
+                                  for source in os.listdir(directory) if source.endswith(('.h', '.cpp'))))
+            if not named:
+                continue
+            if package not in declared:
+                problems.append('%s: includes %s but does not carry the %s package -- it will compile '
+                                'and fail to link' % (project, ', '.join(named), package))
+            elif package not in project_text:
+                problems.append('%s: lists the %s package but does not import its targets -- restore '
+                                'will fetch it and the linker will not see it' % (project, package))
+
+
 def check_headless(problems):
     """NeuronCore, NeuronServer and Server never include a graphics header (AGENTS.md 2, ADR 0067)."""
     client = client_headers()
@@ -578,6 +621,7 @@ def main():
     check_includes_resolve(problems)
     check_game_constants_are_qualified(problems)
     check_package_paths(problems)
+    check_native_packages(problems)
     check_type_names(problems)
     check_spelling_families(problems)
     check_shadowed_macros(problems)

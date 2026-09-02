@@ -162,6 +162,15 @@ same process as its client. If either claim is false, it fails here.
   loop, and on CI it would have been a log with thousands of identical lines in it. The refused
   transports are now held in a scratch list reconciled against `Accepted()` exactly as the sessions
   are, and reserved from the same backlog so it still allocates nothing per pass.
+- **`Server` needed the MsQuic package, and CI is what said so.** Slice 1 included `QuicListener.h`
+  transitively (through `ServerConfig.h`) and never called anything behind it, so nothing pulled
+  `QuicApi.obj` out of `NeuronCore.lib`. Slice 2's `QuicApi::Open` does, and `Server.exe` failed to
+  link with two unresolved MsQuic symbols after compiling cleanly and passing every check in
+  `Build/`. `CheckProjectFiles.py` now holds it: a project that links -- static libraries are exempt,
+  because a `.lib` is not linked -- and that **directly** includes `QuicApi.h`, `QuicListener.h` or
+  `QuicTransport.h` must carry the package and import its targets. Transitive includes are
+  deliberately not counted, or `GameLogic` and every suite that reaches the umbrella would be told to
+  carry MsQuic they never call. Both halves of the failure were planted and confirmed caught.
 - **`Server/` has no test project, and slice 2 is the first slice where that costs something.**
   Slice 1's logic was a boot sequence and a run loop, and running the program *was* the test. The
   session logic is ordinary testable code — open, refuse, close, reopen — and it is verified below by
