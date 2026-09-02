@@ -1,6 +1,13 @@
 # Cross-shard — the same door, with a wire in the middle
 
-Status: drafted 2026-09-01, not yet agreed with the owner.
+**Status: agreed with the owner on 2026-09-02, as drafted — the design had no open decisions to
+put, and §9 states what would make it wrong rather than leaving a question. Slice 1 is cut
+([`CrossShard-slice-1.md`](CrossShard-slice-1.md)); slices 2 to 5 are listed in §8 and are cut one
+at a time, when each is next.**
+
+Slice 5 waits on something no design in this tree owns yet: a headless process. The seam, the
+configuration file and the shard in the save are all in place (§1), and what is missing is a root
+that runs a universe without a window.
 
 [ADR 0056](Decisions/0056-a-jump-is-a-despawn-and-a-spawn-under-one-identity.md) chose the jump's
 shape for what it would make true later, and said so:
@@ -145,7 +152,7 @@ to watch two at once. Nothing here forecloses it.
 
 | # | Slice | Layer | Size | Depends on | ADR |
 |---|---|---|---|---|---|
-| 1 | `ShardOfSystem`, the shard count in `GalaxyDesc` and the save header, and `UniverseGen` writing one file per shard | `GameLogic`+`Tools` | M | — | ADR: the partition is a function of the layout |
+| 1 | [`ShardOfSystem`, the shard count in `GalaxyDesc` and the save header, and `UniverseGen` writing one file per shard](CrossShard-slice-1.md) | `GameLogic`+`Tools` | M | — | ADR: the partition is a function of the layout |
 | 2 | The outbox, the inbox, `SpawnShipAs` refusing a live entity, and **two `Universe`s handed off between in one process** | `GameLogic` | L | 1 | ADR: a handoff is at-least-once delivery onto an idempotent apply |
 | 3 | Both in the state codec, so a shard that dies mid-handoff still holds the ship | `GameLogic` | M | 2 | — |
 | 4 | The handoff on the wire: a message on the reliable lane, the ack, the re-send | `NeuronCore`+`GameLogic` | L | 3 | — |

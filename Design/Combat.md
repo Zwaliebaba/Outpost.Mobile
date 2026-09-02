@@ -1,8 +1,9 @@
 # Combat — mounts, gunnery, and the acts a shot states
 
 **Status: agreed with the owner on 2026-08-31 — the six decisions in §15 were put and taken the
-same day, each the recommended option. Slices 1 to 5 landed on 2026-09-01 and are in review; slice 6
-is open.** The universe is lethal, says so on the wire, and draws it: muzzle flashes, tracers and
+same day, each the recommended option. Slices 1 to 5 landed on 2026-09-01 and merged; slice 6 is
+cut and open ([`Combat-slice-6.md`](Combat-slice-6.md)), and it is the last: when it lands this
+design moves to `Archive/` with its six work orders.** The universe is lethal, says so on the wire, and draws it: muzzle flashes, tracers and
 impacts in the shooter's colours, condition pips on the fleet sheet, and F6/F7 retired because the
 simulation states its own acts now. §13's pacing targets have been measured against the shipped
 table and two numbers moved (slice 5). What is left is slice 6 — the turret geometry turning, the
@@ -662,7 +663,8 @@ One agent per slice, one slice per layer at a time; each retargets the sentences
    slice 6, because slice 3 found the position a marker would carry is already exact in the art and
    the thing that would read one is slice 6's binding (§3 there).
 
-6. **The turret turns, and the content it needs** (`NeuronClient` + `Outpost` + `Tools/`) — a
+6. **The turret turns, and the content it needs** (`NeuronClient` + `Outpost` + `Tools/`).
+   Work order: [`Combat-slice-6.md`](Combat-slice-6.md), cut 2026-09-02. — a
    submesh-range draw on `SceneRenderer`, the hull drawn as its own complement, and a client-side
    table binding a hull's mounts to the parts that carry them. It is a slice of its own because it
    is the only piece of this feature that reaches into the D3D12 command list, and because slice 3

@@ -1,6 +1,9 @@
 # Galaxy map — the graph as a picture, and a destination as a tap
 
-Status: drafted 2026-09-01, not yet agreed with the owner.
+**Status: agreed with the owner on 2026-09-02, as drafted — the design had no open decisions to
+put; §7 says its one decision is forced rather than chosen, and it belongs to slice 3. Slice 1 is
+cut ([`GalaxyMap-slice-1.md`](GalaxyMap-slice-1.md)); slices 2 to 4 are listed in §7 and are cut one
+at a time, when each is next.**
 
 `Design/Archive/Universe.md` deferred this three times, in slices 3, 4 and 4b, always for the same reason:
 a fleet can cross a gate without a map, and a map is UI work that should not gate the mechanism.
@@ -134,7 +137,7 @@ The failure modes are the interesting part and §6 lists them.
 
 | # | Slice | Layer | Size | Depends on | ADR |
 |---|---|---|---|---|---|
-| 1 | The map, drawn: the screen, the projection, the graph, the fleets, and the rail button that opens it | `Outpost` | M | — | — |
+| 1 | [The map, drawn: the screen, the projection, the graph, the fleets, and the rail button that opens it](GalaxyMap-slice-1.md) | `Outpost` | M | — | — |
 | 2 | Tap to look: the camera flies to the tapped system | `Outpost` | S | 1 | — |
 | 3 | Tap to go: gate-graph search, a multi-hop fleet order, and the tick that advances it | `GameLogic`+`Outpost` | L | 1 | ADR: a multi-hop route lives on the fleet, because a ship does not survive its own jump |
 | 4 | Systems get names | `GameLogic` | M | 1 | ADR: a system's name is generated from its seed, or it is authored |
