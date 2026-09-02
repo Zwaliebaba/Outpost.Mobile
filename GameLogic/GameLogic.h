@@ -37,6 +37,7 @@
 #include "StartingUniverse.h"
 #include "Movement.h"
 #include "Universe.h"
+#include "ServerConfig.h"
 #include "ShardLink.h"
 #include "UniverseSnapshot.h"
 #include "Publisher.h"

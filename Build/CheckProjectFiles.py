@@ -218,14 +218,33 @@ def check_dependency_rules(problems):
 # The headers that mean "there is a screen". NeuronClient may include them; the libraries the
 # server is built from may not, because the server is meant to run in a container without one.
 GRAPHICS_INCLUDE = re.compile(r'#\s*include\s*<(d3d\w*|dxgi\w*|d2d\w*|dwrite\w*|dcomp\w*)\.h>', re.I)
-HEADLESS_PROJECTS = ('NeuronCore', 'NeuronServer')
+
+# Server is here as well as the two engine projects, and it is not a library. It is the shard
+# server's composition root (ADR 0067), and the whole claim of Design/ShardServer-slice-1.md is that
+# the simulation does not want a window -- a claim a root can break in one #include. A root is
+# entitled to see several layers; this one is not entitled to see the client's
+# (Design/ShardServer-slice-1.md 5.5).
+HEADLESS_PROJECTS = ('NeuronCore', 'NeuronServer', 'Server')
+
+# What "does not see the client" means in a file: the layer's umbrella header, or any header the
+# client publishes. Read off disk for the same reason game_headers() is -- a hard-coded list is
+# wrong from the commit after the next header lands, and wrong in the permissive direction.
+def client_headers():
+    for name, directory in projects():
+        if name == 'NeuronClient' and os.path.isdir(directory):
+            return sorted(f for f in os.listdir(directory) if f.endswith('.h') and f != 'pch.h')
+    return []
 
 
 def check_headless(problems):
-    """NeuronCore and NeuronServer never include a graphics header (AGENTS.md 2)."""
+    """NeuronCore, NeuronServer and Server never include a graphics header (AGENTS.md 2, ADR 0067)."""
+    client = client_headers()
     for name, directory in projects():
         if name not in HEADLESS_PROJECTS or not os.path.isdir(directory):
             continue
+        project_text = re.sub(r'<!--.*?-->', '', read(os.path.join(directory, '%s.vcxproj' % name)), flags=re.S)
+        if 'NeuronClient' in project_text:
+            problems.append('%s/%s.vcxproj: a headless project references NeuronClient' % (directory, name))
         for source in sorted(os.listdir(directory)):
             if not source.endswith(('.h', '.cpp')):
                 continue
@@ -234,6 +253,10 @@ def check_headless(problems):
                 line = body[:match.start()].count('\n') + 1
                 problems.append('%s/%s:%d: a headless library includes the graphics header <%s.h>'
                                 % (directory, source, line, match.group(1)))
+            for client_header in client:
+                if '#include "%s"' % client_header in body:
+                    problems.append('%s/%s: a headless project includes the client header %s'
+                                    % (directory, source, client_header))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -420,7 +443,7 @@ def main():
         return 1
 
     print('project files: XML well-formed, every source registered, shared settings agree, '
-          'names unique, layers intact, headless libraries headless.')
+          'names unique, layers intact, nothing headless sees a screen.')
     print('source names: no banned type affixes, no split spelling families, no shadowed Windows '
           'macros, no positional literal aggregates.')
     return 0

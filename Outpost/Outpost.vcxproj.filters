@@ -10,9 +10,6 @@
     <ClCompile Include="TickStats.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="ServerConfig.cpp">
-      <Filter>Boot</Filter>
-    </ClCompile>
     <ClCompile Include="ShipExplosion.cpp">
       <Filter>View</Filter>
     </ClCompile>
@@ -45,9 +42,6 @@
     </ClInclude>
     <ClInclude Include="TickStats.h">
       <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ServerConfig.h">
-      <Filter>Boot</Filter>
     </ClInclude>
     <ClInclude Include="UniverseSimulation.h">
       <Filter>Boot</Filter>

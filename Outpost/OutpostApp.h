@@ -6,7 +6,7 @@
 #include "FleetSheet.h"
 #include "GalaxyScreen.h"
 #include "Hud.h"
-#include "ServerConfig.h"
+#include "Game::ServerConfig.h"
 #include "UniverseSimulation.h"
 #include "UniverseView.h"
 
@@ -165,7 +165,7 @@ private:
   // What this root was told to be, read once at boot and a value from then on. It is the only thing
   // in the executable that came out of a file rather than out of a header, which is AGENTS.md 5's
   // rule about where configuration is allowed to enter (ADR 0043).
-  ServerConfig m_config;
+  Game::ServerConfig m_config;
 
   Game::Universe m_universe;
   UniverseSimulation m_simulation{m_universe};

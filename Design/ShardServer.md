@@ -1,7 +1,9 @@
 # Shard server — a universe with no window
 
-**Status: drafted 2026-09-02, not yet agreed. §5 puts three decisions to the owner and none of them
-should be taken by an implementer. Nothing is cut.**
+**Status: drafted and agreed with the owner on 2026-09-02. All three of §5's decisions were put and
+taken the same day — two roots, the in-process server stays, and a client is redirected — and §5
+records each with what it costs. Slice 1 is cut ([`ShardServer-slice-1.md`](ShardServer-slice-1.md));
+slices 2 to 5 are listed in §7 and are cut one at a time, when each is next.**
 
 The player-facing sentence is that there isn't one: **nobody sees this, and that is the point.**
 What a player eventually gets from it is a universe that is still there when they close the game,
@@ -80,15 +82,20 @@ window" — which is exactly the seam ADR 0008 cut and ADR 0037 defended.
 - **Not a Windows service, and not a container image.** How it is deployed is a question for the day
   something deploys it.
 
-## 5. Decisions this design puts to the owner
+## 5. Decisions, put to the owner and taken
 
-**None of these should be taken by an implementer**, and each is needed before the slice that names
-it.
+All three were put on 2026-09-02 and answered the same day, each as the draft recommended. They are
+kept as questions with their answers beneath, because the cost of each is what a later reader will
+want and it does not survive being rewritten into a statement.
 
 1. **One root or two?** A separate `Server/` executable beside `Outpost`, or one root with the
    window made optional. The draft says two, for ADR 0008's reason and because "optional window" is
    a condition that ends up threaded through boot, input, render and shutdown. The cost of two is a
    dozen lines of ordering duplicated, and a discipline that they must not drift.
+
+   → **Two.** The duplication is accepted and is the thing §6 says to watch: if a change to boot
+   ordering ever has to be made twice, this decision was wrong. Slice 1's decision record carries the
+   argument.
 
 2. **Does the game executable keep its in-process server?** Today `Outpost` hosts its own universe
    and talks to it over QUIC on loopback (ADR 0021, 0028). It could keep that for single player, or
@@ -96,11 +103,21 @@ it.
    and means two ways to start a game for ever; dropping it makes every session identical and makes
    the first run harder.
 
+   → **It keeps it.** So there are two ways to start a game, deliberately: `Outpost` alone is single
+   player and needs nothing installed, and `Server` plus `Outpost` is everything else. The standing
+   cost is that a change to session setup has two callers, and the standing benefit is that a first
+   checkout still runs the game by running the game.
+
 3. **Which shard does a client connect to first, and who tells it?** §7 says the shard its camera is
    in — but a client that has not connected has no camera position it trusts. Options: a fixed
    home shard in the client's config; the save's shard; or a redirect from any shard to the right
    one. The draft leans to the last, because it is the only one that stays true when a player's
    fleet has moved and it is what a reconnect on a crossing needs anyway.
+
+   → **A redirect.** A client connects to whichever shard it knows and is told where to go; the same
+   message is what a crossing sends. It costs one message kind and a reconnect path that would have
+   been needed for crossings regardless, and it is the only answer that is still correct after a
+   player's fleet has moved — which a config file and a save's shard both stop being.
 
 ## 6. What would make this design wrong
 
@@ -120,15 +137,23 @@ Cut one at a time, when each is next.
 
 | # | Slice | Layer | Size | Depends on | ADR |
 |---|---|---|---|---|---|
-| 1 | The executable: config, save, run loop, clean shutdown. **One shard, no clients, no links** | `Server` | M | §5.1 | ADR: the tree's second composition root |
-| 2 | Sessions: the listener, one publisher subscriber per connection | `Server` | M | 1, §5.2 | — |
+| 1 | [The executable: config, save, run loop, clean shutdown. **One shard, no clients, no links**](ShardServer-slice-1.md) | `Server` | M | — | [0067](Decisions/0067-the-tree-has-a-second-composition-root.md) — **landed 2026-09-02** |
+| 2 | Sessions: the listener, one publisher subscriber per connection | `Server` | M | 1 | — |
 | 3 | Links: a `ShardLink` per neighbour, derived from the layout; `NoteDurableThrough` after each save | `Server`+`GameLogic` | M | 1 | — |
 | 4 | Two shards, two processes, a fleet crossing between them — **`CrossShard.md`'s slice 5, server half** | `Server` | M | 2, 3 | — |
-| 5 | The client follows its camera across: reconnect on a crossing, and §5.3's answer | `Outpost` | L | 4, §5.3 | ADR |
+| 5 | The client follows its camera across: the redirect §5.3 chose, and a reconnect on a crossing | `Server`+`Outpost` | L | 4 | ADR: a client is redirected, not configured |
 
 Slice 1 is deliberately useless on its own — a process that loads a universe, ticks it and saves it,
 with nobody watching. That is the point: it is the smallest thing that proves the engine's headless
 claim, and everything after it is an addition rather than a rewrite.
+
+**Slice 1 landed, and the claim held.** A universe booted by `Server`, ticked 8276 times and saved is
+byte-for-byte the universe ticked 8276 times through `Universe::Step` directly — the run loop changes
+no outcome — and the loop allocates nothing across 6100 steady-state ticks after boot. `ServerHost`
+needed no change to run without a window, which is the answer this slice was cut to get. Two things
+did change on contact and are recorded in [the work order](ShardServer-slice-1.md) §8: `ServerConfig`
+moved from `Outpost/` to `GameLogic/` so one deployment's file has one parser, and AGENTS.md §5's
+`argv` exemption widened from "a tool under `Tools/`" to "a program that is its own caller".
 
 `CrossShard.md`'s slice 5 is **this design's slices 4 and 5**, and that design's row is amended to
 point here rather than restating them. The unreachable-shard refusal `CrossShard.md` §6 asks for

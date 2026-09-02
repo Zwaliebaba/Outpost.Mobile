@@ -6,7 +6,7 @@
 #include <string>
 #include <string_view>
 
-namespace Outpost
+namespace Game
 {
 namespace
 {
@@ -244,4 +244,4 @@ bool ParseServerConfig(std::string_view _text, ServerConfig& _outConfig, std::st
   _outConfig = parsed;
   return true;
 }
-} // namespace Outpost
+} // namespace Game

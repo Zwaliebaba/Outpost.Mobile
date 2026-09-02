@@ -10,9 +10,19 @@
 #include <string>
 #include <string_view>
 
-namespace Outpost
+namespace Game
 {
 // What a composition root is told to be, as against what it compiles in.
+//
+// In `GameLogic` and not in a root, since 2026-09-02: there are TWO composition roots now -- the game
+// and the shard server -- and a configuration file both read has to be parsed by one parser, or the
+// two ends of one deployment disagree about what its own file said
+// ([ADR 0067](../Design/Decisions/0067-the-tree-has-a-second-composition-root.md)). It sits here
+// rather than in an engine project because its defaults are taken from `InterestSet`, `Publisher` and
+// `SimTuning` -- which is the property worth keeping, and which no engine project may name.
+//
+// **Reading the file is still the root's, and only the root's.** This parses a string; nothing here
+// opens anything, and ADR 0043 is unchanged.
 //
 // AGENTS.md 5 bans argv and the environment and says configuration is loaded by the composition
 // root only; a file read there is exactly that, and not an exception to it (ADR 0043). Libraries go
@@ -81,4 +91,4 @@ inline constexpr const wchar_t* SERVER_CONFIG_FILE = L"Server.cfg";
 // window logs it and boots on the defaults, because a typo in a tuning file should not be a black
 // screen, while a headless root would print and exit non-zero. Same parser, two roots.
 [[nodiscard]] bool ParseServerConfig(std::string_view _text, ServerConfig& _outConfig, std::string& _outError);
-} // namespace Outpost
+} // namespace Game

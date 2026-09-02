@@ -101,3 +101,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0064](0064-a-mount-is-bound-to-its-art-by-a-client-table-of-submesh-names.md) | A mount is bound to its art by a client table of submesh names | accepted |
 | [0065](0065-a-handoff-is-at-least-once-delivery-onto-an-idempotent-apply.md) | A handoff is at-least-once delivery onto an idempotent apply | accepted |
 | [0066](0066-an-acknowledgement-means-durable-not-delivered.md) | An acknowledgement means "durable", not "delivered" | accepted |
+| [0067](0067-the-tree-has-a-second-composition-root.md) | The tree has a second composition root, and it is not shared with the first | accepted |

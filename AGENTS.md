@@ -105,8 +105,12 @@ stops (ADR 0057), and a file in an older format is migrated on read — every fi
 added is read behind a gate on the byte the file carries, back to `UNIVERSE_STATE_FORMAT_OLDEST`,
 and a fixture per retired format under `Tests/GameLogicTests/Assets/` is what proves it (ADR 0061).
 The save header carries a shard count, and `ShardOfSystem` cuts the galaxy into contiguous pieces the
-tool can write one file each for — but **nothing runs more than one shard**: there is no second
-process and no handoff, and the shipped count is one (ADR 0063). The
+tool can write one file each for. A crossing has machinery now — a `Universe` has an outbox and an
+inbox, both in the save, and `ShardLink` pumps them over a `Transport` at-least-once onto an
+idempotent apply, acknowledging only what the far end has made durable (ADRs 0065, 0066) — and
+`Server.exe` boots and ticks one shard with no window at all (ADR 0067). But **nothing runs more than
+one shard yet**: the two ends have never been two processes, no link is wired to a real transport,
+and the shipped count is one (ADR 0063). The
 content pipeline is still NMO and DDS, with `Tools/DdsBake.py` baking the DDS half's mips and BC
 compression offline. Tuning is `constexpr` in `SimTuning.h`, `HullSpec.h`, `DeviceSpec.h` and
 `ViewTuning.h` (§5); what a *deployment* may change without a rebuild — the port, the backlog, one
@@ -127,8 +131,10 @@ than a list of them (ADR 0049), so its size does not depend on how many ships it
 request/reply pair is the only one on this seam (ADR 0051). The seam serves N subscribers now rather
 than one: `Game::Publisher` holds a table of them, each with its own interest set, writer, issuer -- an owner and a faction (ADR 0062) --
 phase, order budget, despawn cursor and last-sent fleet rosters (ADR 0030). What remains missing is the far end — this executable adds exactly one entry,
-there is no second machine to be on the other side of it, and no headless process yet -- `Server.cfg` is
-how one would be told what to be (ADR 0043), and nothing reads it but this executable.
+there is no second machine to be on the other side of it. There IS a headless process now --
+`Server.exe`, which boots a shard, ticks it and saves it, and reads the same `Server.cfg` through the
+same parser the game does (ADRs 0043, 0067) -- but it serves nobody: it opens no listener and holds
+no session, which is what `Design/ShardServer.md`'s remaining slices are for.
 The client sees the universe through the seam, filtered to what one subscriber can see (§2).
 Where the HUD shows a number the simulation does not yet have, it is a placeholder supplied by the
 composition root, and it says so at the definition.
@@ -349,10 +355,11 @@ does not have.
 | `GameLogic/` | The deterministic simulation, namespace `Game`. `Universe`, `ShipState`, `UniversePos`, `HullSpec`, `DeviceSpec` (what a gun is; `HullSpec` says where a hull carries one), `Movement`, `Collision`, `SpatialIndex`, `PathGrid`, `Formation`, `Patrol`, `SimTuning`, `InterestSet`, `PathIslands` (the architecture partitioned into islands, one `PathGrid` over each, ADR 0033), `UniverseLayout` (a solar system's star and planet sites from a seed — static content both halves read, ADR 0037, and the library's only randomness), `UniverseSnapshot` (the wire format, ADR 0008) and `Publisher` (the fan-out to N subscribers, ADR 0030). Depends on NeuronCore only. |
 | `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, the explosion's `FxRenderer`/`MeshShatter`/`SpriteParticles` and the `GlowBillboards` the thruster plume is built with, `ViewCulling` (the camera's frustum and the sphere test everything drawn is gated on), `BoxFit` (the isotropic fit of a box into a screen rectangle the galaxy map is projected through), the planet pipeline (`CubeSphere`, `Noise3`, `BodyDesc`/`BodyParams`/`BodyField`, `BodyMeshBuilder`, `BodyRenderer`, `ColourRamp` — see [`Design/Archive/PlanetRenderer.md`](Design/Archive/PlanetRenderer.md)), the star field (`SkyField`, `SkyRenderer`, `SkyVertex` — [`Design/Archive/Skybox.md`](Design/Archive/Skybox.md)), and the content readers `DdsImage`, `NmoFile`/`NmoReader`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
-| `Outpost/` | The executable: composition root, presentation state, the HUD and its event log, the modal `AssemblyScreen` a station long-press opens and the modal `GalaxyScreen` the rail's `UNIVRS` button opens, boot and shutdown ordering, and `TickStats` -- what a tick cost, timed here because the simulation may not read a clock. `Outpost/Assets/` is the content the MSIX package deploys. |
+| `Outpost/` | The game executable and the first of the tree's two composition roots (ADR 0067): presentation state, the HUD and its event log, the modal `AssemblyScreen` a station long-press opens and the modal `GalaxyScreen` the rail's `UNIVRS` button opens, boot and shutdown ordering, and `TickStats` -- what a tick cost, timed here because the simulation may not read a clock. `Outpost/Assets/` is the content the MSIX package deploys. |
+| `Server/` | The shard server: a second executable and the tree's **second composition root** ([ADR 0067](Design/Decisions/0067-the-tree-has-a-second-composition-root.md)). `ShardApp` boots one shard from `Universe.sav` (or `Universe.<n>.sav`), ticks it through `ServerHost` and saves on a cadence; `ShardSimulation` is the `Simulation` it drives. It sees `NeuronCore`, `NeuronServer` and `GameLogic` and **not** `NeuronClient` — nothing here may name a graphics type, and `CheckProjectFiles.py` holds that as it holds it for the two engine libraries. [`Design/ShardServer.md`](Design/ShardServer.md). |
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
 | `NeuronClient/Shaders/` | HLSL (§3). DXC compiles it, as shader model 6.7 DXIL, into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
-| `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). |
+| `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). `CheckViewAccess.py` is here too and deliberately **not** in CI: it checks every member call `Outpost/OutpostApp.cpp` makes against the public surface of the six classes that root owns, which is a thing a Linux box can decide about a file MSVC is the only compiler for. Run it when you touch the root. |
 | `Tools/` | `UniverseGen/`, the C++ console tool that writes `Universe.sav` (ADR 0058) and the one program allowed `argv` (§5); and the content tools, stdlib Python only: the NMO ship-mesh codec and Blender add-on (`BlenderNmo/`), the OBJ→NMO converter (`ObjToNmo.py`), the DDS mip-and-BC baker (`DdsBake.py`), and their tests (`Nmo*Test.py` — the codec test needs bare python3, the Blender one the `bpy` wheel, and `NmoShippedArtTest.py` reads the shipping hulls in `Outpost/Assets/Meshes/` to assert what the game's art guarantees a consumer: every part named, bounded and collision-free under FNV-1a, which is what lets a client address one part of a hull, [`Design/Archive/Combat-slice-3.md`](Design/Archive/Combat-slice-3.md) §2.6). None of the three runs in CI, so run the one your change touches by hand. [`Design/Archive/NmoFormat.md`](Design/Archive/NmoFormat.md) is the format; nothing here is engine code, and no `.vcxproj` names it. The shipping corpus is *not* converted here: the hulls are authored as GLB in `Art/Meshes/` and converted by `Art/Meshes/GlbToNmo.py`, which sits beside them because that is where an artist looks for it ([ADR 0035](Design/Decisions/0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md)). `ObjToNmo.py` stays as the OBJ path's record and the Blender test's fixture source. |
 | `Design/` | Designs with a slice still open, `Screenprints/`, `Archive/` for designs whose slices have all landed and for the work orders that landed them, and `Design/Decisions/` — the architecture decision records (§9). An archived design is still the document its area is reviewed against and is cited from code as before; `Design/` itself is the list of what is unfinished. Its `README.md` says which document is which and how a slice moves from a design into the tree (§7). |
 | `.github/` | CI (§6) and the pull request template every slice answers (§7). |
@@ -448,8 +455,12 @@ to reach into the universe, that is the seam telling you the change belongs some
 - **Each project reaches the engine through one umbrella header** — `NeuronCore.h`,
   `NeuronClient.h`, `NeuronServer.h`, `GameLogic.h` — pulled in by its `pch.h`. That is where the
   Windows headers are configured, in the one order that works, and it is why no `.cpp` in this
-  tree includes `<windows.h>` itself. `Outpost/pch.h` includes three of them because the
-  composition root is the only thing entitled to see every layer.
+  tree includes `<windows.h>` itself. `Outpost/pch.h` includes three of them, and `Server/pch.h`
+  includes three of them, because a **composition root** is the only kind of thing entitled to see
+  more than one layer -- and since 2026-09-02 there are two of them, not one
+  ([ADR 0067](Design/Decisions/0067-the-tree-has-a-second-composition-root.md)). The server's three
+  are not the game's three: it sees `NeuronServer` where the game sees `NeuronClient`, and
+  `CheckProjectFiles.py` holds that.
 - **A header that declares a member of type `T` includes `T`'s header itself**, even though the
   umbrella would have supplied it. The umbrella is a convenience, not a contract.
 - **Every project's `pch.cpp` contains exactly `#include "pch.h"`** and nothing else. `/Yc`
@@ -559,11 +570,16 @@ macro of that shape appears.
   libraries receive plain config structs (`Camera::Desc`, `ServerHost::Desc`,
   `PointerTracker::Desc`) and never read files or the registry themselves.
 
-  **A command-line tool under `Tools/` may read `argv`** — the owner's call, taken when
-  `UniverseGen` arrived (ADR 0058). The rule is about the *game*, and its reason is that a library
-  must not reach around its caller for configuration; a command-line tool **is** its caller, and a
-  generator you cannot point at a seed is a generator you have to rebuild to use. The exemption is
-  the tools only: `Outpost` still reads neither, and a library still reads nothing at all.
+  **A program that is its own caller may read `argv`** — the owner's call, taken when `UniverseGen`
+  arrived (ADR 0058) and widened to `Server` when the second composition root did
+  ([ADR 0067](Design/Decisions/0067-the-tree-has-a-second-composition-root.md)). The rule is about the
+  *game*, and its reason is that a library must not reach around its caller for configuration; a
+  console program **is** its caller, and a generator you cannot point at a seed is a generator you
+  have to rebuild to use. `Server` reads one thing this way — which shard to be — because the
+  alternative is one near-identical `Server.cfg` per shard differing in one integer, and the first
+  time one is edited and another is not, two processes believe they are the same shard. The exemption
+  is `Tools/` and `Server` only: `Outpost` still reads neither, and a library still reads nothing at
+  all.
 - **Single-writer state.** The authoritative universe belongs to whichever thread ticks it, render
   state to the main thread. Today both are the same thread, which is why this rule is easy to break
   without noticing: when a transport's workers or an audio callback arrive, they enqueue to a ring

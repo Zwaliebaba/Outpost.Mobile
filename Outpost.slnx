@@ -16,6 +16,7 @@
   <Project Path="NeuronClient/NeuronClient.vcxproj" Id="4cfb6201-cce9-4f52-ac14-22449b28e6f2" />
   <Project Path="NeuronCore/NeuronCore.vcxproj" Id="b10d634c-43a1-4101-b5e6-788825429aab" />
   <Project Path="NeuronServer/NeuronServer.vcxproj" Id="512284cd-a17a-4816-8e0a-9e9dadbfc464" />
+  <Project Path="Server/Server.vcxproj" Id="b2e64a17-53cd-4f98-a701-6c8d3f45e912" />
   <Project Path="Outpost/Outpost.vcxproj" Id="e901e26f-65e6-494a-aad7-e58e089a729c">
     <Deploy />
   </Project>

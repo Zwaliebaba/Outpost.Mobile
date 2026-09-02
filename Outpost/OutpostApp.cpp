@@ -306,7 +306,7 @@ void OutpostApp::LoadServerConfig()
     return; // no file, or an empty one: the defaults are what the game booted on before it existed
 
   std::string error;
-  if (!ParseServerConfig(text, m_config, error))
+  if (!Game::ParseServerConfig(text, m_config, error))
   {
     // Reported and not obeyed. The parser applied nothing, so m_config is still the defaults -- and
     // this root logs rather than exits because there is a window and a person in front of it. A
