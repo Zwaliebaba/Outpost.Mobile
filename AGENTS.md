@@ -97,7 +97,10 @@ armour classes past the one hull number, no turret that turns -- a hull's guns f
 holds still. The save is a versioned file now: `UniverseGen` writes one, the boot restores it or
 stops (ADR 0057), and a file in an older format is migrated on read — every field a later format
 added is read behind a gate on the byte the file carries, back to `UNIVERSE_STATE_FORMAT_OLDEST`,
-and a fixture per retired format under `Tests/GameLogicTests/Assets/` is what proves it (ADR 0061). The
+and a fixture per retired format under `Tests/GameLogicTests/Assets/` is what proves it (ADR 0061).
+The save header carries a shard count, and `ShardOfSystem` cuts the galaxy into contiguous pieces the
+tool can write one file each for — but **nothing runs more than one shard**: there is no second
+process and no handoff, and the shipped count is one (ADR 0063). The
 content pipeline is still NMO and DDS, with `Tools/DdsBake.py` baking the DDS half's mips and BC
 compression offline. Tuning is `constexpr` in `SimTuning.h`, `HullSpec.h`, `DeviceSpec.h` and
 `ViewTuning.h` (§5); what a *deployment* may change without a rebuild — the port, the backlog, one

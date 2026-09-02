@@ -1,9 +1,10 @@
 # Cross-shard — the same door, with a wire in the middle
 
 **Status: agreed with the owner on 2026-09-02, as drafted — the design had no open decisions to
-put, and §9 states what would make it wrong rather than leaving a question. Slice 1 is cut
-([`CrossShard-slice-1.md`](CrossShard-slice-1.md)); slices 2 to 5 are listed in §8 and are cut one
-at a time, when each is next.**
+put, and §9 states what would make it wrong rather than leaving a question. Slice 1 has landed
+([`CrossShard-slice-1.md`](CrossShard-slice-1.md), [ADR 0063](Decisions/0063-the-partition-is-a-function-of-the-layout.md));
+slices 2 to 5 are listed in §8 and are cut one at a time, when each is next. §2 is amended to say
+what was built.**
 
 Slice 5 waits on something no design in this tree owns yet: a headless process. The seam, the
 configuration file and the shard in the save are all in place (§1), and what is missing is a root
@@ -37,8 +38,9 @@ The player-facing sentence: **the frontier stops fitting in one process.**
   rather than falling back (ADR 0028).
 - **`ConfigureShard`**, a save file that records its shard, and a reader that refuses a file whose
   header and body disagree about it (ADR 0057).
-- **`UniverseGen`**, which writes a universe for a shard — and today always writes shard 0
-  (ADR 0058).
+- **`UniverseGen`**, which writes a universe for a shard — and since slice 1 writes one file per
+  shard, `Universe.0.sav` upward, refusing a count that would leave a shard empty (ADR 0058,
+  ADR 0063).
 
 ## 2. The partition
 
@@ -49,11 +51,23 @@ agree *without being told*, for the same reason the galaxy itself is a seed rath
 copies of an authored partition is two chances to disagree, and the disagreement is a ship that
 arrives nowhere.
 
-`SystemSite` already carries `cellQ`/`cellR`, which are world-fixed. `ShardOfSystem(site, count)` is
-a pure function of those and the shard count. **Contiguity matters and cheapness does not**: a
-partition that scatters neighbours across shards turns most gates into wire crossings, which is the
-one cost this whole design is trying to bound. A ring-based or block-based split keeps neighbours
-together; a hash does not, and is rejected for exactly that.
+`SystemSite` already carries `cellQ`/`cellR`, which are world-fixed. `ShardOfSystem(site, desc)` is
+a pure function of those and `GalaxyDesc::shardCount`. **Contiguity matters and cheapness does not**:
+a partition that scatters neighbours across shards turns most gates into wire crossings, which is the
+one cost this whole design is trying to bound.
+
+What was built is a contiguous block split on the lattice's q columns, and the hash it beat was
+measured rather than argued away — against the shipped galaxy's 68 gates, the block keeps 90% / 81% /
+71% of them in-shard at two, three and four shards where a hash keeps 37% / 38% / 16%
+([ADR 0063](Decisions/0063-the-partition-is-a-function-of-the-layout.md)). A ring-based split is also
+contiguous and lost for a different reason: ring areas grow with the ring index, so the shard count
+is not a free parameter and the shards are wildly unequal.
+
+`shardCount` defaults to 1, which means no partition at all — every system answers shard 0 and the
+shipped galaxy is byte-identical to what it was. `MaxShardCount(desc)` is the column ceiling
+(11 here) and is only a ceiling: occupancy against the drawn layout is not monotonic, so
+`OccupiedShardCount(systems, desc)` measures it and `UniverseGen` refuses a count that would leave a
+shard empty.
 
 The shard count is deployment configuration (`Server.cfg`, ADR 0043) and is therefore in the save
 header, because a universe generated for four shards is not a universe four *other* shards can run.
@@ -152,7 +166,7 @@ to watch two at once. Nothing here forecloses it.
 
 | # | Slice | Layer | Size | Depends on | ADR |
 |---|---|---|---|---|---|
-| 1 | [`ShardOfSystem`, the shard count in `GalaxyDesc` and the save header, and `UniverseGen` writing one file per shard](CrossShard-slice-1.md) | `GameLogic`+`Tools` | M | — | ADR: the partition is a function of the layout |
+| 1 | [`ShardOfSystem`, the shard count in `GalaxyDesc` and the save header, and `UniverseGen` writing one file per shard](CrossShard-slice-1.md) — **landed**: a q-column block split, `SAVE_FILE_FORMAT` 1 → 2, `BuildStartingGalaxy` building every shard in one pass so a gate can name the shard it leads to | `GameLogic`+`Tools` | M | — | [0063](Decisions/0063-the-partition-is-a-function-of-the-layout.md) |
 | 2 | The outbox, the inbox, `SpawnShipAs` refusing a live entity, and **two `Universe`s handed off between in one process** | `GameLogic` | L | 1 | ADR: a handoff is at-least-once delivery onto an idempotent apply |
 | 3 | Both in the state codec, so a shard that dies mid-handoff still holds the ship | `GameLogic` | M | 2 | — |
 | 4 | The handoff on the wire: a message on the reliable lane, the ack, the re-send | `NeuronCore`+`GameLogic` | L | 3 | — |

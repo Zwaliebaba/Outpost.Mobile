@@ -564,6 +564,14 @@ struct SaveHeader
   // (Design/Archive/SaveMigration-work-order.md 1.2).
   std::uint8_t fileFormat = 0;
   std::uint8_t stateFormat = 0;
+
+  // How many shards the galaxy this universe belongs to was written for, and therefore how many
+  // ShardOfSystem was asked about. It is here and not only in Server.cfg because a universe
+  // generated for four shards is not a universe four OTHER shards can run: the partition is a
+  // function of the layout and the count, so a mismatch silently moves every system
+  // (Design/CrossShard.md 2). A file format 1 predates it and reads back as 1, which is what those
+  // files meant.
+  std::uint32_t shardCount = 1;
 };
 
 // The state's format: what WriteUniverseState writes, and the newest byte ReadUniverseState accepts.
@@ -593,12 +601,27 @@ static_assert(UNIVERSE_STATE_FORMAT_OLDEST <= UNIVERSE_STATE_FORMAT, "the oldest
 // and bumping either need not bump the other. The same window applies: ReadSaveFile accepts a file
 // format from SAVE_FILE_FORMAT_OLDEST to SAVE_FILE_FORMAT, for the state format's reason.
 inline constexpr std::uint32_t SAVE_FILE_MAGIC = 0x55534156u;
-inline constexpr std::uint8_t SAVE_FILE_FORMAT = 1;
+
+// 2: the shard count.
+inline constexpr std::uint8_t SAVE_FILE_FORMAT = 2;
 inline constexpr std::uint8_t SAVE_FILE_FORMAT_OLDEST = 1;
 static_assert(SAVE_FILE_FORMAT_OLDEST <= SAVE_FILE_FORMAT, "the oldest accepted file format is newer than the one written");
 
-// magic 4 + format 1 + galaxy seed 8 + shard 2 + state length 8.
-inline constexpr std::size_t SAVE_HEADER_BYTES = 23;
+// magic 4 + format 1 + galaxy seed 8 + shard 2 + state length 8, and from format 2 a shard count of
+// 4 on the end.
+//
+// A function of the format rather than one constant, because the header is what says where the state
+// begins and an older file's header is shorter. It was a constant while there was one format, and
+// the day there were two it had to stop being one -- which is the same shape ADR 0061 gave the state
+// codec, applied to the thing in front of it.
+inline constexpr std::size_t SAVE_HEADER_BYTES = 27;
+
+[[nodiscard]] constexpr std::size_t SaveHeaderBytes(std::uint8_t _fileFormat) noexcept
+{
+  return (_fileFormat >= 2) ? 27u : 23u;
+}
+
+static_assert(SaveHeaderBytes(SAVE_FILE_FORMAT) == SAVE_HEADER_BYTES, "the current header's length has drifted from its fields");
 
 // What the file is called.
 //

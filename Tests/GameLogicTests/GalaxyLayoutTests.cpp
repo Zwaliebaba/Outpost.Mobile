@@ -17,6 +17,19 @@ namespace
 constexpr std::uint64_t GALAXY_SEED = 0x46726F6E74696572ull; // "Frontier"
 constexpr std::uint64_t HOME_SEED = 0x53797331ull;           // "Sys1", the starting system
 
+// A hash of the same cell, which is what the block partition is measured against. It balances
+// perfectly and keeps nothing together, which is the reason Design/CrossShard.md 2 rejects it.
+[[nodiscard]] std::uint32_t HashShard(const Game::SystemSite& _site, std::uint32_t _count) noexcept
+{
+  std::uint64_t hash = 1469598103934665603ull;
+  for (const std::uint64_t value : {static_cast<std::uint64_t>(_site.cellQ + 1000), static_cast<std::uint64_t>(_site.cellR + 1000)})
+  {
+    hash ^= value;
+    hash *= 1099511628211ull;
+  }
+  return static_cast<std::uint32_t>(hash % _count);
+}
+
 [[nodiscard]] bool SameSite(const Game::SystemSite& _a, const Game::SystemSite& _b) noexcept
 {
   return _a.cellQ == _b.cellQ && _a.cellR == _b.cellR && _a.systemSeed == _b.systemSeed && _a.pin == _b.pin &&
@@ -72,6 +85,115 @@ constexpr std::uint64_t HOME_SEED = 0x53797331ull;           // "Sys1", the star
 TEST_CLASS(GalaxyLayoutTests)
 {
 public:
+  TEST_METHOD(ThePartitionIsAPureFunctionOfTheCell)
+  {
+    // Every participant -- each shard, and every client -- must agree on which shard owns a system
+    // and must agree WITHOUT being told (Design/CrossShard.md 2). That is only true if this is a
+    // function of the cell and the count, so it is asked twice about the same site and asked about
+    // sites built by hand rather than by a layout.
+    Game::GalaxyDesc desc = Game::STARTING_GALAXY;
+    desc.shardCount = 4;
+    for (std::int32_t q = -5; q <= 5; ++q)
+    {
+      for (std::int32_t r = -5; r <= 5; ++r)
+      {
+        Game::SystemSite site;
+        site.cellQ = q;
+        site.cellR = r;
+        const Game::ShardId once = Game::ShardOfSystem(site, desc);
+        Assert::AreEqual(static_cast<std::uint32_t>(once), static_cast<std::uint32_t>(Game::ShardOfSystem(site, desc)),
+                         L"the partition answered differently the second time it was asked");
+        Assert::IsTrue(once < desc.shardCount, L"the partition named a shard that does not exist");
+
+        // The star's position plays no part: two systems in one cell are one shard's whatever the
+        // jitter did to them, which is what makes a client's answer the server's.
+        Game::SystemSite moved = site;
+        Game::Translate(moved.starPos, 12345.0f, -6789.0f);
+        Assert::AreEqual(static_cast<std::uint32_t>(once), static_cast<std::uint32_t>(Game::ShardOfSystem(moved, desc)),
+                         L"the partition read the star's position rather than its cell");
+      }
+    }
+  }
+
+  TEST_METHOD(OneShardHoldsEverything)
+  {
+    // The shipped galaxy, and the reason this slice changes nothing that ships: at one shard the
+    // partition is the identity and every system is shard 0's.
+    Game::GalaxyDesc desc = Game::STARTING_GALAXY;
+    Assert::AreEqual(1u, desc.shardCount, L"the shipped galaxy is no longer one shard");
+    const Game::GalaxyLayout galaxy = Game::LayOutGalaxy(Game::STARTING_GALAXY_SEED, Game::UniversePos{}, desc, Game::GALAXY_PINS);
+    for (const Game::SystemSite& site : galaxy.systems)
+      Assert::AreEqual(0u, static_cast<std::uint32_t>(Game::ShardOfSystem(site, desc)), L"a system left shard 0 in a one-shard galaxy");
+    Assert::AreEqual(1u, Game::OccupiedShardCount(galaxy.systems, desc), L"one shard did not hold the whole galaxy");
+  }
+
+  TEST_METHOD(ThePartitionKeepsNeighboursTogetherFarBetterThanAHash)
+  {
+    // The design's one claim about the partition, measured rather than asserted: contiguity is the
+    // requirement and cheapness is not, because a partition that scatters neighbours turns most
+    // gates into wire crossings and that is the cost the whole cross-shard design bounds
+    // (Design/CrossShard.md 2). The floors below are what the block split measured on 2026-09-02;
+    // they are a floor and not an equality, so a later partition may beat them and may not lose to
+    // them silently.
+    struct Row
+    {
+      std::uint32_t shards;
+      std::uint32_t keptAtLeast;
+    };
+    constexpr Row ROWS[] = {{2, 61}, {3, 55}, {4, 48}};
+
+    for (const Row& row : ROWS)
+    {
+      Game::GalaxyDesc desc = Game::STARTING_GALAXY;
+      desc.shardCount = row.shards;
+      const Game::GalaxyLayout galaxy = Game::LayOutGalaxy(Game::STARTING_GALAXY_SEED, Game::UniversePos{}, desc, Game::GALAXY_PINS);
+
+      std::uint32_t kept = 0;
+      std::uint32_t hashKept = 0;
+      for (const Game::GateLink& link : galaxy.links)
+      {
+        const Game::SystemSite& a = galaxy.systems[link.systemA];
+        const Game::SystemSite& b = galaxy.systems[link.systemB];
+        if (Game::ShardOfSystem(a, desc) == Game::ShardOfSystem(b, desc))
+          ++kept;
+        if (HashShard(a, row.shards) == HashShard(b, row.shards))
+          ++hashKept;
+      }
+
+      Assert::IsTrue(kept >= row.keptAtLeast, std::format(L"at {} shards the partition kept {} of {} links whole, against a floor of {}",
+                                                          row.shards, kept, galaxy.links.size(), row.keptAtLeast)
+                                                .c_str());
+      // The comparison is the argument, not the number: a hash balances perfectly and keeps nothing
+      // together, which is why it lost.
+      Assert::IsTrue(kept > hashKept * 2u,
+                     std::format(L"at {} shards the partition kept {} links against a hash's {}", row.shards, kept, hashKept).c_str());
+      Assert::AreEqual(row.shards, Game::OccupiedShardCount(galaxy.systems, desc), L"a shard was left with no system at all");
+    }
+  }
+
+  TEST_METHOD(OccupancyIsMeasuredAndNotAssumed)
+  {
+    // Occupancy is NOT monotonic in the count -- the shipped galaxy fills every shard at ten and
+    // leaves one empty at nine, because a band's edges move with the count and the systems inside it
+    // do not. That is why UniverseGen asks the drawn layout rather than a ceiling, and this row is
+    // what says the ceiling would have been a lie (Design/CrossShard-slice-1.md 6).
+    Game::GalaxyDesc desc = Game::STARTING_GALAXY;
+    Assert::AreEqual(11u, Game::MaxShardCount(desc), L"the column ceiling moved");
+
+    const auto occupiedAt = [](std::uint32_t _count)
+    {
+      Game::GalaxyDesc at = Game::STARTING_GALAXY;
+      at.shardCount = _count;
+      const Game::GalaxyLayout galaxy = Game::LayOutGalaxy(Game::STARTING_GALAXY_SEED, Game::UniversePos{}, at, Game::GALAXY_PINS);
+      return Game::OccupiedShardCount(galaxy.systems, at);
+    };
+
+    Assert::AreEqual(8u, occupiedAt(9u), L"nine shards no longer leaves one empty");
+    Assert::AreEqual(10u, occupiedAt(10u), L"ten shards no longer fills every one");
+    Assert::IsTrue(occupiedAt(9u) < 9u && occupiedAt(10u) == 10u,
+                   L"occupancy has become monotonic, and the tool's per-count check could be a ceiling after all");
+  }
+
   // A seed means one galaxy forever, which is the reason the layout may be content rather than wire
   // data: both halves call this and neither tells the other what came out (ADR 0037, ADR 0055).
   TEST_METHOD(TheGalaxyIsAFunctionOfItsSeed)

@@ -1749,11 +1749,12 @@ void WriteSaveFile(const Universe& _universe, const SaveHeader& _header, std::ve
   out.U64(_header.galaxySeed);
   out.U16(static_cast<std::uint16_t>(_header.shard));
   out.U64(static_cast<std::uint64_t>(state.size()));
+  out.U32(_header.shardCount);
   // The header is exactly as long as the constant says. A field added above without moving the
   // constant would put the state at an offset the reader does not look at, and the reader's own
   // arithmetic would then be measured against the wrong place -- so it is asserted here, at compile
   // time, rather than discovered in a file somebody cannot load.
-  static_assert(SAVE_HEADER_BYTES == 4u + 1u + 8u + 2u + 8u, "the save header's length has drifted from its fields");
+  static_assert(SAVE_HEADER_BYTES == 4u + 1u + 8u + 2u + 8u + 4u, "the save header's length has drifted from its fields");
 
   _outBytes.insert(_outBytes.end(), state.begin(), state.end());
 }
@@ -1771,21 +1772,27 @@ bool ReadSaveFile(std::span<const std::uint8_t> _bytes, SaveHeader& _outHeader, 
   header.galaxySeed = in.U64();
   header.shard = static_cast<ShardId>(in.U16());
   const std::uint64_t stateBytes = in.U64();
+  // Format 2 added it. A file written before it was written by a build that had one shard and no
+  // way to say otherwise, which is exactly what 1 means (ADR 0061's gate, applied to the header).
+  header.shardCount = (fileFormat >= 2) ? in.U32() : 1u;
   if (!in.Ok())
     return false;
+  if (header.shardCount == 0u)
+    return false; // a galaxy split into no shards is not a galaxy this build can place anything in
 
   // The length must account for the file exactly. Short is a torn write; long is a file with
   // something appended, which the state codec would not notice because it stops at the end of the
   // state. Compared against the buffer rather than trusted, and computed in uint64 so a length near
   // the top of the range cannot wrap the addition into a small number that happens to match.
-  if (stateBytes != static_cast<std::uint64_t>(_bytes.size()) - static_cast<std::uint64_t>(SAVE_HEADER_BYTES))
+  const std::size_t headerBytes = SaveHeaderBytes(fileFormat);
+  if (stateBytes != static_cast<std::uint64_t>(_bytes.size()) - static_cast<std::uint64_t>(headerBytes))
     return false;
 
   // Into a local universe, not the caller's, for ReadUniverseState's own reason one level up: a
   // refusal at the LAST check below -- the shard cross-check -- must leave the caller holding the
   // universe it had, and a read straight into _outUniverse could not offer that.
   Universe loaded;
-  if (!ReadUniverseState(_bytes.subspan(SAVE_HEADER_BYTES), loaded))
+  if (!ReadUniverseState(_bytes.subspan(headerBytes), loaded))
     return false;
 
   // The one thing the header claims that the body can contradict. A file that disagrees with itself
@@ -1796,7 +1803,7 @@ bool ReadSaveFile(std::span<const std::uint8_t> _bytes, SaveHeader& _outHeader, 
 
   // The state codec has already checked this byte's magic and window, so it is read as a fact here
   // rather than parsed a second time.
-  header.stateFormat = _bytes[SAVE_HEADER_BYTES + FORMAT_BYTE_OFFSET];
+  header.stateFormat = _bytes[headerBytes + FORMAT_BYTE_OFFSET];
 
   _outHeader = header;
   _outUniverse = std::move(loaded);
@@ -1805,16 +1812,23 @@ bool ReadSaveFile(std::span<const std::uint8_t> _bytes, SaveHeader& _outHeader, 
 
 bool PeekSaveFormats(std::span<const std::uint8_t> _bytes, std::uint8_t& _outFileFormat, std::uint8_t& _outStateFormat)
 {
-  if (_bytes.size() <= SAVE_HEADER_BYTES + FORMAT_BYTE_OFFSET)
+  if (_bytes.size() <= FORMAT_BYTE_OFFSET)
     return false;
   ByteReader file(_bytes);
   if (file.U32() != SAVE_FILE_MAGIC)
     return false;
-  ByteReader state(_bytes.subspan(SAVE_HEADER_BYTES));
+
+  // The header's own length depends on the byte this function is here to read, so the file format is
+  // taken first and the state is looked for where THAT format puts it.
+  const std::uint8_t fileFormat = _bytes[FORMAT_BYTE_OFFSET];
+  const std::size_t headerBytes = SaveHeaderBytes(fileFormat);
+  if (_bytes.size() <= headerBytes + FORMAT_BYTE_OFFSET)
+    return false;
+  ByteReader state(_bytes.subspan(headerBytes));
   if (state.U32() != UNIVERSE_STATE_MAGIC)
     return false;
-  _outFileFormat = _bytes[FORMAT_BYTE_OFFSET];
-  _outStateFormat = _bytes[SAVE_HEADER_BYTES + FORMAT_BYTE_OFFSET];
+  _outFileFormat = fileFormat;
+  _outStateFormat = _bytes[headerBytes + FORMAT_BYTE_OFFSET];
   return true;
 }
 

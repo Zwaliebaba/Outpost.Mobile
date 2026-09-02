@@ -109,3 +109,61 @@ functions are what `GameLogicTests` is best at.
   slice 2's, and until then no such universe is written.
 - **`EntityId` needs nothing.** ADR 0047 already carries the shard, which §3 leans on and this slice
   does not touch.
+
+## 7. What changed on contact, and what is deliberately not here
+
+- **§5's "every shard non-empty at counts 1 to 54" was wrong, and the measurement is the reason it
+  is not in the suite.** The lattice has `2 * ringCount + 1` columns — 11 for the shipped galaxy —
+  so 54 was never reachable, and a column split cannot exceed the column count. Worse, occupancy is
+  **not monotonic** against the drawn layout: 9 shards leaves 8 occupied, 10 leaves 10. There is no
+  clean invariant to assert, so the slice ships two honest things instead of one false one:
+  `MaxShardCount` documented as a ceiling, and `OccupiedShardCount` measured against the systems that
+  were actually drawn. `OccupancyIsMeasuredAndNotAssumed` pins that, and `UniverseGen` refuses a
+  count that would write an empty shard rather than writing it.
+- **ADR 0058 is not amended.** §4 of this order told the implementer to add a line to that record's
+  consequences. `Design/README.md` forbids it — a decision record is append-only and superseded by a
+  later one naming it, never edited to agree with what came after. ADR 0063 names it instead. The
+  order was wrong; this section is the correction, and the order itself stays as it was written.
+- **Genesis grew a whole-galaxy entry point.** `BuildStartingGalaxy(layout, desc, span<Universe>)`
+  builds every shard in one pass, because a gate leaving a shard has to name the shard it leads to
+  and the only honest way to know that is to have drawn the destination first. Building shards one
+  at a time would have meant predicting the far side. `BuildStartingUniverse` is untouched and is
+  still what the one-shard path calls.
+- **`SaveHeaderBytes` became a function of the format.** The header grew four bytes for the shard
+  count, so `PeekSaveFormats` could no longer assume a fixed 23-byte header when deciding whether a
+  format-1 file was well formed. This is the first header field ever added, and it is the reason
+  ADR 0061's migrate-on-read applies to the *file* format and not only the state format.
+- **No new fixture was cut for the file-format bump, and that is a stated bend of AGENTS.md §12.**
+  The rule wants the previous format's file committed as `UniverseFormat<N>.sav`, run by the tool at
+  the parent commit. `UniverseFormat7.sav` *is* a file-format-1 file, so the 1 → 2 gate is exercised
+  by a real artifact; what is missing is a file at state 8 **and** file format 1, which would isolate
+  the two gates from each other. That artifact can only honestly come from MSVC, which nothing in
+  this container is, and a clang-built stand-in would pass the replay row while being the wrong bytes
+  — exactly the failure the fixture rows exist to catch. The bend is recorded rather than papered
+  over; the next bump that happens on a Windows machine closes it.
+- **`Server.cfg` is not touched.** §2 scoped the shard count to `GalaxyDesc` and the save header; the
+  deployment side of it belongs with the process that reads it, which is slice 5's.
+
+## 8. What was verified, and how — and the honest gap
+
+Measured locally against the same `GameLogic`, clang 18 on Linux behind the usual shims:
+
+```
+count  2 | block kept 61/68 (90%) | hash kept 25 (37%)
+count  3 | block kept 55/68 (81%) | hash kept 26 (38%)
+count  4 | block kept 48/68 (71%) | hash kept 11 (16%)
+
+count 1 | ships 307 gates 136 stations 165 fleets 1 | leads out  0 | deterministic: yes
+count 2 | ships 307 gates 136 stations 165 fleets 1 | leads out 14 (all resolve in their shard)
+count 4 | ships 307 gates 136 stations 165 fleets 1 | leads out 40 (all resolve in their shard)
+
+one-shard partitioned build equals the shipped build: yes (307 ships)
+format-1 fixture loads through file 1->2 and state 7->8 and replays to byte equality: yes
+```
+
+The census is conserved across every count, which is the claim that a partition cuts the galaxy up
+rather than changing it.
+
+**The gap:** nothing here ran on MSVC, and nothing here ran a second process. The first is CI's to
+answer and is the gate. The second is not a gap in this slice — no universe with a gate whose ends
+are in two `Universe`s is written by anything yet, and the day one is, is slice 2's.

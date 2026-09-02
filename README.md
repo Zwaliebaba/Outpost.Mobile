@@ -115,7 +115,9 @@ same numbers.
 will start, and the game says so if you forget. The two are separate executables in separate output
 directories, so give the tool the game's path — `UniverseGen 0 "…\Outpost\Assets\Universe.sav"` —
 and `UniverseGen --help` spells it out. A different first argument writes a different galaxy from the
-same code (ADR 0058).
+same code (ADR 0058). An optional third argument is a shard count: above one the tool cuts the galaxy
+into that many contiguous pieces and writes `Universe.0.sav` upward beside the path you gave, and it
+refuses a count that would leave a shard with nothing in it (ADR 0063).
 
 ---
 

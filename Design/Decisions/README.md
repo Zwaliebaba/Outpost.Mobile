@@ -97,3 +97,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0060](0060-the-game-is-its-own-benchmark.md) | The game is its own benchmark: one persistent plane, at fleet grain, with an economy under it | accepted |
 | [0061](0061-the-save-is-migrated-on-read.md) | The save is migrated on read, and a format is retired only by record | accepted |
 | [0062](0062-an-owner-is-not-a-faction-and-not-an-entity.md) | An owner is not a faction and not an entity | accepted |
+| [0063](0063-the-partition-is-a-function-of-the-layout.md) | The partition is a function of the layout, and contiguity is what decides it | accepted |

@@ -615,6 +615,41 @@ public:
 
   // Every way a file can be wrong, and the same discipline the state codec keeps: refuse, change
   // nothing, never throw, never assert.
+  TEST_METHOD(TheShardCountSurvivesTheHeader)
+  {
+    // A universe generated for four shards is not a universe four OTHER shards can run: the
+    // partition is a function of the layout and the count, so a count that arrived wrong would move
+    // every system in silence (Design/CrossShard.md 2). It rides the header for the shard's own
+    // reason -- a header is readable without decoding the body.
+    Game::Universe source;
+    (void)BuildScene(source);
+
+    Game::SaveHeader header;
+    header.galaxySeed = 0x1234u;
+    header.shard = source.Shard();
+    header.shardCount = 4;
+
+    std::vector<std::uint8_t> file;
+    Game::WriteSaveFile(source, header, file);
+
+    Game::Universe loaded;
+    Game::SaveHeader read;
+    Assert::IsTrue(Game::ReadSaveFile(file, read, loaded), L"a four-shard file was refused");
+    Assert::AreEqual(4u, read.shardCount, L"the shard count did not survive the header");
+    Assert::AreEqual(static_cast<std::uint32_t>(Game::SAVE_FILE_FORMAT), static_cast<std::uint32_t>(read.fileFormat),
+                     L"the file was not written at the current file format");
+
+    // Zero shards is not a galaxy anything can be placed in, and is refused rather than read as one.
+    std::vector<std::uint8_t> zeroed = file;
+    zeroed[23] = 0;
+    zeroed[24] = 0;
+    zeroed[25] = 0;
+    zeroed[26] = 0;
+    Game::Universe untouched;
+    Game::SaveHeader ignored;
+    Assert::IsFalse(Game::ReadSaveFile(zeroed, ignored, untouched), L"a file claiming zero shards was accepted");
+  }
+
   TEST_METHOD(AnOlderFixtureLoadsAndReplays)
   {
     // The migration gate. Every fixture is a real file in a format this build still reads; each

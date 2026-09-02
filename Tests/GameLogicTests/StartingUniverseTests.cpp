@@ -155,6 +155,90 @@ public:
 
   // The tool's whole contract, end to end: generate, write a save file, read it back in another
   // universe, and run both. What the tool writes is what the game runs (ADR 0058).
+  TEST_METHOD(APartitionedGalaxyIsTheSameGalaxyCutUp)
+  {
+    // The census is conserved and nothing is counted twice: every shard's universe together is the
+    // one galaxy the layout drew (Design/CrossShard-slice-1.md 4.4). At one shard it must also be
+    // the SAME universe the shipped build makes, byte for byte, which is the claim that this slice
+    // changed nothing that ships.
+    const Game::GalaxyLayout shipped = ShippedGalaxy();
+    Game::Universe whole;
+    Game::BuildStartingUniverse(shipped, 0, whole);
+    std::vector<std::uint8_t> wholeBytes;
+    Game::WriteUniverseState(whole, wholeBytes);
+
+    for (const std::uint32_t count : {1u, 2u, 4u})
+    {
+      Game::GalaxyDesc desc = Game::STARTING_GALAXY;
+      desc.shardCount = count;
+      const Game::GalaxyLayout galaxy = Game::LayOutGalaxy(Game::STARTING_GALAXY_SEED, Game::UniversePos{}, desc, Game::GALAXY_PINS);
+
+      std::vector<Game::Universe> shards(count);
+      Game::BuildStartingGalaxy(galaxy, desc, shards);
+
+      std::uint32_t ships = 0;
+      std::uint32_t gates = 0;
+      std::uint32_t stations = 0;
+      std::uint32_t fleets = 0;
+      for (std::uint32_t at = 0; at < count; ++at)
+      {
+        Assert::AreEqual(at, static_cast<std::uint32_t>(shards[at].Shard()), L"a shard was not configured with its own index");
+        ships += shards[at].ShipCount();
+        gates += shards[at].GateCount();
+        stations += shards[at].StationCount();
+        fleets += shards[at].FleetCount();
+      }
+      Assert::AreEqual(whole.ShipCount(), ships, L"the shards together do not hold the galaxy's ships");
+      Assert::AreEqual(whole.GateCount(), gates, L"the shards together do not hold the galaxy's gates");
+      Assert::AreEqual(whole.StationCount(), stations, L"the shards together do not hold the galaxy's stations");
+      Assert::AreEqual(1u, fleets, L"the player's fleet is in more or fewer than one shard");
+
+      if (count == 1u)
+      {
+        std::vector<std::uint8_t> oneShard;
+        Game::WriteUniverseState(shards[0], oneShard);
+        Assert::IsTrue(wholeBytes == oneShard, L"the one-shard partitioned build is not the shipped build");
+      }
+    }
+  }
+
+  TEST_METHOD(AGateOutOfAShardNamesTheShardItLeadsTo)
+  {
+    // What the handoff design's test for "this gate leads out" actually reads
+    // (Design/CrossShard.md 3): EntityShardOf(destination) != Shard(). A crossing gate must name an
+    // entity that really exists in the shard it names -- an identity minted in another universe,
+    // which is why every shard is built in one pass and not one at a time.
+    Game::GalaxyDesc desc = Game::STARTING_GALAXY;
+    desc.shardCount = 4;
+    const Game::GalaxyLayout galaxy = Game::LayOutGalaxy(Game::STARTING_GALAXY_SEED, Game::UniversePos{}, desc, Game::GALAXY_PINS);
+
+    std::vector<Game::Universe> shards(desc.shardCount);
+    Game::BuildStartingGalaxy(galaxy, desc, shards);
+
+    std::uint32_t leadingOut = 0;
+    for (std::uint32_t at = 0; at < desc.shardCount; ++at)
+    {
+      for (std::uint32_t gate = 0; gate < shards[at].GateCount(); ++gate)
+      {
+        const Game::EntityId destination = shards[at].GateOf(gate).destination;
+        const std::uint32_t other = Game::EntityShardOf(destination);
+        if (other == static_cast<std::uint32_t>(shards[at].Shard()))
+        {
+          Assert::AreNotEqual(Game::INVALID_SHIP_ID, shards[at].ResolveEntity(destination), L"a gate inside a shard leads nowhere");
+          continue;
+        }
+        ++leadingOut;
+        Assert::IsTrue(other < desc.shardCount, L"a gate leads to a shard that does not exist");
+        Assert::AreNotEqual(Game::INVALID_SHIP_ID, shards[other].ResolveEntity(destination),
+                            L"a gate leading out names an entity its own shard does not hold");
+      }
+    }
+    // Twenty of the sixty-eight links cross at four shards, so forty ends lead out. Stated rather
+    // than merely non-zero, because a partition that quietly stopped cutting anything would pass a
+    // non-zero check by keeping every link whole.
+    Assert::AreEqual(40u, leadingOut, L"the number of gate ends leading out of their shard moved");
+  }
+
   TEST_METHOD(AGeneratedUniverseSurvivesTheSaveFile)
   {
     const Game::GalaxyLayout galaxy = ShippedGalaxy();

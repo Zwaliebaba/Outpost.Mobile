@@ -117,7 +117,96 @@ void SpawnHostileBase(Universe& _universe)
     _universe.AssignPatrol(ship, station, HOSTILE_PATROL_RING_METRES, HOSTILE_PATROL_CRUISE_MPS);
   }
 }
+// The stations of one shard's systems, or of every system when there is no partition.
+//
+// Split out of SpawnVanguardStations rather than given a flag, because the single-shard build must
+// stay byte-identical and the cheapest way to be sure of that is for it to call the same function it
+// always called.
+void SpawnVanguardStationsOfShard(const GalaxyLayout& _galaxy, const GalaxyDesc& _desc, ShardId _shard, Universe& _universe)
+{
+  Universe::StationDesc desc;
+  desc.ownerFaction = FACTION_VANGUARD;
+  desc.protectorHullId = static_cast<std::uint32_t>(VANGUARD_PROTECTOR_HULL);
+  desc.protectorComplement = VANGUARD_PROTECTOR_COMPLEMENT;
+  desc.launchEveryTicks = VANGUARD_LAUNCH_EVERY_TICKS;
+  desc.targetCap = VANGUARD_TARGET_CAP;
+
+  for (const SystemSite& site : _galaxy.systems)
+  {
+    if (ShardOfSystem(site, _desc) != _shard)
+      continue;
+    const SystemLayout system = LayOutGalaxySystem(site, STARTING_GALAXY, GALAXY_PINS);
+    for (const PlanetSite& planet : system.planets)
+    {
+      const ShipId structure =
+        _universe.SpawnShip(planet.posUniverse, 0.0f, static_cast<std::uint32_t>(HullId::Structure), FACTION_VANGUARD);
+      _universe.MakeStation(structure, desc);
+    }
+  }
+}
 } // namespace
+
+void BuildStartingGalaxy(const GalaxyLayout& _galaxy, const GalaxyDesc& _desc, std::span<Universe> _outShards)
+{
+  if (_outShards.size() != _desc.shardCount || _galaxy.systems.empty())
+    return;
+
+  for (std::size_t at = 0; at < _outShards.size(); ++at)
+    _outShards[at].ConfigureShard(static_cast<ShardId>(at));
+
+  // Home is where the player and the rival stand, and it is a system like any other -- so which
+  // shard holds it is the partition's answer and not a constant.
+  const ShardId home = ShardOfSystem(_galaxy.systems[SystemAt(_galaxy.systems, UniversePos{})], _desc);
+
+  // The same order the single-shard build keeps, for the same reason: ship ids are handed out in
+  // spawn order, and the fleet is first so that it keeps the ids it has always had.
+  SpawnStartingFleet(_outShards[home]);
+
+  for (std::size_t at = 0; at < _outShards.size(); ++at)
+    SpawnVanguardStationsOfShard(_galaxy, _desc, static_cast<ShardId>(at), _outShards[at]);
+
+  // Both ends of every link, each in the universe of the shard its system belongs to. Two passes
+  // across the shards for the reason the single-shard build needs two within one: the row carries
+  // the far gate's EntityId, and the far gate does not exist while the near one is being spawned.
+  struct GateEnd
+  {
+    ShardId shard = 0;
+    ShipId ship = INVALID_SHIP_ID;
+  };
+  std::vector<GateEnd> ends;
+  ends.reserve(_galaxy.links.size() * 2u);
+
+  for (const GateLink& link : _galaxy.links)
+  {
+    const SystemSite& a = _galaxy.systems[link.systemA];
+    const SystemSite& b = _galaxy.systems[link.systemB];
+    const ShardId shardA = ShardOfSystem(a, _desc);
+    const ShardId shardB = ShardOfSystem(b, _desc);
+    ends.push_back(GateEnd{shardA, _outShards[shardA].SpawnShip(GateSite(a, b, STARTING_GALAXY), GateHeadingRad(a, b),
+                                                                static_cast<std::uint32_t>(HullId::Structure), FACTION_VANGUARD)});
+    ends.push_back(GateEnd{shardB, _outShards[shardB].SpawnShip(GateSite(b, a, STARTING_GALAXY), GateHeadingRad(b, a),
+                                                                static_cast<std::uint32_t>(HullId::Structure), FACTION_VANGUARD)});
+  }
+
+  for (std::size_t at = 0; at + 1 < ends.size(); at += 2)
+  {
+    const GateEnd& here = ends[at];
+    const GateEnd& there = ends[at + 1];
+
+    Universe::GateDesc toFar;
+    toFar.destination = _outShards[there.shard].EntityIdOf(there.ship);
+    (void)_outShards[here.shard].MakeGate(here.ship, toFar);
+
+    Universe::GateDesc toNear;
+    toNear.destination = _outShards[here.shard].EntityIdOf(here.ship);
+    (void)_outShards[there.shard].MakeGate(there.ship, toNear);
+  }
+
+  SpawnHostileBase(_outShards[home]);
+
+  for (Universe& shard : _outShards)
+    shard.SettleDerivedState();
+}
 
 void BuildStartingUniverse(const GalaxyLayout& _galaxy, ShardId _shard, Universe& _outUniverse)
 {
