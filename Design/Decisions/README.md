@@ -94,3 +94,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0057](0057-the-save-is-a-versioned-file-and-a-refused-one-stops-the-boot.md) | The save is a versioned file, and a refused one stops the boot | accepted |
 | [0058](0058-a-universe-is-authored-by-a-tool-not-by-the-program-that-runs-it.md) | A universe is authored by a tool, not by the program that runs it | accepted |
 | [0059](0059-a-route-is-scoped-to-the-island-that-planned-it.md) | A route is scoped to the island that planned it (supersedes 0034) | accepted |
+| [0060](0060-the-game-is-its-own-benchmark.md) | The game is its own benchmark: one persistent plane, at fleet grain, with an economy under it | accepted |
