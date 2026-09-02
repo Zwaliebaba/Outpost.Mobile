@@ -760,6 +760,24 @@ public:
   // (Design/ShardServer-slice-2.md 2.6). The game reads its camera instead and does not call this.
   [[nodiscard]] bool TryCentreOfOwnedFleets(OwnerId _owner, UniversePos& _outCentre) const noexcept;
 
+  // The shards this one has a gate to: every gate's destination that names a different shard,
+  // deduplicated and ascending. Returns how many there are, filling _out up to its size -- so a
+  // caller can size a buffer from GalaxyDesc::shardCount and be sure, or ask with an empty span and
+  // find out first.
+  //
+  // **Derived from the gates rather than from the layout**, and deliberately: a shard that
+  // re-derived the partition would need the seed, the pins and the GalaxyDesc, and would disagree
+  // with its own save the day any of them drifted. The gates are in the file and already say where
+  // they lead (ADR 0056), so the file is the single source and there is no second one to keep in
+  // step (Design/ShardServer-slice-3.md 2.1).
+  //
+  // What this is for is one ShardLink per neighbour. On the shipped galaxy the neighbour graph is a
+  // path rather than a mesh -- ADR 0063's cut is contiguous, so a shard borders at most two others
+  // at every count the partition supports -- which means links cost O(shards) and not O(shards^2).
+  // That is a measurement and not a guarantee: what a link depends on is SYMMETRY, that if this
+  // shard names another the other names it back, and that is what the suite asserts.
+  [[nodiscard]] std::uint32_t NeighbourShards(std::span<ShardId> _out) const noexcept;
+
   [[nodiscard]] std::uint32_t FleetCount() const noexcept
   {
     return static_cast<std::uint32_t>(m_fleets.size());

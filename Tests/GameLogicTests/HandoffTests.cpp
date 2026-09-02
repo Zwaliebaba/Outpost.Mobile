@@ -153,6 +153,67 @@ struct Wire
 TEST_CLASS(HandoffTests)
 {
 public:
+  TEST_METHOD(AShardNamesEveryShardItHasAGateTo)
+  {
+    // Which shards a server opens a link to, derived from the save's own gates rather than from the
+    // layout: a shard that re-derived the partition would need the seed, the pins and the
+    // GalaxyDesc, and would disagree with its own file the day any of them drifted
+    // (Design/ShardServer-slice-3.md 2.1).
+    for (std::uint32_t shardCount = 1; shardCount <= 5; ++shardCount)
+    {
+      const Galaxy world = BuildGalaxy(shardCount);
+      std::vector<std::vector<Game::ShardId>> named(shardCount);
+      for (std::uint32_t at = 0; at < shardCount; ++at)
+      {
+        // Asked with an empty span first: the count has to be right with nowhere to put the answer,
+        // which is how a caller sizes its buffer. A dedupe that read back out of the span could not
+        // do that -- what did not fit would be counted twice.
+        const std::uint32_t size = world.shards[at].NeighbourShards({});
+        named[at].resize(size);
+        Assert::AreEqual(size, world.shards[at].NeighbourShards(named[at]),
+                         L"the count changed when there was somewhere to put the answer");
+
+        for (std::size_t after = 1; after < named[at].size(); ++after)
+        {
+          Assert::IsTrue(named[at][after] > named[at][after - 1], L"the neighbours are not ascending, so one is repeated or out of order");
+        }
+        for (const Game::ShardId neighbour : named[at])
+          Assert::AreNotEqual(world.shards[at].Shard(), neighbour, L"a shard named itself as its own neighbour");
+      }
+
+      if (shardCount == 1)
+        Assert::AreEqual(std::size_t{0}, named[0].size(), L"a galaxy of one shard has a neighbour");
+
+      // The property a link actually depends on, and the one worth guarding: the path shape the
+      // shipped galaxy happens to have is a fact about this galaxy, and symmetry is a fact about the
+      // partition. A link with one end is not a link.
+      for (std::uint32_t at = 0; at < shardCount; ++at)
+      {
+        for (const Game::ShardId neighbour : named[at])
+        {
+          const std::vector<Game::ShardId>& back = named[neighbour];
+          Assert::IsTrue(std::find(back.begin(), back.end(), static_cast<Game::ShardId>(at)) != back.end(),
+                         L"a shard names a neighbour that does not name it back");
+        }
+      }
+    }
+  }
+
+  TEST_METHOD(AShortSpanStillCountsAndFillsWhatItCan)
+  {
+    // The awkward case, because it is the one a caller hits when the partition grew since it sized
+    // its buffer: the count is the true one and what fits is the front of the answer.
+    const Galaxy world = BuildGalaxy(3);
+    const Game::Universe& middle = world.shards[1];
+    std::vector<Game::ShardId> all(middle.NeighbourShards({}));
+    Assert::AreEqual(std::size_t{2}, all.size(), L"the middle shard of three does not border two others");
+    (void)middle.NeighbourShards(all);
+
+    std::vector<Game::ShardId> few(1);
+    Assert::AreEqual(2u, middle.NeighbourShards(few), L"a short span reported only what it could hold");
+    Assert::AreEqual(all[0], few[0], L"a short span did not hold the front of the answer");
+  }
+
   TEST_METHOD(AFleetCrossingOutOfItsShardIsInTheOutboxAndNowhereElse)
   {
     // The design's own honest sentence, as a census: a fleet mid-handoff is in neither universe

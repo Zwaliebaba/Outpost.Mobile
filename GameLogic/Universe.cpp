@@ -537,6 +537,49 @@ bool Universe::TryCentreOfOwnedFleets(OwnerId _owner, UniversePos& _outCentre) c
   return true;
 }
 
+std::uint32_t Universe::NeighbourShards(std::span<ShardId> _out) const noexcept
+{
+  // Smallest-not-yet-taken, once per neighbour. Allocation-free on purpose -- this is called at boot
+  // today and the run loop's promise is that nothing it reaches allocates, so a std::set here would
+  // be a landmine for whoever calls it from a pass later -- and correct for a span of ANY size,
+  // including an empty one, which is how a caller asks how many there are before sizing a buffer.
+  // A dedupe that read back out of _out could not do that: what did not fit would be recounted.
+  //
+  // Quadratic in neighbours times gates, which is at most two times a hundred and thirty-six on the
+  // shipped galaxy. The same shape OccupiedShardCount was rewritten into, and for the same reason.
+  std::uint32_t found = 0;
+  ShardId previous = 0;
+  bool havePrevious = false;
+  for (;;)
+  {
+    ShardId best = 0;
+    bool haveBest = false;
+    for (const Gate& gate : m_gates)
+    {
+      if (gate.destination == INVALID_ENTITY_ID)
+        continue;
+      const ShardId beyond = EntityShardOf(gate.destination);
+      if (beyond == Shard())
+        continue;
+      if (havePrevious && beyond <= previous)
+        continue;
+      if (!haveBest || beyond < best)
+      {
+        best = beyond;
+        haveBest = true;
+      }
+    }
+    if (!haveBest)
+      return found;
+
+    if (found < _out.size())
+      _out[found] = best;
+    ++found;
+    previous = best;
+    havePrevious = true;
+  }
+}
+
 void Universe::LedgerFor(StationId _station, const Issuer& _asker, std::span<std::uint32_t> _outCounts) const noexcept
 {
   const std::size_t stated = (_outCounts.size() < HULL_COUNT) ? _outCounts.size() : std::size_t{HULL_COUNT};
