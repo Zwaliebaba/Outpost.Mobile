@@ -63,7 +63,15 @@ public:
   //
   // It does NOT drain the inbox. Applying a handoff is a tick-boundary act and belongs to whoever
   // owns the stepping, which is the same rule an order queue keeps (Design/CrossShard.md 4).
-  Pumped Pump(Universe& _universe, Neuron::Transport& _transport);
+  //
+  // **_peer is which shard is on the other end, and it is what the outbox is filtered by.** The
+  // outbox is one queue for every destination, so a link that sent all of it would hand a shard the
+  // entries meant for its other neighbour -- entries naming a gate that shard does not have. That is
+  // invisible with two shards, where every entry is for the one peer there is, and it is why this
+  // argument did not exist until a shard could have two neighbours
+  // (Design/ShardServer-slice-3.md 8). Handed in per pump rather than held, for the same reason the
+  // universe and the transport are: nothing here outlives a pump it did not see.
+  Pumped Pump(Universe& _universe, Neuron::Transport& _transport, ShardId _peer);
 
 private:
   // Sequence, and the tick this end had when the entry arrived. The tick is what the durability rule
@@ -83,6 +91,7 @@ private:
   // Reused between pumps, like every other scratch in this library.
   std::vector<std::uint8_t> m_messageScratch;
   std::vector<Universe::Handoff> m_handoffScratch;
+  std::vector<Universe::Handoff> m_outboundScratch; // the outbox entries for THIS peer, and no others
   std::vector<std::uint64_t> m_ackScratch;
 };
 } // namespace Game

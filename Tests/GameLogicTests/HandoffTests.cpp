@@ -141,8 +141,8 @@ struct Wire
     _world.shards[_departing].Step();
     _world.shards[_arriving].Step();
     _wire.Poll(_world.shards[_departing].Tick());
-    (void)_wire.departingLink.Pump(_world.shards[_departing], _wire.departing);
-    (void)_wire.arrivingLink.Pump(_world.shards[_arriving], _wire.arriving);
+    (void)_wire.departingLink.Pump(_world.shards[_departing], _wire.departing, static_cast<Game::ShardId>(_arriving));
+    (void)_wire.arrivingLink.Pump(_world.shards[_arriving], _wire.arriving, static_cast<Game::ShardId>(_departing));
     if (_world.shards[_arriving].DrainInbox() > 0)
       return pump;
   }
@@ -197,6 +197,60 @@ public:
         }
       }
     }
+  }
+
+  TEST_METHOD(ALinkCarriesNothingThatIsNotForItsOwnPeer)
+  {
+    // The defect ShardServer slice 3 found, guarded. The outbox is ONE queue for every destination,
+    // and until this slice a link sent all of it -- so a shard with two neighbours would hand each
+    // of them the other's entries, naming a gate that shard does not have. Invisible with two
+    // shards, where every entry is for the one peer there is, which is why four slices of tests did
+    // not see it (Design/ShardServer-slice-3.md 8).
+    //
+    // Stated as the property rather than by staging a double crossing, which would need two fleets
+    // in one shard and there is one: a real outbox, one link to the shard it is for and one to a
+    // shard it is not, and the second must carry nothing.
+    Galaxy world = BuildGalaxy(4);
+    const std::uint32_t departing = ShardHoldingTheFleet(world);
+    const Game::ShipId gate = GateLeadingOut(world.shards[departing]);
+    const std::uint32_t arriving = ShardOfDestination(world.shards[departing], gate);
+
+    OrderThroughGate(world.shards[departing], gate);
+    Assert::IsTrue(StepUntilHandedOff(world, departing), L"the fleet never reached the gate");
+    Assert::IsFalse(world.shards[departing].Outbox().empty(), L"there is nothing in the outbox to filter");
+
+    // A shard that is NOT the destination. Any of the four will do so long as it is neither end.
+    std::uint32_t elsewhere = 0;
+    while (elsewhere == departing || elsewhere == arriving)
+      ++elsewhere;
+
+    Neuron::LoopbackTransport right;
+    Neuron::LoopbackTransport rightFar;
+    Neuron::LoopbackTransport wrong;
+    Neuron::LoopbackTransport wrongFar;
+    Neuron::LoopbackTransport::Connect(right, rightFar, {});
+    Neuron::LoopbackTransport::Connect(wrong, wrongFar, {});
+
+    Game::ShardLink toArriving;
+    Game::ShardLink toElsewhere;
+    const Game::ShardLink::Pumped sentRight = toArriving.Pump(world.shards[departing], right, static_cast<Game::ShardId>(arriving));
+    const Game::ShardLink::Pumped sentWrong = toElsewhere.Pump(world.shards[departing], wrong, static_cast<Game::ShardId>(elsewhere));
+
+    Assert::IsTrue(sentRight.handoffsSent > 0, L"the link to the destination shard sent nothing");
+    Assert::AreEqual(0u, sentWrong.handoffsSent, L"a link sent entries that were for another shard");
+    Assert::IsFalse(sentWrong.laneRefused, L"the wrong link reported a refusal rather than having nothing to say");
+
+    // And nothing reached the far end of the wrong wire, which is the claim a count alone does not
+    // quite make: a message with zero entries in it is still a message.
+    rightFar.AdvanceTo(world.shards[departing].Tick());
+    rightFar.Poll();
+    wrongFar.AdvanceTo(world.shards[departing].Tick());
+    wrongFar.Poll();
+    std::vector<std::uint8_t> buffer(Neuron::MAX_RELIABLE_BYTES);
+    Assert::AreNotEqual(0u, rightFar.ReceiveReliable(buffer.data(), Neuron::MAX_RELIABLE_BYTES),
+                        L"the destination shard's lane carried nothing");
+    Assert::AreEqual(0u, wrongFar.ReceiveReliable(buffer.data(), Neuron::MAX_RELIABLE_BYTES),
+                     L"a shard that was not the destination was sent something");
   }
 
   TEST_METHOD(AShortSpanStillCountsAndFillsWhatItCan)
@@ -440,8 +494,8 @@ public:
     {
       world.shards[departing].Step();
       wire.Poll(world.shards[departing].Tick());
-      (void)wire.arrivingLink.Pump(world.shards[arriving], wire.arriving);
-      (void)wire.departingLink.Pump(world.shards[departing], wire.departing);
+      (void)wire.arrivingLink.Pump(world.shards[arriving], wire.arriving, static_cast<Game::ShardId>(departing));
+      (void)wire.departingLink.Pump(world.shards[departing], wire.departing, static_cast<Game::ShardId>(arriving));
     }
     Assert::IsTrue(world.shards[departing].Outbox().empty(), L"the outbox was never acknowledged");
   }
@@ -472,7 +526,8 @@ public:
     {
       world.shards[departing].Step();
       wire.Poll(world.shards[departing].Tick());
-      refused = wire.departingLink.Pump(world.shards[departing], wire.departing).laneRefused || refused;
+      refused =
+        wire.departingLink.Pump(world.shards[departing], wire.departing, static_cast<Game::ShardId>(arriving)).laneRefused || refused;
     }
     Assert::IsTrue(refused, L"a lane with no room never refused a send");
     Assert::AreEqual(held, world.shards[departing].Outbox().size(), L"a refused send lost an outbox entry");
@@ -512,8 +567,8 @@ public:
       world.shards[departing].Step();
       world.shards[arriving].Step();
       wire.Poll(world.shards[departing].Tick());
-      (void)wire.departingLink.Pump(world.shards[departing], wire.departing);
-      acked += wire.arrivingLink.Pump(world.shards[arriving], wire.arriving).acksSent;
+      (void)wire.departingLink.Pump(world.shards[departing], wire.departing, static_cast<Game::ShardId>(arriving));
+      acked += wire.arrivingLink.Pump(world.shards[arriving], wire.arriving, static_cast<Game::ShardId>(departing)).acksSent;
       (void)world.shards[arriving].DrainInbox();
     }
     Assert::AreEqual(std::uint32_t{0}, acked, L"a shard acknowledged a handoff it had not saved");
@@ -527,8 +582,8 @@ public:
       world.shards[departing].Step();
       world.shards[arriving].Step();
       wire.Poll(world.shards[departing].Tick());
-      (void)wire.arrivingLink.Pump(world.shards[arriving], wire.arriving);
-      (void)wire.departingLink.Pump(world.shards[departing], wire.departing);
+      (void)wire.arrivingLink.Pump(world.shards[arriving], wire.arriving, static_cast<Game::ShardId>(departing));
+      (void)wire.departingLink.Pump(world.shards[departing], wire.departing, static_cast<Game::ShardId>(arriving));
     }
     Assert::IsTrue(world.shards[departing].Outbox().empty(), L"a noted save did not clear the outbox");
   }

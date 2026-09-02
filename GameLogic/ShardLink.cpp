@@ -5,7 +5,7 @@
 
 namespace Game
 {
-ShardLink::Pumped ShardLink::Pump(Universe& _universe, Neuron::Transport& _transport)
+ShardLink::Pumped ShardLink::Pump(Universe& _universe, Neuron::Transport& _transport, ShardId _peer)
 {
   Pumped pumped;
 
@@ -81,13 +81,25 @@ ShardLink::Pumped ShardLink::Pump(Universe& _universe, Neuron::Transport& _trans
   //
   // On a cadence. Every tick would put a fleet's worth of messages on the lane sixty times a second
   // for as long as one crossing is unacknowledged.
+  //
+  // Filtered to this peer. A handoff names the gate it ARRIVES at, in the arriving shard's table, so
+  // the shard that entry is for is EntityShardOf(gate) and nothing else has to be carried to know it.
+  // Sending the whole outbox down every link would hand a shard entries naming a gate it does not
+  // have -- correct-looking with two shards, wrong with three.
+  m_outboundScratch.clear();
+  for (const Universe::Handoff& entry : _universe.Outbox())
+  {
+    if (EntityShardOf(entry.gate) == _peer)
+      m_outboundScratch.push_back(entry);
+  }
+
   const std::uint64_t tick = _universe.Tick();
   const bool due = m_lastSendTick == 0 || tick >= m_lastSendTick + HANDOFF_RESEND_TICKS;
-  if (due && !_universe.Outbox().empty())
+  if (due && !m_outboundScratch.empty())
   {
     m_lastSendTick = tick;
     std::uint32_t sent = 0;
-    if (WriteHandoffs(_universe.Outbox(), _transport, sent))
+    if (WriteHandoffs(m_outboundScratch, _transport, sent))
       pumped.handoffsSent = sent;
     else
       pumped.laneRefused = true; // the entry stays in the outbox, which is the whole point

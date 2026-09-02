@@ -117,3 +117,49 @@ never had to:
   put a transport's timing inside the replay contract.
 - **The neighbour derivation reaching for the layout.** It does not need one, and a version that takes
   a `GalaxyLayout` would make the server able to disagree with its own save.
+
+## 7. Assumptions the implementer may make
+
+- **`QuicListener` and `Publisher` need no change**, as slices 1 and 2 found.
+- **The neighbour set is stable for the life of a process.** A shard's gates do not change while it
+  runs, so the links are built once at boot and never rebuilt. The day a gate can be built or
+  destroyed, this is the sentence that stops being true.
+- **A link with no transport is a link that does nothing**, not an error. Slice 3 builds the links;
+  slice 4 is what gives them somewhere to send.
+
+## 8. What changed on contact
+
+- **`ShardLink` sent the whole outbox to every peer, and that is wrong the moment a shard has two
+  neighbours.** §7 of this order assumed `ShardLink` needed no change and said that if it did, it was
+  this slice's finding. It did.
+
+  `Universe::Outbox()` is **one queue for every destination**, and `ShardLink::Pump` passed all of it
+  to `WriteHandoffs`. With two shards that is correct by accident — every entry is for the one peer
+  there is — which is why four slices of `CrossShard` tests, all written against two shards, never
+  saw it. With three the middle shard borders two others, and each would have been handed the other's
+  entries: handoffs naming a gate that shard does not have.
+
+  The fix is one argument and four lines. `Pump` takes the peer's `ShardId` and sends only the entries
+  whose `EntityShardOf(gate)` matches — a handoff already names the gate it **arrives** at, in the
+  arriving shard's table (ADR 0056), so nothing new had to be carried to know where an entry is for.
+  The peer is handed in per pump rather than held, for the same reason the universe and the transport
+  are.
+
+  **The guard bites.** `HandoffTests::ALinkCarriesNothingThatIsNotForItsOwnPeer` flies a real
+  crossing, then pumps two links out of the departing shard — one to the destination and one to a
+  shard that is not it — and asserts the second sends nothing and puts nothing on its wire. Restoring
+  the old behaviour fails that row and only that row:
+
+  ```
+  with the pre-slice-3 send-everything:  342 rows run, 2 failed
+  with the filter:                       342 rows run, 1 failed   (the pre-existing clang matchup row)
+  ```
+
+  It was tempting to write this row by putting two synthesised entries in one outbox, and that would
+  have meant adding a mutator to `Universe` for a test to use. The outbox is written by `StepJumps`
+  and by nothing else, and it should stay that way — so the row states the property instead: a real
+  outbox, a link to the shard it is for and a link to a shard it is not.
+- **`NeighbourShards` is `Universe`'s, not the layout's.** §2.1 asked for the neighbour set to be
+  derived from the layout, as `ShardServer.md` §3.4 did. It is derived from the **gates**, which is
+  strictly better: the server never loads a layout, so it cannot disagree with its own save. The
+  design's sentence is the one that was imprecise, not this order's.
