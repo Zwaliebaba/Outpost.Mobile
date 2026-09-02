@@ -114,6 +114,10 @@ private:
   // taken mid-Step would be a universe that never existed (Design/Universe.md 8).
   void SaveUniverse();
 
+  // Writes what the ticks since the last sample cost to Universe.stats and resets the window. Only
+  // ever called between ticks, beside the save, and for the same reason.
+  void WriteTickStats();
+
   // The local system's planets, as minimap marks. The stations they stand for are in the save file;
   // the marks are not, because a mark is a picture rather than a record. Rebuilt at boot and again
   // whenever the camera changes systems (Design/Universe-slice-4b.md 4).
@@ -187,6 +191,10 @@ private:
   // The tick the last save was taken at, so the cadence is a distance rather than a modulo -- see
   // the call site in Run.
   std::uint64_t m_lastSaveTick = 0;
+
+  // The same, for the statistics sidecar, and a separate number because the two cadences are set
+  // independently in Server.cfg.
+  std::uint64_t m_lastStatsTick = 0;
 
   // Why RestoreUniverse answered Refused, for the boot failure's sentence. A refused read changes
   // nothing, so the sentence is composed where the bytes are still in hand.

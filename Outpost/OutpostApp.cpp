@@ -666,6 +666,28 @@ OutpostApp::RestoreResult OutpostApp::RestoreUniverse()
   return RestoreResult::Restored;
 }
 
+void OutpostApp::WriteTickStats()
+{
+  // The levels are read here rather than accumulated per tick, because each is a level and not
+  // something a tick adds to.
+  TickStats& stats = m_simulation.Stats();
+  stats.tick = m_universe.Tick();
+  stats.shipCount = m_universe.ShipCount();
+  stats.subscriberCount = m_simulation.SubscriberCount();
+
+  // Stamped whether or not the write lands, on SaveUniverse's argument: a disk that refuses once
+  // will refuse again, and retrying every tick would turn a full disk into a frame rate.
+  m_lastStatsTick = m_universe.Tick();
+
+  if (!WriteTickStatsFile(stats))
+  {
+    // Info and not Alert, which is where this differs from a refused save: nothing is lost that the
+    // game needed, and a readout that cannot be written is not a reason to interrupt a player.
+    m_log.PushFormat(EventLog::Severity::Info, 0.0f, "STATS REFUSED | TICK %llu", static_cast<unsigned long long>(m_universe.Tick()));
+  }
+  stats.ResetWindow();
+}
+
 void OutpostApp::SaveUniverse()
 {
   Game::SaveHeader header;
@@ -952,6 +974,13 @@ void OutpostApp::Render()
   frame.stats.selectedCount = m_view.SelectedCount();
   frame.stats.shipCount = m_universe.ShipCount();
   frame.stats.timeScale = m_timeScale;
+  // The last tick's two halves, and the worst of the window so far. Read straight off the block the
+  // adapter fills, which is reset when the sidecar is written -- so WORST is "the worst since the
+  // last file" rather than since boot, and it is meant to be (Outpost/TickStats.h).
+  frame.stats.stepMs = m_simulation.Stats().stepLastMs;
+  frame.stats.publishMs = m_simulation.Stats().publishLastMs;
+  frame.stats.stepWorstMs = m_simulation.Stats().stepWorstMs;
+  frame.stats.subscriberCount = m_simulation.SubscriberCount();
   frame.stats.explosionCount = m_view.ExplosionCount();
   frame.stats.particleCount = m_view.Particles().Count();
   frame.stats.particlesDropped = m_view.Particles().Dropped();
@@ -1071,6 +1100,12 @@ void OutpostApp::Run()
     // a save every frame if that chain ever grows a counter of its own.
     if (m_config.saveEveryTicks != 0 && m_universe.Tick() - m_lastSaveTick >= m_config.saveEveryTicks)
       SaveUniverse();
+
+    // Beside the save and for the save's reason: between ticks. It writes a window and resets, so
+    // a file is what the last statsEveryTicks ticks cost rather than a mean since boot that stops
+    // moving after ten minutes (Design/TickTelemetry-work-order.md).
+    if (m_config.statsEveryTicks != 0 && m_universe.Tick() - m_lastStatsTick >= m_config.statsEveryTicks)
+      WriteTickStats();
 
     Render();
   }

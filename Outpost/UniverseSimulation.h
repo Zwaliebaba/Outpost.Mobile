@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ServerConfig.h"
+#include "TickStats.h"
 
 #include "Publisher.h"
 #include "Universe.h"
@@ -59,10 +60,33 @@ public:
 
   void Step() override
   {
+    // Bracketed, not reordered. The order below is argued at the top of this class and the timing
+    // must not become a reason to touch it: orders in, tick, publish. The split is where the two
+    // halves genuinely divide -- everything before SetCentre is the simulation, everything from it
+    // is the seam -- because they scale with different things and the review asks about them
+    // separately (Design/TickTelemetry-work-order.md 1.2).
+    const TickStats::Clock::time_point began = TickStats::Clock::now();
     m_publisher.ApplyOrders(m_universe);
     m_universe.Step();
+
+    const TickStats::Clock::time_point stepped = TickStats::Clock::now();
     m_publisher.SetCentre(m_subscriber, m_viewCentre);
     m_publisher.Publish(m_universe);
+    const TickStats::Clock::time_point published = TickStats::Clock::now();
+
+    m_stats.Record(TickStats::ElapsedMs(began, stepped), TickStats::ElapsedMs(stepped, published));
+  }
+
+  // What the ticks since the last sample cost. The levels on it are filled by the root at write
+  // time rather than here, because each is a level and not something a tick accumulates.
+  [[nodiscard]] TickStats& Stats() noexcept
+  {
+    return m_stats;
+  }
+
+  [[nodiscard]] std::uint32_t SubscriberCount() const noexcept
+  {
+    return m_publisher.Count();
   }
 
   // Where this subscriber is looking, pushed in by the composition root each frame from the
@@ -108,6 +132,10 @@ public:
 
 private:
   Game::Universe& m_universe;
+
+  // Wall-clock durations, which is why they are here and not one layer down: GameLogic may not read
+  // a clock and this slice must not be the reason it starts (Outpost/TickStats.h).
+  TickStats m_stats;
   Game::Publisher m_publisher;
   Game::Publisher::Handle m_subscriber;
 

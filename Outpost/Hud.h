@@ -33,6 +33,14 @@ public:
     int selectedCount = 0;
     std::uint32_t shipCount = 0;
     float timeScale = 1.0f;
+    // What the tick itself costs, from the composition root's own clock (Outpost/TickStats.h). On
+    // the screen for the reason every other number here is: the step and the publish scale with
+    // different things, and a shard that is falling behind looks exactly like one that is not until
+    // you read them (Design/TickTelemetry-work-order.md 1.4).
+    double stepMs = 0.0;
+    double publishMs = 0.0;
+    double stepWorstMs = 0.0;
+    std::uint32_t subscriberCount = 0;
     // The explosion effect, so an overflowing pool or a full vertex ring is read off the screen
     // rather than guessed at (Design/Archive/SpaceshipExplosion.md 6.2, 8.1).
     int explosionCount = 0;

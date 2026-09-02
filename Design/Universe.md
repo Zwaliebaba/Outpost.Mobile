@@ -355,6 +355,13 @@ The save is the state codec given a file:
   once; and a format is retired only by a decision record ([ADR 0061](Decisions/0061-the-save-is-migrated-on-read.md)).
   The refusal above is unchanged for a format outside the window.
 
+- **A statistics sidecar beside it**, `Universe.stats`, added by slice 4 of
+  [`GameDesignPlan.md`](GameDesignPlan.md) and not in this design as written. It is what the tick
+  cost over the last window — the step and the publish timed separately, their means and their
+  worst — written as text on its own `statsEveryTicks` cadence and reset each time. It is not part
+  of the save and nothing reads it back: a refused write is logged and forgotten, where a refused
+  save is not ([`TickTelemetry-work-order.md`](TickTelemetry-work-order.md)).
+
 The shot log stays out of the file, as it already is by design: a reloaded universe with no
 tracers pending is the correct picture of one that has just resumed.
 
