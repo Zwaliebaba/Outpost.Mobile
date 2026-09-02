@@ -1,9 +1,11 @@
 # Galaxy map — the graph as a picture, and a destination as a tap
 
 **Status: agreed with the owner on 2026-09-02, as drafted — the design had no open decisions to
-put; §7 says its one decision is forced rather than chosen, and it belongs to slice 3. Slice 1 has
-landed ([`GalaxyMap-slice-1.md`](GalaxyMap-slice-1.md)); slices 2 to 4 are listed in §7 and are cut
-one at a time, when each is next. §1 and §2 are amended to say what was built.**
+put; §7 says its one decision is forced rather than chosen, and it belongs to slice 3. Slices 1 and 2
+have landed ([`GalaxyMap-slice-1.md`](GalaxyMap-slice-1.md),
+[`GalaxyMap-slice-2.md`](GalaxyMap-slice-2.md)); slices 3 and 4 are listed in §7 and are cut one at a
+time, when each is next. §1, §2 and §4.2 are amended to say what was built. **Screenshots are owed
+against both landed slices** and are recorded as owed rather than dropped.**
 
 `Design/Archive/Universe.md` deferred this three times, in slices 3, 4 and 4b, always for the same reason:
 a fleet can cross a gate without a map, and a map is UI work that should not gate the mechanism.
@@ -81,11 +83,19 @@ and it is worth landing alone because it is the half that cannot be wrong in an 
 
 Tapping a system moves the camera there and closes the map.
 
-This costs almost nothing, and the reason is slice 4b: the scenery follows **where the camera is**,
-not a jump event, and that slice's own work order named "a galaxy map that flies you somewhere" as
-one of the things the choice covered in advance. So the map hands `Camera::SnapGoal` a position and
-everything else — the worlds, the rocks, the station marks — already follows. It is worth landing as
-its own slice precisely *because* it is the claim slice 4b made without being able to test it.
+It cost almost nothing, and the reason was slice 4b: the scenery follows **where the camera is**, not
+a jump event, and that slice's own work order named "a galaxy map that flies you somewhere" as one of
+the things the choice covered in advance. **The claim held, and it held more completely than this
+paragraph expected**: the flight rebuilds no scenery at all. The frame loop already asks
+`SystemAtCamera` once per frame, after the last thing that moves the camera and before `Render`, and
+rebuilds when the answer changes — a check written for a fleet crossing a gate, which covers a camera
+put anywhere for free. `FlyToSystem` is `SnapGoal`, a cancelled focus, and the two lines that close
+the map.
+
+`SnapGoal` and not `SetGoal`: the map is a jump in attention rather than a pan, and a galaxy is three
+orders of magnitude past the distance `UniverseView::FollowFocusedFleet` already calls "beyond any
+worth watching". The focus is released with it, or a followed fleet would drag the camera back on the
+next frame.
 
 Nothing about the simulation changes. The player is looking somewhere else, which is not an order.
 
@@ -146,7 +156,7 @@ The failure modes are the interesting part and §6 lists them.
 | # | Slice | Layer | Size | Depends on | ADR |
 |---|---|---|---|---|---|
 | 1 | [The map, drawn: the screen, the projection, the graph, the fleets, and the rail button that opens it](GalaxyMap-slice-1.md) — **landed**: `GalaxyScreen`, `Neuron::FitBoxIsotropic` and its suite, the rail as the map's one switch | `Outpost`+`NeuronClient` | M | — | — |
-| 2 | Tap to look: the camera flies to the tapped system | `Outpost` | S | 1 | — |
+| 2 | [Tap to look: the camera flies to the tapped system](GalaxyMap-slice-2.md) — **landed**: a nearest-node hit test through the layout the draw used, and slice 4b's claim tested for the first time | `Outpost` | S | 1 | — |
 | 3 | Tap to go: gate-graph search, a multi-hop fleet order, and the tick that advances it | `GameLogic`+`Outpost` | L | 1 | ADR: a multi-hop route lives on the fleet, because a ship does not survive its own jump |
 | 4 | Systems get names | `GameLogic` | M | 1 | ADR: a system's name is generated from its seed, or it is authored |
 

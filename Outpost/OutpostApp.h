@@ -82,6 +82,10 @@ private:
   // view can say, and what is there, which is Game::SystemAt's.
   [[nodiscard]] std::uint32_t SystemAtCamera() const noexcept;
 
+  // Puts the camera in a system and closes the map. The map's one verb until slice 3 gives it a
+  // second (Design/GalaxyMap.md 4.2).
+  void FlyToSystem(std::uint32_t _system);
+
   // Re-lays the local system and rebuilds everything drawn from it: the worlds, the rocks and the
   // minimap's station marks.
   //

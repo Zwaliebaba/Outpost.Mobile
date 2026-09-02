@@ -808,6 +808,36 @@ std::uint32_t OutpostApp::OwnShipCount() const noexcept
   return count;
 }
 
+void OutpostApp::FlyToSystem(std::uint32_t _system)
+{
+  if (_system >= m_galaxy.systems.size())
+    return;
+
+  // SnapGoal and not SetGoal. The map is a jump in attention rather than a pan, and the distances
+  // are three orders of magnitude past what UniverseView::FollowFocusedFleet already calls "beyond
+  // any distance worth watching" -- an eased flight across a galaxy is a minute of empty space.
+  const Game::UniversePos star = m_galaxy.systems[_system].starPos;
+  m_camera.SnapGoal(m_view.ViewX(star), m_view.ViewZ(star));
+
+  // The focus goes with it. Flying somewhere is the player looking, and a fleet focus that survived
+  // the flight would drag the camera back on the very next frame (Design/GalaxyMap-slice-2.md 4.4).
+  m_view.CancelFocus();
+
+  // Closed the one way this screen closes: the rail button is its state, so unlighting the button is
+  // what closes it, and Escape runs these same two lines (OnKeyDown).
+  m_map.Close();
+  m_hud.ClearActiveRail();
+
+  // And that is the whole flight. Nothing here rebuilds the scenery, because nothing has to: the
+  // frame loop already asks SystemAtCamera once per frame, after the last thing that moves the
+  // camera and before Render, and rebuilds when the answer changes. That check was written for a
+  // fleet crossing a gate, and it covers this for free -- which is exactly the claim
+  // Design/Archive/Universe-slice-4b.md made when it put the scenery on WHERE THE CAMERA IS rather
+  // than on a jump event, and this is the first caller that tests it (Design/GalaxyMap-slice-2.md 1).
+  if (m_log)
+    m_log->PushFormat(EventLog::Severity::Info, m_view.SimTimeSec(), "MAP | SYSTEM %u", _system);
+}
+
 void OutpostApp::OnResize(std::uint32_t _widthPx, std::uint32_t _heightPx)
 {
   m_gpu.Resize(_widthPx, _heightPx);
@@ -932,7 +962,12 @@ void OutpostApp::Update()
       m_sheet.Open(openSheet);
     if (usedByHud)
       continue;
-    if (m_map.HandlePointer(event))
+    // The map, which consumes everything the rail did not and may name a system as it does.
+    std::uint32_t tapped = static_cast<std::uint32_t>(m_galaxy.systems.size());
+    const bool usedByMap = m_map.HandlePointer(event, m_galaxy, tapped, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
+    if (tapped < m_galaxy.systems.size())
+      FlyToSystem(tapped);
+    if (usedByMap)
       continue;
     m_pointers.Apply(event, m_camera, m_view);
   }

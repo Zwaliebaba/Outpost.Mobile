@@ -654,6 +654,11 @@ inline constexpr float HUD_MAP_EDGE_PX = 1.0f;
 inline constexpr Neuron::Rgba HUD_MAP_EDGE_COLOUR{0.28f, 0.36f, 0.44f, 0.55f};
 inline constexpr Neuron::Rgba HUD_MAP_NODE_COLOUR{0.60f, 0.70f, 0.80f, 1.0f};
 inline constexpr Neuron::Rgba HUD_MAP_SCRIM{0.0f, 0.0f, 0.0f, 0.70f};
+// How near a node a finger has to land to mean it. Well above the 5-pixel dot, because the target is
+// a thumb and not a cursor, and comfortably under the 42 pixels the closest two stars are apart at
+// 1920x1080 -- so the nearest-node rule never has to break a tie a player would call wrong
+// (Design/GalaxyMap-slice-2.md 4.2).
+inline constexpr float HUD_MAP_TAP_RADIUS_PX = 18.0f;
 
 // --- the fleet sheet ------------------------------------------------------------------------------
 // One fleet's panel, held over the bottom bar by a long press on its button (Design/Archive/Fleets.md 9.3).

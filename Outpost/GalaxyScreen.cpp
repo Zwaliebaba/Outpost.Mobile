@@ -91,6 +91,63 @@ BoxFit GalaxyScreen::Projection(const Game::GalaxyLayout& _galaxy, const Layout&
   return FitBoxIsotropic(x0, z0, x1, z1, _layout.plot.x0, _layout.plot.y0, _layout.plot.x1, _layout.plot.y1);
 }
 
+std::uint32_t GalaxyScreen::SystemAtPointer(const Game::GalaxyLayout& _galaxy, float _xPx, float _yPx, float _dpiScale,
+                                            std::uint32_t _widthPx, std::uint32_t _heightPx) const noexcept
+{
+  const Layout layout = ComputeLayout(_dpiScale, _widthPx, _heightPx);
+  const BoxFit fit = Projection(_galaxy, layout);
+  if (fit.scale <= 0.0f)
+    return static_cast<std::uint32_t>(_galaxy.systems.size());
+
+  // NEAREST within the radius, not the first inside it, so two nodes whose targets overlap resolve
+  // the way a player would call it. Compared squared, in pixels, because the radius is a pixel
+  // number -- HUD_MAP_TAP_RADIUS_PX is a thumb, and a thumb does not scale with the galaxy.
+  const float radius = HUD_MAP_TAP_RADIUS_PX * layout.scale;
+  float bestSq = radius * radius;
+  std::uint32_t best = static_cast<std::uint32_t>(_galaxy.systems.size());
+  for (std::size_t at = 0; at < _galaxy.systems.size(); ++at)
+  {
+    const Game::SystemSite& site = _galaxy.systems[at];
+    const float dx = fit.XPx(Game::OffsetX(_galaxy.origin, site.starPos)) - _xPx;
+    const float dy = fit.YPx(Game::OffsetZ(_galaxy.origin, site.starPos)) - _yPx;
+    const float distSq = dx * dx + dy * dy;
+    // Strictly nearer, so a tie keeps the lower index -- the rule Game::SystemAt already states, for
+    // the same reason: an arbitrary answer is one that can differ between two runs.
+    if (distSq < bestSq)
+    {
+      bestSq = distSq;
+      best = static_cast<std::uint32_t>(at);
+    }
+  }
+  return best;
+}
+
+bool GalaxyScreen::HandlePointer(const PointerEvent& _event, const Game::GalaxyLayout& _galaxy, std::uint32_t& _outSystem, float _dpiScale,
+                                 std::uint32_t _widthPx, std::uint32_t _heightPx)
+{
+  if (!m_open)
+    return false;
+
+  if (_event.kind == PointerEvent::Kind::Down)
+  {
+    m_pressed = true;
+    m_pressedPointer = _event.pointerId;
+    m_pressedSystem = SystemAtPointer(_galaxy, _event.xPx, _event.yPx, _dpiScale, _widthPx, _heightPx);
+    return true;
+  }
+
+  // Consumed whatever it is -- the screen is modal -- but only a lift by the contact that went down
+  // on a node, still on that node, names anything.
+  if (_event.kind == PointerEvent::Kind::Up && m_pressed && _event.pointerId == m_pressedPointer)
+  {
+    const std::uint32_t lifted = SystemAtPointer(_galaxy, _event.xPx, _event.yPx, _dpiScale, _widthPx, _heightPx);
+    if (lifted < _galaxy.systems.size() && lifted == m_pressedSystem)
+      _outSystem = lifted;
+    m_pressed = false;
+  }
+  return true;
+}
+
 void GalaxyScreen::Draw(TextRenderer& _text, const Game::GalaxyLayout& _galaxy, const UniverseView& _view, std::uint32_t _here,
                         float _dpiScale, std::uint32_t _widthPx, std::uint32_t _heightPx) const
 {

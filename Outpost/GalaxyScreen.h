@@ -37,6 +37,7 @@ public:
   void Close() noexcept
   {
     m_open = false;
+    m_pressed = false; // a contact still down when the screen closes must not name a system later
   }
 
   [[nodiscard]] bool IsOpen() const noexcept
@@ -55,12 +56,22 @@ public:
   // universe behind it. The rail runs ahead of this in the chain, which is what lets the button that
   // opened the map close it (Design/GalaxyMap-slice-1.md 7).
   //
-  // Unnamed, because this slice looks at nothing about the event. Slice 2 gives it a name and a hit
-  // test; until then the parameter is here so the caller's chain does not change shape when it does.
-  [[nodiscard]] bool HandlePointer(const Neuron::PointerEvent&) const noexcept
-  {
-    return m_open;
-  }
+  // _outSystem is set to the system a tap named, or left alone. Reported rather than acted on, for
+  // Hud::HandlePointer's reason: this class knows where a contact landed, and what a *system* means
+  // -- a camera flight now, a fleet order in slice 3 -- belongs to the composition root.
+  //
+  // A press that begins on a node and lifts elsewhere names nothing, which is the rule the HUD's
+  // buttons already keep: a tap can be cancelled by sliding off.
+  [[nodiscard]] bool HandlePointer(const Neuron::PointerEvent& _event, const Game::GalaxyLayout& _galaxy, std::uint32_t& _outSystem,
+                                   float _dpiScale, std::uint32_t _widthPx, std::uint32_t _heightPx);
+
+  // Which system is drawn nearest _xPx/_yPx, within HUD_MAP_TAP_RADIUS_PX, or the system count.
+  //
+  // Through the SAME layout and the same projection the draw used, which is the whole of why it is a
+  // member function: a node drawn in one place and hit-tested in another is wrong in a way no test
+  // catches and every player finds.
+  [[nodiscard]] std::uint32_t SystemAtPointer(const Game::GalaxyLayout& _galaxy, float _xPx, float _yPx, float _dpiScale,
+                                              std::uint32_t _widthPx, std::uint32_t _heightPx) const noexcept;
 
 private:
   struct Rect
@@ -86,5 +97,11 @@ private:
   [[nodiscard]] static Neuron::BoxFit Projection(const Game::GalaxyLayout& _galaxy, const Layout& _layout) noexcept;
 
   bool m_open = false;
+
+  // The node a press went down on, and which contact is holding it. A press is only spent where it
+  // began, so a finger that slid off a node between down and up has changed its mind.
+  std::uint32_t m_pressedSystem = 0;
+  std::uint32_t m_pressedPointer = 0;
+  bool m_pressed = false;
 };
 } // namespace Outpost
