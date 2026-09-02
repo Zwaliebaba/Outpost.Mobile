@@ -33,7 +33,7 @@ them — while a *late* one draws a line between two ships that have both since 
 than drawing nothing.
 
 It is its own message (`KIND_FIRE`) rather than a block in the fragment header, where
-`Design/Combat.md` §9.2's word "block" would have put it. The fleet status block rides *every*
+`Design/Archive/Combat.md` §9.2's word "block" would have put it. The fleet status block rides *every*
 fragment precisely so that it heals; a list of events stamped on every fragment would draw every
 tracer once per fragment. State repeats, events do not.
 

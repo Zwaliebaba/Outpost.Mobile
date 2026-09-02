@@ -251,7 +251,7 @@ at the radius `ViewTuning.h:280-281` names, `BODY_START_ASTEROIDS` at `ViewTunin
 `Outpost/UniverseView.cpp:1698-1718` distance-culls them by pixel size; F5 rerolls them. `HullId`
 ends at `Stargate, Structure` (`GameLogic/HullSpec.h:20-32`) and `Mine` "waits ... for something in
 the universe to mine, since a rock is presentation" (`GameLogic/ShipState.h:197-199`).
-`Design/Combat.md:473-479` already prescribes the shape: "a minable rock is a ship on an immovable
+`Design/Archive/Combat.md:473-479` already prescribes the shape: "a minable rock is a ship on an immovable
 hull with a side-table row (resource, remaining units), placed by LayOutSystem so both halves agree
 where it is, which today they do not". The galaxy generator draws occupancy, jitter and planets only
 — `SystemSite` is starPos, cell, systemSeed, pin (`GameLogic/GalaxyLayout.h:47-55`) and
@@ -300,7 +300,7 @@ owner, garrison, targets and docked rows and no stock (`GameLogic/Universe.h:96-
 (`GameLogic/UniverseSnapshot.h:178-187`). What crosses a jump is entity, hull, faction and damage
 (`GameLogic/Universe.h:1201-1207`; `Universe.cpp:1149, :1174-1181`; `Design/Archive/Universe.md:268-273`;
 `Design/CrossShard.md:105-112`), so a full Hauler would arrive empty by ADR 0056's own rule.
-`Design/Combat.md:474-480` hands "cargo, unloading into a ledger, and the meaning of a full hold" to
+`Design/Archive/Combat.md:474-480` hands "cargo, unloading into a ledger, and the meaning of a full hold" to
 a mining design that does not exist (`Design/Archive/Stations.md:861-863`;
 `Design/Archive/Fleets.md:1018-1020`); `Tests/GameLogicTests/UniverseStateTests.cpp:250-294` pins
 the two-field docked row; AGENTS.md:92-93 still says no format versions the codec, stale against
@@ -335,7 +335,7 @@ carrying one" (`GameLogic/DeviceSpec.h:24-34`; `Universe.cpp:1779-1782` `if (dev
 DeviceKind::Gun) continue;`); the Miner is `LOADOUT_NONE` with "The mining design arms the Miner
 with tools on these same mounts" (`GameLogic/HullSpec.h:222-227`;
 `Tests/GameLogicTests/CombatTests.cpp:284` pins `MountCount()==0`); the sheet omits MINE
-(`Outpost/FleetSheet.h:61-63`). The extraction machinery is the fire pass by `Design/Combat.md
+(`Outpost/FleetSheet.h:61-63`). The extraction machinery is the fire pass by `Design/Archive/Combat.md
 :460-481` §12's design, and `ChooseMountTarget` priority 2 already resolves `row.orderTarget`, but
 `MountTargetStands` rejects any target of the shooter's own faction — "not its own faction, ever"
 (`GameLogic/Universe.h:962-971`) — and every priority resolves to a hostile ship, so a tool needs a
@@ -406,7 +406,7 @@ the refuter found: F4 calls `m_universe.DespawnShip(handle)` on the host with th
 `Destroyed` cause and its comment "there is no health, no damage" is stale since combat landed
 (`Outpost/OutpostApp.cpp:764-787`; `GameLogic/Universe.h:321-324`), so any payout keyed on the
 cause alone pays out on a keypress; and "a protector drops nothing" is restated in
-`Design/Archive/Stations.md:557-563, :640-645`, `Design/Combat.md:313-315`,
+`Design/Archive/Stations.md:557-563, :640-645`, `Design/Archive/Combat.md:313-315`,
 `Design/Decisions/0041:80-82` and `Tests/GameLogicTests/ProtectorTests.cpp:201-202` and coded
 nowhere, while `LaunchedProtectorCount` is derived so a dead protector is replaced next launch tick
 (`GameLogic/Universe.h:554-562`; `Universe.cpp:130-134`). `StepFleets` retires a fleet at
@@ -414,7 +414,7 @@ nowhere, while `LaunchedProtectorCount` is derived so a dead protector is replac
 (`Universe.cpp:1354-1381, :1397-1404`). `RoutePlanCount` and two siblings are the only simulation
 counters, "a readout, never read by the simulation" (`Universe.h:818-821, :1256-1258`;
 `Outpost/Hud.h:28-55`). Kill attribution on the wire was deliberately deferred
-(`Design/Combat.md:373-375, :568`; `Design/Decisions/0053:64-66`); ADR 0027 is the cursor pattern.
+(`Design/Archive/Combat.md:373-375, :568`; `Design/Decisions/0053:64-66`); ADR 0027 is the cursor pattern.
 
 *Proposal.* A journal in the despawn log's shape, saved with a base sequence like `m_despawnBase`:
 `LedgerEntry{u64 tick; OwnerId owner; EntryKind kind; ItemId or currency; i64 amount; OwnerId
@@ -493,7 +493,7 @@ says which Vanguard stations are refineries; the mask is what the system profile
 `DespawnCause` is `{Destroyed, Docked, JumpedOut}` and its header says "Wreck-and-salvage and
 capture are each one more" (`GameLogic/Universe.h:22, :29-34`); step 4 despawns each dead handle
 with `Destroyed` and leaves nothing (`GameLogic/Universe.cpp:1872-1873`);
-`Design/Combat.md:566-567` says the same. Two refuter corrections: the client shatters on every
+`Design/Archive/Combat.md:566-567` says the same. Two refuter corrections: the client shatters on every
 `Destroyed` departure — "only a death detonates" (`Outpost/UniverseView.cpp:277-281`) — so a decayed
 wreck must leave through a cause of its own; and step 4 iterates the death scratch while
 `DespawnShip` swap-pops and `SpawnShip` may reallocate `m_ships` (`Universe.cpp:1435`), so wreck
@@ -525,12 +525,12 @@ despawn/spawn (`GameLogic/Universe.h:1201-1207`; `Universe.cpp:1149, :1181`;
 returns a damaged protector to its complement whole ("the hull returns to the complement by simply
 stopping being counted", `Universe.cpp:1035-1037, :1345`), so a station's defence can never be
 attrited. `Design/Archive/Stations.md:490-494, :836-838` asked that "the ledger must carry whatever
-a future ship-identity needs"; `Design/Combat.md:289-291` says hull points are "never regenerating
+a future ship-identity needs"; `Design/Archive/Combat.md:289-291` says hull points are "never regenerating
 — repair is a station-menu design". Beyond repair, everything is free: `IssueDockOrder`'s gates
 are live-row, own-ships, standing (`GameLogic/Universe.h:523-534`); `ComposeResult` has no
 economic value (`:674-682`); `GateDesc::ownerFaction` is "Read by nothing this phase"
 (`Universe.h:195-206`; `Universe.cpp:681-684`); guns need no ammunition and hulls no fuel
-(`GameLogic/DeviceSpec.h:37-64`; `Universe.h:173-178`; `Design/Combat-slice-1.md:435-436`). The
+(`GameLogic/DeviceSpec.h:37-64`; `Universe.h:173-178`; `Design/Archive/Combat-slice-1.md:435-436`). The
 combat panel found the same free repair independently (item C14); it is undeclared and owed today.
 
 *Proposal.* Give the ledger row the `Jumper`'s shape: `DockedShip{entity, hullId, ownerId,
@@ -555,7 +555,7 @@ for the toll.
 ### 12. A station-local market: a per-system economic profile, a station that knows its system, an order book, and NPC seeding [Missing] [P1] [EVE]
 
 The word "market" occurs once in Design/, GameLogic/ and Outpost/ and means a device choice
-(`Design/Combat-slice-5.md:101`); "order book", "toll" and "sovereign" return zero hits. The
+(`Design/Archive/Combat-slice-5.md:101`); "order book", "toll" and "sovereign" return zero hits. The
 reliable lane carries `FleetOrder`, `FleetRoster`, `LedgerRequest/Reply` and `ComposeOrder` and no
 price field (`GameLogic/UniverseSnapshot.h:140-197`). Genesis stamps one `StationDesc` on every
 `PlanetSite` of every `SystemSite` (`GameLogic/StartingUniverse.cpp:44-58`), `SystemSite` has
@@ -674,7 +674,7 @@ today `manifestCount = 0` when the door is gone (`Universe.cpp:1397-1404`;
 `Tests/GameLogicTests/FleetTests.cpp:813` the only path that reaches it;
 `Design/Archive/Fleets.md:305-309` "may prefer the manifest to fall back into wreckage or a
 refund"), and the ledger's fate is named with options listed and no accounting
-(`Design/Combat.md:310-313, :564-565`; `Design/Archive/Stations.md:871-872`;
+(`Design/Archive/Combat.md:310-313, :564-565`; `Design/Archive/Stations.md:871-872`;
 `GameLogic/UniverseSnapshot.h:82-83` seven flag bits kept for user and conquerable stations; ADR
 0038:35-36). The garrison is bottomless, free and self-repairing (`Universe.h:112-115`;
 `Stations.md:557-563`), which forecloses the siege. Homeworld's persistent fleet needs no territory.
@@ -1049,7 +1049,7 @@ it (`Universe.cpp:1694-1702`). `Mine` returns `Unsupported` and `FleetCommand` h
 referent (`Universe.cpp:686-691`; `Universe.h:723-732`). On the wire a `FireEvent` is
 `{shooter, target, mount}` and no record state says webbed, jammed, cloaked or repairing
 (`GameLogic/UniverseSnapshot.h:113-125, :105-106`); ADR 0053:23-33, 73-83 puts consequences in
-state and instants on datagrams. `Design/Combat.md:460-481` §12 already prescribes the rock as a
+state and instants on datagrams. `Design/Archive/Combat.md:460-481` §12 already prescribes the rock as a
 hull row with a side table and the Miner's tool mounts — "Nothing in 16's slices touches any of
 that" — but a rock-as-ship carries a `FactionId` that `MountTargetStands`' own-faction test would
 refuse, so the framework must add a target class. Every ability both benchmarks need — repair,
@@ -1088,7 +1088,7 @@ formation parameter and the standing order is assigned whole on every order (`Ga
 unconditional for every mount (`Universe.cpp:1749-1756`) and ADR 0050:34-36, 47-49 refused "a
 sense". `ENGAGE_STANDOFF_FRACTION` is the only range a pursuit knows (`SimTuning.h:419-422`).
 Hold-fire, withdraw and escort doctrine are deferred to an RoE design that has no file
-(`Design/Combat.md:454-458, 556-561`); queues, formation choice and stances are deferred
+(`Design/Archive/Combat.md:454-458, 556-561`); queues, formation choice and stances are deferred
 (`Design/Archive/Fleets.md:1019-1030`). Homeworld needs Guard/Escort, a harvest referent,
 evasive/neutral/aggressive tactics and a formation choice that survive orders, plus queued
 waypoints; EVE needs orbit and keep-at-range on Attack, activate-device-on-target, and hold-fire
@@ -1121,7 +1121,7 @@ compile-time constant in the replay contract picks the Wedge for every order (`F
 1`, `GameLogic/SimTuning.h:7-10, 297-300`; cast at lowering, `Universe.cpp:2355-2368`);
 `FleetOrder` carries no shape or spacing (`UniverseSnapshot.h:140-150`). "Slots are solved at
 the destination, not maintained en route" (`Design/Archive/Fleets.md:457-466`; `:1025-1026`
-formation choice deferred; `Design/Combat.md:337-339` formation combat deferred). Patience
+formation choice deferred; `Design/Archive/Combat.md:337-339` formation combat deferred). Patience
 re-plans to the member's own route destination, "never to a re-solved formation"
 (`Universe.cpp:1654-1662`); there is one group clearance but one `PlanRoute` per member and no
 leader (`:2362-2368`); Attack lowers to per-ship `PursueTarget` for every combatant
@@ -1151,14 +1151,14 @@ preserved because the order still names a fleet.
 The counter graph is two edges short rather than absent. Per-hull dps 6/15/13.3/24/43.3/26.7 and
 hull points 60/150/240/520/3800/5200 both rise with size and speeds span only 34 to 20 m/s
 (`GameLogic/DeviceSpec.h:82-89`; `GameLogic/HullSpec.h:217-234`): the Bomber beats the line and
-the LightTurret is "the escort's tool" (`Design/Combat.md:490-503, 511`), but the Interceptor
+the LightTurret is "the escort's tool" (`Design/Archive/Combat.md:490-503, 511`), but the Interceptor
 kills nothing armed — "Two Interceptors cannot harass a Frigate; they die first"
-(`Design/Combat-slice-5.md:56-63, 74-80`) — and `LOADOUT_BATTLESHIP` carries two LightTurrets of
+(`Design/Archive/Combat-slice-5.md:56-63, 74-80`) — and `LOADOUT_BATTLESHIP` carries two LightTurrets of
 its own (`HullSpec.h:71-88`), so an escort adds nothing a capital does not bring. Every turret
 hull's +/-150 degree arcs union to 360 degrees against `HullSpec.h:61-63`'s promised "blind spot
 astern". `EngageStandoffMetres = 0.8 x shortest traversing mount` holds the Battleship and Carrier
 at 144 m and throws away the 420 m their heavies were authored for (`HullSpec.h:163-178, 286-292`;
-`SimTuning.h:419-422` argued from Corvette and Frigate only; `Design/Combat.md:321-328` chose the
+`SimTuning.h:419-422` argued from Corvette and Frigate only; `Design/Archive/Combat.md:321-328` chose the
 rule deliberately). `LOADOUT_CARRIER` is four LightTurrets on 5200 points (`HullSpec.h:84-88,
 231`) and "Carrier wings" is deferred to a hangar design with no page (`Combat.md:570`; ADR
 0038:33-37, 60-62 anticipates non-Structure stations and "stations do not despawn" is what a
@@ -1200,7 +1200,7 @@ pushed without damage and `SpawnShip` starts at `maxHullPoints` (`GameLogic/Univ
 :1056-1063, :46-49, :1480-1483`) while a jump carries `hullPoints` (`:1146-1150, 1179-1182`).
 `ComposeFleet` is the undock path (`Universe.cpp:481-486`), so `Design/Archive/Stations.md
 :863-867`'s "no undocking by any path" predates it, and dock-and-recompose is a free, silent,
-total repair contradicting `Design/Combat.md:288-294`'s "never regenerating" — the economy panel's
+total repair contradicting `Design/Archive/Combat.md:288-294`'s "never regenerating" — the economy panel's
 item E11 found the same fact from the other side. There is nowhere to hang a fitting, a cargo hold,
 a kill count, a repair bill or an insurance record; `MountLoadout` is a `constexpr` member of the
 hull row and `DeviceId` is a closed enum of five (`HullSpec.h:55-59, 71-88`; `DeviceSpec.h:27-36`;
@@ -1234,7 +1234,7 @@ Every hull has one `u32` and every device one damage figure (`GameLogic/ShipStat
 whose comment names a fractional resist as the float trap; `DeviceSpec.h:38-64`;
 `HullSpec.h:90-141` no energy pool, no signature); nothing regenerates, resists or distinguishes a
 90-point alpha from ninety 1-point shots, which is why the Battleship matchup is bimodal on a
-single dial (`Design/Combat-slice-5.md:56-57`). Aim is a binary gate followed by full damage
+single dial (`Design/Archive/Combat-slice-5.md:56-57`). Aim is a binary gate followed by full damage
 (`Universe.cpp:1694-1702, 1812-1815, 1838-1842`): the LightTurret "tracks anything"
 (`DeviceSpec.h:86`) and the target's bounding radius, read for range-to-skin, is never read for hit
 weight, so speed and size buy nothing; `CombatTests.cpp:267` pins the one tracking counter.
@@ -1285,7 +1285,7 @@ conflicts so the order of work below has one answer per line.
 hullId, ownerId, factionId, hullPoints}` so a dock stops being a free repair and a fee can be
 charged; the combat panel (C14) wants the same row to carry `hullPoints`, an `EntityId` and a fit
 so a ship is a record. Both cite the same lines (`GameLogic/Universe.cpp:1028-1038`;
-`Universe.cpp:48`; `Universe.h:1201-1207`) and the same contradiction with `Design/Combat.md
+`Universe.cpp:48`; `Universe.h:1201-1207`) and the same contradiction with `Design/Archive/Combat.md
 :288-294`. Resolved: one design, `Design/ShipRecord.md`, owned by the combat panel, lands the row
 with `entity`, `ownerId`, `hullPoints` and a fit array in one format bump, and the economy panel's
 repair price, fee table and impound rule are sections of that document rather than a second row
@@ -1313,7 +1313,7 @@ C1's slice 0 re-lays the fleet status block once, with a kind byte, a flags byte
 JUMPING, cargo-full) and a stance byte, so `FLEET_STATUS_BYTES` moves once; and the ship record
 gains a second flags byte in the same ALPN bump, carrying the site flag, the fired bit and the five
 effect flags, rather than rationing six bits three ways. One ALPN bump, one `SnapshotTests` update,
-recorded in one amendment to `Design/Combat.md` 9.3. The interest-update header grows twice and
+recorded in one amendment to `Design/Archive/Combat.md` 9.3. The interest-update header grows twice and
 both are one field: E2's `I64` balance and C5's rate byte, and they should land as one header
 change.
 
@@ -1374,17 +1374,17 @@ same number.
 
 1. **C1 slice 0 — the LAUNCHING/Jump collision and the one status-block re-lay** (P0, both).
    A work order, no design: `Design/Archive/FleetStatus-work-order.md`, budgeting the kind byte, the flags
-   byte and the stance byte at once, amending `Design/Combat.md` 9.3 for the ALPN bump.
+   byte and the stance byte at once, amending `Design/Archive/Combat.md` 9.3 for the ALPN bump.
 2. **C5 slice 0 and E7's counters — telemetry** (P0, both). New `Design/Telemetry.md`: per-tick
    Step and Publish timing, subscriber and record counts, economy counters, one log beside
    `Universe.sav`. Nothing below can be measured without it.
-2. **C13 slice 0 — the matchup matrix test** (P0, both). A work order under `Design/Combat.md`
+2. **C13 slice 0 — the matchup matrix test** (P0, both). A work order under `Design/Archive/Combat.md`
    16: the slice-5 harness brought into `Tests/GameLogicTests` with the intended counter graph as
    the expected matrix. Lands before any hull or device number moves.
 3. **E1 — OwnerId and AdmitOwner** (P0, EVE). New `Design/Ownership.md`: the second key beside
    `FactionId`, the slot table per owner, `AdmitOwner`, and the placeholder-owner rule until the
    login exists. Amends ADR 0013's consequences and names ADR 0047.
-3. **C1 slice 1 — OrderReply** (P0, both). Amendment to `Design/Combat.md` (a new section on the
+3. **C1 slice 1 — OrderReply** (P0, both). Amendment to `Design/Archive/Combat.md` (a new section on the
    reliable-lane reply) and a record superseding ADR 0051's "first ack anywhere" argument.
 4. **E2 and E14's wallet-home decision — the wallet** (P0, both). New `Design/Economy.md` §1-2:
    the money discipline, `Post`, the balance on the header, and the shard-home decision recorded as
@@ -1412,7 +1412,7 @@ same number.
    clock's use of it, `AStallDoesNotSpiral` re-pinned; a record amending ADR 0045's consequences.
    Waits on the headless run loop, which this review names as an external dependency and which
    `Design/CrossShard.md` or a `Design/DedicatedServer.md` must own.
-9. **C13 — the counter graph retune** (P0, both). Amendment to `Design/Combat.md` §8 and §15
+9. **C13 — the counter graph retune** (P0, both). Amendment to `Design/Archive/Combat.md` §8 and §15
    (class effectiveness, engage range, arcs, speeds, the Battleship's lights) and a new record on
    ADR 0052's opacity argument; the Carrier's hangar as its own section naming ADR 0038:61.
 10. **C8 — publish off the tick thread, the quadratic loops, save on a worker** (P0, EVE). New
@@ -1421,11 +1421,11 @@ same number.
     3.5's drop-whole rule (as a new record, since the design is archived) and to ADR 0053's
     newest-gunfire rule; `bytesPerUpdate` in Server.cfg.
 12. **C3 — the client clock and the first test under lag** (P1, both). A work order under
-    `Design/Combat.md` 9 or a new `Design/ClientClock.md`; presentation only, plus the
+    `Design/Archive/Combat.md` 9 or a new `Design/ClientClock.md`; presentation only, plus the
     `QuicTransport` statistics accessor.
 12. **E7 — the journal, the garrison invariant, F4 fenced** (P1, EVE). `Design/Economy.md` §5;
     the F4 fence is a one-line `ServerConfig` key and lands with the first slice.
-13. **C2 — FleetIntent** (P1, Homeworld). Amendment to `Design/Combat.md` (a section on
+13. **C2 — FleetIntent** (P1, Homeworld). Amendment to `Design/Archive/Combat.md` (a section on
     owner-only intent) recorded as the deliberate addition ADR 0009:47-48 provides for.
 13. **E11 and C14 — the ship record: damage through the ledger, priced repair, fees, tolls**
     (P1, both). New `Design/ShipRecord.md` (the resolution of `Combat.md` 7.1 versus the code) with
@@ -1439,19 +1439,19 @@ same number.
     as a new `Design/Prediction.md`, since the design is archived.
 15. **C6 — the session layer** (P1, EVE). New `Design/Session.md` beside `Design/CrossShard.md`,
     folding the cross-shard client half into CrossShard.md before it is agreed.
-16. **C12 — formation as fleet state** (P1, Homeworld). Amendment to `Design/Combat.md` §8 and a
+16. **C12 — formation as fleet state** (P1, Homeworld). Amendment to `Design/Archive/Combat.md` §8 and a
     record taking `FORMATION_SHAPE` out of the replay contract.
 16. **E9 — refining** and **E10 — wrecks** (P1). `Design/Mining.md` §7-8 and `Design/Economy.md`
     §6; `DespawnCause::Decayed` through ADR 0040's door.
 17. **C9 — the leashed interest centre and per-role descriptors** (P1, both). New
     `Design/Interest.md` amending `Design/Archive/Fleets.md` 9.1 by record; the sensor tier as a
-    later section of `Design/Combat.md`.
+    later section of `Design/Archive/Combat.md`.
 17. **E12 — the market** (P1, EVE). New `Design/Market.md`: the system profile, the station's
     system index, the book, NPC seeding, `MarketRequest/Reply`, contracts as the last section.
 18. **E13 — standings as a scalar** (P1, EVE). New `Design/Standings.md`, the standings-repair
     design ADR 0039:74-76 names, superseding Stations §15 decision 3 by record.
 18. **C15 — shields, armour, tracking, capacitor, the support kinds** (P1, EVE). Amendment to
-    `Design/Combat.md` §7 and a record superseding ADR 0052's alternatives paragraph.
+    `Design/Archive/Combat.md` §7 and a record superseding ADR 0052's alternatives paragraph.
 19. **E14 (input-log half) — recovery from the last snapshot plus the input log** (P1, EVE).
     `Design/Persistence.md`, naming ADR 0057 and `Design/CrossShard.md` §4.
 20. **E15 — sovereignty** (P2, EVE). New `Design/Sovereignty.md`: gate ownership read, the
@@ -1519,7 +1519,7 @@ on purpose rather than discovered in a diff.
   exists, and every EVE item is keyed on a placeholder owner until a session says who is asking.
 - **Everything the economy panel found is declared absent by the tree itself** (README.md:92;
   AGENTS.md:92-93; `Design/Archive/Universe.md:425-426`; `Design/Archive/Fleets.md:1018-1020`;
-  `Design/Combat.md:474-480`) and handed to a mining design and a station-menu design that do not
+  `Design/Archive/Combat.md:474-480`) and handed to a mining design and a station-menu design that do not
   exist under `Design/`. The gap is honest; the risk is that each panel keeps deferring to the
   other's unwritten design while the one seam they share — an owner, a wallet, an item — has no
   owner. The order of work above gives it one.
@@ -1542,7 +1542,7 @@ about that no item above names. Each line says where the tree was checked.
 - **PvE content: missions, NPC spawners, an AI opponent.** The only hostiles are the Vandal base's
   boot-time patrols (`GameLogic/StartingUniverse.cpp:99-113`); spawners and hostile production are
   declared out (`Design/Archive/Hostiles.md:522-523`) and NPC helm behaviour is deferred
-  (`Design/Combat.md:562-563`). E7 names bounties and E13 names missions as faucets with nothing to
+  (`Design/Archive/Combat.md:562-563`). E7 names bounties and E13 names missions as faucets with nothing to
   pay them on. EVE's rats and agents are its faucet; Homeworld's scripted enemy fleets are its game.
 - **Homeworld's campaign structure.** Scripted missions, level flow, the fleet carried between
   missions, per-mission save and difficulty that scales to the surviving fleet: "campaign" appears

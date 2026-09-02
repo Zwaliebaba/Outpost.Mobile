@@ -13,7 +13,7 @@ ratchet that can only ever agree with the code — it stops being able to say *t
 which is most of what it is for. The rule also refuses a specific dishonesty: retrofitting a
 rationale, so that a decision taken under pressure reads afterwards as one that was always intended.
 
-`Design/Combat.md` ran that rule over six slices and showed what it costs. Five slices landed, and
+`Design/Archive/Combat.md` ran that rule over six slices and showed what it costs. Five slices landed, and
 four of them came back different from the design in ways worth recording: the fire events took their
 own datagram message rather than a block in the fragment header; no shipped hull carries the bones
 §10.1 planned to pose; the turret slew and the `Gun` markers moved to a sixth slice; the fire pass
@@ -86,6 +86,6 @@ It costs discipline in three places, and none of them is enforceable by a check:
   that says what the design used to say. `Combat-slice-1.md` §4a is the shape of it.
 - **`git log` and `git blame` become load-bearing** for anything the work orders do not name.
 
-`Design/Combat.md` is amended under this record in the commit that carries it, and is the first
+`Design/Archive/Combat.md` is amended under this record in the commit that carries it, and is the first
 design maintained this way. Every design already in `Design/Archive/` keeps the old rule, which
 costs nothing: they are finished, and nothing in them is going to diverge again.

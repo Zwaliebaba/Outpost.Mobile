@@ -106,7 +106,7 @@ public:
   // Both ends are frozen at arrival rather than followed per frame, and that is the same rule
   // ShipExplosion is built on: either ship may have died on the tick the shot landed, and a tracer
   // that chased a live record would snap to nothing halfway through its own flight
-  // (Design/Combat-slice-4.md 2.1).
+  // (Design/Archive/Combat-slice-4.md 2.1).
   struct GunShot
   {
     DirectX::XMFLOAT3 fromWorld{0.0f, 0.0f, 0.0f};
@@ -166,6 +166,16 @@ public:
     // turret's angle is presentation state with a history -- rebuilding it every update would snap
     // every turret back to rest four times a second.
     std::vector<MountView> mounts;
+
+    // Where each mount's shots draw from, in mesh space, resolved from the hull's `Gun` markers.
+    // Empty for a hull whose art authors none, which is the Bomber, the Carrier and the Battleship's
+    // two light mounts -- their shots draw from the hull's origin, as they always did.
+    std::vector<MuzzleView> muzzles;
+
+    // Which of a mount's several muzzles the next shot uses. One counter for the hull rather than one
+    // per mount: a twin turret alternates its barrels, which is the whole effect, and a fleet action
+    // does not need the alternation to be per-mount exact.
+    std::uint8_t muzzleTurn = 0;
 
     // One ring buffer per exhaust, nozzle-major: nozzle n owns [n * TRAIL_SAMPLES, (n + 1) *
     // TRAIL_SAMPLES), newest at trailHead. Every nozzle is sampled on the same tick, so the head
@@ -445,7 +455,7 @@ public:
 
   // How whole a fleet member is, 0..1, or -1 for one this client holds no record for -- a fleet
   // somewhere the camera has never been. A caller that could not tell those apart would draw a
-  // healthy pip for a ship it knows nothing about (Design/Combat-slice-4.md 2.3).
+  // healthy pip for a ship it knows nothing about (Design/Archive/Combat-slice-4.md 2.3).
   [[nodiscard]] float ConditionOfMember(Game::EntityId _entity) const noexcept;
 
   // The order a sheet button armed, waiting for the universe tap that supplies its target. None until
@@ -678,6 +688,11 @@ private:
   [[nodiscard]] DirectX::XMFLOAT3 HullPointToWorld(const ShipView& _view, const DisplayPose& _pose,
                                                    const DirectX::XMFLOAT3& _local) const noexcept;
 
+  // Where a shot from _mount leaves this hull, in world space: its authored muzzle, carried round by
+  // the turret's current aim if that mount turns, and the hull's origin when the art authors none
+  // (Design/Archive/Combat.md 3.1). Advances the hull's muzzle counter, which is why it is not const.
+  [[nodiscard]] DirectX::XMFLOAT3 MuzzleToWorld(ShipView& _view, const DisplayPose& _pose, std::uint32_t _mount) const noexcept;
+
   // Turns one mount toward a shot it just fired, in the shooter's own frame. A mount index the art
   // does not bind is ignored, which is most of them.
   void AimMountAt(ShipView& _view, float _headingRad, std::uint32_t _mount, const DirectX::XMFLOAT3& _fromWorld,
@@ -821,7 +836,7 @@ private:
   };
   std::vector<PosedHull> m_posed;
 
-  // The record this client last ordered an attack on, for the bracket bar (Design/Combat.md 10.3).
+  // The record this client last ordered an attack on, for the bracket bar (Design/Archive/Combat.md 10.3).
   // Client-local and nowhere on the wire: the fleet status block says a fleet is attacking, never
   // what, and a target that leaves the interest set drops out of here rather than pointing at a
   // record nobody holds.

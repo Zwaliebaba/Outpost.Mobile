@@ -21,6 +21,33 @@ namespace
 }
 } // namespace
 
+std::vector<MuzzleView> ResolveMuzzles(const MeshData& _mesh, std::uint32_t _mountCount)
+{
+  // The suffixes a mount's muzzles may carry, in the order a turret alternates through them. The
+  // NUL one first, because a single-muzzle mount is named `Gun0` with no letter at all.
+  static constexpr char SUFFIXES[MAX_MOUNT_MUZZLES] = {'\0', 'A', 'B', 'C'};
+
+  // Built by hand rather than formatted, so the name a hash is taken of is spelled out here and
+  // nothing depends on a format string agreeing with the rule the art check enforces.
+  static_assert(Game::MAX_MOUNTS < 10, "a mount index past nine needs two digits, and Gun<N> assumes one");
+
+  std::vector<MuzzleView> muzzles;
+  for (std::uint32_t mount = 0; mount < _mountCount && mount < Game::MAX_MOUNTS; ++mount)
+  {
+    for (const char suffix : SUFFIXES)
+    {
+      const char name[6] = {'G', 'u', 'n', static_cast<char>('0' + mount), suffix, '\0'};
+      const std::uint32_t hash = NameHash(name);
+      for (const MeshMarker& marker : _mesh.markers)
+      {
+        if (marker.kind == MarkerKind::Gun && marker.nameHash == hash)
+          muzzles.push_back(MuzzleView{.mount = mount, .local = marker.position});
+      }
+    }
+  }
+  return muzzles;
+}
+
 std::vector<MountView> ResolveMounts(Game::HullId _hull, const MeshData& _mesh)
 {
   std::vector<MountView> mounts;
@@ -37,6 +64,7 @@ std::vector<MountView> ResolveMounts(Game::HullId _hull, const MeshData& _mesh)
       continue; // a bow gun does not turn, whatever its art is called: the hull aims it
 
     MountView view;
+    view.mount = row.mount;
     view.restRad = mount.bearingRad;
     view.aimRad = view.restRad;
     view.wantRad = view.restRad;
@@ -54,7 +82,7 @@ std::vector<MountView> ResolveMounts(Game::HullId _hull, const MeshData& _mesh)
       const std::uint32_t hash = NameHash(name);
       const MeshRange range = _mesh.RangeOf(hash);
       if (range.vertexCount == 0)
-        continue; // the art does not carry this part: a diagnostic, not a crash (Combat.md 3.1)
+        continue; // the art does not carry this part: a diagnostic, not a crash (Design/Archive/Combat.md 3.1)
       if (!pivoted)
       {
         view.pivot = _mesh.PivotOf(hash);
@@ -68,6 +96,26 @@ std::vector<MountView> ResolveMounts(Game::HullId _hull, const MeshData& _mesh)
       mounts.push_back(view);
   }
   return mounts;
+}
+
+const MountView* FindMount(std::span<const MountView> _mounts, std::uint32_t _mount) noexcept
+{
+  for (const MountView& mount : _mounts)
+  {
+    if (mount.mount == _mount)
+      return &mount;
+  }
+  return nullptr;
+}
+
+MountView* FindMount(std::span<MountView> _mounts, std::uint32_t _mount) noexcept
+{
+  for (MountView& mount : _mounts)
+  {
+    if (mount.mount == _mount)
+      return &mount;
+  }
+  return nullptr;
 }
 
 float MountBearingToward(const MountView& _mount, float _localX, float _localZ) noexcept

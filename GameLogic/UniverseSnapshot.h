@@ -92,7 +92,7 @@ struct ShipSnapshot
   // In the record rather than in an event, and ADR 0029's own question is what settles it: a lost
   // fraction is corrected by the next update six ticks later, so this is state that heals and late
   // is worse than lost. A hull that cannot be destroyed reads 255 -- undamaged is the only honest
-  // answer for a thing with nothing to lose (Design/Combat-slice-2.md 2.2).
+  // answer for a thing with nothing to lose (Design/Archive/Combat-slice-2.md 2.2).
   std::uint8_t hullFraction = 255;
 };
 
@@ -110,7 +110,7 @@ inline constexpr std::uint8_t SHIP_FLAG_GATE = 0x02;
 // It is an event rather than state, and it is the only thing on this seam that is. What it does NOT
 // carry is as deliberate as what it does: no damage number, because the fraction in the record
 // already says what happened; and no kill attribution, because a leave run states that a ship was
-// destroyed and never by whom (Design/Combat.md 9.2, 14).
+// destroyed and never by whom (Design/Archive/Combat.md 9.2, 14).
 struct FireEvent
 {
   EntityId shooter = INVALID_ENTITY_ID;
@@ -294,7 +294,7 @@ public:
 
   // The gunfire since this subscriber last heard, as one datagram. False when there was none to
   // send or the lane refused it; nothing is retried, because a lost muzzle flash is not a lie and a
-  // late one draws a line into empty space (Design/Combat-slice-2.md 2.3).
+  // late one draws a line into empty space (Design/Archive/Combat-slice-2.md 2.3).
   //
   // More than MAX_FIRE_EVENTS keeps the newest. It is a separate message rather than a block in the
   // fragment header for one reason worth stating: the fleet status block rides every fragment so it

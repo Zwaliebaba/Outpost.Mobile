@@ -260,7 +260,7 @@ private:
   // something to consume, and **F5 reseeds every body's look and the sky with them** -- never the
   // sites, which are the layout's (m_layout). F6 and F7 stood here and are gone: each declared an
   // act the simulation could not perform, and the fire pass performs both for real now
-  // (OutpostApp.cpp's note where they were, Design/Combat.md 6, ADR 0052).
+  // (OutpostApp.cpp's note where they were, Design/Archive/Combat.md 6, ADR 0052).
   //
   // F5 does not release the buffers the last scene's bodies are in -- BodyRenderer keeps every
   // handle for the run -- so each press costs the memory of the scene it replaced. That is acceptable

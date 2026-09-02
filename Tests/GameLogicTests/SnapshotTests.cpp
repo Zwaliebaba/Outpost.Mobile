@@ -198,7 +198,7 @@ public:
     //
     // And 21 rather than that 22 since the record gained a hull fraction: one byte on 47 costs a
     // record a fragment, which is the price of a client being able to draw a damage bar at all
-    // (Design/Combat-slice-2.md 2.2). The figure moves with the record by construction -- that is what
+    // (Design/Archive/Combat-slice-2.md 2.2). The figure moves with the record by construction -- that is what
     // this row is for -- and what matters is that it is *derived*, so nobody has to remember it.
     Assert::AreEqual(21u, Game::ShipsPerSnapshotFragment(), L"the record plus the fleet block no longer fits 21 ships in a datagram");
     Assert::IsTrue(Game::ShipsPerSnapshotFragment() < 64, L"the record got suspiciously small");
@@ -207,7 +207,7 @@ public:
   TEST_METHOD(AShipRecordCarriesItsHullFraction)
   {
     // A fraction rather than the number, because a fraction is what a pip row and a target bar draw
-    // (Design/Combat.md 9.1, 10.3). Three readings matter: whole, hurt, and a hull with nothing to
+    // (Design/Archive/Combat.md 9.1, 10.3). Three readings matter: whole, hurt, and a hull with nothing to
     // lose -- which reads whole, because undamaged is the only honest answer for a station.
     // The damage is done by the fire pass rather than by a setter, because there is no setter and
     // there should not be one: hull points are the pass's to spend (ADR 0052), and a test that

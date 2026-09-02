@@ -189,8 +189,9 @@ void UniverseView::ApplySnapshot()
 
         // What this hull's art can turn, joined to what the simulation says it carries. Resolved
         // here with restY and the bounds, and for the same reason: the draw loop runs per ship per
-        // frame and must not be looking a submesh up by name (Design/Combat-slice-6.md 2.2).
+        // frame and must not be looking a submesh up by name (Design/Archive/Combat-slice-6.md 2.2).
         view.mounts = ResolveMounts(static_cast<Game::HullId>(ship.hullId), data);
+        view.muzzles = ResolveMuzzles(data, Game::HullSpecOf(ship.hullId).MountCount());
       }
       m_ships.push_back(std::move(view));
     }
@@ -251,14 +252,14 @@ void UniverseView::TakeTheGunfire()
     GunShot shot;
     if (shooter != m_ships.size())
     {
-      shot.fromWorld = HullPointToWorld(m_ships[shooter], DisplayedPose(shooter), XMFLOAT3(0.0f, 0.0f, 0.0f));
+      shot.fromWorld = MuzzleToWorld(m_ships[shooter], DisplayedPose(shooter), event.mount);
       shot.colour = LiveryOf(m_ships[shooter].faction, IsOwn(shooter), m_receiver.IsHostileToMe(m_ships[shooter].faction));
     }
     if (target != m_ships.size())
       shot.toWorld = HullPointToWorld(m_ships[target], DisplayedPose(target), XMFLOAT3(0.0f, 0.0f, 0.0f));
     // A shot from off screen: the impact is all there is to draw, and it keeps GunShot's default
     // white. Not a guess at red -- this half genuinely does not know whose fire that was, and a
-    // colour is a claim about it (Design/Combat-slice-4.md 2.2).
+    // colour is a claim about it (Design/Archive/Combat-slice-4.md 2.2).
     if (shooter == m_ships.size())
       shot.fromWorld = shot.toWorld;
     if (target == m_ships.size())
@@ -272,7 +273,7 @@ void UniverseView::TakeTheGunfire()
 
     // The turret that fired it turns to where it fired. Presentation off a message the client
     // already has: nothing here is sent, nothing is asked, and the shot has already landed --
-    // the server settled the aim and this is a drawing of it (Combat.md 10.2).
+    // the server settled the aim and this is a drawing of it (Design/Archive/Combat.md 10.2).
     //
     // The bearing is taken in the shooter's own frame from the two world points the shot already
     // resolved, so a hull that is turning carries its turret round with it for free.
@@ -433,7 +434,7 @@ void UniverseView::ExplodeTheLost(std::uint64_t _tick)
     // said who shot at whom, the departure run says who died, and the join of the two is a kill the
     // player made. The wire deliberately states no killer (ADR 0053), and this is what that costs --
     // a line that is right when the shot arrived and silent when it did not, which is a flourish on
-    // the log rather than a fact the player is owed (Design/Combat-slice-4.md 2.5).
+    // the log rather than a fact the player is owed (Design/Archive/Combat-slice-4.md 2.5).
     for (const ShotAt& aimed : m_shotAt)
     {
       if (aimed.entity != entity || m_log == nullptr)
@@ -910,12 +911,45 @@ void UniverseView::DrawPosedHull(Neuron::SceneRenderer& _renderer, Neuron::GpuDe
   }
 }
 
+XMFLOAT3 UniverseView::MuzzleToWorld(ShipView& _view, const DisplayPose& _pose, std::uint32_t _mount) const noexcept
+{
+  // Which of this mount's muzzles, of however many the art authored. Counted over the hull so a twin
+  // turret alternates its barrels, which is the whole of what the counter buys.
+  const MuzzleView* chosen = nullptr;
+  std::uint32_t seen = 0;
+  for (const MuzzleView& muzzle : _view.muzzles)
+  {
+    if (muzzle.mount != _mount)
+      continue;
+    ++seen;
+    if (chosen == nullptr || (_view.muzzleTurn % seen) == 0)
+      chosen = &muzzle;
+  }
+  if (chosen == nullptr)
+    return HullPointToWorld(_view, _pose, XMFLOAT3(0.0f, 0.0f, 0.0f)); // unauthored: the hull's origin, as it always was
+  ++_view.muzzleTurn;
+
+  // Carried round by the turret, when this mount is one that turns. The marker sits on the barrel, so
+  // a flash drawn at its bind-pose position would hang in the air beside a turret that had traversed.
+  // The same pivot-rotate the posed draw uses, applied to one point instead of a vertex run.
+  XMFLOAT3 local = chosen->local;
+  if (const MountView* const mount = FindMount(_view.mounts, _mount); mount != nullptr)
+  {
+    const XMMATRIX turn = XMMatrixTranslation(-mount->pivot.x, -mount->pivot.y, -mount->pivot.z) *
+                          XMMatrixRotationY(mount->aimRad - mount->restRad) *
+                          XMMatrixTranslation(mount->pivot.x, mount->pivot.y, mount->pivot.z);
+    XMStoreFloat3(&local, XMVector3Transform(XMLoadFloat3(&local), turn));
+  }
+  return HullPointToWorld(_view, _pose, local);
+}
+
 void UniverseView::AimMountAt(ShipView& _view, float _headingRad, std::uint32_t _mount, const XMFLOAT3& _fromWorld,
                               const XMFLOAT3& _toWorld) const noexcept
 {
   // A mount index the art does not bind is not an error: the Battleship's two light mounts and every
-  // one of the Carrier's have no turret submesh, so they fire and nothing turns (Combat.md 12).
-  if (_mount >= _view.mounts.size())
+  // one of the Carrier's have no turret submesh, so they fire and nothing turns (Design/Archive/Combat.md 12).
+  MountView* const found = FindMount(_view.mounts, _mount);
+  if (found == nullptr)
     return;
 
   // World delta into the hull frame. The hull's heading is a rotation about Y, so its inverse is a
@@ -930,7 +964,7 @@ void UniverseView::AimMountAt(ShipView& _view, float _headingRad, std::uint32_t 
   if (localX == 0.0f && localZ == 0.0f)
     return; // a shot at itself, or at a point it is standing on: there is no bearing to take
 
-  MountView& mount = _view.mounts[_mount];
+  MountView& mount = *found;
   mount.wantRad = MountBearingToward(mount, localX, localZ);
   mount.holdSec = TURRET_HOLD_SEC;
 }
@@ -994,7 +1028,7 @@ void UniverseView::UpdateFeedback(float _dtSec)
   // And so do the turrets. Real time on purpose and by the same argument: the server settled every
   // shot's aim on the tick it fired, so a turret's angle decides nothing and may run at whatever rate
   // the swapchain does. Turn the slew off and the same shots land on the same ticks
-  // (Design/Combat-slice-6.md 4.3).
+  // (Design/Archive/Combat-slice-6.md 4.3).
   for (ShipView& view : m_ships)
   {
     for (MountView& mount : view.mounts)
@@ -1459,7 +1493,7 @@ void UniverseView::IssueAttackOrder(std::size_t _target)
   // an identity language and the HUD is a relation one (ViewTuning.h says so at HUD_ALERT_RED), so
   // a marker in the universe says which ship was tapped rather than how the HUD feels about it.
   // Remembered for the bracket bar, and only here: an order this client sent is the only way it can
-  // know what it is hunting (Combat.md 10.3).
+  // know what it is hunting (Design/Archive/Combat.md 10.3).
   m_orderedTarget = state[_target].entity;
 
   const Game::FactionId owner = state[_target].factionId;
@@ -2094,7 +2128,7 @@ void UniverseView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const
     }
 
     // The ordered target's condition bar: a thin arc on its own bracket, so the player reads their
-    // fleet on the sheet and their quarry on the thing they pointed at (Combat.md 10.3).
+    // fleet on the sheet and their quarry on the thing they pointed at (Design/Archive/Combat.md 10.3).
     //
     // It is the ONE ship this client last ordered an attack on, remembered here because nothing on
     // the wire carries an order back -- the fleet status block says a fleet is attacking, not what.
@@ -2309,7 +2343,7 @@ void UniverseView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const
     // A shot is three glows on the billboards the running lights already ride: a muzzle at the
     // shooter, beads down the line so it reads as a direction rather than a dot, and an impact at
     // the far end. Nothing new enters the renderer's contract, which is what let this land without
-    // the slice that turns the turrets (Design/Combat-slice-4.md 1, 2.2).
+    // the slice that turns the turrets (Design/Archive/Combat-slice-4.md 1, 2.2).
     for (const GunShot& shot : m_shots)
     {
       // Squared, so a tracer is bright for the first instant and gone rather than dimming evenly.

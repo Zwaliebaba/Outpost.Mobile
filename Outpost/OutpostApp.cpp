@@ -793,7 +793,7 @@ void OutpostApp::MarkLocalStations()
 // faction already holds hostile, which at this range is anything of the player's that comes close --
 // but their helms do not react to any of it: the ring stays a metronome by the owner's brief
 // (Design/Archive/Hostiles.md 6), because in this game senses live in the mounts and not in the helm
-// (Design/Combat.md 5.4).
+// (Design/Archive/Combat.md 5.4).
 //
 // The base is a station row too, with no garrison: its patrol is not a garrison and does not
 // change, and what the row buys is one answer path for "may I dock here" -- the player is refused
@@ -887,7 +887,7 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
   //
   // Universe::RecordAggression and Universe::RecordHostileAct stay exactly as they are. They are the
   // simulation's own entry points, they still have no client message and never will, and the tests
-  // still drive them directly (Design/Combat-slice-4.md 2.6).
+  // still drive them directly (Design/Archive/Combat-slice-4.md 2.6).
   case '1':
     m_timeScale = 0.25f;
     break;

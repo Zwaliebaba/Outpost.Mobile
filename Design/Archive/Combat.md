@@ -2,21 +2,20 @@
 
 **Status: agreed with the owner on 2026-08-31 — the six decisions in §15 were put and taken the
 same day, each the recommended option. Slices 1 to 5 landed on 2026-09-01 and merged; slice 6 is
-cut and PARTLY landed ([`Combat-slice-6.md`](Combat-slice-6.md)), and it is the last: when it lands
-whole this design moves to `Archive/` with its six work orders.** The universe is lethal, says so on
-the wire, and draws it: muzzle flashes, tracers and impacts in the shooter's colours, condition pips
-on the fleet sheet, turrets that turn to what they fired at, a condition bar on the quarry's bracket,
-and F6/F7 retired because the simulation states its own acts now. §13's pacing targets have been
-measured against the shipped table and two numbers moved (slice 5).
+and slice 6 landed on 2026-09-02, which was the last.** The universe is lethal, says so on the wire,
+and draws it: muzzle flashes off the gun that fired them, tracers and impacts in the shooter's
+colours, condition pips on the fleet sheet, turrets that turn to what they fired at and stow when the
+fight ends, a condition bar on the quarry's bracket, and F6/F7 retired because the simulation states
+its own acts now. §13's pacing targets have been measured against the shipped table and two numbers
+moved (slice 5).
 
-What is left is the back half of slice 6: **the `Gun` markers and their consistency check**. They are
-blocked on a question the shipped art and `HullSpec` answer differently — a marker is not one per
-mount, a marker's name does not say which mount it belongs to, and six mounts in the roster have no
-art at all — measured and put to the owner in that order's §8. **The screenshots slice 4 is accepted
-by are still owed**, and slice 6 pays them when it closes.
+**One thing this design owes and did not pay: the screenshots slice 4 is accepted by.** Nothing in
+the environment the slices were written in has MSVC, D3D12 or a window, and the owner made CI-green
+the gate on 2026-09-02 with Windows-only manual checks waived. They are recorded as owed here rather
+than quietly dropped, for the reason `Fleets.md` records its own three.
 
 **This document is amended in place as its slices land**, on the owner's instruction of 2026-09-01
-and by [ADR 0054](Decisions/0054-a-design-is-amended-in-place-as-its-slices-land.md), which reverses
+and by [ADR 0054](../Decisions/0054-a-design-is-amended-in-place-as-its-slices-land.md), which reverses
 the rule `Design/README.md` used to state. So every section below describes the game as it stands,
 and the ones that described something else — a fire *block* appended to the update, three turret
 submeshes with barrel bones, a turret slewing in slice 4 — describe what shipped instead.
@@ -25,8 +24,8 @@ submeshes with barrel bones, a turret slewing in slice 4 — describe what shipp
 change, is in the work order of the slice that changed it ([slice 1](Combat-slice-1.md) §4a,
 [slice 2](Combat-slice-2.md) §2.3, [slice 3](Combat-slice-3.md) §2.6, [slice 4](Combat-slice-4.md)
 §2.7, [slice 5](Combat-slice-5.md) §3) and in
-[ADR 0052](Decisions/0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md) and
-[ADR 0053](Decisions/0053-fire-events-ride-the-datagram-lane.md). Read this file for the design's
+[ADR 0052](../Decisions/0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md) and
+[ADR 0053](../Decisions/0053-fire-events-ride-the-datagram-lane.md). Read this file for the design's
 reasoning; read those for what it once said and why it stopped saying it.
 
 This is the design the rest of the tree has been writing IOUs against. ADR 0041 closed with "the
@@ -129,13 +128,14 @@ offline by a `Tools/` script at most, never read from content at runtime. The ca
 already made this exact argument about size: the mesh fit is where the numbers start, not what
 they are. A mount without an authored marker draws its effects from the hull's origin — content is
 a diagnostic, never a crash — and the `Tools/` check (§16, slice 6) is what keeps the two tables
-from quietly disagreeing. The shipped build draws every muzzle from the hull's origin, and it does so
-even where a marker exists: the Battleship, the Frigate, the Interceptor and the Fighter each carry
-`Gun` markers already — this design said none did, and was wrong about the art it was written beside
-— but they are letter-named, so nothing joins one to a mount and no consumer can read them yet. What
-a marker must correspond to is an open question that slice 6 measured and could not answer for itself
-([`Combat-slice-6.md`](Combat-slice-6.md) §8); it is authoring work the slice plan owns, not a
-blocker for the simulation half.
+from quietly disagreeing. **A marker names its mount**: `Gun<N>` for a single muzzle and
+`Gun<N><letter>` for one of several on mount N, which is the only shape the client can find, since
+`MeshMarker` keeps a name as a hash and cannot parse one. The Battleship, the Corvette, the Frigate
+and the Interceptor are authored to it; the Bomber, the Carrier and the Battleship's two light mounts
+carry none and draw from the origin, which this paragraph has always permitted. The rule is enforced
+by `Tools/NmoShippedArtTest.py`, which parses `HULL_SPECS`' mount counts and fails when a marker names
+a mount its hull does not have, when two markers claim the same muzzle, or when a marker's name is
+not of that shape ([`Combat-slice-6.md`](Combat-slice-6.md) §10).
 
 ### 3.2 Per-mount state
 
@@ -285,7 +285,7 @@ nobody at all if its death had already landed.
 acts were always going to come from the one pass that can observe a shot, and that comment now says
 so. What ADR 0041 actually forbids is unchanged and load-bearing: **no client message states an act,
 and there never will be one.** A client sends orders; the simulation fires, observes itself firing,
-and judges. [ADR 0052](Decisions/0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md)
+and judges. [ADR 0052](../Decisions/0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md)
 records that completion rather than leaving the sentence's change to be discovered in a diff.
 
 F6 and F7 retired with slice 4, replaced by the acts they were standing in for — an attack order on
@@ -389,9 +389,9 @@ wire — *who* destroyed you — is deliberately absent this design (§14); the 
 the record's width and the new message kind, `outpost-3` → `outpost-4`, so two builds that disagree
 refuse at the handshake rather than misparse — both rules already written, both merely obeyed.
 
-The ALPN is `outpost-6` as of slice 2 of [`GameDesignPlan.md`](GameDesignPlan.md), which re-laid the
+The ALPN is `outpost-6` as of slice 2 of [`GameDesignPlan.md`](../GameDesignPlan.md), which re-laid the
 fleet status block: a kind byte, a flags byte and a reserved stance byte where there was one byte
-holding all three ([`FleetStatus-work-order.md`](Archive/FleetStatus-work-order.md)). The rule is unchanged
+holding all three ([`FleetStatus-work-order.md`](FleetStatus-work-order.md)). The rule is unchanged
 and this is it being obeyed a sixth time. What that slice did *not* do is bump the state format: the
 block rides the snapshot header and no field of `Universe` moved, which is the distinction ADR 0057
 drew between the two version bytes and the first time it has paid.
@@ -417,15 +417,16 @@ What that costs is that a turret turns about its own **bind-pose centre** rather
 and that a turret and its barrels are separate named submeshes a consumer must turn together — so
 the binding from a mount to the parts that carry it is a client-side table read off submesh names,
 which is where ADR 0002 would have put it anyway. The Battleship's three turrets and the Corvette's
-two **turn** ([ADR 0064](Decisions/0064-a-mount-is-bound-to-its-art-by-a-client-table-of-submesh-names.md));
+two **turn** ([ADR 0064](../Decisions/0064-a-mount-is-bound-to-its-art-by-a-client-table-of-submesh-names.md));
 hulls whose art has no turret submesh lose nothing and draw as they always did. The table is in
 `Outpost` rather than `NeuronClient`, because it names `HullId` and no engine project may see
 `GameLogic` — the composition root is the client half that is allowed to hold both.
 
 ### 10.2 What a shot looks like
 
-From the fire message: muzzle flash at the mount's `Gun` marker — the hull's origin when unauthored,
-which is still every hull today, since no marker names the mount it belongs to (§3.1) — a tracer to the target, drawn as long as the view
+From the fire message: muzzle flash at the mount's `Gun` marker, carried round by the turret's current
+aim so the flash sits on the barrel rather than where the barrel was authored — the hull's origin when
+unauthored (§3.1) — a tracer to the target, drawn as long as the view
 likes because the hit already happened and presentation owns time on its side of the wire, and an
 impact flash on the target. A tracer is a straight line between two frozen points: no ballistics, no
 lead, no travel time, since the line is a drawing of a shot rather than a simulation of one. It is
@@ -577,7 +578,7 @@ Frigate, which breaks the first target. New `SimTuning.h` constants: `FIRE_ALIGN
 `ENGAGE_STANDOFF_FRACTION` and the gather's gunnery margin, with the fire message's cap in
 `UniverseSnapshot.h` beside the format it belongs to — each with the argued comment the file demands.
 
-**The table is pinned by a matrix now**, added by slice 5 of [`GameDesignPlan.md`](GameDesignPlan.md)
+**The table is pinned by a matrix now**, added by slice 5 of [`GameDesignPlan.md`](../GameDesignPlan.md)
 and not by this design: `Tests/GameLogicTests/MatchupTests.cpp` runs every combatant hull against
 every other, one on one and in the groups the targets above name, and asserts who wins and within
 fifteen percent how long it takes. Its geometry is its own — six hundred metres bow to bow, fleets
@@ -585,7 +586,7 @@ of one, attack orders both ways — and it is not the harness slice 5 measured w
 are not the ones above: under mutual orders two Interceptors never land a hit on each other, and a
 mixed eight of two each loses to the Battleship. Neither is corrected here; the matrix records what
 the tables do, and the retune that changes it is the review's C13
-([`MatchupMatrix-work-order.md`](Archive/MatchupMatrix-work-order.md) §7).
+([`MatchupMatrix-work-order.md`](MatchupMatrix-work-order.md) §7).
 
 ## 14. Deliberately left out, so nobody goes looking
 
@@ -651,12 +652,12 @@ One agent per slice, one slice per layer at a time; each retargets the sentences
    hull's damage discarded while the act states. ADR due: *combat resolves deterministically, and the
    fire pass states the acts* (completing 0041/0050).
    Work order: [`Combat-slice-1.md`](Combat-slice-1.md). **Landed and in review 2026-09-01**, with
-   [ADR 0052](Decisions/0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md).
+   [ADR 0052](../Decisions/0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md).
 2. **The combat wire** (`GameLogic` seam) — `hullFraction` in the record, the fire message,
    receiver accessors, ALPN and format bumps. Tests beside the existing snapshot suite; ADR due:
    *fire events ride the datagram lane* (ADR 0029 applied).
    Work order: [`Combat-slice-2.md`](Combat-slice-2.md). **Landed and in review 2026-09-01**, with
-   [ADR 0053](Decisions/0053-fire-events-ride-the-datagram-lane.md). The events took their own
+   [ADR 0053](../Decisions/0053-fire-events-ride-the-datagram-lane.md). The events took their own
    message kind rather than a block in the fragment header (§9.2, and §2.3 there).
 3. **The parts** (`NeuronClient`) — `MeshData` grows named submeshes and marker `parentBone`;
    reader tests against the golden fixture, whose turret has been waiting for exactly this slice.
@@ -680,16 +681,13 @@ One agent per slice, one slice per layer at a time; each retargets the sentences
    the thing that would read one is slice 6's binding (§3 there).
 
 6. **The turret turns, and the content it needs** (`NeuronClient` + `Outpost` + `Tools/`).
-   Work order: [`Combat-slice-6.md`](Combat-slice-6.md), cut 2026-09-02.
-   **Partly landed 2026-09-02**, with
-   [ADR 0064](Decisions/0064-a-mount-is-bound-to-its-art-by-a-client-table-of-submesh-names.md): the
-   submesh-range draw and the complement, the mount-to-part table, the slew, the target bar and the
-   `HULL` bar. **What is not done is the `Gun` marker authoring and the mount-versus-marker check**,
-   and the reason is not effort: the shipped art and `HullSpec` disagree about what a marker
-   corresponds to, in three separate ways that each change what the check can be, and the choice
-   costs anywhere between renaming four files and modelling six turrets that do not exist. It is
-   measured and put to the owner in that order's §8. **The design does not move to `Archive/` until
-   it is closed, and neither do the screenshots.** — a
+   Work order: [`Combat-slice-6.md`](Combat-slice-6.md), cut 2026-09-02. **Landed 2026-09-02**, with
+   [ADR 0064](../Decisions/0064-a-mount-is-bound-to-its-art-by-a-client-table-of-submesh-names.md): the
+   submesh-range draw and the complement, the mount-to-part table, the slew, the target bar, the
+   `HULL` bar, the `Gun` markers renamed to name their mounts, and the check that holds them to it.
+   It landed in two commits rather than one, because the marker rule was a question the shipped art
+   and `HullSpec` answered three different ways and the owner had to settle it (that order's §8 and
+   §10). The muzzle flash comes off the gun now, which was the point of naming the markers. — a
    submesh-range draw on `SceneRenderer`, the hull drawn as its own complement, and a client-side
    table binding a hull's mounts to the parts that carry them. It is a slice of its own because it
    is the only piece of this feature that reaches into the D3D12 command list, and because slice 3
@@ -705,8 +703,9 @@ One agent per slice, one slice per layer at a time; each retargets the sentences
    The **target bar** slice 4 cut out is here too (§10.3): a thin condition bar on the ordered
    target's selection bracket, and the HUD stat panel's `HULL` bar finally reading the record instead
    of a hard-coded whole.
-   **The screenshots slice 4 is accepted by are owed and are this slice's to pay**, since it is the
-   one that changes what the same frames show.
+   **The screenshots slice 4 is accepted by were this slice's to pay and are still owed**: the
+   environment the slice was built in has no MSVC, no D3D12 and no window, and the owner waived
+   Windows-only manual checks on 2026-09-02 in favour of CI-green as the gate. The header says so.
 
 Dependencies: 1 → {2, 3}, 2 → 4, 4 → 5, and 6 after 3 and 4 — slice 3 reads a mesh and depends on
 neither of the two before it. After slice 1 the universe is lethal in tests and under F-keys; after 2

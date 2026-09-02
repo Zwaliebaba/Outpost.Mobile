@@ -100,10 +100,10 @@ move the camera, pinch and twist with two contacts to zoom and turn.
 ### Deliberately not here yet
 
 So nobody goes looking: no economy, no audio, no mining, no login — one player, whose owner key is
-the constant `OWNER_LOCAL` until a session says who is asking. A Corvette's turrets and a
-Battleship's three swing to what they fired at and stow when the fight ends; every other hull's guns
-fire and its geometry holds still, and every muzzle flash still comes off the hull's origin rather
-than the gun. Combat is here and is one number deep: hull points,
+the constant `OWNER_LOCAL` until a session says who is asking. A Corvette's turrets, a Frigate's
+batteries and a Battleship's three swing to what they fired at and stow when the fight ends; every
+other hull's guns fire and its geometry holds still. Combat is here and is one number deep: hull
+points,
 one damage figure per device, and no shields, armour classes or resistances. Tuning is `constexpr`
 in `SimTuning.h`, `HullSpec.h`, `DeviceSpec.h` and `ViewTuning.h`; what a deployment may change
 without a rebuild lives in `Outpost/Assets/Server.cfg`. The networking is real QUIC over a real

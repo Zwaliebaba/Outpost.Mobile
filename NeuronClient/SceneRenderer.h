@@ -59,7 +59,7 @@ public:
   // The matrix is the caller's whole answer. This renderer knows nothing about pivots or bind poses;
   // a caller that wants a part to turn about its own centre builds translate(-pivot) * rotate *
   // translate(pivot) * hull and hands the product over, which is what keeps the rig-shaped question
-  // out of a renderer that has no rig (Design/Combat-slice-6.md 6).
+  // out of a renderer that has no rig (Design/Archive/Combat-slice-6.md 6).
   //
   // A run that is empty, or that starts past the mesh, draws nothing. That is the case a hull whose
   // art carries no turret produces, and it must cost a call and not a crash.

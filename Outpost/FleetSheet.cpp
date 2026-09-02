@@ -208,7 +208,7 @@ void FleetSheet::Draw(TextRenderer& _text, const UniverseView& _view, std::span<
   //
   // One pip per member, in roster order, filled to that member's hull fraction. Pips rather than
   // percentages because the question a commander asks this sheet is "is anything about to die", and
-  // eight small bars answer it in a glance where eight numbers do not (Design/Combat.md 10.3).
+  // eight small bars answer it in a glance where eight numbers do not (Design/Archive/Combat.md 10.3).
   {
     const float pipHeight = textPx * 0.55f;
     const float pipWidth = textPx * 1.6f;
@@ -227,7 +227,7 @@ void FleetSheet::Draw(TextRenderer& _text, const UniverseView& _view, std::span<
 
       // A member with no record draws as an empty outline rather than as a full or an empty bar:
       // this half has never been told how that ship is, and either fill would be a claim
-      // (Design/Combat-slice-4.md 2.3).
+      // (Design/Archive/Combat-slice-4.md 2.3).
       _text.DrawScreenRect(x, top, x + pipWidth, top + pipHeight, HUD_PIP_EMPTY);
       if (condition >= 0.0f)
       {

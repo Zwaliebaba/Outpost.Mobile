@@ -1479,7 +1479,7 @@ public:
     // "Turns on" is read as gunfire rather than as distance, and that change is this phase's rather
     // than this row's. The raider was spawned on top of the Miner, which is well inside a Corvette's
     // 180 m turrets, so the combatant is already where its guns bear and a pursuit that closed
-    // further would be one that had learned nothing (Design/Combat.md 8). What says it turned is
+    // further would be one that had learned nothing (Design/Archive/Combat.md 8). What says it turned is
     // that the raider is losing hull points, and nothing but this fleet is shooting at it.
     Assert::IsTrue(universe.Ship(raider).hullPoints < Game::HullSpecOf(Game::HullId::Interceptor).maxHullPoints,
                    L"the combatant did not turn its guns on the attacker");

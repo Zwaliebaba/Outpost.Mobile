@@ -98,7 +98,7 @@ constexpr std::uint32_t LEAVE_HEADER_BYTES = 1 + 8 + 4 + 4 + 4 + 4;
 // sector pair narrowed from i64 to i32 (ADR 0046), prevPos became a delta against posUniverse rather
 // than a second whole position, and the two angles became turns16. The record was 47 until combat
 // put a byte of hull fraction in it, which is the one place state that heals belongs
-// (Design/Combat.md 9.1) -- and the capacity below re-derived itself, which is the point of deriving
+// (Design/Archive/Combat.md 9.1) -- and the capacity below re-derived itself, which is the point of deriving
 // it. At 1,152 bytes a datagram less the header and the fleet block that rides every fragment, that
 // is 21 ship records per fragment against the 13 this replaces -- so a hundred-ship update is 5
 // fragments instead of 8, which is what finding E1 cares about: at 2% datagram loss it completes 90%

@@ -677,7 +677,7 @@ void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, std::span<co
     bool anyAligning = false;
     // What the selection has left, from the records rather than from a constant. The bar showed a
     // hard-coded whole from the day it was drawn, which was honest while nothing could be damaged and
-    // stopped being the moment gunnery landed (Design/Combat.md 10.3, cut out of slice 4).
+    // stopped being the moment gunnery landed (Design/Archive/Combat.md 10.3, cut out of slice 4).
     //
     // The MEAN over the selection, and 255ths of whole is what the record carries. A minimum would
     // read as the fleet being in worse shape than it is the instant one Interceptor is scratched; a

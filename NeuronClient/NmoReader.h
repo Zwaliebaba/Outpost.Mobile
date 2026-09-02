@@ -23,7 +23,7 @@ namespace Neuron
 // What it validates and then deliberately skips: normals, UVs, emissive, skin buffers, bone tables
 // and clips -- nothing in this engine poses a bone yet, and no hull in the game has one to pose:
 // every shipped mesh is named rigid submeshes with no skeleton at all
-// (Design/Combat-slice-3.md 2.6). A file carrying a rig this reader ignored is better than one it
+// (Design/Archive/Combat-slice-3.md 2.6). A file carrying a rig this reader ignored is better than one it
 // refused, and the day a rigged hull is authored the bytes are already proved.
 class NmoReader
 {

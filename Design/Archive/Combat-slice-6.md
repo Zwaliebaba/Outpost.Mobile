@@ -143,7 +143,7 @@ slice has landed; this one has not.
   `NeuronClient` may not list `GameLogic` (AGENTS.md §3) — the order asked for something the layer
   rule forbids. `Outpost` is the composition root, sees both layers, and already holds the
   hull-to-mesh table this is the sibling of; a headless shard still has none of it, which is the half
-  of ADR 0002 that mattered. [ADR 0064](Decisions/0064-a-mount-is-bound-to-its-art-by-a-client-table-of-submesh-names.md)
+  of ADR 0002 that mattered. [ADR 0064](../Decisions/0064-a-mount-is-bound-to-its-art-by-a-client-table-of-submesh-names.md)
   records it.
 - **A posed hull leaves the instanced path, and that cost is bounded twice.** §2.1 said "two or three
   draws instead of one" and did not say what that does to `MmoScalabilityReview` G2's instancing: an
@@ -249,3 +249,115 @@ suite, so `ResolveMounts`, the slew and the bars are verified by running the ari
 tree rather than in it — the same gap `TickStats` and `GalaxyScreen` have. And `SceneRenderer`'s two
 new entry points are D3D12 and were not compiled here at all; the half of them that can be wrong
 silently is the complement, which is why it is in `MeshData.h` and in the suite.
+
+---
+
+## 10. The owner's answer, and the back half of the slice
+
+**Put on 2026-09-02, answered the same day, both as recommended.**
+
+> **The marker rule: rename to bind.** A `Gun` marker names its mount — `Gun<N>` for a single muzzle,
+> `Gun<N><letter>` for one of several on mount N.
+>
+> **The Frigate's mounts: the batteries.** `frigate_battery` and `frigate_battery.001`, not the
+> lances — they are the parts named like guns and they sit where a traversing turret belongs.
+
+That settles the rule against the shipped art rather than the other way round, and it is the only one
+of the three options that makes a marker mean something a consumer can *read*: `MeshMarker` keeps a
+name as a hash and cannot parse one, so `Gun<N>` is the only shape the client can look up. Which is
+what let the muzzle flash finally come off the gun.
+
+### 10.1 What was authored
+
+| Hull | Before | After |
+|---|---|---|
+| Battleship | `GunA`..`GunF`, letter-named, two per turret | `Gun0A`/`Gun0B`, `Gun1A`/`Gun1B`, `Gun2A`/`Gun2B` — positions unchanged, matched to mounts by the barrel each sits on |
+| Interceptor | `GunA`, `GunB` | `Gun0A`, `Gun0B` — one fixed mount, two railgun muzzles |
+| Frigate | `GunA`, `GunB` at the **lance** tips, both owned by the port battery's marker run | `Gun0`, `Gun1` at the batteries' outboard faces, one on each battery's own run |
+| Corvette | none | `Gun0`, `Gun1` authored on each turret's forward face at its own centre height |
+| Fighter | `PodGunA`, `PodGunB` | unchanged — there is no `Fighter` `HullId`, so the check reports it as unchecked rather than passing it |
+| Bomber, Carrier | none | none — allowed: they draw from the origin, per `Combat.md` §3.1 |
+
+`NmoFormat.write` round-trips all eleven shipped meshes **byte-identically** before the edit, which is
+what makes each diff exactly the marker change and nothing else. Verified again after.
+
+### 10.2 The check, and what it can hold
+
+`Tools/NmoShippedArtTest.py` parses `HULL_SPECS`' mount counts — the parse §3 chose over a generated
+table, and every step of it raises rather than defaulting, so its fragility is a red check and not a
+wrong answer. It reads the `HullId` enum for row order, the `LOADOUT_*` constants for their counts,
+and the loadout named in each row of the `HULL_SPECS` initialiser. Against the header today:
+
+```
+Interceptor 1  Bomber 1  Corvette 2  Miner 0  Frigate 2
+Hauler 0  Battleship 5  Carrier 4  Stargate 0  Structure 0
+```
+
+The rule it enforces is the *reverse* of "a marker per mount", and that is deliberate. A mount may
+carry several muzzles and a mount may carry none, so neither direction of a count comparison is true.
+What can be held is: **every marker names a mount its hull has, no two claim the same muzzle of the
+same mount, and every marker's name is of the shape.** A mount with no marker is reported, not failed.
+
+Planted each of the three failures against the Corvette and confirmed the check catches them and
+exits 1:
+
+```
+Gun0 -> GunZ   FAILED: Gun marker 'GunZ' does not name a mount -- the name is Gun<N> or Gun<N><letter>
+Gun1 -> Gun7   FAILED: Gun marker 'Gun7' names mount 7, but the hull carries 2
+Gun1 -> Gun0   FAILED: Gun markers 'Gun0' and 'Gun0' claim the same muzzle of mount 0
+```
+
+and its clean run reports the four things that are true and unfailable:
+
+```
+Battleship.nmo: mount(s) 3, 4 carry no Gun marker and draw from the hull origin
+Bomber.nmo:     mount(s) 0 carry no Gun marker and draw from the hull origin
+Carrier.nmo:    mount(s) 0, 1, 2, 3 carry no Gun marker and draw from the hull origin
+Fighter.nmo:    2 Gun marker(s), but no HullId of that name -- nothing to check them against
+```
+
+### 10.3 The disagreement this leaves, stated rather than fixed
+
+**On both the Corvette and the Frigate, `HullSpec` bears the two turret mounts fore and aft (0 and
+π) while the art puts both turrets port and starboard.** It is one systematic disagreement, not two
+quirks: the same `{0, π}` pair is authored for both hulls and neither hull's art was built to it.
+
+With a ±150° arc it changes no engagement — a port turret resting forward can still bear on nearly
+anything — so what it costs is where a *stowed* turret points. Correcting it means moving mount
+bearings, which are simulation content: every one of them changes recorded outcomes, and the matchup
+matrix (slice 5) would have to be re-measured against the new table. That is a slice, not a line, and
+it is owed rather than done here.
+
+### 10.4 What the muzzle change actually did
+
+`ResolveMuzzles` hashes the names a mount's muzzles may carry and looks those up, because the client
+cannot read a marker's name — only its hash. A shot then draws from its mount's muzzle, **carried
+round by that mount's current aim**, using the same pivot-rotate the posed draw uses applied to one
+point instead of a vertex run. A hull that authors none is unchanged and draws from its origin.
+
+One defect was found and fixed while wiring it: `ShipView::mounts` holds only the mounts the art binds
+and the device turns, so it is **dense where mount indices are not** — the Battleship binds 0, 1 and 2
+of five. Indexing it by a mount id worked on every shipped hull, because the bound mounts happen to be
+a prefix on all of them, and would have pointed at the wrong turret the first time one was not.
+`MountView` carries its own index now and `FindMount` looks it up. This is slice 3's `FleetInSlot` bug
+in a different costume, caught before CI rather than by it.
+
+Resolved against the shipped art, at load, as the client will:
+
+```
+Corvette:   2 of 2 mounts bound  | mount 0 pivot (-1.93, 2.53, 0.70) rest    0 deg, 180 deg/s
+                                 | mount 1 pivot ( 1.93, 2.53, 0.70) rest  180 deg, 180 deg/s
+            2 muzzles, one per mount, on each turret's forward face
+Battleship: 3 of 5 mounts bound  | mount 0 pivot (0.00, 13.18, 19.50) rest    0 deg
+                                 | mount 1 pivot (-9.75, 13.18, 4.65) rest  120 deg
+                                 | mount 2 pivot ( 9.75, 13.18, 4.65) rest -120 deg
+            6 muzzles, two per bound mount; FindMount(3) is null, as it must be
+            draws as 5 posed runs + 2 gaps: [0,+2000) [2400,+600)
+```
+
+### 10.5 The gap that remains
+
+The screenshots. §5 asks for a fight and a quiet frame at two window sizes, which is what accepts a
+screen, and nothing in this environment has MSVC, D3D12 or a window. The owner made CI-green the gate
+on 2026-09-02 with Windows-only manual checks waived; `Combat.md`'s header records them as owed rather
+than dropping them, and this is where that debt comes to rest.

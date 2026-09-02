@@ -96,7 +96,7 @@ constexpr Cell DUELS[] = {
 };
 static_assert(std::size(DUELS) == std::size(COMBATANTS) * std::size(COMBATANTS), "the matrix has a cell per ordered pair");
 
-// The fights the pacing targets name (Design/Combat.md 13), as groups under the same rule. The
+// The fights the pacing targets name (Design/Archive/Combat.md 13), as groups under the same rule. The
 // mixed eight is two of each armed non-capital hull; the design says "a mixed eight-fleet" and no
 // more.
 constexpr Game::HullId EIGHT_CORVETTES[] = {Game::HullId::Corvette, Game::HullId::Corvette, Game::HullId::Corvette, Game::HullId::Corvette,

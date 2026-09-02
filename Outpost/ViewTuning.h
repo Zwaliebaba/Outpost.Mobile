@@ -120,7 +120,7 @@ inline constexpr Neuron::Rgba SHOCK_RING_COLOUR{1.0f, 0.86f, 0.62f, 0.6f};
 
 // A station exists in the game now (the hostile base below), and it can be shot at, but nothing can
 // destroy one: a station is an immovable hull and an immovable hull discards its damage, which is
-// how Design/Archive/Stations.md 8.5's rule is spelled (Design/Combat.md 7.2). Nor can one be
+// how Design/Archive/Stations.md 8.5's rule is spelled (Design/Archive/Combat.md 7.2). Nor can one be
 // selected, so F4 cannot reach it either. So nothing sets ShipExplosion::Spawn::shockRing on its own
 // account yet, and until something can kill a station every death carries a ring, which is the only
 // way the effect can be looked at. Whatever gives a station a lifecycle sets the flag from the
@@ -447,7 +447,7 @@ inline constexpr float GUN_TRACER_SEC = 0.33f;
 
 // The beads a tracer is drawn as. They ride the same glow billboards a running light does, so the
 // tracer costs no pipeline, no shader and nothing in the renderer's contract -- which is the whole
-// reason this half of the slice could land without the other (Design/Combat-slice-4.md 1).
+// reason this half of the slice could land without the other (Design/Archive/Combat-slice-4.md 1).
 inline constexpr int GUN_TRACER_BEADS = 6;
 inline constexpr float GUN_TRACER_RADIUS_METRES = 0.9f;
 inline constexpr float GUN_MUZZLE_RADIUS_METRES = 3.2f;
@@ -460,7 +460,7 @@ inline constexpr std::size_t MAX_DRAWN_SHOTS = 64;
 
 // How long after being shot at a ship's death still reads as the player's kill. Two seconds is past
 // any cooldown in the device table except the Bomber's, so a shot that lands and kills is credited
-// while a coincidence two fights away is not (Design/Combat-slice-4.md 2.5).
+// while a coincidence two fights away is not (Design/Archive/Combat-slice-4.md 2.5).
 inline constexpr float GUN_KILL_CREDIT_SEC = 2.0f;
 
 // How long a turret keeps bearing on the last thing it fired at before it stows.
@@ -473,7 +473,7 @@ inline constexpr float GUN_KILL_CREDIT_SEC = 2.0f;
 inline constexpr float TURRET_HOLD_SEC = 5.0f;
 
 // The ordered target's bracket bar: a second ring just inside the selection ring, thinner than it,
-// drawn as a partial fill (Design/Combat.md 10.3).
+// drawn as a partial fill (Design/Archive/Combat.md 10.3).
 inline constexpr float TARGET_BAR_RADIUS_SCALE = 0.88f;
 inline constexpr float TARGET_BAR_THICKNESS_SCALE = 0.6f;
 
@@ -519,7 +519,7 @@ inline constexpr Neuron::Rgba HUD_ALERT_RED{LIVERY_VANDAL.r, LIVERY_VANDAL.g, LI
 
 // The condition pips on the fleet sheet: the trough a pip is drawn in, and the middle of the ramp
 // between the green above and the red beside it. Amber is mixed from the two rather than authored,
-// so a palette change carries the middle with it (Design/Combat-slice-4.md 2.4).
+// so a palette change carries the middle with it (Design/Archive/Combat-slice-4.md 2.4).
 inline constexpr Neuron::Rgba HUD_PIP_EMPTY{HUD_ALERT_RED.r * 0.2f, HUD_ALERT_RED.g * 0.2f, HUD_ALERT_RED.b * 0.2f, 0.5f};
 inline constexpr Neuron::Rgba HUD_PIP_HURT{(HUD_ACCENT_GREEN.r + HUD_ALERT_RED.r) * 0.5f, (HUD_ACCENT_GREEN.g + HUD_ALERT_RED.g) * 0.5f,
                                            (HUD_ACCENT_GREEN.b + HUD_ALERT_RED.b) * 0.5f, 1.0f};
@@ -530,7 +530,7 @@ inline constexpr Neuron::Rgba HUD_PIP_HURT{(HUD_ACCENT_GREEN.r + HUD_ALERT_RED.r
 //
 // Here rather than in FleetSheet.cpp, where it started: the ordered target's bracket bar reads the
 // same condition and must read it in the same colours, and one condition meaning two colours
-// depending on where it is drawn is the failure this move prevents (Design/Combat-slice-6.md 2.4).
+// depending on where it is drawn is the failure this move prevents (Design/Archive/Combat-slice-6.md 2.4).
 [[nodiscard]] inline Neuron::Rgba ConditionColour(float _condition) noexcept
 {
   if (_condition > 0.6f)

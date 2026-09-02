@@ -178,7 +178,7 @@ public:
   // between two candidates scoring within noise of each other and restarts its traverse every time
   // one of them edges ahead; with it, the mount keeps last tick's target for as long as that target
   // is still live and still valid, and re-chooses the moment it is not. It is a tie-break, never a
-  // commitment (Design/Combat.md 5.2).
+  // commitment (Design/Archive/Combat.md 5.2).
   //
   // All of it is intent, which is what the snapshot exists to withhold: the view will slew its
   // turrets off the fire block and its own clock, and is allowed to disagree by a degree.
@@ -373,7 +373,7 @@ public:
   // --- the shot log ---------------------------------------------------------------------------
 
   // Every shot that landed, read by cursor and trimmed by whoever is reading -- the despawn log's
-  // mechanism with a different record, and ADR 0027's argument unchanged (Design/Combat-slice-2.md 2.1).
+  // mechanism with a different record, and ADR 0027's argument unchanged (Design/Archive/Combat-slice-2.md 2.1).
   //
   // It is a log rather than one tick's worth because an update goes out every
   // INTEREST_UPDATE_EVERY_TICKS and a view fed only the newest tick would miss five sixths of the
@@ -483,7 +483,7 @@ public:
   // acts the server observed; a client that could declare one could make anybody a criminal
   // (Design/Archive/Stations.md 8.1). It arrives either from outside the tick -- an adapter, the
   // composition root, a test -- like any order, or from StepMounts, which observes a landed shot and
-  // states what it saw (Design/Combat.md 6, ADR 0052). Those are the only two shapes a call can
+  // states what it saw (Design/Archive/Combat.md 6, ADR 0052). Those are the only two shapes a call can
   // take, and a client message is neither.
   //
   // A stale attacker handle is a no-op. The attacked station scrambles its garrison off the standing
@@ -507,7 +507,7 @@ public:
   // order, or from StepMounts on a landed hit. The sentence that used to stand here, "nothing inside
   // Step states an act", was true until the fire pass gave the simulation something to observe;
   // what is unchanged and load-bearing is that no CLIENT message states one, and none ever will
-  // (Design/Combat.md 6, ADR 0041, ADR 0052).
+  // (Design/Archive/Combat.md 6, ADR 0041, ADR 0052).
   void RecordHostileAct(ShipHandle _attacker, ShipHandle _victim);
 
   // --- stations ----------------------------------------------------------------------------------
@@ -769,7 +769,7 @@ public:
   //   RefusedFriendly  Attack: the named record is the issuer's own faction's. NoSuchTarget would
   //                    have been a lie, and the gate is here rather than on the sheet for ADR 0014's
   //                    reason -- no mount may resolve to a friend, and neither may an order
-  //                    (Design/Combat.md 11);
+  //                    (Design/Archive/Combat.md 11);
   //   NotAGate         Jump: the named record is not a live gate row. There is no standing refusal
   //                    beside it -- a gate takes anyone this phase, and inventing half a
   //                    gate-standings design here would repeat the mistake the stations design
@@ -989,7 +989,7 @@ private:
   // fleet it is flying with while the fleet flies at something else.
   [[nodiscard]] bool MountTargetStands(ShipId _shooter, ShipId _target, const DeviceSpec& _device) const noexcept;
 
-  // What one mount will shoot at this tick, by Design/Combat.md 5.2's fixed order: the fleet's
+  // What one mount will shoot at this tick, by Design/Archive/Combat.md 5.2's fixed order: the fleet's
   // threat, the fleet's ordered target, the ship's protector duty, the target it already held, and
   // then the nearest standing-hostile it can see. First that stands.
   [[nodiscard]] ShipId ChooseMountTarget(ShipId _ship, const DeviceSpec& _device, const MountState& _mount) const noexcept;
@@ -1020,7 +1020,7 @@ private:
   // It stops short by EngageStandoffMetres, so a hull with turrets holds where they all bear instead
   // of closing to contact and parking its guns on its quarry's hull. A hull whose mounts are all
   // fixed keeps the old behaviour and is sent at the target itself, which is what makes it fly
-  // attack runs (Design/Combat.md 8).
+  // attack runs (Design/Archive/Combat.md 8).
   //
   // One function with two masters, which is what the design means by the fleet defense being the
   // protector's chassis: the protector duty and the fleet posture both call it, so neither can drift
@@ -1268,7 +1268,7 @@ private:
 
   // Who holds whom hostile. Mutated only by RecordAggression -- from outside the tick, or from
   // StepMounts, which is the last pass in it and states its acts after every mount has already
-  // chosen (Design/Combat.md 6). So a tick's reads of this table all precede that tick's writes, and
+  // chosen (Design/Archive/Combat.md 6). So a tick's reads of this table all precede that tick's writes, and
   // it is read pointwise and never iterated, so no pass of Step depends on its contents in array
   // order.
   StandingTable m_standings = DEFAULT_STANDINGS;

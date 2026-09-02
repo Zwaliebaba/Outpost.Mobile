@@ -93,12 +93,14 @@ stops, rather than running on a second path nobody is testing (`Design/Decisions
 purpose.
 
 **Deliberately not here yet**, so nobody goes looking for it: no audio, no economy, no shields or
-armour classes past the one hull number. A turret DOES turn now, on the two hulls whose art carries
-one -- the Corvette's pair and the Battleship's three -- and a hull with a turret off its rest leaves
-the instanced draw path while it does, bounded by ViewTuning.h's TURRET_STOWED_RAD and
-MAX_POSED_HULLS (ADR 0064). No muzzle flash comes off a `Gun` marker yet: several hulls carry
-markers, none of them names the mount it belongs to, and every shot still draws from the hull's
-origin. The save is a versioned file now: `UniverseGen` writes one, the boot restores it or
+armour classes past the one hull number. A turret DOES turn now, on the three hulls whose art carries
+one -- the Corvette's pair, the Frigate's batteries and the Battleship's three heavy turrets -- and a
+hull with a turret off its rest leaves the instanced draw path while it does, bounded by
+ViewTuning.h's TURRET_STOWED_RAD and MAX_POSED_HULLS (ADR 0064). A muzzle flash comes off the gun
+that fired it, carried round by the turret's aim, wherever the art authors a `Gun<N>` marker for that
+mount; the Bomber, the Carrier and the Battleship's two light mounts author none and draw from the
+hull's origin, which Design/Archive/Combat.md 3.1 permits and
+`Tools/NmoShippedArtTest.py` reports rather than fails. The save is a versioned file now: `UniverseGen` writes one, the boot restores it or
 stops (ADR 0057), and a file in an older format is migrated on read — every field a later format
 added is read behind a gate on the byte the file carries, back to `UNIVERSE_STATE_FORMAT_OLDEST`,
 and a fixture per retired format under `Tests/GameLogicTests/Assets/` is what proves it (ADR 0061).
@@ -279,6 +281,16 @@ over GameLogic and NeuronServer. Each arrived non-blocking and was promoted once
 runner came back clean, which is the only way a linter should ever start gating; the next project
 joins the same way.
 
+**The content codecs gate too**, on the same Windows job and before anything is compiled, since they
+are stdlib Python and need no compiler: `Tools/NmoRoundtripTest.py` proves the NMO reader and writer
+agree, and `Tools/NmoShippedArtTest.py` holds the shipped hulls to what a consumer of their parts may
+assume -- named submeshes with their own bounds, no FNV-1a collision, and **every `Gun` marker naming
+a mount `HullSpec` says its hull carries**. That last one parses `GameLogic/HullSpec.h`, which is the
+one place in the tree a script reads a C++ header: a generated table would be a second source of
+truth for a table that is already the only one, and the parser is written to raise rather than
+default, so its fragility is a red check and not a wrong answer (ADR 0064,
+[`Design/Archive/Combat-slice-6.md`](Design/Archive/Combat-slice-6.md) §10.2).
+
 Run either yourself before you push — clang-tidy on the files you wrote, not on the tree:
 
 ```
@@ -341,7 +353,7 @@ does not have.
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
 | `NeuronClient/Shaders/` | HLSL (§3). DXC compiles it, as shader model 6.7 DXIL, into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
 | `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). |
-| `Tools/` | `UniverseGen/`, the C++ console tool that writes `Universe.sav` (ADR 0058) and the one program allowed `argv` (§5); and the content tools, stdlib Python only: the NMO ship-mesh codec and Blender add-on (`BlenderNmo/`), the OBJ→NMO converter (`ObjToNmo.py`), the DDS mip-and-BC baker (`DdsBake.py`), and their tests (`Nmo*Test.py` — the codec test needs bare python3, the Blender one the `bpy` wheel, and `NmoShippedArtTest.py` reads the shipping hulls in `Outpost/Assets/Meshes/` to assert what the game's art guarantees a consumer: every part named, bounded and collision-free under FNV-1a, which is what lets a client address one part of a hull, [`Design/Combat-slice-3.md`](Design/Combat-slice-3.md) §2.6). None of the three runs in CI, so run the one your change touches by hand. [`Design/Archive/NmoFormat.md`](Design/Archive/NmoFormat.md) is the format; nothing here is engine code, and no `.vcxproj` names it. The shipping corpus is *not* converted here: the hulls are authored as GLB in `Art/Meshes/` and converted by `Art/Meshes/GlbToNmo.py`, which sits beside them because that is where an artist looks for it ([ADR 0035](Design/Decisions/0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md)). `ObjToNmo.py` stays as the OBJ path's record and the Blender test's fixture source. |
+| `Tools/` | `UniverseGen/`, the C++ console tool that writes `Universe.sav` (ADR 0058) and the one program allowed `argv` (§5); and the content tools, stdlib Python only: the NMO ship-mesh codec and Blender add-on (`BlenderNmo/`), the OBJ→NMO converter (`ObjToNmo.py`), the DDS mip-and-BC baker (`DdsBake.py`), and their tests (`Nmo*Test.py` — the codec test needs bare python3, the Blender one the `bpy` wheel, and `NmoShippedArtTest.py` reads the shipping hulls in `Outpost/Assets/Meshes/` to assert what the game's art guarantees a consumer: every part named, bounded and collision-free under FNV-1a, which is what lets a client address one part of a hull, [`Design/Archive/Combat-slice-3.md`](Design/Archive/Combat-slice-3.md) §2.6). None of the three runs in CI, so run the one your change touches by hand. [`Design/Archive/NmoFormat.md`](Design/Archive/NmoFormat.md) is the format; nothing here is engine code, and no `.vcxproj` names it. The shipping corpus is *not* converted here: the hulls are authored as GLB in `Art/Meshes/` and converted by `Art/Meshes/GlbToNmo.py`, which sits beside them because that is where an artist looks for it ([ADR 0035](Design/Decisions/0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md)). `ObjToNmo.py` stays as the OBJ path's record and the Blender test's fixture source. |
 | `Design/` | Designs with a slice still open, `Screenprints/`, `Archive/` for designs whose slices have all landed and for the work orders that landed them, and `Design/Decisions/` — the architecture decision records (§9). An archived design is still the document its area is reviewed against and is cited from code as before; `Design/` itself is the list of what is unfinished. Its `README.md` says which document is which and how a slice moves from a design into the tree (§7). |
 | `.github/` | CI (§6) and the pull request template every slice answers (§7). |
 
@@ -789,6 +801,10 @@ configurations you built.
 - [ ] Added a field to `Universe` that `Step` reads? `WriteUniverseState` carries it, or `ReadUniverseState`
       rebuilds it. `UniverseStateTests::ASavedUniverseReplaysToTheSameRun` compares two whole states and
       goes red if neither happened.
+- [ ] Touched a `.nmo` under `Outpost/Assets/Meshes/`, or a hull's `MountLoadout`? `python
+      Tools/NmoShippedArtTest.py` passes, and you ran it *before* pushing rather than reading CI:
+      it is the only thing joining the art's `Gun<N>` markers to `HullSpec`'s mount table, and the
+      two drifting apart is silent in the game (ADR 0064).
 - [ ] Bumped `UNIVERSE_STATE_FORMAT` or `SAVE_FILE_FORMAT`? The new field is read behind a gate on the
       format the reader took and defaulted where the file predates it; the previous format's fixture,
       `Tests/GameLogicTests/Assets/UniverseFormat<N>.sav`, is `UniverseGen 0` run at the parent commit

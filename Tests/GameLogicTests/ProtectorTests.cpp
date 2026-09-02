@@ -152,7 +152,7 @@ public:
       //
       // Asked of Universe::PursuitAimedAt rather than of the route's destination, which is where this
       // row used to read it. The two were the same point until a pursuit gained a stand-off and the
-      // destination moved up to 224 m short of the target (Design/Combat.md 8, ADR 0052); measured
+      // destination moved up to 224 m short of the target (Design/Archive/Combat.md 8, ADR 0052); measured
       // against the destination now, a Corvette's own 144 m stand-off reads as permanent drift.
       Assert::IsTrue(Game::Distance(universe.PursuitAimedAt(hunter), universe.Ship(live).posUniverse) <= Game::PURSUIT_REPLAN_METRES + 1.0f,
                      L"the hunter let its target drift past the replan threshold without re-aiming");

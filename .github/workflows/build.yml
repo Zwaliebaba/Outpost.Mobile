@@ -103,6 +103,19 @@ jobs:
         # a CI run and reported as nine identical MSB4024 errors.
         run: python Build/CheckProjectFiles.py
 
+      - name: Check the content codecs and the shipped art
+        shell: pwsh
+        # Stdlib Python over the NMO reader/writer and the shipped hulls: the format round-trips, and
+        # every Gun marker names a mount HullSpec says its hull carries (Design/Archive/Combat.md 3.1).
+        # Beside CheckProjectFiles rather than after the build, because none of it needs a compiler --
+        # and in CI at all because a check nobody runs is a check that rots, which is exactly what the
+        # mount-versus-marker rule exists to prevent.
+        run: |
+          python Tools/NmoRoundtripTest.py
+          if ($LASTEXITCODE -ne 0) { throw 'NmoRoundtripTest failed' }
+          python Tools/NmoShippedArtTest.py
+          if ($LASTEXITCODE -ne 0) { throw 'NmoShippedArtTest failed' }
+
       - name: Restore packages
         shell: pwsh
         run: |

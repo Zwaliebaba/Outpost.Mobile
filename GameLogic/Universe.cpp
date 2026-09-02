@@ -234,7 +234,7 @@ void Universe::PursueTarget(ShipId _ship, ShipId _target)
 
   // Short of the target by what this hull's turrets need, along the bearing from the target back to
   // the pursuer, so a gunship holds where its guns bear. Zero for a hull with no traversing mount,
-  // which is what sends a fighter at its quarry and makes the pass a pass (Design/Combat.md 8).
+  // which is what sends a fighter at its quarry and makes the pass a pass (Design/Archive/Combat.md 8).
   const HullSpec& hull = HullSpecOf(ship.hullId);
   UniversePos aimPoint = targetPos;
   const float standoff = EngageStandoffMetres(hull);
@@ -681,7 +681,7 @@ Universe::FleetOrderResult Universe::IssueFleetOrder(const Issuer& _issuer, std:
     if (_command.target >= m_ships.size())
       return FleetOrderResult::NoSuchTarget;
     // No mount may resolve to a friend and neither may an order, which is where the structural half
-    // of "there is no friendly fire" is actually held (Design/Combat.md 11). In the simulation and
+    // of "there is no friendly fire" is actually held (Design/Archive/Combat.md 11). In the simulation and
     // not on the sheet, for ADR 0014's reason.
     if (m_ships[_command.target].factionId == _issuer.faction)
       return FleetOrderResult::RefusedFriendly;
@@ -1714,7 +1714,7 @@ bool Universe::MountTargetStands(ShipId _shooter, ShipId _target, const DeviceSp
   // No priority may resolve to a friend. This one line is where "there is no friendly fire" stops
   // being a promise in a design document and becomes a property of the simulation: a shot lands on
   // its acquired target and nowhere else, and an own-faction ship is never acquired
-  // (Design/Combat.md 11, ADR 0052).
+  // (Design/Archive/Combat.md 11, ADR 0052).
   if (target.factionId == shooter.factionId)
     return false;
 
@@ -1767,7 +1767,7 @@ ShipId Universe::ChooseMountTarget(ShipId _ship, const DeviceSpec& _device, cons
   // its own, no cadence, no scan -- and the neighbour cap's honest consequence rides along with it.
   // A hull whose K nearest are all friends does not see the enemy K+1 away, holds its fire and is
   // shot; the stated act that follows rouses its fleet, which is the failure correcting itself
-  // rather than a case needing a mechanism (Design/Combat.md 5.2).
+  // rather than a case needing a mechanism (Design/Archive/Combat.md 5.2).
   for (const Neighbour& candidate : NeighboursOf(_ship))
   {
     if (MountTargetStands(_ship, candidate.id, _device) && HoldsHostile(_ship, candidate.id))

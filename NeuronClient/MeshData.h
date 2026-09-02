@@ -65,7 +65,7 @@ struct MeshMarker
   // and one that floats where the barrel used to be.
   //
   // Nothing reads it yet, and no shipped hull sets it: every hull in the game is rigid submeshes
-  // with no rig at all (Design/Combat-slice-3.md 2.6). It is four bytes on a struct loaded once per
+  // with no rig at all (Design/Archive/Combat-slice-3.md 2.6). It is four bytes on a struct loaded once per
   // hull, against reading the format a second time the day a rigged hull is authored.
   std::int32_t parentBone = -1;
 };
