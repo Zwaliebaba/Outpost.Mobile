@@ -61,6 +61,20 @@ constexpr std::uint8_t KIND_COMPOSE_ORDER = 9;
 // flash is not a lie, while a late one draws a line into empty space (ADR 0053).
 constexpr std::uint8_t KIND_FIRE = 10;
 
+// Shard to shard, both on the reliable lane. A lost handoff is a fleet that left one universe and
+// reached no other, which is the failure this whole design exists to prevent -- so it takes the lane
+// the fire message argued its way OUT of, and for the mirror-image reason (ADR 0053, ADR 0029).
+//
+// No client sends or understands either, so the ALPN does not move: an unknown kind is refused by
+// the dispatch above rather than misread, which is the property that makes adding one cheap.
+constexpr std::uint8_t KIND_HANDOFF = 11;
+constexpr std::uint8_t KIND_HANDOFF_ACK = 12;
+
+// What one Handoff costs on the wire, which is what decides how many fit a message. Stated rather
+// than sizeof'd, for the reason the queue is written field by field: sizeof would include padding
+// the format does not carry.
+constexpr std::uint32_t HANDOFF_WIRE_BYTES = 8 + 8 + 4 + 1 + 4 + 8 + 1 + 1 + 4 + 4 + 8;
+
 // kind, complete, snapshotId, fragmentIndex, fragmentCount, tick, recordCount, hostileMask
 //
 // The mask is appended rather than inserted, so every field a reader already knew stays where it
@@ -1181,23 +1195,47 @@ void ReadShipState(ByteReader& _in, ShipState& _outShip)
 // Field by field and never as a struct. A Handoff has a u8 between two u32s and would carry three
 // bytes of padding into the file, which two identical universes could differ in -- the argument
 // Route already makes about waypoints past its count, one type over.
+void WriteHandoffFields(ByteWriter& _out, const Universe::Handoff& _handoff)
+{
+  _out.U64(_handoff.entity);
+  _out.U64(_handoff.gate);
+  _out.U32(_handoff.hullId);
+  _out.U8(_handoff.factionId);
+  _out.U32(_handoff.hullPoints);
+  _out.U64(_handoff.owner);
+  _out.U8(_handoff.ownerFaction);
+  _out.U8(_handoff.slot);
+  _out.U32(_handoff.memberIndex);
+  _out.U32(_handoff.crossingCount);
+  _out.U64(_handoff.sequence);
+}
+
+// The same fields back, with the bounds the fleet block checks: a slot or a faction past its limit is
+// an invariant corrupted rather than a value, and it would index past a table later.
+[[nodiscard]] bool ReadHandoffFields(ByteReader& _in, Universe::Handoff& _handoff)
+{
+  _handoff.entity = _in.U64();
+  _handoff.gate = _in.U64();
+  _handoff.hullId = _in.U32();
+  _handoff.factionId = _in.U8();
+  _handoff.hullPoints = _in.U32();
+  _handoff.owner = _in.U64();
+  _handoff.ownerFaction = _in.U8();
+  _handoff.slot = _in.U8();
+  _handoff.memberIndex = _in.U32();
+  _handoff.crossingCount = _in.U32();
+  _handoff.sequence = _in.U64();
+  return _in.Ok() && _handoff.factionId < FACTION_LIMIT && _handoff.ownerFaction < FACTION_LIMIT && _handoff.slot < FLEET_SLOTS;
+}
+
+// One writer for the save and the wire, so the two spellings of a Handoff cannot drift apart. That
+// they are the same bytes is not a coincidence to be maintained -- it is why slice 3 could say the
+// struct was already a wire format.
 void WriteHandoffQueue(ByteWriter& _out, const std::vector<Universe::Handoff>& _queue)
 {
   _out.U32(static_cast<std::uint32_t>(_queue.size()));
   for (const Universe::Handoff& handoff : _queue)
-  {
-    _out.U64(handoff.entity);
-    _out.U64(handoff.gate);
-    _out.U32(handoff.hullId);
-    _out.U8(handoff.factionId);
-    _out.U32(handoff.hullPoints);
-    _out.U64(handoff.owner);
-    _out.U8(handoff.ownerFaction);
-    _out.U8(handoff.slot);
-    _out.U32(handoff.memberIndex);
-    _out.U32(handoff.crossingCount);
-    _out.U64(handoff.sequence);
-  }
+    WriteHandoffFields(_out, handoff);
 }
 
 // The same shape back, bounded like every other count in this format: the smallest entry is larger
@@ -1210,20 +1248,7 @@ void WriteHandoffQueue(ByteWriter& _out, const std::vector<Universe::Handoff>& _
   _outQueue.resize(count);
   for (Universe::Handoff& handoff : _outQueue)
   {
-    handoff.entity = _in.U64();
-    handoff.gate = _in.U64();
-    handoff.hullId = _in.U32();
-    handoff.factionId = _in.U8();
-    handoff.hullPoints = _in.U32();
-    handoff.owner = _in.U64();
-    handoff.ownerFaction = _in.U8();
-    handoff.slot = _in.U8();
-    handoff.memberIndex = _in.U32();
-    handoff.crossingCount = _in.U32();
-    handoff.sequence = _in.U64();
-    // The same bounds the fleet block checks, for the same reason: a slot or a faction past its
-    // limit is an invariant corrupted rather than a value, and it would index past a table later.
-    if (handoff.factionId >= FACTION_LIMIT || handoff.ownerFaction >= FACTION_LIMIT || handoff.slot >= FLEET_SLOTS)
+    if (!ReadHandoffFields(_in, handoff))
       return false;
   }
   return _in.Ok();
@@ -2067,6 +2092,80 @@ bool ReadLedgerReply(std::span<const std::uint8_t> _message, LedgerReply& _outRe
   for (std::uint32_t hull = 0; hull < HULL_COUNT; ++hull)
     _outReply.hullCounts[hull] = counts[hull];
   return true;
+}
+
+bool WriteHandoffs(std::span<const Universe::Handoff> _handoffs, Neuron::Transport& _transport, std::uint32_t& _outSent)
+{
+  _outSent = 0;
+  if (_handoffs.empty())
+    return true; // nothing to say is not a failure to say it
+
+  // As many as the lane holds. The kind byte and the count are the header; the rest is entries.
+  const std::uint32_t room = (Neuron::MAX_RELIABLE_BYTES - 1u - 4u) / HANDOFF_WIRE_BYTES;
+  const std::uint32_t taking = std::min(room, static_cast<std::uint32_t>(_handoffs.size()));
+  if (taking == 0)
+    return false; // one entry does not fit the lane, which is a build mistake rather than a runtime one
+
+  std::vector<std::uint8_t> bytes;
+  ByteWriter out(bytes);
+  out.U8(KIND_HANDOFF);
+  out.U32(taking);
+  for (std::uint32_t at = 0; at < taking; ++at)
+    WriteHandoffFields(out, _handoffs[at]);
+
+  if (!_transport.SendReliable(bytes.data(), static_cast<std::uint32_t>(bytes.size())))
+    return false; // the lane refused: the caller still holds every entry, which is the point
+  _outSent = taking;
+  return true;
+}
+
+bool ReadHandoffs(std::span<const std::uint8_t> _message, std::vector<Universe::Handoff>& _outHandoffs)
+{
+  ByteReader in(_message);
+  if (in.U8() != KIND_HANDOFF)
+    return false;
+  const std::uint32_t count = in.U32();
+  if (!in.Ok() || count == 0 || count > in.Remaining())
+    return false;
+
+  _outHandoffs.resize(count);
+  for (Universe::Handoff& handoff : _outHandoffs)
+  {
+    if (!ReadHandoffFields(in, handoff))
+      return false;
+  }
+  return in.Ok();
+}
+
+bool WriteHandoffAck(std::span<const std::uint64_t> _sequences, Neuron::Transport& _transport)
+{
+  if (_sequences.empty())
+    return true;
+
+  const std::uint32_t room = (Neuron::MAX_RELIABLE_BYTES - 1u - 4u) / 8u;
+  const std::uint32_t taking = std::min(room, static_cast<std::uint32_t>(_sequences.size()));
+
+  std::vector<std::uint8_t> bytes;
+  ByteWriter out(bytes);
+  out.U8(KIND_HANDOFF_ACK);
+  out.U32(taking);
+  for (std::uint32_t at = 0; at < taking; ++at)
+    out.U64(_sequences[at]);
+  return _transport.SendReliable(bytes.data(), static_cast<std::uint32_t>(bytes.size()));
+}
+
+bool ReadHandoffAck(std::span<const std::uint8_t> _message, std::vector<std::uint64_t>& _outSequences)
+{
+  ByteReader in(_message);
+  if (in.U8() != KIND_HANDOFF_ACK)
+    return false;
+  const std::uint32_t count = in.U32();
+  if (!in.Ok() || count == 0 || count > in.Remaining())
+    return false;
+  _outSequences.resize(count);
+  for (std::uint64_t& sequence : _outSequences)
+    sequence = in.U64();
+  return in.Ok();
 }
 
 bool WriteComposeOrder(const ComposeOrder& _order, Neuron::Transport& _transport)

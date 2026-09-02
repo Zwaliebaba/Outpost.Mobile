@@ -693,6 +693,26 @@ void WriteSaveFile(const Universe& _universe, const SaveHeader& _header, std::ve
 [[nodiscard]] bool WriteLedgerReply(const LedgerReply& _reply, Neuron::Transport& _transport);
 [[nodiscard]] bool ReadLedgerReply(std::span<const std::uint8_t> _message, LedgerReply& _outReply);
 
+// --- the shard-to-shard seam ----------------------------------------------------------------------
+
+// A batch of handoffs, and the acknowledgement that clears them.
+//
+// Both ride the RELIABLE lane. A lost handoff is a fleet that has left one universe and reached no
+// other, which is the one thing this design must not do -- so it is the opposite of the fire message,
+// whose argument for the datagram lane was that a lost flash is not a lie (ADR 0053, ADR 0029).
+//
+// They are shard-to-shard and no client sends or understands either, which is why the ALPN does not
+// move: a kind a reader does not know is already refused rather than misread.
+//
+// A message carries as many entries as MAX_RELIABLE_BYTES holds; the rest wait for the next send,
+// which the re-send loop was going to make anyway. WriteHandoffs reports how many it took, so a
+// caller can tell "the lane refused" from "the batch did not fit".
+[[nodiscard]] bool WriteHandoffs(std::span<const Universe::Handoff> _handoffs, Neuron::Transport& _transport, std::uint32_t& _outSent);
+[[nodiscard]] bool ReadHandoffs(std::span<const std::uint8_t> _message, std::vector<Universe::Handoff>& _outHandoffs);
+
+[[nodiscard]] bool WriteHandoffAck(std::span<const std::uint64_t> _sequences, Neuron::Transport& _transport);
+[[nodiscard]] bool ReadHandoffAck(std::span<const std::uint8_t> _message, std::vector<std::uint64_t>& _outSequences);
+
 // The draft, upward. The last of the four order kinds, and the only one that names no ship at all.
 [[nodiscard]] bool WriteComposeOrder(const ComposeOrder& _order, Neuron::Transport& _transport);
 [[nodiscard]] bool ReadComposeOrder(std::span<const std::uint8_t> _message, ComposeOrder& _outOrder);

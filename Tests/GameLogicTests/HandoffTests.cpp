@@ -107,6 +107,47 @@ void OrderThroughGate(Game::Universe& _shard, Game::ShipId _gate)
 {
   return Game::EntityShardOf(_shard.GateOf(_shard.GateAt(_gate)).destination);
 }
+
+// Two shards wired to each other, each with its own end of the link. The pattern QUIC across
+// 127.0.0.1 already set: the transport is real, the two ends are in one process, and nothing about
+// the code under test knows the difference (ADR 0021, 0028).
+struct Wire
+{
+  Neuron::LoopbackTransport departing;
+  Neuron::LoopbackTransport arriving;
+  Game::ShardLink departingLink;
+  Game::ShardLink arrivingLink;
+
+  void Connect(const Neuron::LoopbackTransport::Desc& _desc)
+  {
+    Neuron::LoopbackTransport::Connect(departing, arriving, _desc);
+  }
+
+  void Poll(std::uint64_t _tick)
+  {
+    departing.AdvanceTo(_tick);
+    arriving.AdvanceTo(_tick);
+    departing.Poll();
+    arriving.Poll();
+  }
+};
+
+// Runs the link until the fleet has arrived or the budget is spent. Returns the tick it stopped on,
+// so a row can say how long a crossing actually took rather than only that it happened.
+[[nodiscard]] int PumpUntilArrived(Wire& _wire, Galaxy& _world, std::uint32_t _departing, std::uint32_t _arriving, int _maxPumps = 4000)
+{
+  for (int pump = 0; pump < _maxPumps; ++pump)
+  {
+    _world.shards[_departing].Step();
+    _world.shards[_arriving].Step();
+    _wire.Poll(_world.shards[_departing].Tick());
+    (void)_wire.departingLink.Pump(_world.shards[_departing], _wire.departing);
+    (void)_wire.arrivingLink.Pump(_world.shards[_arriving], _wire.arriving);
+    if (_world.shards[_arriving].DrainInbox() > 0)
+      return pump;
+  }
+  return -1;
+}
 } // namespace
 
 TEST_CLASS(HandoffTests)
@@ -308,6 +349,176 @@ public:
     // Every sequence is distinct, which is what an acknowledgement addresses one entry by.
     for (std::size_t at = 1; at < batch.size(); ++at)
       Assert::AreNotEqual(batch[at - 1].sequence, batch[at].sequence, L"two handoffs share a sequence number");
+  }
+
+  TEST_METHOD(AFleetCrossesAWireWithNobodyCopyingTheOutbox)
+  {
+    // Everything before this row moved a Handoff by hand. This one puts it on a transport, which is
+    // the whole of slice 4: the same four calls, driven by a link instead of by a test.
+    Galaxy world = BuildGalaxy(4);
+    const std::uint32_t before = PlayerShips(world);
+    const std::uint32_t departing = ShardHoldingTheFleet(world);
+    const Game::ShipId gate = GateLeadingOut(world.shards[departing]);
+    const std::uint32_t arriving = ShardOfDestination(world.shards[departing], gate);
+
+    OrderThroughGate(world.shards[departing], gate);
+    Assert::IsTrue(StepUntilHandedOff(world, departing), L"the fleet never reached the gate");
+
+    Wire wire;
+    wire.Connect(Neuron::LoopbackTransport::Desc{});
+    // Everything up to now is on disk, so the arriving end may acknowledge what it receives.
+    wire.arrivingLink.NoteDurableThrough(world.shards[arriving].Tick() + 100000);
+
+    Assert::IsTrue(PumpUntilArrived(wire, world, departing, arriving) >= 0, L"the fleet never arrived over the wire");
+    Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID, world.shards[arriving].FleetInSlot(Game::OWNER_LOCAL, 0),
+                        L"the fleet did not re-form on the far side");
+    Assert::AreEqual(before, PlayerShips(world), L"a ship was lost or duplicated crossing the wire");
+
+    // And the outbox empties, which is the acknowledgement arriving back.
+    for (int pump = 0; pump < 200 && !world.shards[departing].Outbox().empty(); ++pump)
+    {
+      world.shards[departing].Step();
+      wire.Poll(world.shards[departing].Tick());
+      (void)wire.arrivingLink.Pump(world.shards[arriving], wire.arriving);
+      (void)wire.departingLink.Pump(world.shards[departing], wire.departing);
+    }
+    Assert::IsTrue(world.shards[departing].Outbox().empty(), L"the outbox was never acknowledged");
+  }
+
+  TEST_METHOD(ALaneTooShallowToTakeTheMessageLosesNothing)
+  {
+    // The loss model, and it is a real one rather than an injected fault: SendReliable refuses when
+    // the queue is full. The entry stays in the outbox -- which is the point of the outbox -- and the
+    // next re-send delivers it.
+    Galaxy world = BuildGalaxy(4);
+    const std::uint32_t before = PlayerShips(world);
+    const std::uint32_t departing = ShardHoldingTheFleet(world);
+    const Game::ShipId gate = GateLeadingOut(world.shards[departing]);
+    const std::uint32_t arriving = ShardOfDestination(world.shards[departing], gate);
+
+    OrderThroughGate(world.shards[departing], gate);
+    Assert::IsTrue(StepUntilHandedOff(world, departing), L"the fleet never reached the gate");
+
+    Wire wire;
+    Neuron::LoopbackTransport::Desc desc;
+    desc.capacityReliableMessages = 0; // nothing may be sent at all
+    wire.Connect(desc);
+    wire.arrivingLink.NoteDurableThrough(world.shards[arriving].Tick() + 100000);
+
+    const std::size_t held = world.shards[departing].Outbox().size();
+    bool refused = false;
+    for (int pump = 0; pump < 200; ++pump)
+    {
+      world.shards[departing].Step();
+      wire.Poll(world.shards[departing].Tick());
+      refused = wire.departingLink.Pump(world.shards[departing], wire.departing).laneRefused || refused;
+    }
+    Assert::IsTrue(refused, L"a lane with no room never refused a send");
+    Assert::AreEqual(held, world.shards[departing].Outbox().size(), L"a refused send lost an outbox entry");
+    // In the outbox and nowhere else, which is where a ship IS while a send is being refused -- the
+    // same census the first row of this suite states, and the reason it counts the queue.
+    Assert::AreEqual(before, PlayerShips(world) + static_cast<std::uint32_t>(held), L"a refused send lost a ship");
+
+    // Room appears, and the same entries go across untouched.
+    Wire open;
+    open.Connect(Neuron::LoopbackTransport::Desc{});
+    open.arrivingLink.NoteDurableThrough(world.shards[arriving].Tick() + 100000);
+    Assert::IsTrue(PumpUntilArrived(open, world, departing, arriving) >= 0, L"the fleet never arrived once the lane had room");
+    Assert::AreEqual(before, PlayerShips(world), L"the retry duplicated a ship");
+  }
+
+  TEST_METHOD(NothingIsAcknowledgedUntilTheArrivingShardHasSavedIt)
+  {
+    // ADR 0066. With no save noted, the arriving shard may not acknowledge, so the departing outbox
+    // must still hold every entry however long the two are pumped -- and the ships must be safe on
+    // BOTH sides while that is true, which is the whole reason for the rule.
+    Galaxy world = BuildGalaxy(4);
+    const std::uint32_t departing = ShardHoldingTheFleet(world);
+    const Game::ShipId gate = GateLeadingOut(world.shards[departing]);
+    const std::uint32_t arriving = ShardOfDestination(world.shards[departing], gate);
+
+    OrderThroughGate(world.shards[departing], gate);
+    Assert::IsTrue(StepUntilHandedOff(world, departing), L"the fleet never reached the gate");
+
+    Wire wire;
+    wire.Connect(Neuron::LoopbackTransport::Desc{});
+    // Deliberately NOT noted durable: this shard has saved nothing.
+    const std::size_t held = world.shards[departing].Outbox().size();
+
+    std::uint32_t acked = 0;
+    for (int pump = 0; pump < 400; ++pump)
+    {
+      world.shards[departing].Step();
+      world.shards[arriving].Step();
+      wire.Poll(world.shards[departing].Tick());
+      (void)wire.departingLink.Pump(world.shards[departing], wire.departing);
+      acked += wire.arrivingLink.Pump(world.shards[arriving], wire.arriving).acksSent;
+      (void)world.shards[arriving].DrainInbox();
+    }
+    Assert::AreEqual(std::uint32_t{0}, acked, L"a shard acknowledged a handoff it had not saved");
+    Assert::AreEqual(held, world.shards[departing].Outbox().size(), L"the outbox was cleared without an acknowledgement");
+    Assert::IsTrue(world.shards[arriving].ShipCount() > 0, L"the far side has nothing at all");
+
+    // Now it saves, and the same pump clears the outbox.
+    wire.arrivingLink.NoteDurableThrough(world.shards[arriving].Tick());
+    for (int pump = 0; pump < 400 && !world.shards[departing].Outbox().empty(); ++pump)
+    {
+      world.shards[departing].Step();
+      world.shards[arriving].Step();
+      wire.Poll(world.shards[departing].Tick());
+      (void)wire.arrivingLink.Pump(world.shards[arriving], wire.arriving);
+      (void)wire.departingLink.Pump(world.shards[departing], wire.departing);
+    }
+    Assert::IsTrue(world.shards[departing].Outbox().empty(), L"a noted save did not clear the outbox");
+  }
+
+  TEST_METHOD(AHandoffMessageRoundTripsThroughItsOwnCodec)
+  {
+    // The wire format, on its own, because a codec tested only through a link is a codec whose
+    // failures look like link failures.
+    Galaxy world = BuildGalaxy(4);
+    const std::uint32_t departing = ShardHoldingTheFleet(world);
+    const Game::ShipId gate = GateLeadingOut(world.shards[departing]);
+    OrderThroughGate(world.shards[departing], gate);
+    Assert::IsTrue(StepUntilHandedOff(world, departing), L"the fleet never reached the gate");
+    const std::vector<Game::Universe::Handoff> sent = TakeOutbox(world.shards[departing]);
+
+    Neuron::LoopbackTransport a;
+    Neuron::LoopbackTransport b;
+    Neuron::LoopbackTransport::Connect(a, b, Neuron::LoopbackTransport::Desc{});
+    std::uint32_t taken = 0;
+    Assert::IsTrue(Game::WriteHandoffs(sent, a, taken), L"the lane refused a handoff message");
+    Assert::AreEqual(static_cast<std::uint32_t>(sent.size()), taken, L"the message did not take every entry");
+
+    b.AdvanceTo(1);
+    b.Poll();
+    std::vector<std::uint8_t> buffer(Neuron::MAX_RELIABLE_BYTES);
+    const std::uint32_t size = b.ReceiveReliable(buffer.data(), Neuron::MAX_RELIABLE_BYTES);
+    Assert::IsTrue(size > 0, L"nothing arrived on the reliable lane");
+
+    std::vector<Game::Universe::Handoff> got;
+    Assert::IsTrue(Game::ReadHandoffs(std::span<const std::uint8_t>(buffer.data(), size), got), L"the handoff message was refused");
+    Assert::AreEqual(sent.size(), got.size(), L"the message lost an entry");
+    for (std::size_t at = 0; at < sent.size(); ++at)
+    {
+      Assert::AreEqual(sent[at].entity, got[at].entity, L"an entry changed identity on the wire");
+      Assert::AreEqual(sent[at].gate, got[at].gate, L"an entry lost the gate it is bound for");
+      Assert::AreEqual(sent[at].sequence, got[at].sequence, L"an entry lost its sequence");
+      Assert::AreEqual(sent[at].hullPoints, got[at].hullPoints, L"an entry lost its damage");
+      Assert::AreEqual(sent[at].owner, got[at].owner, L"an entry lost its owner");
+      Assert::AreEqual(sent[at].crossingCount, got[at].crossingCount, L"an entry lost the width of its spread");
+    }
+
+    // And an ack, the same way round.
+    const std::uint64_t sequences[] = {sent[0].sequence, sent[1].sequence};
+    Assert::IsTrue(Game::WriteHandoffAck(sequences, a), L"the lane refused an acknowledgement");
+    b.AdvanceTo(2);
+    b.Poll();
+    const std::uint32_t ackSize = b.ReceiveReliable(buffer.data(), Neuron::MAX_RELIABLE_BYTES);
+    std::vector<std::uint64_t> gotAck;
+    Assert::IsTrue(Game::ReadHandoffAck(std::span<const std::uint8_t>(buffer.data(), ackSize), gotAck), L"the acknowledgement was refused");
+    Assert::AreEqual(std::size_t{2}, gotAck.size(), L"the acknowledgement lost a sequence");
+    Assert::AreEqual(sequences[0], gotAck[0], L"an acknowledgement named a different entry");
   }
 
   TEST_METHOD(AOneShardGalaxyHandsOffNothing)
