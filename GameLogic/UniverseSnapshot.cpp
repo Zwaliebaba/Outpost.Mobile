@@ -79,7 +79,7 @@ constexpr std::uint32_t SNAPSHOT_HEADER_BYTES = 1 + 1 + 4 + 4 + 4 + 8 + 4 + 1;
 // WORST case rather than against what an update happens to carry -- one number that every caller
 // and every test agree on, rather than the truer number nobody can state. It costs one record a
 // fragment: 22 rather than 23 (Design/Archive/Fleets-slice-5.md 2.2).
-constexpr std::uint32_t FLEET_STATUS_BYTES = 4 + 4 + 2 + 2 + 1 + 1;
+constexpr std::uint32_t FLEET_STATUS_BYTES = 4 + 4 + 2 + 2 + 1 + 1 + 1 + 1;
 constexpr std::uint32_t FLEET_BLOCK_MAX_BYTES = 1 + FLEET_SLOTS * FLEET_STATUS_BYTES;
 
 // kind, tick, leaveCount, destroyedCount, dockedCount, jumpedCount
@@ -111,13 +111,16 @@ constexpr std::uint32_t FIRE_HEADER_BYTES = 1 + 8 + 2;
 constexpr std::uint32_t FIRE_EVENT_BYTES = 8 + 8 + 1;
 static_assert(FIRE_HEADER_BYTES + MAX_FIRE_EVENTS * FIRE_EVENT_BYTES <= Neuron::MAX_DATAGRAM_BYTES,
               "a full fire message must fit one datagram, or the cap is meaningless");
-// The saved state's magic and format byte. Not a KIND_* value: a state buffer is not a datagram and
-// never meets SnapshotReceiver::Accept, so the magic is what turns feeding it to one into a refusal
-// rather than a misread. The format byte is what makes a disagreement between two builds a refusal
-// too -- there is nothing to migrate from yet, and a version nobody checks is a version nobody has.
+// The saved state's magic. Not a KIND_* value: a state buffer is not a datagram and never meets
+// SnapshotReceiver::Accept, so the magic is what turns feeding it to one into a refusal rather than
+// a misread. The format byte beside it on the wire is UNIVERSE_STATE_FORMAT in the header, and what
+// a build does with a byte older than its own is read with it: a format inside the window is
+// migrated on read, and one outside it is refused, because a version nobody checks is a version
+// nobody has.
 constexpr std::uint32_t UNIVERSE_STATE_MAGIC = 0x54535550u; // 'PUST' little-endian: Persisted Universe STate
-constexpr std::uint8_t UNIVERSE_STATE_FORMAT =
-  7; // 2: the fleet table. 3: its manifest. 4: its order. 5: its threat. 6: the guns. 7: the plan stamp
+
+// The byte after the magic, in both the state and the file. Where PeekSaveFormats looks.
+constexpr std::size_t FORMAT_BYTE_OFFSET = 4;
 
 // An EntityId is a u64, which is exactly what a {slot, generation} pair cost. So identity became
 // global for no bytes at all: the ship record stays 47, a fragment stays 23 ships, and the order cap
@@ -520,16 +523,17 @@ void WriteShipRecord(ByteWriter& _out, const Universe& _universe, ShipId _id)
 // A fleet with neither is the one tick between a manifest being dropped for a dead station and the
 // next tick's retire freeing the slot; clearing the bit there says the truth one tick early rather
 // than stating a position that means nothing.
-void WriteFleetBlock(ByteWriter& _out, const Universe& _universe, FactionId _viewer)
+void WriteFleetBlock(ByteWriter& _out, const Universe& _universe, const Issuer& _viewer)
 {
   UniversePos positions[FLEET_SLOTS];
-  std::uint8_t statuses[FLEET_SLOTS] = {};
+  std::uint8_t kinds[FLEET_SLOTS] = {};
+  std::uint8_t flags[FLEET_SLOTS] = {};
   std::uint8_t counts[FLEET_SLOTS] = {};
   std::uint8_t mask = 0;
 
   for (std::uint32_t slot = 0; slot < FLEET_SLOTS; ++slot)
   {
-    const Universe::FleetId id = _universe.FleetInSlot(_viewer, static_cast<std::uint8_t>(slot));
+    const Universe::FleetId id = _universe.FleetInSlot(_viewer.owner, static_cast<std::uint8_t>(slot));
     if (id == Universe::INVALID_FLEET_ID)
       continue;
     const Universe::Fleet& fleet = _universe.FleetOf(id);
@@ -570,18 +574,22 @@ void WriteFleetBlock(ByteWriter& _out, const Universe& _universe, FactionId _vie
       centre = _universe.Ships()[structure].posUniverse;
     }
 
-    // Launching outranks the standing order in what is SHOWN, not in what is done: a fleet ordered
-    // to move mid-launch is both, and the launch is the fact the player has no other way to see.
-    std::uint8_t status = (fleet.manifestCount != 0) ? FLEET_STATUS_LAUNCHING : static_cast<std::uint8_t>(fleet.orderKind);
+    // The kind and the launch are both stated, which is what splitting them bought: a fleet ordered
+    // to move mid-launch is doing both, and the old byte could say only one. Which of the two a
+    // reader leads with is the reader's business (UniverseView::FleetActivity).
+    std::uint8_t kind = static_cast<std::uint8_t>(fleet.orderKind);
+    std::uint8_t bits = 0;
+    if (fleet.manifestCount != 0)
+      bits |= FLEET_FLAG_LAUNCHING;
 
     // Engaged is the threat surviving this tick's stand-down check, which Universe has already run --
     // so the row holds a threat only while the alert, the leash and the target all still hold. The
     // two bits therefore differ exactly when the alert outlives the fight, which is what buying two
     // of them was for (Design/Archive/Fleets.md 7.2, 7.3).
     if (fleet.threat.generation != 0)
-      status |= FLEET_STATUS_ENGAGED;
+      bits |= FLEET_FLAG_ENGAGED;
     if (fleet.alertTicks > 0)
-      status |= FLEET_STATUS_UNDER_ATTACK;
+      bits |= FLEET_FLAG_UNDER_ATTACK;
 
     // Members in space plus manifest, so the count is the fleet's composed size throughout a launch
     // and does not climb as the hulls appear. The roster's own count is how many are out, and the
@@ -594,7 +602,8 @@ void WriteFleetBlock(ByteWriter& _out, const Universe& _universe, FactionId _vie
 
     mask |= static_cast<std::uint8_t>(1u << slot);
     positions[slot] = centre;
-    statuses[slot] = status;
+    kinds[slot] = kind;
+    flags[slot] = bits;
     counts[slot] = static_cast<std::uint8_t>(total);
   }
 
@@ -608,13 +617,17 @@ void WriteFleetBlock(ByteWriter& _out, const Universe& _universe, FactionId _vie
     _out.I32(ToWireSector(pos.sectorZ));
     _out.U16(pos.stepX);
     _out.U16(pos.stepZ);
-    _out.U8(statuses[slot]);
+    _out.U8(kinds[slot]);
+    _out.U8(flags[slot]);
+    // The stance, reserved. Written from a literal rather than from a variable so that the day it
+    // carries something, the compiler names this line.
+    _out.U8(0);
     _out.U8(counts[slot]);
   }
 }
 } // namespace
 
-std::uint32_t SnapshotWriter::Write(const Universe& _universe, Neuron::Transport& _transport, FactionId _viewer)
+std::uint32_t SnapshotWriter::Write(const Universe& _universe, Neuron::Transport& _transport, const Issuer& _viewer)
 {
   const std::span<const ShipState> ships = _universe.Ships();
   const std::uint32_t perFragment = ShipsPerSnapshotFragment();
@@ -642,7 +655,7 @@ std::uint32_t SnapshotWriter::Write(const Universe& _universe, Neuron::Transport
     out.U32(fragmentCount);
     out.U64(_universe.Tick());
     out.U32(count);
-    out.U8(_universe.HostileMaskFor(_viewer));
+    out.U8(_universe.HostileMaskFor(_viewer.faction));
     WriteFleetBlock(out, _universe, _viewer);
 
     for (std::uint32_t at = 0; at < count; ++at)
@@ -723,7 +736,7 @@ bool SnapshotWriter::WriteLeaves(std::uint64_t _tick, std::span<const EntityId> 
 
 std::uint32_t SnapshotWriter::WriteInterest(const Universe& _universe, std::span<const ShipHandle> _sent, std::span<const EntityId> _left,
                                             std::span<const EntityId> _destroyed, std::span<const EntityId> _docked,
-                                            std::span<const EntityId> _jumped, Neuron::Transport& _transport, FactionId _viewer)
+                                            std::span<const EntityId> _jumped, Neuron::Transport& _transport, const Issuer& _viewer)
 {
   m_lastBytes = 0;
   m_lastRecords = 0;
@@ -775,7 +788,7 @@ std::uint32_t SnapshotWriter::WriteInterest(const Universe& _universe, std::span
     out.U32(fragmentCount);
     out.U64(_universe.Tick());
     out.U32(count);
-    out.U8(_universe.HostileMaskFor(_viewer));
+    out.U8(_universe.HostileMaskFor(_viewer.faction));
     WriteFleetBlock(out, _universe, _viewer);
 
     for (const ShipId id : m_resolvedScratch)
@@ -838,7 +851,9 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
     const std::uint16_t stepX = in.U16();
     const std::uint16_t stepZ = in.U16();
     fleets[slot].position = FromLattice(sectorX, sectorZ, stepX, stepZ);
-    fleets[slot].status = in.U8();
+    fleets[slot].kind = in.U8();
+    fleets[slot].flags = in.U8();
+    fleets[slot].stance = in.U8();
     fleets[slot].count = in.U8();
   }
 
@@ -1234,6 +1249,7 @@ void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _o
   for (const Universe::Docking& docking : _universe.m_dockings)
   {
     out.Handle(docking.station);
+    out.U64(docking.owner);
     out.Bool(docking.active);
   }
 
@@ -1300,6 +1316,7 @@ void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _o
     {
       out.U32(docked.hullId);
       out.U8(docked.factionId);
+      out.U64(docked.owner);
     }
   }
 
@@ -1321,6 +1338,7 @@ void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _o
   for (const Universe::Fleet& fleet : _universe.m_fleets)
   {
     out.U8(fleet.ownerFaction);
+    out.U64(fleet.owner);
     out.U8(fleet.slot);
     out.U32(fleet.memberCount);
     for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
@@ -1346,7 +1364,16 @@ void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _o
 bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUniverse)
 {
   ByteReader in(_bytes);
-  if (in.U32() != UNIVERSE_STATE_MAGIC || in.U8() != UNIVERSE_STATE_FORMAT)
+  const std::uint32_t magic = in.U32();
+  // Held for the whole read, because it is what every field added by a later format is gated on:
+  // a field written from format N onwards is read as
+  //
+  //   value = (format >= N) ? in.U32() : <the value it had before it existed>;
+  //
+  // at the point in the stream where it lives, and nowhere else. That gate is the entire migration
+  // (ADR 0061). Format 8's owner fields are the first two, below.
+  const std::uint8_t format = in.U8();
+  if (magic != UNIVERSE_STATE_MAGIC || format < UNIVERSE_STATE_FORMAT_OLDEST || format > UNIVERSE_STATE_FORMAT)
     return false;
 
   const std::uint64_t tick = in.U64();
@@ -1418,6 +1445,9 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
   for (Universe::Docking& docking : dockings)
   {
     docking.station = in.Handle();
+    // Format 8, on the fleet row's terms: a docking in flight when an older file was written was
+    // the player's if anybody's, because nothing else in that build could issue one.
+    docking.owner = (format >= 8) ? in.U64() : OWNER_LOCAL;
     docking.active = in.Bool();
   }
 
@@ -1515,6 +1545,10 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
     {
       docked.hullId = in.U32();
       docked.factionId = in.U8();
+      // Format 8 added it. A file written before it has rows that meant "the player's" when the
+      // faction was the player's and "somebody else's" otherwise, and that is what they come back
+      // as -- the row is the same row, read by a build that can now say more about it (ADR 0061).
+      docked.owner = (format >= 8) ? in.U64() : ((docked.factionId == FACTION_PLAYER) ? OWNER_LOCAL : OWNER_NOBODY);
     }
   }
 
@@ -1533,32 +1567,46 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
     // The destination is deliberately not checked against this universe's entities. A gate whose far
     // side is not here is exactly what a half-loaded shard looks like, and the jump pass already
     // refuses to move anybody through one -- so the fail-closed behaviour is the pass's, and a check
-    // here would turn a recoverable universe into a refused load (Design/Universe-slice-2.md 4.6).
+    // here would turn a recoverable universe into a refused load (Design/Archive/Universe-slice-2.md 4.6).
     if (!in.Ok() || gate.ownerFaction >= FACTION_LIMIT)
       return false;
   }
 
-  // An exact bound rather than a heuristic one: every slot of every faction is the most fleets a
-  // universe can legitimately hold, so a count past it is a corrupt file and not a big universe.
+  // Bounded against what is left in the buffer rather than by an exact ceiling. It was
+  // FACTION_LIMIT * FLEET_SLOTS -- every slot of every faction -- and that was exact only while a
+  // fleet's owner was a faction. Owners are u64 and unbounded by design (Design/Archive/OwnerKey-work-order.md),
+  // so the most fleets a universe may hold is the most a player base may have, and the honest bound
+  // is the one every other count in this codec uses: a fleet row is more than a byte, so a count
+  // past Remaining() is a corrupt file however many players a shard carries.
   const std::uint32_t fleetCount = in.U32();
-  if (!in.Ok() || fleetCount > FACTION_LIMIT * FLEET_SLOTS)
+  if (!in.Ok() || fleetCount > in.Remaining())
     return false;
 
   // Two live fleets claiming one slot would make FleetInSlot's answer depend on which row came
   // first, which is an invariant corrupted rather than a value -- the same kind of defect as a slot
   // naming a ship that is not there, and refused for the same reason.
   std::vector<Universe::Fleet> fleets(fleetCount);
-  bool slotTaken[FACTION_LIMIT][FLEET_SLOTS] = {};
+
+  // (owner, slot) pairs, checked for duplicates after the read rather than during it. The array of
+  // flags this replaces was indexed by faction, which cannot hold an owner: a u64 has no array to
+  // be a subscript of, and the pairs are collected and sorted instead. O(n log n) rather than the
+  // O(n^2) a pairwise sweep would cost on a file claiming a large count.
+  std::vector<std::uint64_t> claims;
+  claims.reserve(fleetCount);
+
   for (Universe::Fleet& fleet : fleets)
   {
     fleet.ownerFaction = in.U8();
+    fleet.owner = (format >= 8) ? in.U64() : ((fleet.ownerFaction == FACTION_PLAYER) ? OWNER_LOCAL : OWNER_NOBODY);
     fleet.slot = in.U8();
     fleet.memberCount = in.U32();
     if (!in.Ok() || fleet.ownerFaction >= FACTION_LIMIT || fleet.slot >= FLEET_SLOTS || fleet.memberCount > MAX_FLEET_SHIPS)
       return false;
-    if (slotTaken[fleet.ownerFaction][fleet.slot])
-      return false;
-    slotTaken[fleet.ownerFaction][fleet.slot] = true;
+    // Packed rather than paired, so the sort below needs no comparator: FLEET_SLOTS is 5 and a slot
+    // is already bounded above, so the low three bits hold it and the owner keeps the rest. An owner
+    // past 2^61 would collide, and no minting scheme in this tree can reach one.
+    static_assert(FLEET_SLOTS <= 8, "the slot no longer fits the low three bits of a fleet claim");
+    claims.push_back((fleet.owner << 3) | fleet.slot);
     // The handles themselves are not checked against the slot table, and deliberately: Resolve
     // bounds-checks a slot and compares a generation, so a handle this file invented resolves to
     // nothing and the fleet pass prunes it on the first tick. That is the fail-closed direction
@@ -1592,6 +1640,17 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
     fleet.threat = in.Handle();
     fleet.threatAnchorPos = in.Pos();
     fleet.alertTicks = in.U32();
+  }
+
+  // Two live fleets claiming one owner's slot would make FleetInSlot's answer depend on which row
+  // came first, which is an invariant corrupted rather than a value -- the same kind of defect as a
+  // slot naming a ship that is not there, and refused for the same reason. Sorted and swept for
+  // adjacent equals, which is the whole check.
+  std::sort(claims.begin(), claims.end());
+  for (std::size_t at = 1; at < claims.size(); ++at)
+  {
+    if (claims[at] == claims[at - 1])
+      return false;
   }
 
   if (!in.Ok())
@@ -1702,10 +1761,13 @@ void WriteSaveFile(const Universe& _universe, const SaveHeader& _header, std::ve
 bool ReadSaveFile(std::span<const std::uint8_t> _bytes, SaveHeader& _outHeader, Universe& _outUniverse)
 {
   ByteReader in(_bytes);
-  if (in.U32() != SAVE_FILE_MAGIC || in.U8() != SAVE_FILE_FORMAT)
+  const std::uint32_t magic = in.U32();
+  const std::uint8_t fileFormat = in.U8();
+  if (magic != SAVE_FILE_MAGIC || fileFormat < SAVE_FILE_FORMAT_OLDEST || fileFormat > SAVE_FILE_FORMAT)
     return false;
 
   SaveHeader header;
+  header.fileFormat = fileFormat;
   header.galaxySeed = in.U64();
   header.shard = static_cast<ShardId>(in.U16());
   const std::uint64_t stateBytes = in.U64();
@@ -1732,9 +1794,33 @@ bool ReadSaveFile(std::span<const std::uint8_t> _bytes, SaveHeader& _outHeader, 
   if (loaded.Shard() != header.shard)
     return false;
 
+  // The state codec has already checked this byte's magic and window, so it is read as a fact here
+  // rather than parsed a second time.
+  header.stateFormat = _bytes[SAVE_HEADER_BYTES + FORMAT_BYTE_OFFSET];
+
   _outHeader = header;
   _outUniverse = std::move(loaded);
   return true;
+}
+
+bool PeekSaveFormats(std::span<const std::uint8_t> _bytes, std::uint8_t& _outFileFormat, std::uint8_t& _outStateFormat)
+{
+  if (_bytes.size() <= SAVE_HEADER_BYTES + FORMAT_BYTE_OFFSET)
+    return false;
+  ByteReader file(_bytes);
+  if (file.U32() != SAVE_FILE_MAGIC)
+    return false;
+  ByteReader state(_bytes.subspan(SAVE_HEADER_BYTES));
+  if (state.U32() != UNIVERSE_STATE_MAGIC)
+    return false;
+  _outFileFormat = _bytes[FORMAT_BYTE_OFFSET];
+  _outStateFormat = _bytes[SAVE_HEADER_BYTES + FORMAT_BYTE_OFFSET];
+  return true;
+}
+
+std::wstring UniverseSaveSidecarName(std::uint8_t _stateFormat)
+{
+  return std::wstring(UNIVERSE_SAVE_FILE) + L"." + std::to_wstring(static_cast<unsigned>(_stateFormat));
 }
 
 // kind, orderId, station handle, handleCount -- 17 bytes, against the move order's 38.

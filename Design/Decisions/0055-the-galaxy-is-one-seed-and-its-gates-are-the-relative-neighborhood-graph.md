@@ -5,7 +5,7 @@ Date: 2026-09-01
 
 ## Context
 
-[`Design/Universe.md`](../Universe.md) needs the frontier to stop being one system. Two questions had
+[`Design/Archive/Universe.md`](../Archive/Universe.md) needs the frontier to stop being one system. Two questions had
 to be answered before any of it could be built, and both are the kind a reasonable person proposes
 again: **where do the systems come from**, and **which of them are joined**.
 
@@ -96,9 +96,9 @@ and content living in one executable is in the wrong one the day there are two.
 - **The separation bound is the pitch's job, and it was got wrong once.** The bound is
   `(1 - 2 * sqrt(2) * cellJitter) * pitch`, not `(1 - 2 * cellJitter) * pitch`: the jitter is a
   square of two independent draws, so a star's worst displacement is its diagonal.
-  `Design/Universe.md` §3.4 stated the disc's arithmetic, the suite caught it on the first run, and
+  `Design/Archive/Universe.md` §3.4 stated the disc's arithmetic, the suite caught it on the first run, and
   the shipped jitter moved from 0.30 to 0.20 so the separation the design asked for still holds
-  (`Design/Universe-slice-1.md` §7). `MinimumStarSeparationMetres` exists so that the number lives
+  (`Design/Archive/Universe-slice-1.md` §7). `MinimumStarSeparationMetres` exists so that the number lives
   in one place and cannot drift from the test that proves it.
 - **`LayOutSystem` gained a second caller and kept its meaning.** The planet loop is now
   `LayOutPlanets`, over a generator the caller owns; `LayOutSystem` is that function with a

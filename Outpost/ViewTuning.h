@@ -431,7 +431,7 @@ inline constexpr float FLEET_FOCUS_ARRIVE_METRES = 25.0f;
 // space with nothing on screen and never quite lands. The number sits in the gap the layout
 // guarantees: wider than any system can be (2 x 7 000 m of gate ring), far inside the 56 926 m
 // MinimumStarSeparationMetres, so it can only ever trigger on a crossing and never inside a system
-// (Design/Universe-slice-4.md 4).
+// (Design/Archive/Universe-slice-4.md 4).
 inline constexpr float CAMERA_SNAP_METRES = 20000.0f;
 
 // --- gunfire ---------------------------------------------------------------------------------

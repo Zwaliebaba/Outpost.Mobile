@@ -419,7 +419,7 @@ static_assert(NoImmovableHullIsDestructible(), "an immovable hull can be destroy
 // How close a fleet member has to be to a gate before the fleet may cross: GATE_CAPTURE_METRES
 // clear of the two hulls' skins, measured centre to centre.
 //
-// DockApproachRangeMetres' shape and its argument, at fleet grain (Design/Universe-slice-2.md 7).
+// DockApproachRangeMetres' shape and its argument, at fleet grain (Design/Archive/Universe-slice-2.md 7).
 [[nodiscard]] constexpr float GateRangeMetres(const HullSpec& _gate, const HullSpec& _ship) noexcept
 {
   return _gate.BoundingRadiusMetres() + _ship.BoundingRadiusMetres() + GATE_CAPTURE_METRES;

@@ -380,6 +380,13 @@ wire — *who* destroyed you — is deliberately absent this design (§14); the 
 the record's width and the new message kind, `outpost-3` → `outpost-4`, so two builds that disagree
 refuse at the handshake rather than misparse — both rules already written, both merely obeyed.
 
+The ALPN is `outpost-6` as of slice 2 of [`GameDesignPlan.md`](GameDesignPlan.md), which re-laid the
+fleet status block: a kind byte, a flags byte and a reserved stance byte where there was one byte
+holding all three ([`FleetStatus-work-order.md`](Archive/FleetStatus-work-order.md)). The rule is unchanged
+and this is it being obeyed a sixth time. What that slice did *not* do is bump the state format: the
+block rides the snapshot header and no field of `Universe` moved, which is the distinction ADR 0057
+drew between the two version bytes and the first time it has paid.
+
 ## 10. The view
 
 ### 10.1 The parts finally pay
@@ -552,6 +559,16 @@ first half does not survive contact, and making it true would need a fighter tha
 Frigate, which breaks the first target. New `SimTuning.h` constants: `FIRE_ALIGN_RAD`,
 `ENGAGE_STANDOFF_FRACTION` and the gather's gunnery margin, with the fire message's cap in
 `UniverseSnapshot.h` beside the format it belongs to — each with the argued comment the file demands.
+
+**The table is pinned by a matrix now**, added by slice 5 of [`GameDesignPlan.md`](GameDesignPlan.md)
+and not by this design: `Tests/GameLogicTests/MatchupTests.cpp` runs every combatant hull against
+every other, one on one and in the groups the targets above name, and asserts who wins and within
+fifteen percent how long it takes. Its geometry is its own — six hundred metres bow to bow, fleets
+of one, attack orders both ways — and it is not the harness slice 5 measured with, so its numbers
+are not the ones above: under mutual orders two Interceptors never land a hit on each other, and a
+mixed eight of two each loses to the Battleship. Neither is corrected here; the matrix records what
+the tables do, and the retune that changes it is the review's C13
+([`MatchupMatrix-work-order.md`](Archive/MatchupMatrix-work-order.md) §7).
 
 ## 14. Deliberately left out, so nobody goes looking
 

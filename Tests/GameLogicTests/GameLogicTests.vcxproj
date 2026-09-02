@@ -196,6 +196,7 @@
     <ClCompile Include="StationTests.cpp" />
     <ClCompile Include="FleetTests.cpp" />
     <ClCompile Include="CombatTests.cpp" />
+    <ClCompile Include="MatchupTests.cpp" />
     <ClCompile Include="DockingTests.cpp" />
     <ClCompile Include="ProtectorTests.cpp" />
     <ClCompile Include="BackOffTests.cpp" />
@@ -214,6 +215,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="Assets\UniverseFormat7.sav">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\NeuronCore\NeuronCore.vcxproj">

@@ -84,6 +84,7 @@ bool ParseServerConfig(std::string_view _text, ServerConfig& _outConfig, std::st
   bool seenUpdateTicks = false;
   bool seenOrders = false;
   bool seenSaveTicks = false;
+  bool seenStatsTicks = false;
 
   std::size_t line = 0;
   std::size_t at = 0;
@@ -215,6 +216,23 @@ bool ParseServerConfig(std::string_view _text, ServerConfig& _outConfig, std::st
       }
       parsed.saveEveryTicks = static_cast<std::uint32_t>(whole);
       seenSaveTicks = true;
+    }
+    else if (key == "statsEveryTicks")
+    {
+      if (seenStatsTicks)
+      {
+        _outError = Refuse(line, "key set twice:", key);
+        return false;
+      }
+      // Zero for never, on saveEveryTicks' reading exactly: a deployment that does not want the
+      // file does not want the timing either, and both stop together.
+      if (!ReadUnsigned(value, whole) || whole > 0xFFFFFFFFull)
+      {
+        _outError = Refuse(line, "statsEveryTicks must be a whole number of ticks, 0 for never, found", value);
+        return false;
+      }
+      parsed.statsEveryTicks = static_cast<std::uint32_t>(whole);
+      seenStatsTicks = true;
     }
     else
     {

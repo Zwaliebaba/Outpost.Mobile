@@ -48,9 +48,14 @@ public:
     // The wire to this subscriber. The publisher does not own it and it must outlive the entry.
     Neuron::Transport* transport = nullptr;
 
-    // Whose orders this subscriber may give. The simulation gates the order itself (ADR 0014); this
-    // is what the publisher passes it, not a second authority check.
-    FactionId faction = FACTION_PLAYER;
+    // Who this subscriber is. The simulation gates every order itself (ADR 0014); this is what the
+    // publisher passes it, and not a second authority check.
+    //
+    // Both halves, because they decide different things: the owner is whose fleets and whose ledger
+    // rows these are, and the faction is what the world holds this subscriber to be. A session will
+    // supply the owner; until there is one, the composition root names the single player
+    // (Design/Archive/OwnerKey-work-order.md).
+    Issuer issuer{OWNER_LOCAL, FACTION_PLAYER};
 
     // Its own, so a spectator or a distant region can be given a different one without touching
     // anybody else's. Defaults to the tuning header's.
@@ -123,7 +128,7 @@ private:
   struct Subscriber
   {
     Neuron::Transport* transport = nullptr;
-    FactionId faction = FACTION_PLAYER;
+    Issuer issuer{OWNER_LOCAL, FACTION_PLAYER};
     std::uint32_t ordersPerTick = 8;
     std::uint32_t phase = 0;
     std::uint64_t despawnCursor = 0;
@@ -133,7 +138,7 @@ private:
     InterestSet interest;
     SnapshotWriter writer;
 
-    // What this subscriber was last told is in each of its faction's slots, so Publish can diff
+    // What this subscriber was last told is in each of its owner's slots, so Publish can diff
     // rather than be told when a roster changed.
     //
     // Here rather than in Universe, and that is the design of it: the diff is per subscriber, changes

@@ -145,16 +145,16 @@ void FleetSheet::Draw(TextRenderer& _text, const UniverseView& _view, std::span<
 
   // --- ENGAGED - DEFENDING, or LAUNCHING 4 OF 8 --------------------------------------------------
   {
-    const std::uint8_t bits = _view.FleetStatusBits(m_slot);
+    const std::uint8_t bits = _view.FleetStatusFlags(m_slot);
     const int out = static_cast<int>(_view.RosterOf(m_slot).size());
     char status[64] = {};
-    if ((bits & Game::FLEET_STATUS_KIND_MASK) == Game::FLEET_STATUS_LAUNCHING)
+    if ((bits & Game::FLEET_FLAG_LAUNCHING) != 0)
     {
       // The roster's size against the status block's count -- the two numbers Design/Archive/Fleets.md 8.2's
       // amendment named this line as the use for.
       std::snprintf(status, sizeof(status), "LAUNCHING %d OF %d", out, _view.FleetCount(m_slot));
     }
-    else if ((bits & Game::FLEET_STATUS_ENGAGED) != 0)
+    else if ((bits & Game::FLEET_FLAG_ENGAGED) != 0)
     {
       // A bar rather than the design's em dash: the UI atlas holds Latin-1 from 192 up, and an em
       // dash is not in it. The same stand-in the HUD's own field separator makes.
@@ -164,7 +164,7 @@ void FleetSheet::Draw(TextRenderer& _text, const UniverseView& _view, std::span<
     {
       std::snprintf(status, sizeof(status), "%s", _view.FleetActivity(m_slot));
     }
-    const bool engaged = (bits & Game::FLEET_STATUS_ENGAGED) != 0;
+    const bool engaged = (bits & Game::FLEET_FLAG_ENGAGED) != 0;
     _text.DrawTextLine(FontId::Ui, layout.panel.x0 + pad, y, HUD_LABEL_SCALE * s, engaged ? HUD_ALERT_RED : HUD_LABEL_COLOUR, status);
     y += labelPx + pad * 0.6f;
   }

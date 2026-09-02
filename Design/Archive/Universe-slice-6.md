@@ -12,8 +12,8 @@ Building in one system stops re-planning routes in every other.
 - **`IsStampCurrent`** — whether a plan still stands, answered per island.
 - **`Route::stamp`** replaces `Route::gridVersion`; `AdvanceRoute` asks the new question.
 - The state codec carries the key, which is world-fixed and means the same thing in every process.
-- [**ADR 0059**](Decisions/0059-a-route-is-scoped-to-the-island-that-planned-it.md), superseding
-  [0034](Decisions/0034-a-routes-version-is-the-whole-worlds.md).
+- [**ADR 0059**](../Decisions/0059-a-route-is-scoped-to-the-island-that-planned-it.md), superseding
+  [0034](../Decisions/0034-a-routes-version-is-the-whole-worlds.md).
 
 ## 2. Out of scope
 

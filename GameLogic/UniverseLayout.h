@@ -93,11 +93,11 @@ inline constexpr float PLANET_BEARING_JITTER = 0.5f;
 // whole of it now. The second caller is the galaxy's per-system recipe, which draws a system's
 // planet COUNT from its seed and then hands the same generator on -- so the count and the planets
 // are one stream rather than two, which is what stops a system's contents depending on an
-// arithmetic nobody wrote down (Design/Universe.md 3.3).
+// arithmetic nobody wrote down (Design/Archive/Universe.md 3.3).
 //
 // Shared rather than copied, deliberately. Two implementations of a four-draw loop would agree on
 // the day they were written and would be one retune apart from meaning two different things by the
-// same seed (Design/Universe-slice-1.md 1).
+// same seed (Design/Archive/Universe-slice-1.md 1).
 //
 // Appends to _outLayout.planets and does not clear it, so the caller decides what it is building.
 void LayOutPlanets(Neuron::Pcg32& _rng, const UniversePos& _starPos, const SystemDesc& _desc, SystemLayout& _outLayout);

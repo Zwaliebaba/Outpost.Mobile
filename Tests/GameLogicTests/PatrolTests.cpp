@@ -12,7 +12,7 @@ namespace
 // It used to be five literals under a comment saying "the two must agree", and nothing made them.
 // Measured: moving the base from 850 m to 9 000 m was a content change that no row in this suite
 // noticed, because every row was testing its own copy of the scene rather than the one the game
-// ships (Design/Universe-slice-5b.md 8, mutation 7). The copies could not be deleted while the
+// ships (Design/Archive/Universe-slice-5b.md 8, mutation 7). The copies could not be deleted while the
 // constants lived in a client header this project cannot see; slice 5b moved them into GameLogic,
 // which is what makes this possible now.
 constexpr float STATION_EAST_METRES = Game::HOSTILE_BASE_EAST_METRES;
@@ -318,7 +318,7 @@ public:
   // not stop the scene itself from being moved somewhere the design's reasoning no longer holds: a
   // base at 9 km still patrols correctly, it is just no longer the base Hostiles.md argued for.
   // These are the four claims in that argument, each against the value it was argued from rather
-  // than a number repeated here (Design/Universe-slice-5b.md 8).
+  // than a number repeated here (Design/Archive/Universe-slice-5b.md 8).
   TEST_METHOD(TheHostileBaseSitsWhereItsDesignArguedFor)
   {
     const float outMetres = std::sqrt(Game::HOSTILE_BASE_EAST_METRES * Game::HOSTILE_BASE_EAST_METRES +

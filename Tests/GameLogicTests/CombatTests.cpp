@@ -6,6 +6,13 @@ namespace GameLogicTests
 {
 namespace
 {
+// One owner per faction, which is what every row here means: these suites were written when the key
+// WAS the faction, and this keeps each of them saying exactly what it said (Design/Archive/OwnerKey-work-order.md).
+[[nodiscard]] Game::Issuer IssuerFor(Game::FactionId _faction)
+{
+  return Game::Issuer{(_faction == Game::FACTION_PLAYER) ? Game::OWNER_LOCAL : Game::OwnerId{_faction} + 1u, _faction};
+}
+
 // A fighter's gun does 3 every half second into 60 points, so a peer kills one in about ten seconds
 // -- the first of Design/Combat.md 13's five pacing targets, and the one every other number is
 // balanced against.
@@ -21,7 +28,7 @@ Game::Universe::FleetId FleetOfOne(Game::Universe& _universe, Game::ShipId _ship
                                    std::uint8_t _slot = 0)
 {
   const Game::ShipId members[] = {_ship};
-  return _universe.FormFleet(_faction, _slot, std::span<const Game::ShipId>(members, 1));
+  return _universe.FormFleet(IssuerFor(_faction), _slot, std::span<const Game::ShipId>(members, 1));
 }
 
 Game::Universe::FleetOrderResult OrderAttack(Game::Universe& _universe, Game::ShipId _target,
@@ -30,7 +37,7 @@ Game::Universe::FleetOrderResult OrderAttack(Game::Universe& _universe, Game::Sh
   Game::Universe::FleetCommand command;
   command.kind = Game::FleetOrderKind::Attack;
   command.target = _target;
-  return _universe.IssueFleetOrder(_faction, _slot, command);
+  return _universe.IssueFleetOrder(IssuerFor(_faction), _slot, command);
 }
 
 void Run(Game::Universe& _universe, int _ticks)
@@ -129,11 +136,11 @@ public:
     Spawn(universe, 0.0f, 120.0f, DirectX::XM_PI, Game::HullId::Battleship, Game::FACTION_VANDAL);
 
     const Game::ShipId members[] = {member, escort};
-    Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID,
-                        universe.FormFleet(Game::FACTION_PLAYER, 0, std::span<const Game::ShipId>(members, 2)));
+    Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID, universe.FormFleet(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 0,
+                                                                             std::span<const Game::ShipId>(members, 2)));
 
     (void)TicksUntilALoss(universe, 600);
-    const Game::Universe::FleetId fleet = universe.FleetInSlot(Game::FACTION_PLAYER, 0);
+    const Game::Universe::FleetId fleet = universe.FleetInSlot(Game::OWNER_LOCAL, 0);
     Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID, fleet, L"the fleet retired with its escort still flying");
     Assert::IsTrue(universe.FleetOf(fleet).alertTicks > 0, L"a member killed outright roused nobody");
   }

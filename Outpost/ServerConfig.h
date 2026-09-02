@@ -52,6 +52,12 @@ struct ServerConfig
   // 0 disables the PERIODIC save; the save at clean shutdown still happens. A period of zero has no
   // other sensible reading, and "never save at all" is a missing file rather than a setting.
   std::uint32_t saveEveryTicks = 1800;
+
+  // How often the tick's own cost is written beside the save, in ticks. Separate from the save's
+  // cadence and not derived from it: a shard being tuned wants the numbers far more often than it
+  // wants a save, and the two have nothing to do with each other beyond both being between-ticks
+  // work. 0 writes no file and costs no sampling (Design/Archive/TickTelemetry-work-order.md 1.5).
+  std::uint32_t statsEveryTicks = 1800;
 };
 
 // The file the root reads, relative to the home directory -- so it resolves under <exe>\Assets\ the

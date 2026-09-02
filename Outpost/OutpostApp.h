@@ -94,7 +94,7 @@ private:
   // Three answers and not two, because "there is no file" and "there is a file I cannot read" must
   // lead to opposite places: the first is a first boot and the second stops the program. Collapsing
   // them is the one mistake this file must not make -- a refused save quietly replaced by a fresh
-  // universe is a player's game deleted by a bug in reading it (Design/Universe.md 8, ADR 0057).
+  // universe is a player's game deleted by a bug in reading it (Design/Archive/Universe.md 8, ADR 0057).
   enum class RestoreResult
   {
     Absent,   // no file: this is a first boot and genesis runs
@@ -103,19 +103,24 @@ private:
   };
 
   // Reads Universe.sav into m_universe, and the galaxy seed it was laid out from into m_galaxySeed.
-  // Touches neither on anything but Restored.
+  // Touches neither on anything but Restored; on Refused it leaves the sentence for the boot failure
+  // in m_restoreRefusal, naming the format bytes when the file has them to name.
   [[nodiscard]] RestoreResult RestoreUniverse();
 
   // Writes the universe to Universe.sav, atomically. Logs and carries on if the disk refuses: a
   // running game should not end because a save did, and the previous save is still there.
   //
   // Only ever called between ticks. The state codec's contract is a universe at rest, and a save
-  // taken mid-Step would be a universe that never existed (Design/Universe.md 8).
+  // taken mid-Step would be a universe that never existed (Design/Archive/Universe.md 8).
   void SaveUniverse();
+
+  // Writes what the ticks since the last sample cost to Universe.stats and resets the window. Only
+  // ever called between ticks, beside the save, and for the same reason.
+  void WriteTickStats();
 
   // The local system's planets, as minimap marks. The stations they stand for are in the save file;
   // the marks are not, because a mark is a picture rather than a record. Rebuilt at boot and again
-  // whenever the camera changes systems (Design/Universe-slice-4b.md 4).
+  // whenever the camera changes systems (Design/Archive/Universe-slice-4b.md 4).
   void MarkLocalStations();
 
   [[nodiscard]] std::uint32_t OwnShipCount() const noexcept;
@@ -174,7 +179,7 @@ private:
   // Which system the camera is in. Home at boot, and nothing moves it yet -- the client half of
   // crossing a gate is slice 4's. It is here now because the station marks and the bodies both ask
   // it which system they are placing, and answering "home" in two places would be two places to
-  // change (Design/Universe.md 9).
+  // change (Design/Archive/Universe.md 9).
   std::uint32_t m_localSystem = 0;
 
   // The seed the galaxy on screen was laid out from, taken from the save header at boot. The
@@ -186,6 +191,14 @@ private:
   // The tick the last save was taken at, so the cadence is a distance rather than a modulo -- see
   // the call site in Run.
   std::uint64_t m_lastSaveTick = 0;
+
+  // The same, for the statistics sidecar, and a separate number because the two cadences are set
+  // independently in Server.cfg.
+  std::uint64_t m_lastStatsTick = 0;
+
+  // Why RestoreUniverse answered Refused, for the boot failure's sentence. A refused read changes
+  // nothing, so the sentence is composed where the bytes are still in hand.
+  std::string m_restoreRefusal;
 
   // Reused across saves rather than allocated per save: at 300 ships this is tens of kilobytes and
   // the save runs inside a frame.

@@ -8,6 +8,13 @@ namespace GameLogicTests
 {
 namespace
 {
+// One owner per faction, which is what every row here means: these suites were written when the key
+// WAS the faction, and this keeps each of them saying exactly what it said (Design/Archive/OwnerKey-work-order.md).
+[[nodiscard]] Game::Issuer IssuerFor(Game::FactionId _faction)
+{
+  return Game::Issuer{(_faction == Game::FACTION_PLAYER) ? Game::OWNER_LOCAL : Game::OwnerId{_faction} + 1u, _faction};
+}
+
 // Its own copy rather than a shared one: both suites keep theirs in an anonymous namespace, which is
 // what the tree does instead of a test-support header nobody owns.
 // The wire's sets are identities since ADR 0047, so this asks the wire's question. A handle names a
@@ -113,7 +120,7 @@ void DockShips(Game::Universe& _universe, Game::Universe::StationId _station, Ga
     Game::Translate(pos, std::sin(bearingRad) * range, std::cos(bearingRad) * range);
     ships.push_back(_universe.SpawnShip(pos, bearingRad, static_cast<std::uint32_t>(_hull), _faction));
   }
-  (void)_universe.IssueDockOrder(ships, structure, _faction);
+  (void)_universe.IssueDockOrder(ships, structure, IssuerFor(_faction));
   _universe.Step();
 }
 
@@ -197,7 +204,7 @@ public:
       Game::Translate(where, 20.0f * static_cast<float>(at), 30.0f);
       ships.push_back(universe.SpawnShip(where, 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette), Game::FACTION_PLAYER));
     }
-    (void)universe.FormFleet(Game::FACTION_PLAYER, 0, ships);
+    (void)universe.FormFleet(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 0, ships);
 
     std::vector<Game::EntityId> crossing;
     for (const Game::ShipId ship : ships)
@@ -220,7 +227,8 @@ public:
     Game::Universe::FleetCommand command;
     command.kind = Game::FleetOrderKind::Jump;
     command.gate = gates.nearStructure;
-    Assert::IsTrue(Game::Universe::FleetOrderResult::Ordered == universe.IssueFleetOrder(Game::FACTION_PLAYER, 0, command),
+    Assert::IsTrue(Game::Universe::FleetOrderResult::Ordered ==
+                     universe.IssueFleetOrder(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 0, command),
                    L"the jump order was refused");
 
     for (std::uint64_t tick = 20; tick < 80; ++tick)
@@ -234,6 +242,54 @@ public:
     }
     Assert::IsTrue(receiver.Destroyed().empty(), L"a jump was stated as a death: the fleet would explode on screen");
     Assert::IsTrue(receiver.Docked().empty(), L"a jump was stated as a docking");
+  }
+
+  TEST_METHOD(AJumpingFleetSaysSoAndNotLaunching)
+  {
+    // The assertion whose absence let a display bug ship. FLEET_STATUS_LAUNCHING was 6 -- "the first
+    // value no FleetOrderKind uses" -- and then Jump was appended to the enum as 6, so a fleet
+    // holding a jump order wrote 6 and both readers drew LAUNCHING. Seven rows in JumpTests covered
+    // what a jump DOES and not one covered what it SHOWS, and the collision lived in the gap
+    // (Design/Archive/FleetStatus-work-order.md).
+    //
+    // It sits here rather than in JumpTests because the status block is decoded here: this is the
+    // only suite with a publisher, a receiver and a wire between them.
+    Game::Universe universe;
+    const Game::UniversePos nearPos = Game::LocalPos(0.0f, 0.0f);
+    const GatePair gates = MakeGatePair(universe, nearPos, Game::LocalPos(60000.0f, 0.0f));
+
+    // Far enough from the gate that the fleet is still flying to it while the block is read: the
+    // fleet must be HOLDING the jump order, since crossing it clears the slot.
+    std::vector<Game::ShipId> ships;
+    for (int at = 0; at < 2; ++at)
+      ships.push_back(SpawnAt(universe, 20.0f * static_cast<float>(at), 1200.0f));
+    (void)universe.FormFleet(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 0, ships);
+
+    Link link;
+    Game::Publisher publisher;
+    Game::Publisher::Desc desc;
+    desc.transport = &link.server;
+    desc.interest.radiusMetres = 3000.0f;
+    (void)publisher.Add(desc);
+
+    Game::SnapshotReceiver receiver;
+    std::uint64_t tick = 0;
+    for (; tick < 10; ++tick)
+      RunTick(universe, publisher, link, tick, &receiver);
+
+    Game::Universe::FleetCommand command;
+    command.kind = Game::FleetOrderKind::Jump;
+    command.gate = gates.nearStructure;
+    Assert::IsTrue(Game::Universe::FleetOrderResult::Ordered ==
+                     universe.IssueFleetOrder(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 0, command),
+                   L"the jump order was refused");
+    for (std::uint64_t at = 0; at < 10; ++at, ++tick)
+      RunTick(universe, publisher, link, tick, &receiver);
+
+    Assert::AreEqual(static_cast<std::uint32_t>(Game::FleetOrderKind::Jump), static_cast<std::uint32_t>(receiver.FleetStatusOf(0).kind),
+                     L"a fleet holding a jump order does not say Jump");
+    Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).flags & Game::FLEET_FLAG_LAUNCHING),
+                     L"a jumping fleet says it is launching -- the collision is back");
   }
 
   TEST_METHOD(AFireEventReachesBothEnds)
@@ -506,13 +562,14 @@ public:
     Game::Universe universe;
     const Game::ShipId ship = SpawnAt(universe, 0.0f, 0.0f);
     const Game::ShipId ships[] = {ship};
-    Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID, universe.FormFleet(Game::FACTION_PLAYER, 2, ships), L"the fleet was refused");
+    Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID,
+                        universe.FormFleet(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 2, ships), L"the fleet was refused");
 
     Link link;
     Game::Publisher publisher;
     Game::Publisher::Desc desc;
     desc.transport = &link.server;
-    desc.faction = Game::FACTION_PLAYER;
+    desc.issuer = Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER};
     (void)publisher.Add(desc);
 
     link.Pump(0);
@@ -524,7 +581,7 @@ public:
     link.Pump(0);
 
     publisher.ApplyOrders(universe);
-    Assert::IsTrue(universe.FleetOf(universe.FleetInSlot(Game::FACTION_PLAYER, 2)).orderKind == Game::FleetOrderKind::Move,
+    Assert::IsTrue(universe.FleetOf(universe.FleetInSlot(Game::OWNER_LOCAL, 2)).orderKind == Game::FleetOrderKind::Move,
                    L"a fleet order did not reach the universe through the seam");
     Assert::AreEqual(Game::OrderState::Moving, universe.Ship(ship).order, L"the fleet's member was not put under way");
 
@@ -533,21 +590,22 @@ public:
     Game::Universe other;
     const Game::ShipId theirs = SpawnAt(other, 0.0f, 0.0f);
     const Game::ShipId theirShips[] = {theirs};
-    Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID, other.FormFleet(Game::FACTION_PLAYER, 2, theirShips), L"the fleet was refused");
+    Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID,
+                        other.FormFleet(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 2, theirShips), L"the fleet was refused");
 
     Link stranger;
     Game::Publisher strangerPublisher;
     Game::Publisher::Desc strangerDesc;
     strangerDesc.transport = &stranger.server;
-    strangerDesc.faction = Game::FACTION_VANDAL;
+    strangerDesc.issuer = Game::Issuer{Game::OwnerId{2}, Game::FACTION_VANDAL};
     (void)strangerPublisher.Add(strangerDesc);
 
     stranger.Pump(0);
     Assert::IsTrue(Game::WriteFleetOrder(order, stranger.client), L"the order was refused by the lane");
     stranger.Pump(0);
     strangerPublisher.ApplyOrders(other);
-    Assert::IsTrue(other.FleetOf(other.FleetInSlot(Game::FACTION_PLAYER, 2)).orderKind == Game::FleetOrderKind::Idle,
-                   L"one faction ordered another faction's slot");
+    Assert::IsTrue(other.FleetOf(other.FleetInSlot(Game::OWNER_LOCAL, 2)).orderKind == Game::FleetOrderKind::Idle,
+                   L"one owner ordered another owner's slot");
   }
 
   TEST_METHOD(TheRosterFollowsTheFleet)
@@ -563,7 +621,7 @@ public:
     Game::Publisher publisher;
     Game::Publisher::Desc desc;
     desc.transport = &link.server;
-    desc.faction = Game::FACTION_PLAYER;
+    desc.issuer = Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER};
 
     // The DEFAULT update period, deliberately: a roster goes out on the tick membership changed and
     // not on the tick this subscriber is next due, and a test that published every tick could not
@@ -577,7 +635,8 @@ public:
 
     std::vector<std::uint32_t> counts = ZeroCounts();
     counts[static_cast<std::size_t>(Game::HullId::Corvette)] = 3;
-    Assert::IsTrue(universe.ComposeFleet(station, 2, counts, Game::FACTION_PLAYER) == Game::Universe::ComposeResult::Composed,
+    Assert::IsTrue(universe.ComposeFleet(station, 2, counts, Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}) ==
+                     Game::Universe::ComposeResult::Composed,
                    L"the compose was refused");
 
     Game::SnapshotReceiver watching;
@@ -599,7 +658,7 @@ public:
     for (std::uint32_t step = 0; step < 3 * Game::FLEET_LAUNCH_EVERY_TICKS + 30; ++step)
     {
       RunTick(universe, publisher, link, tick++);
-      const Game::Universe::FleetId id = universe.FleetInSlot(Game::FACTION_PLAYER, 2);
+      const Game::Universe::FleetId id = universe.FleetInSlot(Game::OWNER_LOCAL, 2);
       const std::uint32_t now = (id == Game::Universe::INVALID_FLEET_ID) ? 0u : universe.FleetOf(id).memberCount;
       const std::uint32_t rosters = CountRosters(link.DrainReliable(), last);
       if (now == held)
@@ -620,7 +679,7 @@ public:
     Link joiner;
     Game::Publisher::Desc joinerDesc;
     joinerDesc.transport = &joiner.server;
-    joinerDesc.faction = Game::FACTION_PLAYER;
+    joinerDesc.issuer = Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER};
     joinerDesc.openingDespawnCursor = universe.DespawnHead();
     (void)publisher.Add(joinerDesc);
 
@@ -635,7 +694,7 @@ public:
     Assert::AreEqual(0u, CountRosters(link.DrainReliable(), last), L"somebody else joining restated an unchanged roster");
 
     // A loss states the roster again, one member shorter.
-    const Game::Universe::Fleet& fleet = universe.FleetOf(universe.FleetInSlot(Game::FACTION_PLAYER, 2));
+    const Game::Universe::Fleet& fleet = universe.FleetOf(universe.FleetInSlot(Game::OWNER_LOCAL, 2));
     Assert::IsTrue(universe.DespawnShip(fleet.members[0]), L"the despawn failed");
     RunTick(universe, publisher, link, tick++);
     Assert::AreEqual(1u, CountRosters(link.DrainReliable(), last), L"a pruned loss did not state the roster");
@@ -645,14 +704,14 @@ public:
     // fleet each time: the row's members move as the prune swaps them down.
     for (int at = 0; at < 2; ++at)
     {
-      const Game::Universe::FleetId id = universe.FleetInSlot(Game::FACTION_PLAYER, 2);
+      const Game::Universe::FleetId id = universe.FleetInSlot(Game::OWNER_LOCAL, 2);
       Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID, id, L"the fleet retired early");
       Assert::IsTrue(universe.DespawnShip(universe.FleetOf(id).members[0]), L"the despawn failed");
       RunTick(universe, publisher, link, tick++);
       Assert::AreEqual(1u, CountRosters(link.DrainReliable(), last), L"a loss did not state the roster");
     }
     Assert::IsTrue(last.members.empty(), L"the last loss did not state an empty roster");
-    Assert::AreEqual(Game::Universe::INVALID_FLEET_ID, universe.FleetInSlot(Game::FACTION_PLAYER, 2), L"the slot was not freed");
+    Assert::AreEqual(Game::Universe::INVALID_FLEET_ID, universe.FleetInSlot(Game::OWNER_LOCAL, 2), L"the slot was not freed");
 
     // The extra ticks the default period costs: the mask rides the update, so it states the freed
     // slot on this subscriber's next due tick rather than on the tick the row went.
@@ -676,7 +735,7 @@ public:
     Game::Publisher publisher;
     Game::Publisher::Desc desc;
     desc.transport = &link.server;
-    desc.faction = Game::FACTION_PLAYER;
+    desc.issuer = Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER};
 
     // Due every tick, so this test reads the block on the tick it means rather than on whichever
     // tick the default period lands on. It is a per-subscriber setting for exactly this reason.
@@ -691,7 +750,8 @@ public:
 
     std::vector<std::uint32_t> counts = ZeroCounts();
     counts[static_cast<std::size_t>(Game::HullId::Corvette)] = 3;
-    Assert::IsTrue(universe.ComposeFleet(station, 0, counts, Game::FACTION_PLAYER) == Game::Universe::ComposeResult::Composed,
+    Assert::IsTrue(universe.ComposeFleet(station, 0, counts, Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}) ==
+                     Game::Universe::ComposeResult::Composed,
                    L"the compose was refused");
     RunTick(universe, publisher, link, tick++);
     link.DrainInto(receiver);
@@ -699,15 +759,14 @@ public:
     // Launching, and counting the whole composed set -- so the button says three from the moment
     // the fleet exists rather than climbing as the hulls appear.
     Assert::AreEqual(0x01u, static_cast<std::uint32_t>(receiver.FleetMask()), L"the composed slot is not held");
-    Assert::AreEqual(static_cast<std::uint32_t>(Game::FLEET_STATUS_LAUNCHING),
-                     static_cast<std::uint32_t>(receiver.FleetStatusOf(0).status & Game::FLEET_STATUS_KIND_MASK),
-                     L"a pouring fleet is not launching");
+    Assert::AreNotEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).flags & Game::FLEET_FLAG_LAUNCHING),
+                        L"a pouring fleet is not launching");
     Assert::AreEqual(3u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).count), L"the count is not the whole composed set");
 
     // The door, which is where a fleet with nobody in space is stated. Reachable exactly here: the
     // metronome starts cold, so a composed fleet is never published empty -- what empties it again
     // is losing the one hull that is out while the manifest still holds the rest.
-    const Game::Universe::FleetId launching = universe.FleetInSlot(Game::FACTION_PLAYER, 0);
+    const Game::Universe::FleetId launching = universe.FleetInSlot(Game::OWNER_LOCAL, 0);
     Assert::AreEqual(1u, universe.FleetOf(launching).memberCount, L"the metronome did not launch on the first step");
     Assert::IsTrue(universe.DespawnShip(universe.FleetOf(launching).members[0]), L"the despawn failed");
     RunTick(universe, publisher, link, tick++);
@@ -720,7 +779,7 @@ public:
     for (std::uint32_t step = 0; step < 2 * Game::FLEET_LAUNCH_EVERY_TICKS + 400; ++step)
       RunTick(universe, publisher, link, tick++, &receiver);
 
-    const Game::Universe::FleetId id = universe.FleetInSlot(Game::FACTION_PLAYER, 0);
+    const Game::Universe::FleetId id = universe.FleetInSlot(Game::OWNER_LOCAL, 0);
     Assert::AreEqual(2u, universe.FleetOf(id).memberCount, L"the fleet did not finish launching");
 
     // Out, and the centroid is the mean of the two. Computed against the same two positions here
@@ -730,19 +789,21 @@ public:
     const Game::UniversePos second = universe.Ship(universe.Resolve(universe.FleetOf(id).members[1])).posUniverse;
     Game::Translate(centre, OffsetX(centre, second) * 0.5f, OffsetZ(centre, second) * 0.5f);
     Assert::IsTrue(Distance(receiver.FleetStatusOf(0).position, centre) < 0.2f, L"the stated position is not the fleet's centroid");
-    Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).status & Game::FLEET_STATUS_KIND_MASK),
+    Assert::AreEqual(static_cast<std::uint32_t>(Game::FleetOrderKind::Idle), static_cast<std::uint32_t>(receiver.FleetStatusOf(0).kind),
                      L"a fleet with nothing to do is not idle");
+    Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).flags & Game::FLEET_FLAG_LAUNCHING),
+                     L"a fleet that finished launching still says it is");
 
     Game::Universe::FleetCommand move;
     move.kind = Game::FleetOrderKind::Move;
     move.point = Game::LocalPos(2000.0f, 0.0f);
-    Assert::IsTrue(universe.IssueFleetOrder(Game::FACTION_PLAYER, 0, move) == Game::Universe::FleetOrderResult::Ordered,
+    Assert::IsTrue(universe.IssueFleetOrder(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 0, move) ==
+                     Game::Universe::FleetOrderResult::Ordered,
                    L"the order was refused");
     RunTick(universe, publisher, link, tick++);
     link.DrainInto(receiver);
-    Assert::AreEqual(static_cast<std::uint32_t>(Game::FleetOrderKind::Move),
-                     static_cast<std::uint32_t>(receiver.FleetStatusOf(0).status & Game::FLEET_STATUS_KIND_MASK),
-                     L"the standing order does not reach the status byte");
+    Assert::AreEqual(static_cast<std::uint32_t>(Game::FleetOrderKind::Move), static_cast<std::uint32_t>(receiver.FleetStatusOf(0).kind),
+                     L"the standing order does not reach the kind byte");
 
     // An act lights both bits. Close enough to be inside the engagement leash, because a threat
     // already past it stands the fleet down on the same tick it was recorded -- which is the case
@@ -753,9 +814,9 @@ public:
     universe.RecordHostileAct(universe.HandleOf(raider), universe.FleetOf(id).members[0]);
     RunTick(universe, publisher, link, tick++);
     link.DrainInto(receiver);
-    Assert::AreNotEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).status & Game::FLEET_STATUS_UNDER_ATTACK),
+    Assert::AreNotEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).flags & Game::FLEET_FLAG_UNDER_ATTACK),
                         L"an act did not light the under-attack bit");
-    Assert::AreNotEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).status & Game::FLEET_STATUS_ENGAGED),
+    Assert::AreNotEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).flags & Game::FLEET_FLAG_ENGAGED),
                         L"an act did not light the engaged bit");
 
     // The attacker gone stands the fleet down while the alert is still burning, which is the one
@@ -763,17 +824,25 @@ public:
     Assert::IsTrue(universe.DespawnShip(universe.HandleOf(raider)), L"the despawn failed");
     RunTick(universe, publisher, link, tick++);
     link.DrainInto(receiver);
-    Assert::AreNotEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).status & Game::FLEET_STATUS_UNDER_ATTACK),
+    Assert::AreNotEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).flags & Game::FLEET_FLAG_UNDER_ATTACK),
                         L"the alert went out with the fight");
-    Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).status & Game::FLEET_STATUS_ENGAGED),
+    Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).flags & Game::FLEET_FLAG_ENGAGED),
                      L"a fleet with nothing to chase is still engaged");
+    // The room this block was re-laid to leave. Zero on the wire and zero on read, so the day one of
+    // them carries something this row says what it was (Design/Archive/FleetStatus-work-order.md 5).
+    Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).stance), L"the reserved stance byte came back set");
+    constexpr std::uint8_t RESERVED_FLAGS =
+      static_cast<std::uint8_t>(~(Game::FLEET_FLAG_LAUNCHING | Game::FLEET_FLAG_ENGAGED | Game::FLEET_FLAG_UNDER_ATTACK));
+    Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).flags & RESERVED_FLAGS),
+                     L"a reserved flag bit came back set");
 
     // Five at once: the widest the block ever is, and every slot decoded on its own terms.
     for (std::uint8_t slot = 1; slot < Game::FLEET_SLOTS; ++slot)
     {
       const Game::ShipId ship = SpawnAt(universe, -3000.0f - static_cast<float>(slot) * 300.0f, 0.0f);
       const Game::ShipId one[] = {ship};
-      Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID, universe.FormFleet(Game::FACTION_PLAYER, slot, one), L"a fleet was refused");
+      Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID,
+                          universe.FormFleet(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, slot, one), L"a fleet was refused");
     }
     RunTick(universe, publisher, link, tick++);
     link.DrainInto(receiver);
@@ -791,13 +860,14 @@ public:
     Game::Universe universe;
     const Game::ShipId ship = SpawnAt(universe, 0.0f, 0.0f);
     const Game::ShipId one[] = {ship};
-    Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID, universe.FormFleet(Game::FACTION_PLAYER, 3, one), L"the fleet was refused");
+    Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID, universe.FormFleet(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 3, one),
+                        L"the fleet was refused");
 
     Link link;
     Game::Publisher publisher;
     Game::Publisher::Desc desc;
     desc.transport = &link.server;
-    desc.faction = Game::FACTION_PLAYER;
+    desc.issuer = Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER};
     desc.centre = Game::LocalPos(Game::INTEREST_RADIUS_METRES * 20.0f, 0.0f);
     (void)publisher.Add(desc);
 
@@ -815,7 +885,7 @@ public:
     Link quiet;
     Game::Publisher::Desc quietDesc;
     quietDesc.transport = &quiet.server;
-    quietDesc.faction = Game::FACTION_VANDAL;
+    quietDesc.issuer = Game::Issuer{Game::OwnerId{2}, Game::FACTION_VANDAL};
     quietDesc.centre = desc.centre;
     (void)publisher.Add(quietDesc);
     for (std::uint64_t tick = 41; tick <= 80; ++tick)
@@ -841,7 +911,7 @@ public:
     Game::Publisher publisher;
     Game::Publisher::Desc desc;
     desc.transport = &link.server;
-    desc.faction = Game::FACTION_PLAYER;
+    desc.issuer = Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER};
     (void)publisher.Add(desc);
 
     Game::LedgerRequest asked;
@@ -884,7 +954,7 @@ public:
     Game::Publisher raiderPublisher;
     Game::Publisher::Desc raiderDesc;
     raiderDesc.transport = &raiderLink.server;
-    raiderDesc.faction = Game::FACTION_PLAYER;
+    raiderDesc.issuer = Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER};
     (void)raiderPublisher.Add(raiderDesc);
 
     Game::LedgerRequest raiderAsked;
@@ -935,7 +1005,7 @@ public:
     Game::Publisher publisher;
     Game::Publisher::Desc desc;
     desc.transport = &link.server;
-    desc.faction = Game::FACTION_PLAYER;
+    desc.issuer = Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER};
     (void)publisher.Add(desc);
 
     Game::ComposeOrder sent;
@@ -948,7 +1018,7 @@ public:
     link.Pump(0);
     publisher.ApplyOrders(universe);
 
-    const Game::Universe::FleetId id = universe.FleetInSlot(Game::FACTION_PLAYER, 4);
+    const Game::Universe::FleetId id = universe.FleetInSlot(Game::OWNER_LOCAL, 4);
     Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID, id, L"a compose order did not reach the universe through the seam");
     Assert::AreEqual(2u, universe.FleetOf(id).manifestCount, L"the draft did not become a manifest");
     Assert::IsTrue(universe.StationOf(station).docked.empty(), L"the composed rows did not leave the ledger");
@@ -966,7 +1036,7 @@ public:
     Game::Publisher strangerPublisher;
     Game::Publisher::Desc strangerDesc;
     strangerDesc.transport = &stranger.server;
-    strangerDesc.faction = Game::FACTION_VANDAL;
+    strangerDesc.issuer = Game::Issuer{Game::OwnerId{2}, Game::FACTION_VANDAL};
     (void)strangerPublisher.Add(strangerDesc);
 
     Game::ComposeOrder theirs = sent;
@@ -975,7 +1045,7 @@ public:
     Assert::IsTrue(Game::WriteComposeOrder(theirs, stranger.client), L"the compose order was refused by the lane");
     stranger.Pump(0);
     strangerPublisher.ApplyOrders(other);
-    Assert::AreEqual(Game::Universe::INVALID_FLEET_ID, other.FleetInSlot(Game::FACTION_VANDAL, 4),
+    Assert::AreEqual(Game::Universe::INVALID_FLEET_ID, other.FleetInSlot(Game::OwnerId{2}, 4),
                      L"one faction composed a fleet out of another faction's ledger");
     Assert::AreEqual(static_cast<std::size_t>(2), other.StationOf(theirPost).docked.size(), L"somebody else's rows left the ledger");
   }

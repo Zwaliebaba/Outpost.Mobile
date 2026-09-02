@@ -282,11 +282,21 @@ void Hud::DrawDebug(TextRenderer& _text, const Layout& _layout, const Frame& _fr
   _text.DrawTextLine(FontId::Ui, (static_cast<float>(_widthPx) - width) * 0.5f, top + lineHeight * 2.0f, HUD_TEXT_SCALE * s,
                      HUD_LABEL_COLOUR, line);
 
+  // The tick, which is the one number on this screen the frame rate cannot show: a frame runs at the
+  // refresh rate whatever the simulation costs, so a step that has crept up to half its budget is
+  // invisible until it is over it. WORST is the window's, because a tick that spikes once a second
+  // is what breaks and a mean never shows it.
+  std::snprintf(line, sizeof(line), "STEP %.2f MS%sPUBLISH %.2f MS%sWORST %.2f MS%sSUBS %u", _frame.stats.stepMs, SEPARATOR,
+                _frame.stats.publishMs, SEPARATOR, _frame.stats.stepWorstMs, SEPARATOR, _frame.stats.subscriberCount);
+  width = advance * static_cast<float>(std::strlen(line));
+  _text.DrawTextLine(FontId::Ui, (static_cast<float>(_widthPx) - width) * 0.5f, top + lineHeight * 3.0f, HUD_TEXT_SCALE * s,
+                     HUD_LABEL_COLOUR, line);
+
   // The router. DECLINED is the one number here that is not a curiosity: an island that refused to
   // build routes nothing and looks like open space, so this is where it says so.
   std::snprintf(line, sizeof(line), "ISLANDS %u%sDECLINED %u", _frame.stats.pathIslandCount, SEPARATOR, _frame.stats.pathIslandsDeclined);
   width = advance * static_cast<float>(std::strlen(line));
-  _text.DrawTextLine(FontId::Ui, (static_cast<float>(_widthPx) - width) * 0.5f, top + lineHeight * 3.0f, HUD_TEXT_SCALE * s,
+  _text.DrawTextLine(FontId::Ui, (static_cast<float>(_widthPx) - width) * 0.5f, top + lineHeight * 4.0f, HUD_TEXT_SCALE * s,
                      HUD_LABEL_COLOUR, line);
 }
 

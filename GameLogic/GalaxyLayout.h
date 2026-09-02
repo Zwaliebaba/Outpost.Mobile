@@ -20,7 +20,7 @@ namespace Game
 //
 // Nothing in the simulation knows a galaxy exists. There is no record, no collision and no tick
 // cost at a cell nobody occupies; what the simulation eventually sees is the ordinary spawn input
-// this produces -- positions and seeds (Design/Universe.md 3).
+// this produces -- positions and seeds (Design/Archive/Universe.md 3).
 
 // Half the height of a hex row, as a fraction of the lattice pitch: sqrt(3)/2.
 //
@@ -41,7 +41,7 @@ inline constexpr std::uint32_t INVALID_PIN_INDEX = 0xFFFFFFFFu;
 // grows from.
 //
 // The cell is carried because it is the system's *name* -- the one identifier that survives a
-// density change, where an index into the systems array does not (Design/Universe.md 3.1). A save
+// density change, where an index into the systems array does not (Design/Archive/Universe.md 3.1). A save
 // file and a shard handoff both want that name, and recovering it from a position afterwards would
 // be arithmetic against the jitter.
 struct SystemSite
@@ -83,7 +83,7 @@ struct SystemPin
 
 // The bounds a galaxy is drawn within.
 //
-// The defaults are the shipped numbers (Design/Universe.md 10), not placeholders, and that is
+// The defaults are the shipped numbers (Design/Archive/Universe.md 10), not placeholders, and that is
 // load-bearing for the same reason SystemDesc's are: the separation and ceiling bounds below are
 // provable in GameLogicTests only if the values they are proved against are the ones the game
 // actually ships.
@@ -105,9 +105,9 @@ struct GalaxyDesc
   // Per axis is the word that costs something. The jitter is a square and not a disc -- two
   // independent draws, which is the cheap and deterministic way to do it -- so a star's worst
   // displacement is its diagonal, cellJitter * sqrt(2) * pitch, and the separation below is
-  // proved against that rather than against the edge. Design/Universe.md 3.4 originally said 0.30
+  // proved against that rather than against the edge. Design/Archive/Universe.md 3.4 originally said 0.30
   // here and proved (1 - 2 * jitter); that arithmetic is a disc's, the suite caught it, and 0.20 is
-  // what holds the separation the design asked for (Design/Universe-slice-1.md 7).
+  // what holds the separation the design asked for (Design/Archive/Universe-slice-1.md 7).
   float cellJitter = 0.20f;
 
   // What fraction of the candidate cells hold a system. A knob rather than a count, because a
@@ -125,8 +125,8 @@ struct GalaxyDesc
   // above by the path grid's ceiling, which is what actually decides it. A system's static span is
   // twice this plus two grid margins, and PathIslands DECLINES to build past
   // PATH_GRID_MAX_CELLS_PER_AXIS *quietly*: the symptom is ships that stop routing, a long way from
-  // here. Design/Universe.md 10 specified 8 000, which is 532 cells against a ceiling of 512
-  // (Design/Universe-slice-3.md 7).
+  // here. Design/Archive/Universe.md 10 specified 8 000, which is 532 cells against a ceiling of 512
+  // (Design/Archive/Universe-slice-3.md 7).
   //
   // It lives in this struct rather than in the composition root precisely so the bound is a
   // GameLogicTests assertion instead of a hope: the executable layer has no suite
@@ -200,7 +200,7 @@ struct GalaxyLayout
 // starting system is exactly the system the game boots into today. An unpinned one draws its planet
 // count from its own seed and then lays its planets out over the same generator, through the loop
 // LayOutSystem uses -- one stream, so a system is a system rather than a count and some planets
-// that happen to share a seed (Design/Universe.md 3.3).
+// that happen to share a seed (Design/Archive/Universe.md 3.3).
 //
 // _pins must be the same span _site came out of. A site whose pin index is not in it is laid out as
 // though it were drawn, which is the fail-closed direction: a system with planets in it beats a
@@ -224,7 +224,7 @@ struct GalaxyLayout
 // Here rather than in the client because it is a question about the galaxy, not about a view: a
 // server deciding which system a position belongs to asks exactly this, and the client's copy would
 // have been the second opinion ADR 0037 exists to prevent. It is also the half of the client's
-// scenery machinery that a suite can actually reach (Design/Universe-slice-4b.md 4).
+// scenery machinery that a suite can actually reach (Design/Archive/Universe-slice-4b.md 4).
 [[nodiscard]] std::uint32_t SystemAt(std::span<const SystemSite> _systems, const UniversePos& _at) noexcept;
 
 // Where the gate that leads to _to stands, inside _from's system.

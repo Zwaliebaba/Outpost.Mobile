@@ -360,7 +360,7 @@ public:
         universe.SpawnShip(Game::LocalPos(200.0f, 600.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Bomber), Game::FACTION_VANDAL);
 
       const Game::ShipId firstStructure = universe.Resolve(universe.StationOf(stations[0]).structure);
-      (void)universe.IssueDockOrder(std::array{docker}, firstStructure, Game::FACTION_PLAYER);
+      (void)universe.IssueDockOrder(std::array{docker}, firstStructure, Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER});
       universe.RecordAggression(universe.HandleOf(raider), stations[1]);
 
       for (int tick = 0; tick < 3000; ++tick)

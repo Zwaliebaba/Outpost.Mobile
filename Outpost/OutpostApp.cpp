@@ -207,9 +207,8 @@ void OutpostApp::Init(HINSTANCE _instance)
   }
   if (restored == RestoreResult::Refused)
   {
-    ThrowBootFailure("the saved universe was refused",
-                     "Universe.sav is present and is not a universe this build can read; move it aside and run "
-                     "UniverseGen to write a new one");
+    const std::string reason = m_restoreRefusal + "; move it aside and run UniverseGen to write a new one";
+    ThrowBootFailure("the saved universe was refused", reason.c_str());
   }
 
   // The places the file's contents stand in. Laid out rather than stored, because a galaxy is a pure
@@ -222,7 +221,7 @@ void OutpostApp::Init(HINSTANCE _instance)
   //
   // From m_galaxySeed, which came out of the save header, and NEVER from a compiled constant: the
   // ships in the file were spawned into the galaxy that seed lays out and no other, so a build whose
-  // own idea of the seed had moved on would draw stations inside stars (Design/Universe.md 8).
+  // own idea of the seed had moved on would draw stations inside stars (Design/Archive/Universe.md 8).
   m_galaxy = Game::LayOutGalaxy(m_galaxySeed, Game::UniversePos{}, Game::STARTING_GALAXY, Game::GALAXY_PINS);
   for (std::size_t at = 0; at < m_galaxy.systems.size(); ++at)
   {
@@ -423,7 +422,7 @@ void OutpostApp::SpawnStartingBodies(std::uint64_t _seed)
   // origin. They were the same point until there was a second system -- home is pinned at lattice
   // cell (0, 0) and a pinned system takes no jitter, so its star IS the origin -- which is why this
   // used to be LocalPos of a bearing and a distance, and why a world in any other system would have
-  // been drawn a whole system away from the one it belongs to (Design/Universe-slice-4b.md 4).
+  // been drawn a whole system away from the one it belongs to (Design/Archive/Universe-slice-4b.md 4).
   //
   // The boot scene does not move: Translate on a default UniversePos carries exactly the two floats
   // LocalPos carries and stores the same two remainders, so while the anchor is the origin the
@@ -596,19 +595,97 @@ OutpostApp::RestoreResult OutpostApp::RestoreUniverse()
 
   const Neuron::ByteBuffer file = Neuron::BinaryFile::ReadFile(Game::UNIVERSE_SAVE_FILE);
   if (file.empty())
-    return RestoreResult::Refused; // present and unreadable, or present and empty; neither is a universe
+  {
+    m_restoreRefusal = "Universe.sav is present and could not be read, or is empty";
+    return RestoreResult::Refused;
+  }
 
   Game::SaveHeader header;
   if (!Game::ReadSaveFile(file, header, m_universe))
+  {
+    // The reader changed nothing, so it cannot say which format it refused; the bytes are peeked
+    // for the sentence, because "not a universe this build can read" is a diagnosis only when it
+    // names the byte (AGENTS.md 5).
+    std::uint8_t fileFormat = 0;
+    std::uint8_t stateFormat = 0;
+    if (Game::PeekSaveFormats(file, fileFormat, stateFormat))
+    {
+      // Widened before formatting: a uint8_t is a char to std::format, and the sentence would carry
+      // a control character where it should carry a seven.
+      m_restoreRefusal =
+        std::format("Universe.sav is file format {} and state format {}; this build reads file formats {} to {} and "
+                    "state formats {} to {}",
+                    static_cast<unsigned>(fileFormat), static_cast<unsigned>(stateFormat),
+                    static_cast<unsigned>(Game::SAVE_FILE_FORMAT_OLDEST), static_cast<unsigned>(Game::SAVE_FILE_FORMAT),
+                    static_cast<unsigned>(Game::UNIVERSE_STATE_FORMAT_OLDEST), static_cast<unsigned>(Game::UNIVERSE_STATE_FORMAT));
+    }
+    else
+    {
+      m_restoreRefusal = "Universe.sav is present and is not a universe: the magic is wrong or the file is torn";
+    }
     return RestoreResult::Refused;
+  }
 
   m_galaxySeed = header.galaxySeed;
+
+  // Which format the universe came out of, on every restore, and when it was an older one, the fact
+  // that this run migrated it -- the next save writes the current format over the file that was
+  // read. The file read is kept beside the save under its format's name, once and never overwritten,
+  // because a reader that misread an older field produces a universe that loads, saves thirty
+  // seconds later, and has by then destroyed the only file that could show what the field was
+  // (Design/Archive/SaveMigration-work-order.md 1.4). A copy of an ACCEPTED file decides nothing for the
+  // player, which is what ADR 0057's refusal of moving a REFUSED one aside was about.
+  m_log.PushFormat(EventLog::Severity::Info, 0.0f, "SAVE | FORMAT %u", static_cast<unsigned>(header.stateFormat));
+  if (header.stateFormat < Game::UNIVERSE_STATE_FORMAT || header.fileFormat < Game::SAVE_FILE_FORMAT)
+  {
+    const std::wstring sidecar = Game::UniverseSaveSidecarName(header.stateFormat);
+    if (Neuron::FileSys::Exists(sidecar))
+    {
+      m_log.PushFormat(EventLog::Severity::Info, 0.0f, "SAVE | MIGRATED %u -> %u | KEPT ALREADY", static_cast<unsigned>(header.stateFormat),
+                       static_cast<unsigned>(Game::UNIVERSE_STATE_FORMAT));
+    }
+    else if (Neuron::BinaryFile::WriteFileAtomic(sidecar, file))
+    {
+      m_log.PushFormat(EventLog::Severity::Info, 0.0f, "SAVE | MIGRATED %u -> %u | KEPT Universe.sav.%u",
+                       static_cast<unsigned>(header.stateFormat), static_cast<unsigned>(Game::UNIVERSE_STATE_FORMAT),
+                       static_cast<unsigned>(header.stateFormat));
+    }
+    else
+    {
+      // Alert for SaveUniverse's reason: the one file that could show what a misread field was is
+      // the one that did not get kept, and the player is the only one who can move it aside.
+      m_log.PushFormat(EventLog::Severity::Alert, 0.0f, "SAVE | MIGRATED %u -> %u | KEEP REFUSED",
+                       static_cast<unsigned>(header.stateFormat), static_cast<unsigned>(Game::UNIVERSE_STATE_FORMAT));
+    }
+  }
 
   // From the file's own tick, so the first periodic save falls a whole period after the restore
   // rather than immediately -- a game reloaded and quit again should not rewrite the file it just
   // read.
   m_lastSaveTick = m_universe.Tick();
   return RestoreResult::Restored;
+}
+
+void OutpostApp::WriteTickStats()
+{
+  // The levels are read here rather than accumulated per tick, because each is a level and not
+  // something a tick adds to.
+  TickStats& stats = m_simulation.Stats();
+  stats.tick = m_universe.Tick();
+  stats.shipCount = m_universe.ShipCount();
+  stats.subscriberCount = m_simulation.SubscriberCount();
+
+  // Stamped whether or not the write lands, on SaveUniverse's argument: a disk that refuses once
+  // will refuse again, and retrying every tick would turn a full disk into a frame rate.
+  m_lastStatsTick = m_universe.Tick();
+
+  if (!WriteTickStatsFile(stats))
+  {
+    // Info and not Alert, which is where this differs from a refused save: nothing is lost that the
+    // game needed, and a readout that cannot be written is not a reason to interrupt a player.
+    m_log.PushFormat(EventLog::Severity::Info, 0.0f, "STATS REFUSED | TICK %llu", static_cast<unsigned long long>(m_universe.Tick()));
+  }
+  stats.ResetWindow();
 }
 
 void OutpostApp::SaveUniverse()
@@ -897,6 +974,13 @@ void OutpostApp::Render()
   frame.stats.selectedCount = m_view.SelectedCount();
   frame.stats.shipCount = m_universe.ShipCount();
   frame.stats.timeScale = m_timeScale;
+  // The last tick's two halves, and the worst of the window so far. Read straight off the block the
+  // adapter fills, which is reset when the sidecar is written -- so WORST is "the worst since the
+  // last file" rather than since boot, and it is meant to be (Outpost/TickStats.h).
+  frame.stats.stepMs = m_simulation.Stats().stepLastMs;
+  frame.stats.publishMs = m_simulation.Stats().publishLastMs;
+  frame.stats.stepWorstMs = m_simulation.Stats().stepWorstMs;
+  frame.stats.subscriberCount = m_simulation.SubscriberCount();
   frame.stats.explosionCount = m_view.ExplosionCount();
   frame.stats.particleCount = m_view.Particles().Count();
   frame.stats.particlesDropped = m_view.Particles().Dropped();
@@ -994,7 +1078,7 @@ void OutpostApp::Run()
     //
     // Once per frame and free at this scale: fifty-four squared distances, against a lattice whose
     // stars are 56 926 m apart, so the answer is never ambiguous anywhere a player can be
-    // (Game::SystemAt, Design/Universe-slice-4b.md 4).
+    // (Game::SystemAt, Design/Archive/Universe-slice-4b.md 4).
     const std::uint32_t here = SystemAtCamera();
     if (here != m_localSystem)
     {
@@ -1004,7 +1088,7 @@ void OutpostApp::Run()
 
     // The periodic save, here because here is between ticks: Advance ran every tick this frame was
     // owed and the next one cannot start until the next Advance, so the universe is at rest, which
-    // is the codec's whole contract (Design/Universe.md 8).
+    // is the codec's whole contract (Design/Archive/Universe.md 8).
     //
     // A distance since the last save, not a modulo of the tick. A frame that advances four ticks
     // steps straight over any single tick the modulo would have matched, so the save would be
@@ -1017,13 +1101,19 @@ void OutpostApp::Run()
     if (m_config.saveEveryTicks != 0 && m_universe.Tick() - m_lastSaveTick >= m_config.saveEveryTicks)
       SaveUniverse();
 
+    // Beside the save and for the save's reason: between ticks. It writes a window and resets, so
+    // a file is what the last statsEveryTicks ticks cost rather than a mean since boot that stops
+    // moving after ten minutes (Design/Archive/TickTelemetry-work-order.md).
+    if (m_config.statsEveryTicks != 0 && m_universe.Tick() - m_lastStatsTick >= m_config.statsEveryTicks)
+      WriteTickStats();
+
     Render();
   }
 
   // Once at clean shutdown, and "clean" means precisely this: the loop above returned rather than
   // threw. Putting it in Shutdown instead would save on the way out of a FAILED boot too -- wWinMain
   // calls Shutdown from both catch blocks -- which would write a half-built universe over a good
-  // file, or, worse, over the very file that had just been refused (Design/Universe-slice-5.md 7).
+  // file, or, worse, over the very file that had just been refused (Design/Archive/Universe-slice-5.md 7).
   SaveUniverse();
 }
 

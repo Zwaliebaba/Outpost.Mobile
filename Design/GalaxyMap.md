@@ -2,7 +2,7 @@
 
 Status: drafted 2026-09-01, not yet agreed with the owner.
 
-`Design/Universe.md` deferred this three times, in slices 3, 4 and 4b, always for the same reason:
+`Design/Archive/Universe.md` deferred this three times, in slices 3, 4 and 4b, always for the same reason:
 a fleet can cross a gate without a map, and a map is UI work that should not gate the mechanism.
 The mechanism landed. This is the screen it was waiting for.
 
@@ -20,7 +20,7 @@ and each pays for a piece of the map:
 - **`GalaxyLayout`** — 54 `SystemSite`s with real positions and 68 `GateLink`s. The client already
   holds it (`OutpostApp::m_galaxy`), laid out at boot from the seed in the save header, so it is the
   same graph the server spawned gates against (ADR 0055, ADR 0057).
-- **`FleetStatus`** — a position, a status and a size **for all five fleets**, decoded out of the
+- **`FleetStatus`** — a position, an order kind, its flags, a reserved stance byte and a size **for all five fleets**, decoded out of the
   snapshot header rather than out of the interest set, so a player is told where every fleet is
   whether or not any of them is on screen (`Design/Archive/Fleets.md` 8.2). Four of five routinely
   are not. The map's hardest data question was answered by a decision taken for the fleet bar.

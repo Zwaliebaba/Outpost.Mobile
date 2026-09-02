@@ -11,6 +11,7 @@ be a design argues where it should instruct.
 | Work order | *What exactly do I do next, and when am I done?* | `Design/<topic>-work-order.md`, or `Design/<topic>-slice-N.md` when a design yields several |
 | Decision record | *Why did it go this way, and what lost?* | `Design/Decisions/NNNN-<slug>.md` |
 | Review | *Where does the tree stand against a stated goal?* | `Design/<topic>Review.md` |
+| Plan | *In what order does a review's work land, and how much has?* | `Design/<topic>Plan.md` while a slice it lists is open, `Design/Archive/` once all have landed |
 
 ## Designs
 

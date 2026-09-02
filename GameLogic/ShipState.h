@@ -30,6 +30,28 @@ inline constexpr FactionId FACTION_VANDAL = 1;
 // and what that *means* is a mapping each side owns.
 inline constexpr FactionId FACTION_VANGUARD = 2;
 
+// Who owns a thing, where "a thing" is a fleet or a row in a station's ledger.
+//
+// A different question from FactionId above, and the tree answered both with that byte until this
+// type existed. A faction is an IDENTITY every client maps to a relation (ADR 0013) and there are
+// eight of them because the wire's hostileMask is a byte; an owner is an ACCOUNT, there are as many
+// as there are players, and no client is ever told one. Making a player a faction would have meant
+// ten thousand rows in a table that is quadratic in its own size, which ADR 0013, 0039 and 0047 each
+// refused in turn without putting anything in its place (Design/Archive/OwnerKey-work-order.md).
+//
+// A u64 and a namespace of its own, deliberately not ADR 0047's shard-scoped EntityId: an account
+// outlives every shard it has ever had a ship on, and an entity does not outlive one.
+using OwnerId = std::uint64_t;
+
+// Everything the government, the Vandals and every other faction hold. Not a player, and never
+// compared for authority against anything but itself.
+inline constexpr OwnerId OWNER_NOBODY = 0;
+
+// The one player this build has. A placeholder for what a login will supply, named as one so that
+// the day a session says who is asking, this constant is what it replaces -- and so that a grep for
+// it finds every place that assumes a single player.
+inline constexpr OwnerId OWNER_LOCAL = 1;
+
 // How many factions the standing table below holds, and therefore how many the wire's hostileMask
 // can name: the mask is a u8 (Design/Archive/Stations.md 4.3). The day factions outgrow a byte the mask
 // becomes a small standings record and this limit moves with it -- widen both together.
@@ -49,6 +71,19 @@ inline constexpr std::uint32_t FACTION_LIMIT = 8;
 // eight is forty player ships, which is the envelope every number in this tree was measured in.
 inline constexpr std::uint32_t FLEET_SLOTS = 5;
 inline constexpr std::uint32_t MAX_FLEET_SHIPS = 8;
+
+// Who is asking, for the calls where that decides the answer.
+//
+// Both, and one type rather than two parameters, because every authority gate needs both and they
+// answer different questions: the owner decides whether you MAY -- is this your fleet, are these
+// your hulls -- and the faction decides how the world holds you, which is what a station consults
+// before it takes your dock. A pair also makes them unswappable, where two loose parameters would
+// convert a u8 into a u64 silently and compile.
+struct Issuer
+{
+  OwnerId owner = OWNER_NOBODY;
+  FactionId faction = FACTION_PLAYER;
+};
 
 // What one faction is to another.
 //
@@ -213,7 +248,7 @@ enum class FleetOrderKind : std::uint8_t
 
   // Jump: fly to a gate and cross it, whole. Appended rather than inserted, because the wire reads
   // this enum as a byte and a value that moved would make one build's Dock another's Attack
-  // (Design/Universe-slice-2.md 4).
+  // (Design/Archive/Universe-slice-2.md 4).
   Jump
 };
 

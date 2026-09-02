@@ -5,7 +5,7 @@ Date: 2026-09-01
 
 ## Context
 
-`Design/Universe.md` §8 gives the state codec a file. Two questions come with it that a commit
+`Design/Archive/Universe.md` §8 gives the state codec a file. Two questions come with it that a commit
 message cannot settle, because both are about what happens when something is wrong.
 
 The first is what a save file *is*. `WriteUniverseState` already produces a complete universe as
@@ -85,4 +85,4 @@ deployment will lose to a power cut is a property of the deployment (ADR 0043).
   that line moves and nothing else does.
 - Genesis is still the game's, on a first boot. It should not stay that way — a headless shard server
   has no business running it either — and the slice that moves it into a tool is
-  `Design/Universe.md` §13's 5b. This record does not decide that; it is what makes it cheap.
+  `Design/Archive/Universe.md` §13's 5b. This record does not decide that; it is what makes it cheap.

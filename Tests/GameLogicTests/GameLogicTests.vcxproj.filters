@@ -7,6 +7,9 @@
     <Filter Include="Project Files">
       <UniqueIdentifier>{7a3b12e5-c869-4f04-b25d-e6910c48a37f}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Assets">
+      <UniqueIdentifier>{4e2c9b1d-8f63-4a7e-b0c5-2d91f6a3e758}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -51,6 +54,9 @@
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="CombatTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="MatchupTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="DockingTests.cpp">
@@ -102,6 +108,9 @@
   <ItemGroup>
     <None Include="packages.config">
       <Filter>Project Files</Filter>
+    </None>
+    <None Include="Assets\UniverseFormat7.sav">
+      <Filter>Assets</Filter>
     </None>
   </ItemGroup>
 </Project>

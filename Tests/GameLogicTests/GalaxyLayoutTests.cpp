@@ -11,7 +11,7 @@ namespace GameLogicTests
 {
 namespace
 {
-// The shipped bounds are GalaxyDesc's own defaults (Design/Universe.md 10), so a test that wants
+// The shipped bounds are GalaxyDesc's own defaults (Design/Archive/Universe.md 10), so a test that wants
 // them constructs one and asks. Spelling them here instead would prove something about a galaxy
 // nobody plays the first time the density is retuned.
 constexpr std::uint64_t GALAXY_SEED = 0x46726F6E74696572ull; // "Frontier"
@@ -252,8 +252,8 @@ public:
 
     // Measured against the GATES, not the planets: a gate stands further out than any orbit, so it
     // is the gates that decide a system's static span. Counting only orbits is what let
-    // Design/Universe.md 10 specify a gate ring of 8 000 m -- 532 cells against a ceiling of 512
-    // (Design/Universe-slice-3.md 7).
+    // Design/Archive/Universe.md 10 specify a gate ring of 8 000 m -- 532 cells against a ceiling of 512
+    // (Design/Archive/Universe-slice-3.md 7).
     const float widestMetres = std::max(desc.gateRingMetres, desc.systemBounds.maxOrbitMetres);
     const float systemSpanMetres = 2.0f * widestMetres + 2.0f * Game::PATH_GRID_MARGIN_METRES;
     const int cells = static_cast<int>(std::ceil(systemSpanMetres / Game::PATH_CELL_SIZE_METRES));
@@ -375,7 +375,7 @@ public:
   }
 
   // SystemAt is the client's "which system am I in", and it is here rather than in the composition
-  // root so that this row can exist at all (Design/Universe-slice-4b.md 4).
+  // root so that this row can exist at all (Design/Archive/Universe-slice-4b.md 4).
   //
   // The property is total: EVERY system's own star answers with that system, over the shipped
   // galaxy, so no cell has a neighbour close enough to steal its own centre. A rule that got one

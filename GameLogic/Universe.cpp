@@ -375,16 +375,19 @@ const Universe::Station& Universe::StationOf(StationId _id) const noexcept
   return m_stations[_id];
 }
 
-bool Universe::CanTakeSlot(FactionId _ownerFaction, std::uint8_t _slot) const noexcept
+bool Universe::CanTakeSlot(OwnerId _owner, std::uint8_t _slot) const noexcept
 {
-  return _slot < FLEET_SLOTS && _ownerFaction < FACTION_LIMIT && FleetInSlot(_ownerFaction, _slot) == INVALID_FLEET_ID;
+  // No ceiling on the owner where there was one on the faction: FACTION_LIMIT is 8 because the
+  // wire's hostileMask is a byte, and an owner is never on the wire. That is the whole reason a
+  // player is not a faction (Design/Archive/OwnerKey-work-order.md).
+  return _slot < FLEET_SLOTS && FleetInSlot(_owner, _slot) == INVALID_FLEET_ID;
 }
 
-Universe::FleetId Universe::FormFleet(FactionId _ownerFaction, std::uint8_t _slot, std::span<const ShipId> _ships)
+Universe::FleetId Universe::FormFleet(const Issuer& _owner, std::uint8_t _slot, std::span<const ShipId> _ships)
 {
   // In the order the header lists them. Which one refuses is not observable -- every refusal is the
   // same invalid id and the same untouched table -- so the order is for the reader.
-  if (!CanTakeSlot(_ownerFaction, _slot))
+  if (!CanTakeSlot(_owner.owner, _slot))
     return INVALID_FLEET_ID;
   if (_ships.empty() || _ships.size() > MAX_FLEET_SHIPS)
     return INVALID_FLEET_ID;
@@ -394,7 +397,9 @@ Universe::FleetId Universe::FormFleet(FactionId _ownerFaction, std::uint8_t _slo
   for (std::size_t at = 0; at < _ships.size(); ++at)
   {
     const ShipId id = _ships[at];
-    if (id >= m_ships.size() || m_ships[id].factionId != _ownerFaction)
+    // The FACTION and not the owner: a ship carries a faction and nothing else, so "is this yours"
+    // at ship grain is the only question a ship can answer (ADR 0013).
+    if (id >= m_ships.size() || m_ships[id].factionId != _owner.faction)
       return INVALID_FLEET_ID;
     if (FleetAt(id) != INVALID_FLEET_ID)
       return INVALID_FLEET_ID;
@@ -408,7 +413,8 @@ Universe::FleetId Universe::FormFleet(FactionId _ownerFaction, std::uint8_t _slo
   }
 
   Fleet fleet;
-  fleet.ownerFaction = _ownerFaction;
+  fleet.ownerFaction = _owner.faction;
+  fleet.owner = _owner.owner;
   fleet.slot = _slot;
   fleet.memberCount = static_cast<std::uint32_t>(_ships.size());
   for (std::size_t at = 0; at < _ships.size(); ++at)
@@ -419,11 +425,11 @@ Universe::FleetId Universe::FormFleet(FactionId _ownerFaction, std::uint8_t _slo
   return id;
 }
 
-Universe::FleetId Universe::FleetInSlot(FactionId _ownerFaction, std::uint8_t _slot) const noexcept
+Universe::FleetId Universe::FleetInSlot(OwnerId _owner, std::uint8_t _slot) const noexcept
 {
   for (std::size_t at = 0; at < m_fleets.size(); ++at)
   {
-    if (m_fleets[at].ownerFaction == _ownerFaction && m_fleets[at].slot == _slot)
+    if (m_fleets[at].owner == _owner && m_fleets[at].slot == _slot)
       return static_cast<FleetId>(at);
   }
   return INVALID_FLEET_ID;
@@ -452,7 +458,7 @@ const Universe::Fleet& Universe::FleetOf(FleetId _id) const noexcept
   return (_id < m_fleets.size()) ? m_fleets[_id] : NONE;
 }
 
-void Universe::LedgerFor(StationId _station, FactionId _asker, std::span<std::uint32_t> _outCounts) const noexcept
+void Universe::LedgerFor(StationId _station, const Issuer& _asker, std::span<std::uint32_t> _outCounts) const noexcept
 {
   const std::size_t stated = (_outCounts.size() < HULL_COUNT) ? _outCounts.size() : std::size_t{HULL_COUNT};
   for (std::size_t hull = 0; hull < stated; ++hull)
@@ -468,18 +474,22 @@ void Universe::LedgerFor(StationId _station, FactionId _asker, std::span<std::ui
   // The same standing gate ComposeFleet applies, and zeros rather than a refusal because this
   // function has no way to say no -- a caller that needs the distinction asks ComposeFleet, which
   // still runs its own gate and still returns RefusedStanding.
-  if (StandingOf(station.ownerFaction, _asker) == Standing::Hostile)
+  //
+  // Standing is faction to faction and the rows are the OWNER's: whether this station will talk to
+  // you at all is about what you are, and which hulls are yours is about property. Both are asked
+  // here because both decide what a ledger answers (Design/Archive/OwnerKey-work-order.md).
+  if (StandingOf(station.ownerFaction, _asker.faction) == Standing::Hostile)
     return;
 
   for (const DockedShip& docked : station.docked)
   {
-    if (docked.factionId == _asker && docked.hullId < stated)
+    if (docked.owner == _asker.owner && docked.hullId < stated)
       ++_outCounts[docked.hullId];
   }
 }
 
 Universe::ComposeResult Universe::ComposeFleet(StationId _station, std::uint8_t _slot, std::span<const std::uint32_t> _hullCounts,
-                                               FactionId _issuerFaction)
+                                               const Issuer& _issuer)
 {
   if (_station >= m_stations.size())
     return ComposeResult::NotAStation;
@@ -488,10 +498,10 @@ Universe::ComposeResult Universe::ComposeFleet(StationId _station, std::uint8_t 
   if (Resolve(station.structure) == INVALID_SHIP_ID)
     return ComposeResult::NotAStation;
 
-  if (StandingOf(station.ownerFaction, _issuerFaction) == Standing::Hostile)
+  if (StandingOf(station.ownerFaction, _issuer.faction) == Standing::Hostile)
     return ComposeResult::RefusedStanding;
 
-  if (!CanTakeSlot(_issuerFaction, _slot))
+  if (!CanTakeSlot(_issuer.owner, _slot))
     return ComposeResult::SlotTaken;
 
   // Each count is bounded before it is summed, so no arithmetic here can overflow whatever a caller
@@ -518,7 +528,7 @@ Universe::ComposeResult Universe::ComposeFleet(StationId _station, std::uint8_t 
   // also answers with, so what a screen was shown and what this gate reads cannot drift apart
   // (Design/Archive/Fleets.md 8.3).
   std::uint32_t available[HULL_COUNT] = {};
-  LedgerFor(_station, _issuerFaction, available);
+  LedgerFor(_station, _issuer, available);
   for (std::uint32_t hull = 0; hull < HULL_COUNT; ++hull)
   {
     if (wanted[hull] > available[hull])
@@ -527,7 +537,8 @@ Universe::ComposeResult Universe::ComposeFleet(StationId _station, std::uint8_t 
 
   // Past every gate: from here nothing can fail, and the ledger may be written.
   Fleet fleet;
-  fleet.ownerFaction = _issuerFaction;
+  fleet.ownerFaction = _issuer.faction;
+  fleet.owner = _issuer.owner;
   fleet.slot = _slot;
   fleet.launchStructure = station.structure;
 
@@ -548,7 +559,7 @@ Universe::ComposeResult Universe::ComposeFleet(StationId _station, std::uint8_t 
   for (std::size_t at = 0; at < station.docked.size(); ++at)
   {
     const DockedShip& docked = station.docked[at];
-    if (docked.factionId == _issuerFaction && docked.hullId < HULL_COUNT && drawn[docked.hullId] < wanted[docked.hullId])
+    if (docked.owner == _issuer.owner && docked.hullId < HULL_COUNT && drawn[docked.hullId] < wanted[docked.hullId])
     {
       ++drawn[docked.hullId];
       continue;
@@ -598,13 +609,13 @@ void Universe::LowerFleetOrder(Fleet& _fleet)
   {
     const ShipId station = Resolve(_fleet.orderStation);
     if (station != INVALID_SHIP_ID)
-      (void)IssueDockOrder(m_fleetShipScratch, station, _fleet.ownerFaction);
+      (void)IssueDockOrder(m_fleetShipScratch, station, Issuer{_fleet.owner, _fleet.ownerFaction});
   }
   else if (_fleet.orderKind == FleetOrderKind::Jump)
   {
     // The approach, through the same call a player's click has always gone through. The pass below
     // does the crossing; this only gets the fleet to the door, in formation, so the members arrive
-    // together rather than trickling into the radius one at a time (Design/Universe.md 6.1).
+    // together rather than trickling into the radius one at a time (Design/Archive/Universe.md 6.1).
     const ShipId gate = Resolve(_fleet.orderGate);
     if (gate != INVALID_SHIP_ID)
     {
@@ -638,11 +649,13 @@ void Universe::LowerFleetOrder(Fleet& _fleet)
   }
 }
 
-Universe::FleetOrderResult Universe::IssueFleetOrder(FactionId _issuerFaction, std::uint8_t _slot, const FleetCommand& _command)
+Universe::FleetOrderResult Universe::IssueFleetOrder(const Issuer& _issuer, std::uint8_t _slot, const FleetCommand& _command)
 {
   // The whole authority gate, and the whole of what naming a fleet buys here: one comparison where
-  // a ship-list order needs a filter over every id it carries (ADR 0049, ADR 0014).
-  const FleetId id = FleetInSlot(_issuerFaction, _slot);
+  // a ship-list order needs a filter over every id it carries (ADR 0049, ADR 0014). It compares the
+  // OWNER now: authority is ownership, and two players in one faction each command their own five
+  // slots (Design/Archive/OwnerKey-work-order.md).
+  const FleetId id = FleetInSlot(_issuer.owner, _slot);
   if (id == INVALID_FLEET_ID)
     return FleetOrderResult::NoSuchFleet;
 
@@ -656,7 +669,9 @@ Universe::FleetOrderResult Universe::IssueFleetOrder(FactionId _issuerFaction, s
       return FleetOrderResult::NotAStation;
     // IssueDockOrder's own gate, asked here so the refusal has a name rather than arriving as an
     // order that silently did nothing (Design/Archive/Stations.md 7.1).
-    if (StandingOf(m_stations[row].ownerFaction, _issuerFaction) == Standing::Hostile)
+    // Standing, and so the FACTION: whether a station takes you is about what you are, not about
+    // whose fleet this is.
+    if (StandingOf(m_stations[row].ownerFaction, _issuer.faction) == Standing::Hostile)
       return FleetOrderResult::RefusedStanding;
     station = m_stations[row].structure;
   }
@@ -668,7 +683,7 @@ Universe::FleetOrderResult Universe::IssueFleetOrder(FactionId _issuerFaction, s
     // No mount may resolve to a friend and neither may an order, which is where the structural half
     // of "there is no friendly fire" is actually held (Design/Combat.md 11). In the simulation and
     // not on the sheet, for ADR 0014's reason.
-    if (m_ships[_command.target].factionId == _issuerFaction)
+    if (m_ships[_command.target].factionId == _issuer.faction)
       return FleetOrderResult::RefusedFriendly;
     target = HandleOf(_command.target);
   }
@@ -680,7 +695,7 @@ Universe::FleetOrderResult Universe::IssueFleetOrder(FactionId _issuerFaction, s
       return FleetOrderResult::NotAGate;
     // One gate and one refusal. There is deliberately no standing check beside it: a gate takes
     // anyone this phase, and half a gate-standings design invented here is the mistake the stations
-    // design declined rather than a head start (Design/Universe.md 6.1).
+    // design declined rather than a head start (Design/Archive/Universe.md 6.1).
     gate = m_gates[row].structure;
   }
   else if (_command.kind == FleetOrderKind::Mine)
@@ -950,7 +965,7 @@ const Universe::Docking& Universe::DockingOf(ShipId _id) const noexcept
   return m_dockings[_id];
 }
 
-Universe::DockOrderResult Universe::IssueDockOrder(std::span<const ShipId> _ships, ShipId _station, FactionId _issuerFaction)
+Universe::DockOrderResult Universe::IssueDockOrder(std::span<const ShipId> _ships, ShipId _station, const Issuer& _issuer)
 {
   const StationId station = StationAt(_station);
   if (station == INVALID_STATION_ID)
@@ -959,7 +974,7 @@ Universe::DockOrderResult Universe::IssueDockOrder(std::span<const ShipId> _ship
   // The owner's opinion of the issuer, and the whole order stands or falls on it: an aggressor is
   // not allowed to dock. Refused means nothing changes -- no ship diverts, no intent is set -- and
   // the client's affordance said so before sending, so the silent wire costs nothing.
-  if (StandingOf(m_stations[station].ownerFaction, _issuerFaction) == Standing::Hostile)
+  if (StandingOf(m_stations[station].ownerFaction, _issuer.faction) == Standing::Hostile)
     return DockOrderResult::RefusedStanding;
 
   // An order plans a route, so the islands have to be current here for the same reason
@@ -973,13 +988,16 @@ Universe::DockOrderResult Universe::IssueDockOrder(std::span<const ShipId> _ship
   {
     // Somebody else's ship is dropped the way a stale id already is, and the rest of the list still
     // goes (Design/Archive/Hostiles.md 4.3).
-    if (id >= m_ships.size() || m_ships[id].factionId != _issuerFaction)
+    // The FACTION here: "is this your ship" is the only question a ship can answer, and it is a
+    // different question from "whose hull will the ledger row be", which the owner below answers.
+    if (id >= m_ships.size() || m_ships[id].factionId != _issuer.faction)
       continue;
     if (id == _station)
       continue; // a station does not dock at itself
 
     ShipState& ship = m_ships[id];
     m_dockings[id].station = stationHandle;
+    m_dockings[id].owner = _issuer.owner;
     m_dockings[id].active = true;
 
     // An explicit order outranks a standing behavior, the line IssueMoveOrder already has.
@@ -1035,7 +1053,7 @@ void Universe::StepDockings()
       // A garrison ship coming home is not a guest: no ledger row, and the hull returns to the
       // complement by simply stopping being counted (Design/Archive/Stations.md 8.3).
       const bool garrison = m_protectors[id].active && m_protectors[id].home == station;
-      m_captureScratch.push_back(Capture{HandleOf(id), station, ship.hullId, ship.factionId, garrison});
+      m_captureScratch.push_back(Capture{HandleOf(id), station, ship.hullId, ship.factionId, m_dockings[id].owner, garrison});
       continue;
     }
 
@@ -1058,7 +1076,7 @@ void Universe::StepDockings()
   for (const Capture& capture : m_captureScratch)
   {
     if (!capture.isGarrison)
-      m_stations[capture.station].docked.push_back(DockedShip{capture.hullId, capture.factionId});
+      m_stations[capture.station].docked.push_back(DockedShip{capture.hullId, capture.factionId, capture.owner});
     (void)DespawnShip(capture.ship, DespawnCause::Docked);
   }
   m_captureScratch.clear();
@@ -1088,7 +1106,7 @@ void Universe::StepJumps()
     // Where the road leads, resolved before anybody is despawned. A destination that no longer names
     // a live gate strands nobody: the fleet holds at the near gate with its order standing, and the
     // moment the far side exists again it crosses. Losing a fleet into a gate that leads nowhere is
-    // the one failure this pass must not have (Design/Universe-slice-2.md 4.6).
+    // the one failure this pass must not have (Design/Archive/Universe-slice-2.md 4.6).
     const ShipId farGate = ResolveEntity(m_gates[row].destination);
     if (farGate == INVALID_SHIP_ID || farGate == gate || GateAt(farGate) == INVALID_GATE_ID)
       continue;
@@ -1147,13 +1165,13 @@ void Universe::StepJumps()
 
       const ShipState& ship = m_ships[member];
       m_jumpScratch.push_back(Jumper{fleet.members[at], EntityIdOf(fleet.members[at]), ship.hullId, ship.factionId, ship.hullPoints,
-                                     arrival, exitRad, fleet.ownerFaction, fleet.slot, at});
+                                     fleet.owner, arrival, exitRad, fleet.ownerFaction, fleet.slot, at});
       ++placed;
     }
 
     // The order is spent by being obeyed, and the alert goes with it. Fleeing through a gate is
     // escape: a leash anchored a system away would never release, so the threat is dropped here
-    // rather than left to time out on the far side (Design/Universe.md 6.2).
+    // rather than left to time out on the far side (Design/Archive/Universe.md 6.2).
     fleet.orderKind = FleetOrderKind::Idle;
     fleet.orderGate = ShipHandle{};
     fleet.threat = ShipHandle{};
@@ -1177,14 +1195,14 @@ void Universe::StepJumps()
 
     // Damage rides across; intent does not. A fresh row's route, patrol, docking, duty and mounts
     // are already at their rest state, which is exactly what the far side should re-derive
-    // (Design/Universe.md 6.3).
+    // (Design/Archive/Universe.md 6.3).
     m_ships[born].hullPoints = jumper.hullPoints;
 
     // The fleet takes the new handle in the slot the old one left. Without this the row goes on
     // holding handles that no longer resolve, StepFleets prunes every one of them at the end of this
     // same tick, and the fleet retires on the tick it arrived -- the ships would be there and the
-    // fleet would not (Design/Universe.md 6.2).
-    const FleetId fleetId = FleetInSlot(jumper.ownerFaction, jumper.slot);
+    // fleet would not (Design/Archive/Universe.md 6.2).
+    const FleetId fleetId = FleetInSlot(jumper.owner, jumper.slot);
     if (fleetId != INVALID_FLEET_ID && jumper.memberIndex < m_fleets[fleetId].memberCount)
       m_fleets[fleetId].members[jumper.memberIndex] = HandleOf(born);
   }
@@ -1266,6 +1284,9 @@ void Universe::StepProtectors()
         if (structure != INVALID_SHIP_ID && !m_dockings[id].active)
         {
           m_dockings[id].station = m_stations[duty.home].structure;
+          // A garrison coming home writes no ledger row at all, so this is the honest value rather
+          // than a placeholder -- and it clears whatever the slot's last occupant left behind.
+          m_dockings[id].owner = OWNER_NOBODY;
           m_dockings[id].active = true;
           m_ships[id].order = OrderState::Idle; // let the dock pass issue the approach on its terms
         }
