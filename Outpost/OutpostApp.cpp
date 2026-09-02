@@ -834,8 +834,10 @@ void OutpostApp::FlyToSystem(std::uint32_t _system)
   // fleet crossing a gate, and it covers this for free -- which is exactly the claim
   // Design/Archive/Universe-slice-4b.md made when it put the scenery on WHERE THE CAMERA IS rather
   // than on a jump event, and this is the first caller that tests it (Design/GalaxyMap-slice-2.md 1).
-  if (m_log)
-    m_log->PushFormat(EventLog::Severity::Info, m_view.SimTimeSec(), "MAP | SYSTEM %u", _system);
+  // By value and at 0.0f, which is what every other line the composition root pushes does. The
+  // pointer-and-SimTimeSec form belongs to UniverseView, which holds the log by pointer and is inside
+  // the class whose sim clock that is.
+  m_log.PushFormat(EventLog::Severity::Info, 0.0f, "MAP | SYSTEM %u", _system);
 }
 
 void OutpostApp::OnResize(std::uint32_t _widthPx, std::uint32_t _heightPx)

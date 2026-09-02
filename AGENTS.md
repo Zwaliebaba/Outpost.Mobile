@@ -801,6 +801,12 @@ configurations you built.
 - [ ] Added a field to `Universe` that `Step` reads? `WriteUniverseState` carries it, or `ReadUniverseState`
       rebuilds it. `UniverseStateTests::ASavedUniverseReplaysToTheSameRun` compares two whole states and
       goes red if neither happened.
+- [ ] Touched `Outpost/OutpostApp.cpp`? `python Build/CheckViewAccess.py` passes. It is the one file
+      in the tree no compiler outside Windows ever sees -- every other `Outpost` source can be built
+      behind a stub, and the composition root reaches the whole graphics stack -- so a call to a
+      member that exists but is not *reachable* survives every local check and fails in CI. That has
+      happened twice on one branch. The check is not in CI, because MSVC gates the same mistakes
+      there five minutes later; it is what you run in the two seconds before you push.
 - [ ] Touched a `.nmo` under `Outpost/Assets/Meshes/`, or a hull's `MountLoadout`? `python
       Tools/NmoShippedArtTest.py` passes, and you ran it *before* pushing rather than reading CI:
       it is the only thing joining the art's `Gun<N>` markers to `HullSpec`'s mount table, and the

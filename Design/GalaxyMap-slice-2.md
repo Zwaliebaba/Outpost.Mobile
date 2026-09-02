@@ -125,3 +125,46 @@ between two nodes names neither rather than guessing.
 proved `FitBoxIsotropic` cannot reach this. It is verified beside the tree instead, which is the same
 gap `TickStats`, `HullParts` and slice 1 have and the same one that let a compile error reach CI on
 this branch. And the screenshots are unpaid: this design now owes them for both landed slices.
+
+## 9. What CI caught that nothing here did — and the guard that closes it
+
+Run 252 failed the build on four errors, all from one line this slice added to `FlyToSystem`:
+
+```cpp
+if (m_log)
+  m_log->PushFormat(EventLog::Severity::Info, m_view.SimTimeSec(), "MAP | SYSTEM %u", _system);
+```
+
+Two mistakes in it, and both are the same shape — **a name that exists but is not reachable from
+where it was written**:
+
+- `OutpostApp` holds `m_log` **by value**. `UniverseView` holds one by pointer, and that is where the
+  idiom was copied from without noticing whose member it was.
+- `UniverseView::SimTimeSec` is **private**. The root has no business reading the view's sim clock,
+  and every other line the root pushes passes `0.0f`.
+
+It is the same failure as run 249 in a different costume, and for the same structural reason:
+**`Outpost/OutpostApp.cpp` is the one file in this tree that no compiler outside Windows ever sees.**
+Every other `Outpost` source can be built here behind a stub — `GalaxyScreen.cpp` was, at
+`-Wall -Wextra` — but the composition root reaches the whole graphics stack through `NeuronClient`,
+so nothing local instantiates what is written into it.
+
+Twice is a pattern, so this slice adds [`Build/CheckViewAccess.py`](../Build/CheckViewAccess.py). It
+reads the headers of the six classes the root owns and checks the two things a script can actually be
+sure about: that a member called on one of them is declared in that class's **public** section, and
+that `->` is used through a pointer and `.` through a value. It is scoped to `OutpostApp.cpp` alone,
+because the same member name means something else one class over — `UniverseView`'s own `m_log` is a
+pointer, and checking every file would report that as twenty failures and teach a reader to ignore the
+output.
+
+Replanting the exact failure proves it catches both halves:
+
+```
+Outpost/OutpostApp.cpp:841: m_view.SimTimeSec() is not public on UniverseView
+Outpost/OutpostApp.cpp:841: m_log->PushFormat -- OutpostApp holds m_log by value, use "."
+```
+
+**It is deliberately not in CI.** MSVC gates the same mistakes there, five minutes later and more
+completely; this is what you run in the two seconds before pushing. `AGENTS.md` §12 says so, which is
+where a contributor will meet it. It is a crutch and says so in its own docstring — the real fix is a
+composition root that something can compile, and that is not this slice's to build.
