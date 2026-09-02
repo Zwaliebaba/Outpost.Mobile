@@ -458,6 +458,85 @@ const Universe::Fleet& Universe::FleetOf(FleetId _id) const noexcept
   return (_id < m_fleets.size()) ? m_fleets[_id] : NONE;
 }
 
+bool Universe::TryCentreOfFleet(FleetId _id, UniversePos& _outCentre) const noexcept
+{
+  if (_id >= m_fleets.size())
+    return false;
+  const Fleet& fleet = m_fleets[_id];
+
+  // Anchored on the first live member and summed as offsets from it, so a fleet straddling a sector
+  // boundary averages in one coordinate frame instead of two.
+  UniversePos centre;
+  bool anchored = false;
+  float sumX = 0.0f;
+  float sumZ = 0.0f;
+  std::uint32_t live = 0;
+  for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+  {
+    const ShipId member = Resolve(fleet.members[at]);
+    if (member == INVALID_SHIP_ID)
+      continue;
+    const UniversePos& pos = m_ships[member].posUniverse;
+    if (!anchored)
+    {
+      centre = pos;
+      anchored = true;
+    }
+    sumX += OffsetX(centre, pos);
+    sumZ += OffsetZ(centre, pos);
+    ++live;
+  }
+
+  if (anchored)
+  {
+    Translate(centre, sumX / static_cast<float>(live), sumZ / static_cast<float>(live));
+    _outCentre = centre;
+    return true;
+  }
+
+  // Nobody out yet: the fleet is where its door is, which is where its first hull will appear.
+  const ShipId structure = Resolve(fleet.launchStructure);
+  if (structure == INVALID_SHIP_ID)
+    return false;
+  _outCentre = m_ships[structure].posUniverse;
+  return true;
+}
+
+bool Universe::TryCentreOfOwnedFleets(OwnerId _owner, UniversePos& _outCentre) const noexcept
+{
+  // Per fleet and not per ship, deliberately: a subscriber with one large fleet and one small one is
+  // looking at neither in particular, and weighting by hull count would drag its interest set onto
+  // whichever happens to be bigger this tick.
+  UniversePos centre;
+  bool anchored = false;
+  float sumX = 0.0f;
+  float sumZ = 0.0f;
+  std::uint32_t counted = 0;
+  for (std::uint32_t slot = 0; slot < FLEET_SLOTS; ++slot)
+  {
+    const FleetId id = FleetInSlot(_owner, static_cast<std::uint8_t>(slot));
+    if (id == INVALID_FLEET_ID)
+      continue;
+    UniversePos one;
+    if (!TryCentreOfFleet(id, one))
+      continue;
+    if (!anchored)
+    {
+      centre = one;
+      anchored = true;
+    }
+    sumX += OffsetX(centre, one);
+    sumZ += OffsetZ(centre, one);
+    ++counted;
+  }
+
+  if (!anchored)
+    return false;
+  Translate(centre, sumX / static_cast<float>(counted), sumZ / static_cast<float>(counted));
+  _outCentre = centre;
+  return true;
+}
+
 void Universe::LedgerFor(StationId _station, const Issuer& _asker, std::span<std::uint32_t> _outCounts) const noexcept
 {
   const std::size_t stated = (_outCounts.size() < HULL_COUNT) ? _outCounts.size() : std::size_t{HULL_COUNT};

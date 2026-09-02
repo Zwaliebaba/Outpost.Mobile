@@ -108,9 +108,9 @@ The save header carries a shard count, and `ShardOfSystem` cuts the galaxy into 
 tool can write one file each for. A crossing has machinery now — a `Universe` has an outbox and an
 inbox, both in the save, and `ShardLink` pumps them over a `Transport` at-least-once onto an
 idempotent apply, acknowledging only what the far end has made durable (ADRs 0065, 0066) — and
-`Server.exe` boots and ticks one shard with no window at all (ADR 0067). But **nothing runs more than
-one shard yet**: the two ends have never been two processes, no link is wired to a real transport,
-and the shipped count is one (ADR 0063). The
+`Server.exe` boots one shard with no window at all and serves a session over QUIC (ADR 0067). But
+**nothing runs more than one shard yet**: the two ends have never been two processes, no link is
+wired to a real transport, and the shipped count is one (ADR 0063). The
 content pipeline is still NMO and DDS, with `Tools/DdsBake.py` baking the DDS half's mips and BC
 compression offline. Tuning is `constexpr` in `SimTuning.h`, `HullSpec.h`, `DeviceSpec.h` and
 `ViewTuning.h` (§5); what a *deployment* may change without a rebuild — the port, the backlog, one
@@ -132,9 +132,13 @@ request/reply pair is the only one on this seam (ADR 0051). The seam serves N su
 than one: `Game::Publisher` holds a table of them, each with its own interest set, writer, issuer -- an owner and a faction (ADR 0062) --
 phase, order budget, despawn cursor and last-sent fleet rosters (ADR 0030). What remains missing is the far end — this executable adds exactly one entry,
 there is no second machine to be on the other side of it. There IS a headless process now --
-`Server.exe`, which boots a shard, ticks it and saves it, and reads the same `Server.cfg` through the
-same parser the game does (ADRs 0043, 0067) -- but it serves nobody: it opens no listener and holds
-no session, which is what `Design/ShardServer.md`'s remaining slices are for.
+`Server.exe`, which boots a shard, ticks it, saves it, and **binds a port and serves one session**
+over the same seam the game talks to itself over, reading the same `Server.cfg` through the same
+parser (ADRs 0043, 0067). It serves exactly one: there is no login, so a second connection is refused
+with a stated reason rather than handed the same player's fleets, and a session's interest set
+follows the centroid of its own fleets because a server has no camera to read
+([`Design/ShardServer.md`](Design/ShardServer.md) §5.4, §5.5). What it still has is no link to another
+shard and no client that dials it -- slices 3 to 5.
 The client sees the universe through the seam, filtered to what one subscriber can see (§2).
 Where the HUD shows a number the simulation does not yet have, it is a placeholder supplied by the
 composition root, and it says so at the definition.
@@ -356,7 +360,7 @@ does not have.
 | `NeuronClient/` | The presenting half — `AppWindow`, `PointerTracker`, `Camera`, `GpuDevice`, `SceneRenderer`, `TextRenderer`, `BitmapFont`, `ScreenImage`, `MeshLibrary`, the explosion's `FxRenderer`/`MeshShatter`/`SpriteParticles` and the `GlowBillboards` the thruster plume is built with, `ViewCulling` (the camera's frustum and the sphere test everything drawn is gated on), `BoxFit` (the isotropic fit of a box into a screen rectangle the galaxy map is projected through), the planet pipeline (`CubeSphere`, `Noise3`, `BodyDesc`/`BodyParams`/`BodyField`, `BodyMeshBuilder`, `BodyRenderer`, `ColourRamp` — see [`Design/Archive/PlanetRenderer.md`](Design/Archive/PlanetRenderer.md)), the star field (`SkyField`, `SkyRenderer`, `SkyVertex` — [`Design/Archive/Skybox.md`](Design/Archive/Skybox.md)), and the content readers `DdsImage`, `NmoFile`/`NmoReader`/`MeshData`. Everything that names a graphics type lives here and nowhere else. |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
 | `Outpost/` | The game executable and the first of the tree's two composition roots (ADR 0067): presentation state, the HUD and its event log, the modal `AssemblyScreen` a station long-press opens and the modal `GalaxyScreen` the rail's `UNIVRS` button opens, boot and shutdown ordering, and `TickStats` -- what a tick cost, timed here because the simulation may not read a clock. `Outpost/Assets/` is the content the MSIX package deploys. |
-| `Server/` | The shard server: a second executable and the tree's **second composition root** ([ADR 0067](Design/Decisions/0067-the-tree-has-a-second-composition-root.md)). `ShardApp` boots one shard from `Universe.sav` (or `Universe.<n>.sav`), ticks it through `ServerHost` and saves on a cadence; `ShardSimulation` is the `Simulation` it drives. It sees `NeuronCore`, `NeuronServer` and `GameLogic` and **not** `NeuronClient` — nothing here may name a graphics type, and `CheckProjectFiles.py` holds that as it holds it for the two engine libraries. [`Design/ShardServer.md`](Design/ShardServer.md). |
+| `Server/` | The shard server: a second executable and the tree's **second composition root** ([ADR 0067](Design/Decisions/0067-the-tree-has-a-second-composition-root.md)). `ShardApp` boots one shard from `Universe.sav` (or `Universe.<n>.sav`), ticks it through `ServerHost`, saves on a cadence, and binds a `QuicListener` it serves one session from; `ShardSimulation` is the `Simulation` it drives and the one place a `Publisher::Desc` is filled on this side of the tree. It sees `NeuronCore`, `NeuronServer` and `GameLogic` and **not** `NeuronClient` — nothing here may name a graphics type, and `CheckProjectFiles.py` holds that as it holds it for the two engine libraries. [`Design/ShardServer.md`](Design/ShardServer.md). |
 | `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
 | `NeuronClient/Shaders/` | HLSL (§3). DXC compiles it, as shader model 6.7 DXIL, into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
 | `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). `CheckViewAccess.py` is here too and deliberately **not** in CI: it checks every member call `Outpost/OutpostApp.cpp` makes against the public surface of the six classes that root owns, which is a thing a Linux box can decide about a file MSVC is the only compiler for. Run it when you touch the root. |

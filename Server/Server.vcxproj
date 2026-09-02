@@ -178,6 +178,7 @@
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="ShardApp.h" />
+    <ClInclude Include="ShardSession.h" />
     <ClInclude Include="ShardSimulation.h" />
   </ItemGroup>
   <ItemGroup>

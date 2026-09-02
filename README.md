@@ -108,9 +108,10 @@ one damage figure per device, and no shields, armour classes or resistances. Tun
 in `SimTuning.h`, `HullSpec.h`, `DeviceSpec.h` and `ViewTuning.h`; what a deployment may change
 without a rebuild lives in `Outpost/Assets/Server.cfg`. The networking is real QUIC over a real
 stack, and it is still one client in one process on `127.0.0.1` with a self-signed certificate the
-client does not validate. `Server.exe` runs a shard without a window and reads the same `Server.cfg`
-through the same parser, but it serves nobody yet: it opens no listener, holds no session and talks
-to no other shard.
+client does not validate. `Server.exe` runs a shard without a window, reads the same `Server.cfg`
+through the same parser, and serves **one** session over the same seam — there is no login, so a
+second connection is refused rather than handed the same player's fleets. It still talks to no other
+shard, and nothing yet dials it but a test harness.
 
 **The save survives the build.** `Universe.sav` is a versioned file: a boot restores it or stops
 naming why, and a file in an older format is migrated on read rather than refused, with the file it
@@ -153,7 +154,7 @@ even name a graphics type, and `Build/CheckProjectFiles.py` holds that (ADR 0067
 | `NeuronClient/` | Everything that names a graphics type: D3D12 device, scene and text renderers, the planet and star-field pipelines, the explosion FX, the content readers |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives |
 | `Outpost/` | The game executable: composition root, presentation state, HUD, the fleet sheet, the station assembly screen and the galaxy map, and `Outpost/Assets/` |
-| `Server/` | The shard server: the second composition root, a console executable that boots one shard, ticks it and saves it, with no window anywhere in it (ADR 0067) |
+| `Server/` | The shard server: the second composition root, a console executable that boots one shard, ticks it, saves it and serves one session over QUIC, with no window anywhere in it (ADR 0067) |
 | `Tools/UniverseGen/` | The console tool that writes `Universe.sav` — the one thing in the tree that authors a universe (ADR 0058) |
 
 The simulation ticks at a fixed rate, is bit-identical across two runs of the same seed, and depends

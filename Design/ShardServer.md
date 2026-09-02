@@ -119,6 +119,33 @@ want and it does not survive being rewritten into a statement.
    been needed for crossings regardless, and it is the only answer that is still correct after a
    player's fleet has moved — which a config file and a save's shard both stop being.
 
+4. **How many sessions does a shard serve, when there is no login?** There is no account and no
+   authentication, so every session would be `OWNER_LOCAL` and `FACTION_PLAYER` — the constants the
+   game's one client uses. Two clients would therefore give orders to one fleet and see one set of
+   ships. Options: serve them all and let them collide; mint an owner per connection so each has its
+   own fleets; or serve one and refuse the rest.
+
+   → **One, and the rest are refused with a stated reason.** Taken 2026-09-02, with slice 2. Minting
+   an owner is the tempting one and is worse than it looks: the server would be inventing an identity
+   backed by nothing, and a client that reconnects gets a different one and loses its fleets — so the
+   feature would be "multiplayer" that silently deletes a player's things. The refusal costs one
+   sentence, is honest about what the tree has, and is lifted by a login rather than replaced by one.
+   `backlog` stays what it always was: how many connections the listener can *hold*.
+
+5. **Where does a session's interest centre come from?** `Publisher::SetCentre` takes a point per
+   subscriber and the game's root reads it off the camera each frame. A server has no camera.
+   Options: derive it from the subscriber's own ships; add a wire message so the client says where it
+   is looking; or leave it at the universe origin.
+
+   → **The centroid of the session's own fleets.** Taken 2026-09-02, with slice 2. It is the number
+   the status block already derives for every update (`UniverseSnapshot`'s fleet block), so it costs
+   no new machinery, no new message kind and no new determinism surface — and `Universe` now derives
+   it once for both callers rather than twice. Measured rather than assumed: with the player's fleet
+   ordered 15 km out, a 2 km interest set at the derived centre holds all three of its ships and one
+   pinned at the origin holds none. The known failure is a camera over empty space away from the
+   fleet, which is documented in `Outpost/UniverseSimulation.h` and is **slice 5's**, where the
+   session gains a camera along with the redirect.
+
 ## 6. What would make this design wrong
 
 - **If the run loop turns out to want a different shape without a window** — if `ServerHost`'s
@@ -138,7 +165,7 @@ Cut one at a time, when each is next.
 | # | Slice | Layer | Size | Depends on | ADR |
 |---|---|---|---|---|---|
 | 1 | [The executable: config, save, run loop, clean shutdown. **One shard, no clients, no links**](ShardServer-slice-1.md) | `Server` | M | — | [0067](Decisions/0067-the-tree-has-a-second-composition-root.md) — **landed 2026-09-02** |
-| 2 | Sessions: the listener, one publisher subscriber per connection | `Server` | M | 1 | — |
+| 2 | [Sessions: the listener, one publisher subscriber per connection](ShardServer-slice-2.md) | `Server` | M | 1 | §5.4, §5.5 |
 | 3 | Links: a `ShardLink` per neighbour, derived from the layout; `NoteDurableThrough` after each save | `Server`+`GameLogic` | M | 1 | — |
 | 4 | Two shards, two processes, a fleet crossing between them — **`CrossShard.md`'s slice 5, server half** | `Server` | M | 2, 3 | — |
 | 5 | The client follows its camera across: the redirect §5.3 chose, and a reconnect on a crossing | `Server`+`Outpost` | L | 4 | ADR: a client is redirected, not configured |

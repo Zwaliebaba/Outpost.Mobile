@@ -1,9 +1,11 @@
 #include "pch.h"
 #include "ShardApp.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <format>
+#include <span>
 
 namespace Shard
 {
@@ -146,7 +148,100 @@ bool ShardApp::Boot(std::uint16_t _shard)
   if (header.stateFormat < Game::UNIVERSE_STATE_FORMAT)
     Say(std::format("MIGRATED | state format {} to {} | the next save writes the newer one", static_cast<unsigned>(header.stateFormat),
                     static_cast<unsigned>(Game::UNIVERSE_STATE_FORMAT)));
+
+  // Last, because a port bound before the universe was read is a port held open by a process about
+  // to exit -- and because everything above can fail without anything to close.
+  return OpenListener();
+}
+
+bool ShardApp::OpenListener()
+{
+  // The development placeholder, and the reason it is set here rather than anywhere else: the
+  // certificate this listener presents is one the process generated moments ago, and there is no
+  // trust store to check it against. The connection is encrypted and it is not authenticated
+  // (ADR 0023). A server on a real network needs a real certificate, and this is the line that has
+  // to change when one exists.
+  Neuron::QuicApi::Desc quicDesc;
+  if (!m_quic.Open(quicDesc))
+  {
+    Say(std::format("QUIC REFUSED | the library would not open | {}", m_quic.Reason()));
+    return false;
+  }
+
+  Neuron::QuicListener::Desc listenerDesc;
+  listenerDesc.backlog = m_config.backlog;
+  if (!m_listener.Start(m_quic, m_config.port, listenerDesc))
+  {
+    Say(std::format("PORT REFUSED | {} | {}", static_cast<unsigned>(m_config.port), m_listener.Reason()));
+    m_quic.Close();
+    return false;
+  }
+
+  m_listening = true;
+  // Once, here, so PumpSessions allocates nothing per pass. Both are bounded by the backlog: the
+  // listener never reports more live connections than it has slots, and a refusal is one of them.
+  m_liveScratch.reserve(m_config.backlog);
+  m_refusedScratch.reserve(m_config.backlog);
+  Say(std::format("LISTENING | 127.0.0.1:{} | backlog {} | one session is served and the rest are refused",
+                  static_cast<unsigned>(m_listener.Port()), static_cast<unsigned>(m_config.backlog)));
   return true;
+}
+
+void ShardApp::PumpSessions()
+{
+  if (!m_listening)
+    return;
+
+  m_listener.Poll();
+  const std::span<Neuron::QuicTransport* const> accepted = m_listener.Accepted();
+
+  // Every connection the listener still calls live gets polled, whether this server serves it or
+  // refused it: a transport nobody polls never finishes the close it was asked for, and its slot is
+  // never recycled.
+  for (Neuron::QuicTransport* transport : accepted)
+    transport->Poll();
+
+  m_liveScratch.assign(accepted.begin(), accepted.end());
+  const auto isLive = [this](const Neuron::Transport* _transport)
+  { return std::find(m_liveScratch.begin(), m_liveScratch.end(), _transport) != m_liveScratch.end(); };
+
+  // Gone first. A session whose transport has left Accepted() has had its slot recycled, and the
+  // pointer this server holds names whatever the pool hands out next -- so it is dropped by
+  // comparing against the span rather than by asking the transport anything (QuicListener.h).
+  while (m_simulation.SessionCount() != 0)
+  {
+    Neuron::Transport* held = m_simulation.SessionTransportAt(0);
+    if (isLive(held))
+      break; // one session, so the first is the only one; a loop here is what lifts with the ceiling
+    (void)m_simulation.CloseSession(held);
+    Say(std::format("SESSION CLOSED | tick {} | {} subscriber(s)", m_universe.Tick(), m_simulation.SessionCount()));
+  }
+
+  // A refusal is forgotten once the listener has finished with the connection, and not before.
+  std::erase_if(m_refusedScratch, [&isLive](const Neuron::Transport* _transport) { return !isLive(_transport); });
+
+  // Then arrived. One is taken and the rest are closed, which is this slice's decision and not a
+  // limit of the listener: there is no login, so every session would be OWNER_LOCAL and two clients
+  // would give orders to one fleet (Design/ShardServer-slice-2.md 2.5).
+  for (Neuron::QuicTransport* transport : accepted)
+  {
+    if (m_simulation.HasSessionOn(transport))
+      continue;
+    if (std::find(m_refusedScratch.begin(), m_refusedScratch.end(), transport) != m_refusedScratch.end())
+      continue; // already refused and already closing; saying so again every pass is a log flood
+    if (transport->State() != Neuron::ConnectionState::Connected)
+      continue; // still handshaking; it is not a session until it can carry a datagram
+
+    if (m_simulation.OpenSession(*transport, m_config))
+    {
+      Say(std::format("SESSION OPEN | tick {} | {} subscriber(s)", m_universe.Tick(), m_simulation.SessionCount()));
+      continue;
+    }
+
+    Say(std::format("SESSION REFUSED | tick {} | this shard serves one session and has one | there is no login yet", m_universe.Tick()));
+    m_refusedScratch.push_back(transport);
+    transport->Close(); // its slot returns to the pool on a later Poll, so a refusal costs nothing lasting
+  }
 }
 
 void ShardApp::SaveUniverse()
@@ -175,12 +270,17 @@ std::uint64_t ShardApp::Run()
 
   while (!StopRequested())
   {
+    // Before the ticks, and once per PASS rather than once per tick. Accepting is not a tick's work,
+    // and a pass that runs no ticks must still take a connection or a client that dials during a
+    // quiet moment waits for the next one (Design/ShardServer-slice-2.md 2.4).
+    PumpSessions();
+
     // The engine's accumulator, driven by real time and nothing else. There is no window to pump and
-    // no frame to be in step with, which is the claim this slice exists to test -- ServerHost was
+    // no frame to be in step with, which is the claim slice 1 existed to test -- ServerHost was
     // written as a fixed-rate loop over a Simulation and nothing in it refers to either.
     // Advance RUNS the ticks and reports how many it ran -- it is not a request for permission to.
-    // The game's loop reads the count to pump the network once per tick; a shard has nothing to do
-    // per tick this slice, so the count is only what decides whether to yield below.
+    // Every tick it runs applies this pass's orders and publishes to every session, because that is
+    // what ShardSimulation::Step does; nothing here reaches a subscriber directly.
     const int steps = m_host.Advance(frameClock.Tick());
 
     // Between ticks, which is the codec's whole contract: Advance ran every tick this pass owed and
@@ -196,6 +296,19 @@ std::uint64_t ShardApp::Run()
 
   Say(std::format("STOPPING | tick {}", m_universe.Tick()));
   SaveUniverse(); // a deliberate stop loses nothing, where a kill loses the ticks since the last save
+
+  // The listener first, which waits for its own callbacks and then closes every connection it
+  // accepted; the registration only after, because it cannot close over a live connection
+  // (QuicListener.h). The sessions are dropped before either, so nothing publishes into a transport
+  // that is being torn down.
+  if (m_listening)
+  {
+    while (m_simulation.SessionCount() != 0)
+      (void)m_simulation.CloseSession(m_simulation.SessionTransportAt(0));
+    m_listener.Stop();
+    m_quic.Close();
+    m_listening = false;
+  }
   return m_universe.Tick();
 }
 } // namespace Shard

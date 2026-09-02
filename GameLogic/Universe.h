@@ -739,6 +739,27 @@ public:
   // stale FleetId reachable in a way that nothing yet makes a stale StationId.
   [[nodiscard]] const Fleet& FleetOf(FleetId _id) const noexcept;
 
+  // Where a fleet is, as one position: the centroid of its live members, or its launch structure
+  // while none is out. False when it has neither, which is the one tick between a manifest being
+  // dropped for a dead station and the next tick's retire freeing the slot.
+  //
+  // Derived and never held. It sits outside the replay contract for the reason
+  // Design/Archive/Fleets.md 8.2 gives -- a number nobody simulates against cannot desynchronize
+  // anything -- and the check on that claim is the save format: if this ever had to live on Fleet,
+  // UNIVERSE_STATE_FORMAT would have to move, and it does not.
+  //
+  // Through OffsetX/OffsetZ from the first live member rather than by averaging the fields, so it is
+  // right with a sector boundary through the middle of a fleet.
+  [[nodiscard]] bool TryCentreOfFleet(FleetId _id, UniversePos& _outCentre) const noexcept;
+
+  // Where an owner's whole force is, as one position: the centroid of the fleet centres above,
+  // weighted equally per fleet rather than per ship. False when the owner has no fleet that can say
+  // where it is.
+  //
+  // This is what a session's interest set follows on a server, which has no camera to read
+  // (Design/ShardServer-slice-2.md 2.6). The game reads its camera instead and does not call this.
+  [[nodiscard]] bool TryCentreOfOwnedFleets(OwnerId _owner, UniversePos& _outCentre) const noexcept;
+
   [[nodiscard]] std::uint32_t FleetCount() const noexcept
   {
     return static_cast<std::uint32_t>(m_fleets.size());

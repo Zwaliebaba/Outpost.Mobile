@@ -4,12 +4,16 @@
 
 #include "ServerHost.h"
 
+#include "QuicApi.h"
+#include "QuicListener.h"
+
 #include "ServerConfig.h"
 
 #include "Universe.h"
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace Shard
 {
@@ -51,9 +55,35 @@ private:
 
   void SaveUniverse();
 
+  // Opens QUIC and binds the port. False and a said reason: a THIRD boot failure with no fallback,
+  // said the way the other two are said. `Outpost` falls back to a loopback because there is a window
+  // and a person in front of it (ADR 0028); a server whose port was refused serves nobody, and
+  // starting anyway would be a process that looks healthy and is not.
+  [[nodiscard]] bool OpenListener();
+
+  // Once per PASS, not once per tick: accepting is not a tick's work, and a pass that ran no ticks
+  // must still take a connection. Reconciles the simulation's sessions against what the listener says
+  // is live, which is the only safe way to hold an accepted transport across a Poll (QuicListener.h).
+  void PumpSessions();
+
   Game::Universe m_universe;
   ShardSimulation m_simulation{m_universe};
   Neuron::ServerHost m_host;
+
+  Neuron::QuicApi m_quic;
+  Neuron::QuicListener m_listener;
+  bool m_listening = false;
+
+  // Everything the listener said was live on the previous pass, so a slot it has recycled can be
+  // told apart from one it has just handed out. Sized once at boot from the backlog and never grown,
+  // which is what keeps the run loop's promise to allocate nothing per tick.
+  std::vector<Neuron::Transport*> m_liveScratch;
+
+  // The connections this shard has refused and asked to close. A refused transport STAYS in the
+  // listener's Accepted() until its close finishes, which is several passes -- so without this it is
+  // refused again, logged again and closed again on every one of them, at sixty passes a second.
+  // Reconciled against Accepted() exactly as the sessions are, and sized from the same backlog.
+  std::vector<Neuron::Transport*> m_refusedScratch;
 
   Game::ServerConfig m_config;
   std::uint16_t m_shard = 0;

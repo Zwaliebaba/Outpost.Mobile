@@ -552,41 +552,14 @@ void WriteFleetBlock(ByteWriter& _out, const Universe& _universe, const Issuer& 
       continue;
     const Universe::Fleet& fleet = _universe.FleetOf(id);
 
-    // The centroid, through OffsetX/OffsetZ from the first live member rather than by averaging the
-    // fields, so it is right with a sector boundary through the middle of a fleet.
+    // The centroid, and Universe is where it is derived: a server's interest set follows the same
+    // number for a session that has no camera (Design/ShardServer-slice-2.md 2.6), and two spellings
+    // of one average is two things to keep in step. False is the one tick between a manifest being
+    // dropped for a dead station and the next tick's retire freeing the slot, and clearing the bit
+    // there says the truth one tick early rather than stating a position that means nothing.
     UniversePos centre;
-    bool anchored = false;
-    float sumX = 0.0f;
-    float sumZ = 0.0f;
-    std::uint32_t live = 0;
-    for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
-    {
-      const ShipId member = _universe.Resolve(fleet.members[at]);
-      if (member == INVALID_SHIP_ID)
-        continue;
-      const UniversePos& pos = _universe.Ships()[member].posUniverse;
-      if (!anchored)
-      {
-        centre = pos;
-        anchored = true;
-      }
-      sumX += OffsetX(centre, pos);
-      sumZ += OffsetZ(centre, pos);
-      ++live;
-    }
-
-    if (anchored)
-    {
-      Translate(centre, sumX / static_cast<float>(live), sumZ / static_cast<float>(live));
-    }
-    else
-    {
-      // Nobody out yet: the fleet is where its door is, which is where its first hull will appear.
-      const ShipId structure = _universe.Resolve(fleet.launchStructure);
-      if (structure == INVALID_SHIP_ID)
-        continue;
-      centre = _universe.Ships()[structure].posUniverse;
-    }
+    if (!_universe.TryCentreOfFleet(id, centre))
+      continue;
 
     // The kind and the launch are both stated, which is what splitting them bought: a fleet ordered
     // to move mid-launch is doing both, and the old byte could say only one. Which of the two a
@@ -612,6 +585,9 @@ void WriteFleetBlock(ByteWriter& _out, const Universe& _universe, const Issuer& 
     // only ever shrinks -- so this sum has a hard ceiling of 8 and no clamp is a guard against
     // anything reachable.
     static_assert(MAX_FLEET_SHIPS <= 0xFFu, "a fleet's size no longer fits the status block's count byte");
+    std::uint32_t live = 0;
+    for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+      live += (_universe.Resolve(fleet.members[at]) != INVALID_SHIP_ID) ? 1u : 0u;
     const std::uint32_t total = live + fleet.manifestCount;
 
     mask |= static_cast<std::uint8_t>(1u << slot);
