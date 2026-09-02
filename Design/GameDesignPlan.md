@@ -101,8 +101,11 @@ Cut now. Five slices, no feature, each leaving one door.
 | 4 | The tick is measured: a per-tick statistics block beside the save | `NeuronServer` + `Outpost` | S | — | C5 slice 0, E7 counters | |
 | 5 | The matchup matrix test pins the balance | `Tests/GameLogicTests` | S | — | C13 slice 0 | |
 
-Slices 1, 2, 4 and 5 share no files and can run in parallel; 3 waits for 1 because it bumps the
-save format and is the first bump the migration rule must carry.
+Three rounds, serial between them. Round one is slices 1 and 5: the codec and a test file that
+touches nothing else. Round two is slice 2 alone, because the state reader and the wire's fleet
+status block live in the same two codec files and slice 1 has to land first. Round three is
+slices 3 and 4, which share no files; 3 waits for 1 because it bumps the save format and is the
+first bump the migration rule must carry, and for 2 because it edits the same codec.
 
 **Slice 1 — the save migrates forward.** ADR 0057 refuses an unknown format and never falls to
 genesis, and that stays. This slice adds beside it a window of accepted formats in
