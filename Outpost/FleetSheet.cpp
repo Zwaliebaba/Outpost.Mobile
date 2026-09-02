@@ -11,16 +11,6 @@ namespace
 {
 constexpr char TIMES[] = "\xD7";
 
-// Green through amber to red, so a fleet reads at a glance and a ship about to die is the one that
-// stands out. Two segments rather than a gradient, because the HUD's palette is three named colours
-// and inventing a fourth here would put a colour in the tree that nothing else can reach.
-[[nodiscard]] Rgba ConditionColour(float _condition)
-{
-  if (_condition > 0.6f)
-    return HUD_ACCENT_GREEN;
-  return (_condition > 0.25f) ? HUD_PIP_HURT : HUD_ALERT_RED;
-}
-
 // In the order the design lists them, and MINE is not among them (Design/Archive/Fleets.md 9.3, 6.6).
 constexpr const char* COMMAND_LABELS[] = {"MOVE", "ATTACK", "DOCK", "JUMP", "STOP"};
 constexpr UniverseView::ArmedOrder COMMAND_ARMS[] = {UniverseView::ArmedOrder::Move, UniverseView::ArmedOrder::Attack,

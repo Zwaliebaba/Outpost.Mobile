@@ -222,6 +222,7 @@
     <ClInclude Include="Hud.h" />
     <ClInclude Include="AssemblyScreen.h" />
     <ClInclude Include="GalaxyScreen.h" />
+    <ClInclude Include="HullParts.h" />
     <ClInclude Include="FleetSheet.h" />
     <ClInclude Include="EventLog.h" />
   </ItemGroup>
@@ -239,6 +240,7 @@
     <ClCompile Include="Hud.cpp" />
     <ClCompile Include="AssemblyScreen.cpp" />
     <ClCompile Include="GalaxyScreen.cpp" />
+    <ClCompile Include="HullParts.cpp" />
     <ClCompile Include="FleetSheet.cpp" />
   </ItemGroup>
   <ItemGroup>

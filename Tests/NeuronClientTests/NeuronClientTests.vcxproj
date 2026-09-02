@@ -200,6 +200,7 @@
     <ClCompile Include="GlowBillboardsTests.cpp" />
     <ClCompile Include="ViewCullingTests.cpp" />
     <ClCompile Include="BoxFitTests.cpp" />
+    <ClCompile Include="MeshRangeTests.cpp" />
     <ClCompile Include="SkyFieldTests.cpp" />
   </ItemGroup>
   <ItemGroup>

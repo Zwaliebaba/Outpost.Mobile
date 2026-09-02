@@ -130,3 +130,122 @@ answer.
   is why the table binds a mount to a *set* of names rather than one.
 - **The slew is not in the replay contract** and never enters it. If a later design wants a turret's
   angle to decide a shot, that is a simulation field and a format bump, and it is not this.
+
+---
+
+## 7. What changed on contact, and what is deliberately not here
+
+**This commit is items 1 to 4 and item 7. Items 5 and 6 are not in it, and the design does NOT move
+to `Archive/`, because the slice is not finished.** §5's last line says the move happens when every
+slice has landed; this one has not.
+
+- **The mount-to-part table is in `Outpost`, not `NeuronClient`** (§2.2). It names `Game::HullId`, and
+  `NeuronClient` may not list `GameLogic` (AGENTS.md §3) — the order asked for something the layer
+  rule forbids. `Outpost` is the composition root, sees both layers, and already holds the
+  hull-to-mesh table this is the sibling of; a headless shard still has none of it, which is the half
+  of ADR 0002 that mattered. [ADR 0064](Decisions/0064-a-mount-is-bound-to-its-art-by-a-client-table-of-submesh-names.md)
+  records it.
+- **A posed hull leaves the instanced path, and that cost is bounded twice.** §2.1 said "two or three
+  draws instead of one" and did not say what that does to `MmoScalabilityReview` G2's instancing: an
+  instance carries one matrix, so a hull whose parts each need one cannot be in the bucket at all.
+  Two bounds, both in `ViewTuning.h`: a turret within `TURRET_STOWED_RAD` of rest counts as stowed and
+  stays instanced — which is every hull in the game outside a fight, and is free accuracy, since a
+  stowed turret draws identically either way — and at most `MAX_POSED_HULLS` hulls pose in one frame,
+  taken **nearest first**. Nearest rather than in submission order, because a hull flickering in and
+  out of the cap as another ship moved would flicker its turrets with it.
+- **`ConditionColour` moved from `FleetSheet.cpp` to `ViewTuning.h`.** The bracket bar reads the same
+  condition as the sheet's pips and must read it in the same colours; a second copy would have been
+  one condition meaning two colours depending on where it was drawn.
+- **The `HULL` bar reads the selection's MEAN, not one ship's.** §2.4 said "the record's
+  `hullFraction`" and the panel describes a selection, which is usually more than one ship. A minimum
+  would read as the fleet being in worse shape than it is the moment one Interceptor is scratched; a
+  sum would mean nothing. One selected ship is its own mean, which is the common case.
+- **The ordered target is remembered client-side, because nothing carries it back.** §2.4 asked for a
+  bar on "the ordered target's" bracket. The fleet status block says a fleet is *attacking*, never
+  what — `Combat.md` §9.1 withholds the target's identity with the rest of the intent — so the only
+  thing that can name it is the order this client sent. It is dropped the moment the record leaves the
+  interest set, rather than left pointing at whichever ship inherits the slot.
+- **Nothing simulated moved.** No order, no message, no field on any snapshot; the slew runs on the
+  view's real-time clock beside the tracer's, for ADR 0053's reason. `GameLogicTests` is untouched.
+
+## 8. The question this slice cannot answer for itself
+
+**Item 5 — the `Gun` markers and the mount-versus-marker check — is blocked on what a marker is
+supposed to correspond to, and the shipped art and `HullSpec` currently answer differently.**
+
+§2.5 says "author a `Gun` marker per mount, at the position the binding now reads", and §4.5 says the
+check "fails when a marker and its mount disagree". Neither is well defined against what is actually
+in the tree. Measured, per hull, mounts from `HullSpec` and markers from the NMO:
+
+| Hull | Mounts (`HullSpec`) | Turret submeshes | `Gun` markers | Named |
+|---|---|---|---|---|
+| Interceptor | 1 × LightGun (fixed) | `interceptor_railgun` ×2 | 2 | `GunA`, `GunB` |
+| Bomber | 1 × StrikeCannon (fixed) | — | 0 | — |
+| Corvette | 2 × LightTurret | `corvette_turret` ×2 | **0** | — |
+| Frigate | 2 × MediumTurret, fore and aft | `frigate_battery` ×2 **abeam**, `frigate_lance` ×2 **forward** | 2 | `GunA`, `GunB`, on the lances |
+| Battleship | 3 × HeavyTurret, **2 × LightTurret** | `battleship_turret_0..2` (+ barrels) | 6 | `GunA`..`GunF`, two per turret |
+| Carrier | 4 × LightTurret | **none** | 0 | — |
+| Fighter | (not in `HULL_SPECS`) | `fighter_pod` ×2 | 2 | `PodGunA`, `PodGunB` |
+
+Three things fall out, and each changes what the check can be:
+
+1. **A marker is not one per mount.** The Battleship carries two markers per turret, one per barrel,
+   which is right for a muzzle flash and means marker count can never equal mount count.
+2. **A marker's name does not say which mount it belongs to.** `GunA` is a letter, so nothing joins a
+   marker to a mount except position, and position does not do it either — the Battleship's three
+   turrets sit at 0° and ±64.5° *by position* while their mounts bear 0° and ±120°, because a mount's
+   bearing is which way it faces and not where it sits.
+3. **Six mounts in the shipped roster have no art at all** — the Battleship's two light turrets and
+   all four of the Carrier's. `Combat.md` §12 admits this in passing ("mounts the shipped art can
+   *mostly* already wear"), and §3.1 permits it ("a mount without an authored marker draws its effects
+   from the hull's origin"). So a check that demands a marker per mount fails the shipped game by
+   design, and one that does not demand it cannot catch a mount that lost its marker.
+
+The choice is the owner's because it decides how much work item 5 is, and the range is wide:
+
+- **Rename to bind.** Markers become `Gun<N>` (or `Gun<N>A`/`Gun<N>B` for twin barrels), where N is
+  the mount. The check then reads: every marker names a mount the hull has, no two name the same one
+  with the same suffix, and a mount without a marker is allowed and draws from the origin. Cheapest:
+  it renames markers in four files and authors two on the Corvette. It also makes the markers
+  *load-bearing* — the muzzle flash could finally come off the marker instead of the hull origin,
+  which is what `Combat.md` §10.2 has always said it should.
+- **Reconcile the art with the table.** Move the Frigate's mounts abeam to match its batteries, or
+  move the batteries fore and aft to match the table, and author light-turret geometry for the
+  Battleship and the Carrier. Honest, and much more work — it is modelling, and `HullSpec`'s bearings
+  are simulation content that changes recorded outcomes.
+- **Check only what is true today**: a hull with no mounts carries no `Gun` marker, a hull with mounts
+  carries at least one, and every marker sits inside its own mesh's bounds. Cheap and weak; it would
+  not have caught the Frigate.
+
+The first is the recommendation: it is the only one that makes the marker mean something the client
+reads, and it leaves the geometry question — the Carrier's four missing turrets — where it belongs,
+in art work that is not this slice's.
+
+## 9. What was verified, and how — and the honest gap
+
+`RangeComplement` was run against every case its suite asserts, and each answer matched to the run:
+nothing posed gives the whole mesh, one run in the middle gives two gaps, a run at either end gives
+one, the whole mesh gives none, adjacent runs merge rather than leaving an empty draw between them,
+three runs handed over backwards give the same four gaps as forwards, an overlapping or nested pair
+merges, an empty or past-the-end run covers nothing, and an empty mesh has no complement. The
+property under all of it — posed runs plus gaps tile the mesh exactly once — was checked as a census
+per vertex and holds in every case where the caller's own runs do not overlap.
+
+`SlewMount` and `MountBearingToward` were run against the shipped device table:
+
+```
+HeavyTurret (18 deg/s, +/-150 deg), target dead abeam: wants 90.0 deg
+  aim after 1.00 s = 18.00 deg -- the rate exactly, never more
+target dead astern for a +/-150 turret: clamps to the arc edge, not through the hull
+a bow gun (+/-20 deg) asked for a target abeam: clamps to 20.0 deg
+the hold runs out at 0: 90 -> 72 -> 54 -> 36 -> 18 deg, home at the same rate it left
+a fixed mount asked to bear, held for five seconds: 0.00 deg
+```
+
+**The gaps, and there are three.** No screenshot: nothing in this container has MSVC, D3D12 or a
+window, so §5's acceptance — a fight and a quiet frame at two window sizes, which also pays slice 4's
+debt — is unpaid and stays unpaid until someone runs it on Windows. Nothing in `Outpost` has a test
+suite, so `ResolveMounts`, the slew and the bars are verified by running the arithmetic beside the
+tree rather than in it — the same gap `TickStats` and `GalaxyScreen` have. And `SceneRenderer`'s two
+new entry points are D3D12 and were not compiled here at all; the half of them that can be wrong
+silently is the complement, which is why it is in `MeshData.h` and in the suite.

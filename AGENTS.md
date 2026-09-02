@@ -93,8 +93,12 @@ stops, rather than running on a second path nobody is testing (`Design/Decisions
 purpose.
 
 **Deliberately not here yet**, so nobody goes looking for it: no audio, no economy, no shields or
-armour classes past the one hull number, no turret that turns -- a hull's guns fire and its geometry
-holds still. The save is a versioned file now: `UniverseGen` writes one, the boot restores it or
+armour classes past the one hull number. A turret DOES turn now, on the two hulls whose art carries
+one -- the Corvette's pair and the Battleship's three -- and a hull with a turret off its rest leaves
+the instanced draw path while it does, bounded by ViewTuning.h's TURRET_STOWED_RAD and
+MAX_POSED_HULLS (ADR 0064). No muzzle flash comes off a `Gun` marker yet: several hulls carry
+markers, none of them names the mount it belongs to, and every shot still draws from the hull's
+origin. The save is a versioned file now: `UniverseGen` writes one, the boot restores it or
 stops (ADR 0057), and a file in an older format is migrated on read — every field a later format
 added is read behind a gate on the byte the file carries, back to `UNIVERSE_STATE_FORMAT_OLDEST`,
 and a fixture per retired format under `Tests/GameLogicTests/Assets/` is what proves it (ADR 0061).

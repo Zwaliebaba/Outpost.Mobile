@@ -2,14 +2,18 @@
 
 **Status: agreed with the owner on 2026-08-31 — the six decisions in §15 were put and taken the
 same day, each the recommended option. Slices 1 to 5 landed on 2026-09-01 and merged; slice 6 is
-cut and open ([`Combat-slice-6.md`](Combat-slice-6.md)), and it is the last: when it lands this
-design moves to `Archive/` with its six work orders.** The universe is lethal, says so on the wire, and draws it: muzzle flashes, tracers and
-impacts in the shooter's colours, condition pips on the fleet sheet, and F6/F7 retired because the
-simulation states its own acts now. §13's pacing targets have been measured against the shipped
-table and two numbers moved (slice 5). What is left is slice 6 — the turret geometry turning, the
-`Gun` markers, and their consistency check, all three of which wait on the same binding between a
-mount and the part that carries it. **The screenshots slice 4 is accepted by are owed**, and slice 6
-pays them.
+cut and PARTLY landed ([`Combat-slice-6.md`](Combat-slice-6.md)), and it is the last: when it lands
+whole this design moves to `Archive/` with its six work orders.** The universe is lethal, says so on
+the wire, and draws it: muzzle flashes, tracers and impacts in the shooter's colours, condition pips
+on the fleet sheet, turrets that turn to what they fired at, a condition bar on the quarry's bracket,
+and F6/F7 retired because the simulation states its own acts now. §13's pacing targets have been
+measured against the shipped table and two numbers moved (slice 5).
+
+What is left is the back half of slice 6: **the `Gun` markers and their consistency check**. They are
+blocked on a question the shipped art and `HullSpec` answer differently — a marker is not one per
+mount, a marker's name does not say which mount it belongs to, and six mounts in the roster have no
+art at all — measured and put to the owner in that order's §8. **The screenshots slice 4 is accepted
+by are still owed**, and slice 6 pays them when it closes.
 
 **This document is amended in place as its slices land**, on the owner's instruction of 2026-09-01
 and by [ADR 0054](Decisions/0054-a-design-is-amended-in-place-as-its-slices-land.md), which reverses
@@ -125,8 +129,12 @@ offline by a `Tools/` script at most, never read from content at runtime. The ca
 already made this exact argument about size: the mesh fit is where the numbers start, not what
 they are. A mount without an authored marker draws its effects from the hull's origin — content is
 a diagnostic, never a crash — and the `Tools/` check (§16, slice 6) is what keeps the two tables
-from quietly disagreeing. No shipped hull carries a `Gun` marker today, and the shipped build draws
-every muzzle from the hull's origin because of it; that is authoring work the slice plan owns, not a
+from quietly disagreeing. The shipped build draws every muzzle from the hull's origin, and it does so
+even where a marker exists: the Battleship, the Frigate, the Interceptor and the Fighter each carry
+`Gun` markers already — this design said none did, and was wrong about the art it was written beside
+— but they are letter-named, so nothing joins one to a mount and no consumer can read them yet. What
+a marker must correspond to is an open question that slice 6 measured and could not answer for itself
+([`Combat-slice-6.md`](Combat-slice-6.md) §8); it is authoring work the slice plan owns, not a
 blocker for the simulation half.
 
 ### 3.2 Per-mount state
@@ -409,13 +417,15 @@ What that costs is that a turret turns about its own **bind-pose centre** rather
 and that a turret and its barrels are separate named submeshes a consumer must turn together — so
 the binding from a mount to the parts that carry it is a client-side table read off submesh names,
 which is where ADR 0002 would have put it anyway. The Battleship's three turrets and the Corvette's
-two are addressable the day this lands, and start turning in slice 6; hulls whose art has no turret
-submesh lose nothing.
+two **turn** ([ADR 0064](Decisions/0064-a-mount-is-bound-to-its-art-by-a-client-table-of-submesh-names.md));
+hulls whose art has no turret submesh lose nothing and draw as they always did. The table is in
+`Outpost` rather than `NeuronClient`, because it names `HullId` and no engine project may see
+`GameLogic` — the composition root is the client half that is allowed to hold both.
 
 ### 10.2 What a shot looks like
 
-From the fire message: muzzle flash at the mount's `Gun` marker — the hull's origin when
-unauthored, which is every hull today (§3.1) — a tracer to the target, drawn as long as the view
+From the fire message: muzzle flash at the mount's `Gun` marker — the hull's origin when unauthored,
+which is still every hull today, since no marker names the mount it belongs to (§3.1) — a tracer to the target, drawn as long as the view
 likes because the hit already happened and presentation owns time on its side of the wire, and an
 impact flash on the target. A tracer is a straight line between two frozen points: no ballistics, no
 lead, no travel time, since the line is a drawing of a shot rather than a simulation of one. It is
@@ -437,11 +447,17 @@ healthy pip for a ship it knows nothing about. Pips rather than percentages, bec
 commander asks the sheet is *is anything about to die*, and eight bars answer that in a glance where
 eight numbers do not.
 
-**A thin bar on the selection bracket of the ordered target is not built**, and is slice 6's: the
-player would read their own fleet on the sheet and their quarry on its bracket, and nobody else
-would grow UI. Nothing draws a bracket bar today, and the `HULL` and `SHIELD` bars in the HUD's stat
-panel are older scaffolding that still shows a hard-coded whole — they are not this readout and
-reading one of them off the record is the other half of the same slice.
+**A thin bar on the selection bracket of the ordered target** is drawn, as slice 6's: the player reads
+their own fleet on the sheet and their quarry on its bracket, and nobody else grew UI. It is a decal
+ring just inside the selection ring, drawn as a partial fill in the pips' own colours, so one
+condition means one colour wherever it appears. Which record it is drawn on is remembered by the
+client from the order it sent, because nothing on the wire carries a target back — the fleet status
+block says a fleet is attacking, never what, and §9.1 keeps it that way on purpose.
+
+The `HULL` bar in the HUD's stat panel reads the record now: the mean `hullFraction` over the
+selection, which is one ship's own number in the common case. The `SHIELD` bar beside it is still
+older scaffolding showing a hard-coded whole, and stays that way while there are no shields to read
+(§1's deliberately-not-here list).
 
 The event log stays edge-triggered — `FLEET %d UNDER ATTACK` and `SHIP LOST` already exist; slice 4
 adds one completion edge, `TARGET DESTROYED`, and refuses per-hit lines, because an 8-entry ring in
@@ -664,7 +680,16 @@ One agent per slice, one slice per layer at a time; each retargets the sentences
    the thing that would read one is slice 6's binding (§3 there).
 
 6. **The turret turns, and the content it needs** (`NeuronClient` + `Outpost` + `Tools/`).
-   Work order: [`Combat-slice-6.md`](Combat-slice-6.md), cut 2026-09-02. — a
+   Work order: [`Combat-slice-6.md`](Combat-slice-6.md), cut 2026-09-02.
+   **Partly landed 2026-09-02**, with
+   [ADR 0064](Decisions/0064-a-mount-is-bound-to-its-art-by-a-client-table-of-submesh-names.md): the
+   submesh-range draw and the complement, the mount-to-part table, the slew, the target bar and the
+   `HULL` bar. **What is not done is the `Gun` marker authoring and the mount-versus-marker check**,
+   and the reason is not effort: the shipped art and `HullSpec` disagree about what a marker
+   corresponds to, in three separate ways that each change what the check can be, and the choice
+   costs anywhere between renaming four files and modelling six turrets that do not exist. It is
+   measured and put to the owner in that order's §8. **The design does not move to `Archive/` until
+   it is closed, and neither do the screenshots.** — a
    submesh-range draw on `SceneRenderer`, the hull drawn as its own complement, and a client-side
    table binding a hull's mounts to the parts that carry them. It is a slice of its own because it
    is the only piece of this feature that reaches into the D3D12 command list, and because slice 3

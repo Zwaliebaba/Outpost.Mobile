@@ -186,6 +186,11 @@ void UniverseView::ApplySnapshot()
           }
         }
         view.trail.assign(view.exhausts.size() * TRAIL_SAMPLES, XMFLOAT3(0.0f, 0.0f, 0.0f));
+
+        // What this hull's art can turn, joined to what the simulation says it carries. Resolved
+        // here with restY and the bounds, and for the same reason: the draw loop runs per ship per
+        // frame and must not be looking a submesh up by name (Design/Combat-slice-6.md 2.2).
+        view.mounts = ResolveMounts(static_cast<Game::HullId>(ship.hullId), data);
       }
       m_ships.push_back(std::move(view));
     }
@@ -205,6 +210,12 @@ void UniverseView::ApplySnapshot()
   // the flag buys over carrying it.
   RefreshSelection();
   RefreshKnownHulls();
+
+  // The ordered target, dropped once the record is gone: it died, it docked, or it left the interest
+  // set. Keeping an id whose record nobody holds would have the bracket bar drawing on whichever
+  // ship inherited the slot.
+  if (m_orderedTarget != Game::INVALID_ENTITY_ID && IndexOfEntity(m_orderedTarget) == m_ships.size())
+    m_orderedTarget = Game::INVALID_ENTITY_ID;
 
   // After ExplodeTheLost, because it is what set the docked-out flags this reads, and last because
   // it is the pass that takes the copy of the rosters the next update will attribute against.
@@ -258,6 +269,15 @@ void UniverseView::TakeTheGunfire()
     if (m_shots.size() >= MAX_DRAWN_SHOTS)
       m_shots.erase(m_shots.begin());
     m_shots.push_back(shot);
+
+    // The turret that fired it turns to where it fired. Presentation off a message the client
+    // already has: nothing here is sent, nothing is asked, and the shot has already landed --
+    // the server settled the aim and this is a drawing of it (Combat.md 10.2).
+    //
+    // The bearing is taken in the shooter's own frame from the two world points the shot already
+    // resolved, so a hull that is turning carries its turret round with it for free.
+    if (shooter != m_ships.size() && event.target != Game::INVALID_ENTITY_ID)
+      AimMountAt(m_ships[shooter], DisplayedPose(shooter).headingRad, event.mount, shot.fromWorld, shot.toWorld);
 
     // Remembered only when it was this client's own ship that fired, because the only thing this
     // list is for is crediting a kill to the player.
@@ -842,6 +862,79 @@ XMFLOAT3 UniverseView::HullPointToWorld(const ShipView& _view, const DisplayPose
   return world;
 }
 
+bool UniverseView::AnyMountOffRest(const ShipView& _view) noexcept
+{
+  // The cheap test that keeps every hull in the game out of the posed path. A turret at rest draws
+  // identically whether it is posed or not, so a hull whose turrets are all stowed has nothing to
+  // gain from leaving the instance bucket -- and that is every hull, every frame, outside a fight.
+  for (const MountView& mount : _view.mounts)
+  {
+    if (std::fabs(mount.aimRad - mount.restRad) > TURRET_STOWED_RAD)
+      return true;
+  }
+  return false;
+}
+
+void UniverseView::DrawPosedHull(Neuron::SceneRenderer& _renderer, Neuron::GpuDevice& _gpu, const ShipView& _view) const
+{
+  const XMMATRIX hull = XMLoadFloat4x4(&_view.lastWorld);
+
+  // The posed runs, gathered first: DrawMeshComplement needs the whole set to work out the gaps, and
+  // it sorts what it is given, which is why this is a local buffer and not the view's own.
+  Neuron::MeshRange posed[Game::MAX_MOUNTS * MAX_MOUNT_PARTS];
+  std::size_t posedCount = 0;
+  for (const MountView& mount : _view.mounts)
+  {
+    for (std::uint32_t at = 0; at < mount.partCount && posedCount < std::size(posed); ++at)
+      posed[posedCount++] = mount.parts[at];
+  }
+
+  // The hull itself, minus what turns.
+  _renderer.DrawMeshComplement(_gpu, _view.mesh, std::span<Neuron::MeshRange>(posed, posedCount), _view.lastWorld, _view.lastLivery,
+                               _view.lastHighlight);
+
+  // Then each mount's parts, at the hull's matrix with a turn about the mount's own bind-pose centre
+  // in front of it. The renderer knows nothing about pivots: the caller hands it the product, which
+  // is what keeps a rig-shaped question out of a renderer that has no rig.
+  for (const MountView& mount : _view.mounts)
+  {
+    if (mount.partCount == 0)
+      continue;
+    const XMMATRIX turn = XMMatrixTranslation(-mount.pivot.x, -mount.pivot.y, -mount.pivot.z) *
+                          XMMatrixRotationY(mount.aimRad - mount.restRad) *
+                          XMMatrixTranslation(mount.pivot.x, mount.pivot.y, mount.pivot.z) * hull;
+    XMFLOAT4X4 world;
+    XMStoreFloat4x4(&world, turn);
+    for (std::uint32_t at = 0; at < mount.partCount; ++at)
+      _renderer.DrawMeshRange(_gpu, _view.mesh, mount.parts[at], world, _view.lastLivery, _view.lastHighlight);
+  }
+}
+
+void UniverseView::AimMountAt(ShipView& _view, float _headingRad, std::uint32_t _mount, const XMFLOAT3& _fromWorld,
+                              const XMFLOAT3& _toWorld) const noexcept
+{
+  // A mount index the art does not bind is not an error: the Battleship's two light mounts and every
+  // one of the Carrier's have no turret submesh, so they fire and nothing turns (Combat.md 12).
+  if (_mount >= _view.mounts.size())
+    return;
+
+  // World delta into the hull frame. The hull's heading is a rotation about Y, so its inverse is a
+  // rotation by -heading, and the bank is deliberately not undone: a turret rides the roll rather
+  // than counter-rotating out of it.
+  const float dx = _toWorld.x - _fromWorld.x;
+  const float dz = _toWorld.z - _fromWorld.z;
+  const float cosH = std::cos(-_headingRad);
+  const float sinH = std::sin(-_headingRad);
+  const float localX = dx * cosH + dz * sinH;
+  const float localZ = -dx * sinH + dz * cosH;
+  if (localX == 0.0f && localZ == 0.0f)
+    return; // a shot at itself, or at a point it is standing on: there is no bearing to take
+
+  MountView& mount = _view.mounts[_mount];
+  mount.wantRad = MountBearingToward(mount, localX, localZ);
+  mount.holdSec = TURRET_HOLD_SEC;
+}
+
 // One sample per nozzle per tick, so trail length means the same thing whatever the frame rate.
 void UniverseView::SampleTrails()
 {
@@ -897,6 +990,16 @@ void UniverseView::UpdateFeedback(float _dtSec)
   // something that already happened, so it is not the simulation's to time (ADR 0053).
   for (GunShot& shot : m_shots)
     shot.ageSec += dt;
+
+  // And so do the turrets. Real time on purpose and by the same argument: the server settled every
+  // shot's aim on the tick it fired, so a turret's angle decides nothing and may run at whatever rate
+  // the swapchain does. Turn the slew off and the same shots land on the same ticks
+  // (Design/Combat-slice-6.md 4.3).
+  for (ShipView& view : m_ships)
+  {
+    for (MountView& mount : view.mounts)
+      SlewMount(mount, dt);
+  }
   std::erase_if(m_shots, [](const GunShot& _shot) { return _shot.ageSec >= GUN_TRACER_SEC; });
 
   for (ShotAt& aimed : m_shotAt)
@@ -1355,6 +1458,10 @@ void UniverseView::IssueAttackOrder(std::size_t _target)
   // On the target and in ITS colour, exactly as the dock marker wears the station's. The scene is
   // an identity language and the HUD is a relation one (ViewTuning.h says so at HUD_ALERT_RED), so
   // a marker in the universe says which ship was tapped rather than how the HUD feels about it.
+  // Remembered for the bracket bar, and only here: an order this client sent is the only way it can
+  // know what it is hunting (Combat.md 10.3).
+  m_orderedTarget = state[_target].entity;
+
   const Game::FactionId owner = state[_target].factionId;
   const DisplayPose pose = DisplayedPose(_target);
   OrderMarker marker;
@@ -1692,6 +1799,7 @@ void UniverseView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRendere
   m_culledCount = 0;
   for (MeshBucket& bucket : m_meshBuckets)
     bucket.instances.clear();
+  m_posed.clear(); // here as well as after the walk, so an early return cannot leave a stale frame's hulls in it
 
   XMFLOAT4X4 world;
 
@@ -1801,10 +1909,25 @@ void UniverseView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRendere
     if (view.visible)
     {
       ++m_submittedCount;
-      // Bucketed by mesh rather than drawn, so a fleet of one hull is one draw. Bucketing by the
-      // mesh handle and not the hull id is what makes two hull ids sharing a mesh share a draw, and
-      // the handle is what the draw needs anyway.
-      Bucket(view.mesh).push_back(Neuron::MeshInstance{.world = world, .tint = {livery.r, livery.g, livery.b, highlight}});
+      // A hull with a turret off rest cannot be instanced: its parts each need a matrix and an
+      // instance carries one. Collected here with how far away it is and settled after the walk, so
+      // the nearest MAX_POSED_HULLS get their turrets and the rest go through the bucket -- the
+      // decision cannot be taken in submission order, because a hull that flickered in and out of
+      // the cap as another ship moved would flicker its turrets with it.
+      if (AnyMountOffRest(view))
+      {
+        const float dx = boundsCentre.x - frame.cameraPos.x;
+        const float dy = boundsCentre.y - frame.cameraPos.y;
+        const float dz = boundsCentre.z - frame.cameraPos.z;
+        m_posed.push_back(PosedHull{.ship = i, .distanceSq = dx * dx + dy * dy + dz * dz});
+      }
+      else
+      {
+        // Bucketed by mesh rather than drawn, so a fleet of one hull is one draw. Bucketing by the
+        // mesh handle and not the hull id is what makes two hull ids sharing a mesh share a draw, and
+        // the handle is what the draw needs anyway.
+        Bucket(view.mesh).push_back(Neuron::MeshInstance{.world = world, .tint = {livery.r, livery.g, livery.b, highlight}});
+      }
     }
     else
     {
@@ -1820,9 +1943,27 @@ void UniverseView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRendere
     // were submitted, those shards would start from wherever the hull last happened to be on screen.
     // Culling decides what is drawn; it must not decide what is remembered.
     view.lastWorld = world;
+    view.lastHighlight = highlight;
     view.lastVelMetresPerSec = XMFLOAT3(std::sin(heading) * state[i].speed, 0.0f, std::cos(heading) * state[i].speed);
     view.drawn = true;
   }
+
+  // The posed hulls, nearest first and capped: everything past the cap falls back into its mesh's
+  // bucket and draws stowed, which is a lie about a turret on a ship too far away to see one turn and
+  // never a lie about what was hit.
+  std::sort(m_posed.begin(), m_posed.end(), [](const PosedHull& _a, const PosedHull& _b) { return _a.distanceSq < _b.distanceSq; });
+  for (std::size_t at = 0; at < m_posed.size(); ++at)
+  {
+    ShipView& view = m_ships[m_posed[at].ship];
+    if (at >= MAX_POSED_HULLS)
+    {
+      Bucket(view.mesh).push_back(Neuron::MeshInstance{
+        .world = view.lastWorld, .tint = {view.lastLivery.r, view.lastLivery.g, view.lastLivery.b, view.lastHighlight}});
+      continue;
+    }
+    DrawPosedHull(_renderer, _gpu, view);
+  }
+  m_posed.clear();
 
   // One draw per hull family present. Order within the opaque pass does not matter -- it writes and
   // tests depth -- so grouping by mesh costs nothing and buys everything.
@@ -1950,6 +2091,26 @@ void UniverseView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const
       _renderer.DrawDecal(_gpu, m_quadMesh, world,
                           Rgba{SEL_RING_COLOUR.r, SEL_RING_COLOUR.g, SEL_RING_COLOUR.b, SEL_RING_COLOUR.a * view.ringFade},
                           SEL_RING_THICKNESS, 0.0f);
+    }
+
+    // The ordered target's condition bar: a thin arc on its own bracket, so the player reads their
+    // fleet on the sheet and their quarry on the thing they pointed at (Combat.md 10.3).
+    //
+    // It is the ONE ship this client last ordered an attack on, remembered here because nothing on
+    // the wire carries an order back -- the fleet status block says a fleet is attacking, not what.
+    // A target that leaves the interest set stops being drawn and, with the record gone, the id is
+    // dropped rather than kept pointing at nothing.
+    if (state[i].entity == m_orderedTarget && m_orderedTarget != Game::INVALID_ENTITY_ID)
+    {
+      const float fraction = static_cast<float>(state[i].hullFraction) / 255.0f;
+      const float radius = hullRadius * SEL_RING_RADIUS_SCALE * TARGET_BAR_RADIUS_SCALE;
+      XMStoreFloat4x4(&world, XMMatrixScaling(radius * 2.0f, 1.0f, radius * 2.0f) * XMMatrixTranslation(x, DECAL_LIFT_Y, z));
+
+      // Green through amber to red, the pip row's ramp, so one condition means one colour wherever it
+      // is drawn. The FILL is the reading: a decal's fill parameter is the fraction of the ring that
+      // is drawn, which is exactly what a condition bar wants and is why this needs no new primitive.
+      const Rgba colour = ConditionColour(fraction);
+      _renderer.DrawDecal(_gpu, m_quadMesh, world, colour, SEL_RING_THICKNESS * TARGET_BAR_THICKNESS_SCALE, fraction);
     }
 
     // The hover ring sits just outside the selection ring so both are readable at once.
