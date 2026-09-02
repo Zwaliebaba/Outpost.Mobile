@@ -4,6 +4,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cwchar> // wcscmp and wcstoul, which argv parsing needs and no other header here promises
 
 namespace
 {

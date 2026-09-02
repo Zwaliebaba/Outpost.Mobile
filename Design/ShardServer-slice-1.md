@@ -150,6 +150,19 @@ gone.
   save was reported as "file format 2 and state format 8 | this build reads file 1 to 2 and state 7
   to 9", which names formats it then says are readable. The peek is now a diagnosis only when a
   format is genuinely out of range; otherwise it says the file is torn and how many bytes it is.
+- **CI found three things no local check could, and two of them now have checks.** The build went
+  red on: `Server.vcxproj` carrying `..\..\packages\` because it was written by copying a `Tests/`
+  project, which restores nothing; and two breakages in `Outpost/` from the `ServerConfig` rename —
+  `#include "Game::ServerConfig.h"` in two headers, where the edit rewrote the filename along with
+  the type, and one unqualified `SERVER_CONFIG_FILE` that had been fine while the constant was in
+  namespace `Outpost`. All three are in files that only MSVC compiles, which is the third time this
+  slice a change to `Outpost/` went out unverified for that reason. So `CheckProjectFiles.py` gained
+  two more checks rather than this order gaining a note to be careful: every quoted `#include`
+  resolves against the including file's own directory and its project's include path, and every
+  `SHOUTING_CASE` constant `GameLogic` publishes is written `Game::`-qualified outside it. Both were
+  confirmed against the exact defects, in both directions. What is still uncovered is everything that
+  needs a compiler — overload resolution and access control — which is what `CheckViewAccess.py`
+  reaches at and only for one file.
 - **`Server/Main.cpp` had to become `ShardMain.cpp`.** `CheckProjectFiles.py`'s repo-wide unique-name
   rule caught the collision with `Outpost/Main.cpp` — two files of one name resolve to whichever
   project root comes first on an include path, and the projects share one.
