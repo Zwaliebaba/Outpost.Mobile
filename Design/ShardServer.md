@@ -146,6 +146,19 @@ want and it does not survive being rewritten into a statement.
    fleet, which is documented in `Outpost/UniverseSimulation.h` and is **slice 5's**, where the
    session gains a camera along with the redirect.
 
+6. **Does `Server` get a test project, when no composition root in this tree has one?** Slice 2's
+   session logic — open, refuse, close, reopen — is ordinary testable code, and it was verified by a
+   scratch harness CI never runs. The tree's convention is one suite per *library*: neither `Outpost`
+   nor `Tools/UniverseGen` has one.
+
+   → **Yes, a twelfth project.** Taken 2026-09-02, with slice 3. The convention's *reason* does not
+   transfer: `Outpost` has no suite because its logic is D3D12- and WinRT-bound and untestable off a
+   device, and `Server`'s is not. What makes it cheap is that it shares no source file with `Server` —
+   the testable half of that project is header-only by construction and `ShardApp.cpp` is the root
+   that is run rather than tested, so the suite reaches it by include path and
+   `CheckProjectFiles.py`'s unique-name rule is not bent. **Keeping that split is now a rule**: a
+   testable thing that lands in a `.cpp` under `Server/` has landed in the wrong file.
+
 ## 6. What would make this design wrong
 
 - **If the run loop turns out to want a different shape without a window** — if `ServerHost`'s
@@ -166,7 +179,7 @@ Cut one at a time, when each is next.
 |---|---|---|---|---|---|
 | 1 | [The executable: config, save, run loop, clean shutdown. **One shard, no clients, no links**](ShardServer-slice-1.md) | `Server` | M | — | [0067](Decisions/0067-the-tree-has-a-second-composition-root.md) — **landed 2026-09-02** |
 | 2 | [Sessions: the listener, one publisher subscriber per connection](ShardServer-slice-2.md) | `Server` | M | 1 | §5.4, §5.5 |
-| 3 | Links: a `ShardLink` per neighbour, derived from the layout; `NoteDurableThrough` after each save | `Server`+`GameLogic` | M | 1 | — |
+| 3 | [Links: a `ShardLink` per neighbour, derived from the save's own gates; `NoteDurableThrough` after each save, and a twelfth project to test it in](ShardServer-slice-3.md) | `Server`+`GameLogic`+`Tests` | M | 1, 2 | §5.6 |
 | 4 | Two shards, two processes, a fleet crossing between them — **`CrossShard.md`'s slice 5, server half** | `Server` | M | 2, 3 | — |
 | 5 | The client follows its camera across: the redirect §5.3 chose, and a reconnect on a crossing | `Server`+`Outpost` | L | 4 | ADR: a client is redirected, not configured |
 

@@ -223,8 +223,9 @@ GRAPHICS_INCLUDE = re.compile(r'#\s*include\s*<(d3d\w*|dxgi\w*|d2d\w*|dwrite\w*|
 # server's composition root (ADR 0067), and the whole claim of Design/ShardServer-slice-1.md is that
 # the simulation does not want a window -- a claim a root can break in one #include. A root is
 # entitled to see several layers; this one is not entitled to see the client's
-# (Design/ShardServer-slice-1.md 5.5).
-HEADLESS_PROJECTS = ('NeuronCore', 'NeuronServer', 'Server')
+# (Design/ShardServer-slice-1.md 5.5). ServerTests is here for the same reason and one more: a suite
+# that could name a graphics type could make the server's headlessness true only when nobody looks.
+HEADLESS_PROJECTS = ('NeuronCore', 'NeuronServer', 'Server', 'ServerTests')
 
 # What "does not see the client" means in a file: the layer's umbrella header, or any header the
 # client publishes. Read off disk for the same reason game_headers() is -- a hard-coded list is
