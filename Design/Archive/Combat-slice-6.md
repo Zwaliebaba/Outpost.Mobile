@@ -361,3 +361,38 @@ The screenshots. §5 asks for a fight and a quiet frame at two window sizes, whi
 screen, and nothing in this environment has MSVC, D3D12 or a window. The owner made CI-green the gate
 on 2026-09-02 with Windows-only manual checks waived; `Combat.md`'s header records them as owed rather
 than dropping them, and this is where that debt comes to rest.
+
+### 10.6 What CI caught that nothing here did
+
+Run 249 failed the build with two errors, both the same one:
+
+```
+Outpost\UniverseView.cpp(936,38): error C2668: 'Outpost::FindMount': ambiguous call to overloaded function
+Outpost\UniverseView.cpp(951,28): error C2668: 'Outpost::FindMount': ambiguous call to overloaded function
+```
+
+`FindMount` was a const overload taking `std::span<const MountView>` and a mutable one taking
+`std::span<MountView>`. A `std::vector<MountView>&` converts to both at the same rank, so **every
+call to it was ill-formed** — and it is not an MSVC quirk: clang rejects the same three lines, which
+was checked afterwards rather than assumed.
+
+The reason it reached CI is worth more than the fix. `HullParts.cpp` — where the pair was *defined* —
+compiled clean at `-Wall -Wextra` here, and a definition of an ambiguous overload set is perfectly
+well-formed. Both **calls** live in `UniverseView.cpp`, which needs D3D12 and cannot be compiled off
+Windows at all, so nothing in this environment ever instantiated the shape that was broken. Checking
+the definition proved exactly nothing about the calls, and the report said "checked".
+
+The fix is one function returning an **index** rather than a pointer: `MountSlotOf`, with
+one-past-the-end for "not found", which is the idiom `UniverseView::IndexOfEntity` already uses. No
+overload set, so nothing to be ambiguous about.
+
+The gap is closed by a scratch translation unit that lifts the two call shapes out of
+`UniverseView.cpp` and compiles them against `HullParts.h` — a `vector<T>&` argument and a
+`const vector<T>&` one — and exercises the sparse case the index exists for: mounts 0 and 2 bound
+with 1 unbound, aiming at mount 2 finding slot 1, and aiming at unbound mount 1 doing nothing.
+
+**The standing lesson, and it is the second time this branch has paid it**: compiling the file that
+declares a thing is not compiling the code that uses it. Slice 3 lost a CI run to
+`FleetInSlot(FactionId, ...)` converting silently, and §10.4 above records catching that same class
+of bug by hand in this slice. This one got through because the harness stops at the layer boundary
+`Outpost` sits on, and only CI compiles past it.

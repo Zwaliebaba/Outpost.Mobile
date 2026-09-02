@@ -141,10 +141,16 @@ struct MuzzleView
 // in the same one draw.
 [[nodiscard]] std::vector<MountView> ResolveMounts(Game::HullId _hull, const Neuron::MeshData& _mesh);
 
-// The mount with index _mount in _mounts, or nullptr. Linear over at most six entries, which is
-// cheaper than the branch that would keep a lookup table in step with them.
-[[nodiscard]] const MountView* FindMount(std::span<const MountView> _mounts, std::uint32_t _mount) noexcept;
-[[nodiscard]] MountView* FindMount(std::span<MountView> _mounts, std::uint32_t _mount) noexcept;
+// Where the mount with index _mount sits in _mounts, or _mounts.size() when it holds none. Linear
+// over at most six entries, which is cheaper than the branch that would keep a lookup table in step
+// with them.
+//
+// An INDEX and not a pointer, so there is one function rather than a const overload and a mutable
+// one. That pair was ambiguous -- a std::vector<MountView>& converts to std::span<const MountView>
+// and to std::span<MountView> at the same rank -- and it failed on MSVC in CI rather than here,
+// because both call sites are in UniverseView.cpp and nothing off Windows compiles that file
+// (run 249). One-past-the-end for "not found" is the idiom UniverseView::IndexOfEntity already uses.
+[[nodiscard]] std::size_t MountSlotOf(std::span<const MountView> _mounts, std::uint32_t _mount) noexcept;
 
 // Advances one mount by _dtSec: turn toward wantRad at traverseRadPerSec, or drift back to rest once
 // the hold has run out. Free rather than a method, because it is the arithmetic worth testing and it

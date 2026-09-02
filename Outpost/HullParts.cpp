@@ -98,24 +98,14 @@ std::vector<MountView> ResolveMounts(Game::HullId _hull, const MeshData& _mesh)
   return mounts;
 }
 
-const MountView* FindMount(std::span<const MountView> _mounts, std::uint32_t _mount) noexcept
+std::size_t MountSlotOf(std::span<const MountView> _mounts, std::uint32_t _mount) noexcept
 {
-  for (const MountView& mount : _mounts)
+  for (std::size_t at = 0; at < _mounts.size(); ++at)
   {
-    if (mount.mount == _mount)
-      return &mount;
+    if (_mounts[at].mount == _mount)
+      return at;
   }
-  return nullptr;
-}
-
-MountView* FindMount(std::span<MountView> _mounts, std::uint32_t _mount) noexcept
-{
-  for (MountView& mount : _mounts)
-  {
-    if (mount.mount == _mount)
-      return &mount;
-  }
-  return nullptr;
+  return _mounts.size();
 }
 
 float MountBearingToward(const MountView& _mount, float _localX, float _localZ) noexcept

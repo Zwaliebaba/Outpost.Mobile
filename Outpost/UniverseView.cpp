@@ -933,11 +933,12 @@ XMFLOAT3 UniverseView::MuzzleToWorld(ShipView& _view, const DisplayPose& _pose, 
   // a flash drawn at its bind-pose position would hang in the air beside a turret that had traversed.
   // The same pivot-rotate the posed draw uses, applied to one point instead of a vertex run.
   XMFLOAT3 local = chosen->local;
-  if (const MountView* const mount = FindMount(_view.mounts, _mount); mount != nullptr)
+  if (const std::size_t slot = MountSlotOf(_view.mounts, _mount); slot < _view.mounts.size())
   {
-    const XMMATRIX turn = XMMatrixTranslation(-mount->pivot.x, -mount->pivot.y, -mount->pivot.z) *
-                          XMMatrixRotationY(mount->aimRad - mount->restRad) *
-                          XMMatrixTranslation(mount->pivot.x, mount->pivot.y, mount->pivot.z);
+    const MountView& mount = _view.mounts[slot];
+    const XMMATRIX turn = XMMatrixTranslation(-mount.pivot.x, -mount.pivot.y, -mount.pivot.z) *
+                          XMMatrixRotationY(mount.aimRad - mount.restRad) *
+                          XMMatrixTranslation(mount.pivot.x, mount.pivot.y, mount.pivot.z);
     XMStoreFloat3(&local, XMVector3Transform(XMLoadFloat3(&local), turn));
   }
   return HullPointToWorld(_view, _pose, local);
@@ -948,8 +949,8 @@ void UniverseView::AimMountAt(ShipView& _view, float _headingRad, std::uint32_t 
 {
   // A mount index the art does not bind is not an error: the Battleship's two light mounts and every
   // one of the Carrier's have no turret submesh, so they fire and nothing turns (Design/Archive/Combat.md 12).
-  MountView* const found = FindMount(_view.mounts, _mount);
-  if (found == nullptr)
+  const std::size_t slot = MountSlotOf(_view.mounts, _mount);
+  if (slot >= _view.mounts.size())
     return;
 
   // World delta into the hull frame. The hull's heading is a rotation about Y, so its inverse is a
@@ -964,7 +965,7 @@ void UniverseView::AimMountAt(ShipView& _view, float _headingRad, std::uint32_t 
   if (localX == 0.0f && localZ == 0.0f)
     return; // a shot at itself, or at a point it is standing on: there is no bearing to take
 
-  MountView& mount = *found;
+  MountView& mount = _view.mounts[slot];
   mount.wantRad = MountBearingToward(mount, localX, localZ);
   mount.holdSec = TURRET_HOLD_SEC;
 }
