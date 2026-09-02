@@ -553,6 +553,16 @@ Frigate, which breaks the first target. New `SimTuning.h` constants: `FIRE_ALIGN
 `ENGAGE_STANDOFF_FRACTION` and the gather's gunnery margin, with the fire message's cap in
 `UniverseSnapshot.h` beside the format it belongs to — each with the argued comment the file demands.
 
+**The table is pinned by a matrix now**, added by slice 5 of [`GameDesignPlan.md`](GameDesignPlan.md)
+and not by this design: `Tests/GameLogicTests/MatchupTests.cpp` runs every combatant hull against
+every other, one on one and in the groups the targets above name, and asserts who wins and within
+fifteen percent how long it takes. Its geometry is its own — six hundred metres bow to bow, fleets
+of one, attack orders both ways — and it is not the harness slice 5 measured with, so its numbers
+are not the ones above: under mutual orders two Interceptors never land a hit on each other, and a
+mixed eight of two each loses to the Battleship. Neither is corrected here; the matrix records what
+the tables do, and the retune that changes it is the review's C13
+([`MatchupMatrix-work-order.md`](MatchupMatrix-work-order.md) §7).
+
 ## 14. Deliberately left out, so nobody goes looking
 
 - **Shields, armor classes, resists, facing damage** — one number first (§7.1).

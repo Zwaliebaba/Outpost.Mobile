@@ -1,6 +1,6 @@
 # The game design plan — the review as slices, under the pillars
 
-**Status: drafted 2026-09-02; phase 0 is cut, slice 1 has its work order, and nothing has landed.** This plan converts
+**Status: drafted 2026-09-02; phase 0 is cut, slices 1 and 5 have their work orders, and nothing has landed.** This plan converts
 [`GameDesignReview.md`](GameDesignReview.md) (tree at `caf9814`) into ordered work in the shape
 `Design/README.md` defines: one slice, one branch, one pull request. It is filtered through
 [ADR 0060](Decisions/0060-the-game-is-its-own-benchmark.md), the owner's pillars of 2026-09-02, so
@@ -99,7 +99,7 @@ Cut now. Five slices, no feature, each leaving one door.
 | 2 | The wire is laid once: the status collision, a flags byte, a reserved byte, a dropped-send log line | `GameLogic` + `Outpost` | M | — | C1 slice 0, cross-cutting | |
 | 3 | An owner key beside the faction, with one owner | `GameLogic` | M | 1 | E1 (key half) | ADR |
 | 4 | The tick is measured: a per-tick statistics block beside the save | `NeuronServer` + `Outpost` | S | — | C5 slice 0, E7 counters | |
-| 5 | The matchup matrix test pins the balance | `Tests/GameLogicTests` | S | — | C13 slice 0 | |
+| 5 | [The matchup matrix test pins the balance](MatchupMatrix-work-order.md) | `Tests/GameLogicTests` | S | — | C13 slice 0 | |
 
 Three rounds, serial between them. Round one is slices 1 and 5: the codec and a test file that
 touches nothing else. Round two is slice 2 alone, because the state reader and the wire's fleet
