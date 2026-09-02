@@ -78,8 +78,7 @@ Game::ShipId SpawnAt(Game::Universe& _universe, float _x, float _z, Game::HullId
     if (ship.entity == _entity)
       return ship;
   }
-  Assert::Fail(L"the snapshot held no record for that entity");
-  return _receiver.Latest().ships.front();
+  Assert::Fail(L"the snapshot held no record for that entity"); // noreturn, so no unreachable fallback value (C4702)
 }
 
 [[nodiscard]] bool Holds(std::span<const Game::EntityId> _set, Game::EntityId _entity)

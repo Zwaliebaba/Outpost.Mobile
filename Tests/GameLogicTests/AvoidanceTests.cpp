@@ -286,6 +286,55 @@ public:
     }
   }
 
+  TEST_METHOD(ACrowdedFormationCruisesInsteadOfRocking)
+  {
+    // Ships squeezed closer than the avoidance clearance -- Corvettes 14 m apart against a 25 m
+    // clearance -- used to hold each other in permanent threat while flying in company: the
+    // time-to-closest of a non-converging pair scored as zero, so both shed speed and wove for the
+    // whole journey, and a player watched a crowded fleet rock back and forth at a crawl (owner
+    // report, 2026-09-02). A crowd that is not converging is calm now, so the journey cruises.
+    Game::Universe universe;
+    std::vector<Game::ShipId> wing;
+    for (int i = 0; i < 3; ++i)
+    {
+      wing.push_back(universe.SpawnShip(Game::LocalPos(static_cast<float>(i) * 14.0f - 14.0f, 0.0f), 0.0f,
+                                        static_cast<std::uint32_t>(Game::HullId::Corvette)));
+    }
+    universe.IssueMoveOrder(wing, Game::LocalPos(0.0f, 1200.0f), false, 0.0f);
+
+    // 1,200 m at a Corvette's 30 m/s is 2,400 ticks; 3,000 allows the spread into slots and the
+    // arrival, and nothing else -- the crawl this row pins took several times that. The mid-journey
+    // reading is the sharper half: a crowd shedding speed to a threat that cannot resolve never
+    // touches its own maximum again.
+    float slowestMidJourney = 1e30f;
+    int arrivedOn = -1;
+    for (int tick = 0; tick < 3000 && arrivedOn < 0; ++tick)
+    {
+      universe.Step();
+      if (tick == 1500)
+      {
+        for (const Game::ShipId id : wing)
+          slowestMidJourney = std::min(slowestMidJourney, universe.Ship(id).speed);
+      }
+      bool all = true;
+      for (const Game::ShipId id : wing)
+        all = all && universe.Ship(id).order == Game::OrderState::Idle;
+      if (all)
+        arrivedOn = tick;
+    }
+    Assert::IsTrue(arrivedOn > 0, L"a crowded formation never arrived -- the rocking crawl is back");
+    Assert::IsTrue(slowestMidJourney > 27.0f,
+                   std::format(L"a crowded formation cruised at {:.1f} m/s against a 30 m/s hull", slowestMidJourney).c_str());
+    Logger::WriteMessage(
+      std::format(L"crowded formation: arrived on tick {}, slowest mid-journey {:.1f} m/s\n", arrivedOn, slowestMidJourney).c_str());
+
+    for (size_t a = 0; a < wing.size(); ++a)
+    {
+      for (size_t b = a + 1; b < wing.size(); ++b)
+        Assert::AreEqual(0.0f, HullOverlap(universe, wing[a], wing[b]), 1e-2f, L"the crowd arrived inside itself");
+    }
+  }
+
   TEST_METHOD(AParkedFormationDoesNotDrift)
   {
     // Formation drift under traffic is not a separate problem; it is the authority split with a

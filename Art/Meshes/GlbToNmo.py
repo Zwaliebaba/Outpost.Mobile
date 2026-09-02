@@ -224,25 +224,55 @@ def _adopt_materials(collection):
                       % mat.name)
                 continue
             liveried, shade = row
+            # Whether the author stated flags at source, read BEFORE anything below writes the same
+            # key: GLTF_RENDER_FLAGS and PROP_RENDER_FLAGS are one property, so a check made after
+            # the liveried row set it would mistake this table's own work for the author's word.
+            authored_flags = GLTF_RENDER_FLAGS in mat
             if GLTF_BASE_COLOUR not in mat:
-                _set_base_colour(mat, shade)
-            if GLTF_RENDER_FLAGS in mat:
+                _set_base_colour(mat, shade, _authored_opacity(mat) if _is_blended(mat) else 1.0)
+            if authored_flags:
                 mat[scene_map.PROP_RENDER_FLAGS] = int(mat[GLTF_RENDER_FLAGS])
             elif liveried:
                 mat[scene_map.PROP_RENDER_FLAGS] = (int(mat.get(scene_map.PROP_RENDER_FLAGS, 0))
                                                     | nmo.RENDER_FLAG_RACE_TINTED)
+            # A material the GLB authored blended stays blended: the flag routes it into the
+            # renderer's blended overlay pass, and the opacity rides base_colour.w through
+            # _set_base_colour above. Additive to the table's row, never instead of it -- the
+            # Stargate's aperture is both liveried and translucent.
+            if _is_blended(mat) and not authored_flags:
+                mat[scene_map.PROP_RENDER_FLAGS] = (int(mat.get(scene_map.PROP_RENDER_FLAGS, 0))
+                                                    | nmo.RENDER_FLAG_ALPHA_BLEND)
             if int(mat.get(scene_map.PROP_RENDER_FLAGS, 0)) & nmo.RENDER_FLAG_RACE_TINTED:
                 flagged += 1
     return flagged
 
 
-def _set_base_colour(mat, shade):
+def _set_base_colour(mat, shade, alpha=1.0):
     """Both places the exporter reads a base colour from, so the two cannot disagree."""
-    mat.diffuse_color = (shade[0], shade[1], shade[2], 1.0)
+    mat.diffuse_color = (shade[0], shade[1], shade[2], alpha)
     if mat.use_nodes:
         principled = next((n for n in mat.node_tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
         if principled is not None:
-            principled.inputs['Base Color'].default_value = (shade[0], shade[1], shade[2], 1.0)
+            principled.inputs['Base Color'].default_value = (shade[0], shade[1], shade[2], alpha)
+
+
+def _authored_opacity(mat):
+    """The GLB's opacity: the Principled Alpha input the glTF importer filled from
+    baseColorFactor, with the viewport colour as the node-free fallback."""
+    if mat.use_nodes:
+        principled = next((n for n in mat.node_tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+        if principled is not None and 'Alpha' in principled.inputs:
+            return float(principled.inputs['Alpha'].default_value)
+    return float(mat.diffuse_color[3])
+
+
+def _is_blended(mat):
+    """Whether the GLB authored this material translucent: its opacity says so and nothing else is
+    asked. Blender's material blend properties were both tried and both lied under 5.1's importer
+    -- surface_render_method reads BLENDED on every material and blend_method no longer means what
+    it did -- where the Alpha input holds exactly the baseColorFactor alpha the artist wrote. The
+    one shape this cannot see, alphaMode BLEND at opacity 1.0, draws identically opaque anyway."""
+    return _authored_opacity(mat) < 0.999
 
 
 def _luminance(colour):

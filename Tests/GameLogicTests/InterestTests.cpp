@@ -97,6 +97,23 @@ public:
     Assert::AreEqual(static_cast<std::size_t>(1), interest.Entered().size(), L"the first update did not report an enter");
   }
 
+  TEST_METHOD(AGateInsideTheRadiusIsSubscribed)
+  {
+    // The regression that demanded it: a Stargate is immovable and deliberately not collidable, and
+    // the static store used to require both -- so a gate stood outside every QueryCircle, no
+    // interest set ever held one, and a fleet parked on a gate's threshold was never sent the gate.
+    // The door has to be as real to a subscriber as a station is (ADR 0056).
+    Game::Universe universe;
+    const Game::ShipId gate =
+      universe.SpawnShip(Game::LocalPos(300.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Stargate), Game::FACTION_VANGUARD);
+    universe.Step();
+
+    Game::InterestSet interest;
+    interest.Configure(DescWith(1000.0f));
+    interest.Update(universe, Game::LocalPos(0.0f, 0.0f));
+    Assert::IsTrue(Holds(interest.Subscribed(), universe.HandleOf(gate)), L"a gate inside the radius was not subscribed");
+  }
+
   TEST_METHOD(MovingInEntersAndMovingOutLeaves)
   {
     Game::Universe universe;

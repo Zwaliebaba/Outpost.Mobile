@@ -61,6 +61,18 @@ public:
   // instanced draws together.
   void DrawMeshInstanced(GpuDevice& _gpu, MeshHandle _mesh, std::span<const MeshInstance> _instances);
 
+  // One run of a mesh's vertices, instanced -- the opaque remainder of a mesh that carries
+  // translucent parts. The runs come from MeshData::subMeshes: a part is a contiguous run of the
+  // soup, so a mesh with no translucent part never pays this path at all.
+  void DrawMeshInstancedRange(GpuDevice& _gpu, MeshHandle _mesh, std::span<const MeshInstance> _instances, std::uint32_t _firstVertex,
+                              std::uint32_t _vertexCount);
+
+  // One translucent part, instanced, through the blended pipeline: depth-tested against the settled
+  // scene, never written, at the material's own opacity. Call after every opaque draw of the frame,
+  // exactly as the decals are (Design/Archive/NmoFormat.md 5.5).
+  void DrawMeshInstancedBlended(GpuDevice& _gpu, MeshHandle _mesh, std::span<const MeshInstance> _instances, std::uint32_t _firstVertex,
+                                std::uint32_t _vertexCount, float _alpha);
+
   // Retires a mesh: the handle stops resolving at once and the buffer is released at the next
   // DiscardStaging, which is the first point the GPU is known to be done with it. False if the
   // handle was already stale, so a double free is a no-op that says so rather than a second release
@@ -91,6 +103,11 @@ public:
   void DrawDecal(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _colour, float _thickness, float _fill);
 
 private:
+  // The shared body of the three instanced draws: ring upload, views, one DrawInstanced over the
+  // given run with the given pipeline.
+  void DrawInstancedRun(GpuDevice& _gpu, std::uint32_t _meshSlot, std::span<const MeshInstance> _instances, std::uint32_t _firstVertex,
+                        std::uint32_t _vertexCount, ID3D12PipelineState* _pso);
+
   void CreateScenePipeline(GpuDevice& _gpu);
   void CreateDecalPipelines(GpuDevice& _gpu);
   void CreateInstanceRing(GpuDevice& _gpu);
@@ -98,7 +115,8 @@ private:
   GpuPtr<ID3D12RootSignature> m_sceneRs;
   GpuPtr<ID3D12PipelineState> m_scenePso;
   GpuPtr<ID3D12PipelineState> m_instancedPso;
-  GpuPtr<ID3D12PipelineState> m_decalPso; // alpha blended
+  GpuPtr<ID3D12PipelineState> m_decalPso;   // alpha blended
+  GpuPtr<ID3D12PipelineState> m_blendedPso; // the hulls' translucent parts: instanced, blended, no depth write
   // Indexed by slot, never by handle: HandleStore is what turns one into the other, and what stops a
   // handle to a freed mesh reaching the mesh that took its place (ADR 0044).
   std::vector<GpuMesh> m_meshes;

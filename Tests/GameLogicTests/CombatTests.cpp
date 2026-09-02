@@ -192,6 +192,55 @@ public:
     Assert::IsTrue(universe.Ship(neutral).hullPoints < 240u, L"a stated neutral target was not shot");
   }
 
+  TEST_METHOD(AMoveOrderHoldsTheGuns)
+  {
+    // The travel hold. A Move order means leave: while the member is still flying it, the held
+    // target and the opportunistic sense are skipped, so a hostile inside the envelope is passed
+    // rather than raked -- and once the ship has ARRIVED it is Idle at its slot and stands guard
+    // exactly as before, which is what the second half of this row pins. The bystander is a Miner
+    // because it is unarmed: a hostile that shot back would rouse the defense, which outranks the
+    // hold on purpose and would turn the row into a measurement of the leash.
+    Game::Universe universe;
+    const Game::ShipId mine = Spawn(universe, 0.0f, 0.0f, 0.0f, Game::HullId::Corvette, Game::FACTION_PLAYER);
+    const Game::ShipId bystander = Spawn(universe, 0.0f, 80.0f, 0.0f, Game::HullId::Miner, Game::FACTION_VANDAL);
+
+    (void)FleetOfOne(universe, mine);
+    Game::Universe::FleetCommand command;
+    command.kind = Game::FleetOrderKind::Move;
+    command.point = Game::LocalPos(100.0f, 160.0f); // arrives 128 m from the bystander: inside a LightTurret's 180 m
+    Assert::IsTrue(universe.IssueFleetOrder(IssuerFor(Game::FACTION_PLAYER), 0, command) == Game::Universe::FleetOrderResult::Ordered);
+
+    Run(universe, 120);
+    Assert::AreEqual(200u, universe.Ship(bystander).hullPoints, L"a travelling fleet raked a bystander in passing");
+
+    Run(universe, 1200);
+    Assert::IsTrue(universe.Ship(bystander).hullPoints < 200u, L"an arrived fleet no longer stands guard");
+  }
+
+  TEST_METHOD(TheDefenseDoesNotSuspendATravelOrder)
+  {
+    // The travel hold's other half (owner decision, 2026-09-02): a stated act against a fleet that
+    // is FLYING an explicit order no longer turns its combatants around. The threat still stands in
+    // the row -- the guns answer it over the shoulder and the alert burns -- but the move is
+    // obeyed. Without this, a fleet ordered out of a fight was dragged back by the first shot that
+    // followed it, and a Move was only ever one landed hit away from behaving like an Attack.
+    Game::Universe universe;
+    const Game::ShipId mine = Spawn(universe, 0.0f, 0.0f, 0.0f, Game::HullId::Corvette, Game::FACTION_PLAYER);
+    const Game::ShipId shooter = Spawn(universe, 0.0f, -60.0f, 0.0f, Game::HullId::Corvette, Game::FACTION_VANDAL);
+
+    (void)FleetOfOne(universe, mine);
+    Game::Universe::FleetCommand command;
+    command.kind = Game::FleetOrderKind::Move;
+    command.point = Game::LocalPos(0.0f, 1500.0f);
+    Assert::IsTrue(universe.IssueFleetOrder(IssuerFor(Game::FACTION_PLAYER), 0, command) == Game::Universe::FleetOrderResult::Ordered);
+
+    Run(universe, 1200);
+    Assert::IsTrue(universe.Ship(mine).hullPoints < 240u, L"the shooter never landed a hit -- the row would measure nothing");
+    Assert::IsTrue(universe.Ship(shooter).hullPoints < 240u, L"the fleeing fleet never answered over its shoulder");
+    Assert::IsTrue(Game::OffsetZ(Game::LocalPos(0.0f, 0.0f), universe.Ship(mine).posUniverse) > 500.0f,
+                   L"a landed hit dragged a travelling fleet back into the fight");
+  }
+
   TEST_METHOD(AStationDiscardsDamageAndStillJudges)
   {
     // Design/Archive/Stations.md 8.5's standing rule, implemented rather than restated: "however it

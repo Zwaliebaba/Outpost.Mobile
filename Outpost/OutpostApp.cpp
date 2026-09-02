@@ -28,11 +28,9 @@ struct HullMesh
   std::wstring mesh;
   Game::HullId hull;
 };
-const HullMesh HULL_MESHES[] = {{L"Bomber", Game::HullId::Bomber},
-                                {L"Corvette", Game::HullId::Corvette},
-                                {L"Frigate", Game::HullId::Frigate},
-                                {L"Interceptor", Game::HullId::Interceptor},
-                                {L"Structure", Game::HullId::Structure}};
+const HullMesh HULL_MESHES[] = {{L"Bomber", Game::HullId::Bomber},     {L"Corvette", Game::HullId::Corvette},
+                                {L"Frigate", Game::HullId::Frigate},   {L"Interceptor", Game::HullId::Interceptor},
+                                {L"Stargate", Game::HullId::Stargate}, {L"Structure", Game::HullId::Structure}};
 
 // For the one log line that has to say what a connection was doing when it ran out of time.
 [[nodiscard]] const char* LinkStateName(Neuron::ConnectionState _state) noexcept
@@ -722,9 +720,7 @@ void OutpostApp::RebuildLocalSystemScenery()
   // The marks are replaced, not added to: they belong to one system, and the minimap's half-range is
   // 4 km against a guaranteed 57 km between stars, so a mark left behind for the system the camera
   // came from draws pinned to the edge forever.
-  m_view.ClearStationMarks();
-  for (const Game::PlanetSite& site : m_layout.planets)
-    m_view.AddStationMark({site.posUniverse, Game::FACTION_VANGUARD});
+  MarkLocalStations();
 
   // The scene is released before the next one is built, which is what stops a crossing leaking the
   // system it left -- F5's bracket exactly, copies first for its reason (ADR 0044).
@@ -785,8 +781,20 @@ void OutpostApp::ReseedBodies()
 void OutpostApp::MarkLocalStations()
 {
   m_view.ClearStationMarks();
-  for (const Game::PlanetSite& site : m_layout.planets)
-    m_view.AddStationMark({site.posUniverse, Game::FACTION_VANGUARD});
+  m_view.AddStationMark({Game::VanguardStationSite(m_layout), Game::FACTION_VANGUARD});
+
+  // The system's doors, from the galaxy the save's seed laid out -- the same positions the gates in
+  // the file were spawned at, derived rather than copied (GateSite's contract). Amber on the map for
+  // IssueJumpOrder's reason: a gate is a road, not an allegiance.
+  m_view.ClearGateMarks();
+  const Game::SystemSite& local = m_galaxy.systems[m_localSystem];
+  for (const Game::GateLink& link : m_galaxy.links)
+  {
+    if (link.systemA != m_localSystem && link.systemB != m_localSystem)
+      continue;
+    const Game::SystemSite& other = m_galaxy.systems[(link.systemA == m_localSystem) ? link.systemB : link.systemA];
+    m_view.AddGateMark({Game::GateSite(local, other, Game::STARTING_GALAXY)});
+  }
 }
 // Somebody else lives here: a station northeast of the fleet, and three Interceptors walking a ring
 // around it at a third of their top speed. Their guns work -- a mount acquires the nearest ship its
@@ -913,7 +921,7 @@ void OutpostApp::Update()
       continue;
 
     int openSheet = -1;
-    const bool usedByHud = m_hud.HandlePointer(event, m_view, openSheet, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
+    const bool usedByHud = m_hud.HandlePointer(event, m_view, m_camera, openSheet, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
     if (openSheet >= 0)
       m_sheet.Open(openSheet);
     if (usedByHud)

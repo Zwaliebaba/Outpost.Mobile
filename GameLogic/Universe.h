@@ -991,7 +991,9 @@ private:
 
   // What one mount will shoot at this tick, by Design/Combat.md 5.2's fixed order: the fleet's
   // threat, the fleet's ordered target, the ship's protector duty, the target it already held, and
-  // then the nearest standing-hostile it can see. First that stands.
+  // then the nearest standing-hostile it can see. First that stands -- except that a fleet member
+  // still flying an explicit travel order (Move, Dock, Jump) takes only the first two: the order
+  // said leave, so the held grudge and the opportunistic sense wait until it arrives.
   [[nodiscard]] ShipId ChooseMountTarget(ShipId _ship, const DeviceSpec& _device, const MountState& _mount) const noexcept;
 
   // Whether _owner's faction holds _other's hostile. The gate on the one priority that is a sense

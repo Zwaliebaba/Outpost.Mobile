@@ -86,6 +86,13 @@ struct MeshSubMesh
   std::uint32_t firstMarker = 0; // into MeshData::markers
   std::uint32_t markerCount = 0;
 
+  // The part's material render flags and its authored opacity, carried per part because a part has
+  // exactly one material (Design/Archive/NmoFormat.md 5.5). What they buy is the blended overlay
+  // pass: the scene draws a mesh's opaque runs in one pass and its AlphaBlend parts in another,
+  // and this is where that split is read from (SceneRenderer::DrawMeshInstancedBlended).
+  std::uint32_t renderFlags = 0; // NmoRenderFlags bitmask
+  float alpha = 1.0f;            // the material's baseColour.w; only the blended pass reads it
+
   // This part's own bind-pose bounds, from the file where it states them and accumulated from its
   // own vertices where it does not -- the mesh-level rule (Design/Archive/NmoFormat.md 5.9), one
   // scope down.

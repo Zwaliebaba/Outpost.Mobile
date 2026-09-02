@@ -3,6 +3,8 @@
 
 #include "ViewTuning.h"
 
+#include "NmoFile.h"
+
 using namespace DirectX;
 using namespace Neuron;
 
@@ -187,6 +189,20 @@ void UniverseView::ApplySnapshot()
         }
         view.trail.assign(view.exhausts.size() * TRAIL_SAMPLES, XMFLOAT3(0.0f, 0.0f, 0.0f));
       }
+
+      // The wink-in. A record this client has never held, whose identity it watched jump out, IS
+      // the ship that left -- a jump preserves the entity (ADR 0056) -- so the far side of the
+      // crossing flashes the way the near side did, keyed on nothing but identity.
+      for (std::size_t watch = 0; watch < m_jumpWatches.size(); ++watch)
+      {
+        if (m_jumpWatches[watch].entity != ship.entity)
+          continue;
+        const float y = SHIP_HOVER_HEIGHT + (view.restY + view.pickCentre.y) * SHIP_SCALE;
+        m_jumpFlashes.push_back(
+          JumpFlash{.posWorld = XMFLOAT3(ViewX(ship.posUniverse), y, ViewZ(ship.posUniverse)), .headingRad = ship.headingRad});
+        m_jumpWatches.erase(m_jumpWatches.begin() + static_cast<std::ptrdiff_t>(watch));
+        break;
+      }
       m_ships.push_back(std::move(view));
     }
     m_entities.push_back(ship.entity);
@@ -316,9 +332,9 @@ void UniverseView::ExplodeTheLost(std::uint64_t _tick)
   // identity (ADR 0056). Without its own run this would arrive as a DESTROY and a fleet crossing a
   // gate would detonate on screen, which is the whole reason the wire states a cause at all.
   //
-  // What it does NOT do yet is draw anything. A wink-out belongs here and is a look rather than a
-  // mechanism; it is left out on purpose and said so, so nobody mistakes a plain removal for the
-  // finished effect (Design/Archive/Universe.md 9).
+  // The wink Design/Archive/Universe.md 9 left as a placeholder: the hull goes out in a flash where
+  // it stood, and its identity is watched for, so the far side can blink the same way the moment
+  // the same entity re-enters this client's view (ADR 0056).
   const std::span<const Game::EntityId> jumped = m_receiver.Jumped();
   int ownJumped = 0;
   int crossedSlot = -1;
@@ -334,6 +350,15 @@ void UniverseView::ExplodeTheLost(std::uint64_t _tick)
       continue;
     if (m_carryScratch[at].faction == m_ownFaction)
       ++ownJumped;
+
+    // The wink-out, at the spot the hull was last drawn. A jumper that was never drawn -- off
+    // screen, or its mesh missing -- leaves without one, exactly as it would leave without an
+    // explosion; the watch is set either way, so its arrival still blinks if the camera crosses.
+    const ShipView& gone = m_carryScratch[at];
+    if (gone.drawn)
+      m_jumpFlashes.push_back(
+        JumpFlash{.posWorld = XMFLOAT3(gone.lastWorld._41, gone.lastWorld._42, gone.lastWorld._43), .headingRad = gone.to.headingRad});
+    m_jumpWatches.push_back(JumpWatch{.entity = entity});
 
     // Which of this client's own fleets went through, so the camera can go with it. Noted before
     // NoteFleetDeparture, which reads the same rosters -- the roster that still names this entity is
@@ -406,7 +431,11 @@ void UniverseView::ExplodeTheLost(std::uint64_t _tick)
 
     m_explosions.emplace_back().Start(spawn, m_particles);
     TriggerCameraShake();
-    if (m_log != nullptr)
+    // Only the player's own dead earn the alert. An enemy going down is not a loss -- its line is
+    // the kill credit below -- and a push gated on nothing said SHIP LOST for every faction, so
+    // shooting down a Vandal read as losing a ship. The explosion and the shake stay for every
+    // death: they are about what happened on screen, not whose ship it was.
+    if (m_log != nullptr && lost.faction == m_ownFaction)
       m_log->Push(EventLog::Severity::Alert, SimTimeSec(), "SHIP LOST");
 
     // Attributed from two facts this client already holds and never from the wire: the fire block
@@ -902,6 +931,17 @@ void UniverseView::UpdateFeedback(float _dtSec)
   for (ShotAt& aimed : m_shotAt)
     aimed.ageSec += dt;
   std::erase_if(m_shotAt, [](const ShotAt& _aimed) { return _aimed.ageSec >= GUN_KILL_CREDIT_SEC; });
+
+  // The jump winks age on the tracers' clock, and a watched identity that never re-entered -- a
+  // spectator's jumper, a crossing the camera did not follow -- is an expectation let go rather
+  // than kept for ever.
+  for (JumpFlash& flash : m_jumpFlashes)
+    flash.ageSec += dt;
+  std::erase_if(m_jumpFlashes, [](const JumpFlash& _flash) { return _flash.ageSec >= JUMP_FLASH_SEC; });
+
+  for (JumpWatch& watch : m_jumpWatches)
+    watch.ageSec += dt;
+  std::erase_if(m_jumpWatches, [](const JumpWatch& _watch) { return _watch.ageSec >= JUMP_ARRIVAL_WATCH_SEC; });
   if (m_navTimeSec > NAV_LIGHT_MAX_PERIOD_SEC)
     m_navTimeSec -= NAV_LIGHT_MAX_PERIOD_SEC;
 
@@ -1039,7 +1079,7 @@ bool UniverseView::IsOwn(std::size_t _index) const noexcept
 
 // Ray against a hull's oriented bounding box. A sphere would be far too loose on a hull three
 // times longer than it is wide.
-float UniverseView::RayHitDistance(std::size_t _index, const XMFLOAT3& _origin, const XMFLOAT3& _direction) const noexcept
+float UniverseView::RayHitDistance(std::size_t _index, const XMFLOAT3& _origin, const XMFLOAT3& _direction, float _padding) const noexcept
 {
   const ShipView& view = m_ships[_index];
   // Against the hull as drawn: the latest record can be a hull-length ahead of it.
@@ -1058,8 +1098,7 @@ float UniverseView::RayHitDistance(std::size_t _index, const XMFLOAT3& _origin, 
                                 (rx * sinH + rz * cosH) / SHIP_SCALE};
   const float localDir[3] = {(_direction.x * cosH - _direction.z * sinH) / SHIP_SCALE, _direction.y / SHIP_SCALE,
                              (_direction.x * sinH + _direction.z * cosH) / SHIP_SCALE};
-  const float extent[3] = {view.halfExtents.x * INPUT_PICK_PADDING, view.halfExtents.y * INPUT_PICK_PADDING,
-                           view.halfExtents.z * INPUT_PICK_PADDING};
+  const float extent[3] = {view.halfExtents.x * _padding, view.halfExtents.y * _padding, view.halfExtents.z * _padding};
 
   float tMin = 0.0f;
   float tMax = 1e30f;
@@ -1098,7 +1137,7 @@ int UniverseView::PickShip(float _xPx, float _yPx) const
   {
     if (!IsOwn(i))
       continue;
-    const float t = RayHitDistance(i, origin, direction);
+    const float t = RayHitDistance(i, origin, direction, INPUT_PICK_PADDING);
     if (t >= 0.0f && t < bestT)
     {
       bestT = t;
@@ -1123,7 +1162,7 @@ int UniverseView::PickStation(float _xPx, float _yPx) const
     // client working it out from "immovable" would be the inference the flag exists to end.
     if ((state[i].flags & Game::SHIP_FLAG_STATION) == 0)
       continue;
-    const float t = RayHitDistance(i, origin, direction);
+    const float t = RayHitDistance(i, origin, direction, INPUT_STRUCTURE_PICK_PADDING);
     if (t >= 0.0f && t < bestT)
     {
       bestT = t;
@@ -1146,7 +1185,7 @@ int UniverseView::PickGate(float _xPx, float _yPx) const
   {
     if ((state[i].flags & Game::SHIP_FLAG_GATE) == 0)
       continue;
-    const float t = RayHitDistance(i, origin, direction);
+    const float t = RayHitDistance(i, origin, direction, INPUT_STRUCTURE_PICK_PADDING);
     if (t >= 0.0f && t < bestT)
     {
       bestT = t;
@@ -1202,7 +1241,7 @@ int UniverseView::PickHostile(float _xPx, float _yPx) const
     // end (Design/Archive/Stations.md 4.3).
     if (!IsHostileToMe(state[i].factionId))
       continue;
-    const float t = RayHitDistance(i, origin, direction);
+    const float t = RayHitDistance(i, origin, direction, INPUT_PICK_PADDING);
     if (t >= 0.0f && t < bestT)
     {
       bestT = t;
@@ -1297,6 +1336,19 @@ void UniverseView::IssueMoveOrder(const XMFLOAT3& _point, bool _hasFacing, float
                       (sent == 1) ? "FLEET" : "FLEETS");
 }
 
+void UniverseView::OrderMoveAt(float _viewX, float _viewZ)
+{
+  // Said out loud when it cannot be obeyed: a map tap that silently does nothing reads as a broken
+  // map, and the log is where every other refused order already speaks.
+  if (SelectedFleetCount() == 0)
+  {
+    if (m_log)
+      m_log->Push(EventLog::Severity::Info, SimTimeSec(), "NO FLEET SELECTED");
+    return;
+  }
+  IssueMoveOrder(XMFLOAT3(_viewX, 0.0f, _viewZ), false, 0.0f);
+}
+
 void UniverseView::IssueDockOrder(std::size_t _station)
 {
   const std::span<const Game::ShipSnapshot> state = Ships();
@@ -1382,18 +1434,18 @@ void UniverseView::OnHover(float _xPx, float _yPx)
 void UniverseView::OnDragUpdate(bool _boxSelect, float _x0Px, float _y0Px, float _x1Px, float _y1Px)
 {
   CancelFocus(); // the player has taken the camera back
+  // An order drag draws nothing while held -- the marker on release is its feedback. The line it
+  // used to draw read as a path the fleet would fly, which a move-with-facing order is not.
   m_boxActive = _boxSelect;
-  m_orderDragActive = !_boxSelect;
-  m_boxX0Px = m_orderX0Px = _x0Px;
-  m_boxY0Px = m_orderY0Px = _y0Px;
-  m_boxX1Px = m_orderX1Px = _x1Px;
-  m_boxY1Px = m_orderY1Px = _y1Px;
+  m_boxX0Px = _x0Px;
+  m_boxY0Px = _y0Px;
+  m_boxX1Px = _x1Px;
+  m_boxY1Px = _y1Px;
 }
 
 void UniverseView::OnDragCancelled()
 {
   m_boxActive = false;
-  m_orderDragActive = false;
 }
 
 void UniverseView::OnBoxSelect(float _x0Px, float _y0Px, float _x1Px, float _y1Px, bool _additive)
@@ -1825,9 +1877,48 @@ void UniverseView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRendere
   }
 
   // One draw per hull family present. Order within the opaque pass does not matter -- it writes and
-  // tests depth -- so grouping by mesh costs nothing and buys everything.
+  // tests depth -- so grouping by mesh costs nothing and buys everything. A mesh with translucent
+  // parts (NmoRenderFlags::AlphaBlend) is drawn here as its opaque runs and further down as its
+  // glass, so the part table decides the draw count and a hull without one still costs one draw.
+  const auto blendedPart = [](const Neuron::MeshSubMesh& _part)
+  { return (_part.renderFlags & static_cast<std::uint32_t>(Neuron::NmoRenderFlags::AlphaBlend)) != 0; };
+  const auto hasBlendedPart = [&](const Neuron::MeshData& _data)
+  {
+    for (const Neuron::MeshSubMesh& part : _data.subMeshes)
+    {
+      if (blendedPart(part))
+        return true;
+    }
+    return false;
+  };
+  bool anyBlended = false;
   for (const MeshBucket& bucket : m_meshBuckets)
-    _renderer.DrawMeshInstanced(_gpu, bucket.mesh, bucket.instances);
+  {
+    if (bucket.instances.empty())
+      continue;
+    const Neuron::MeshData& data = m_meshes->Data(bucket.mesh);
+    if (!hasBlendedPart(data))
+    {
+      _renderer.DrawMeshInstanced(_gpu, bucket.mesh, bucket.instances);
+      continue;
+    }
+    anyBlended = true;
+
+    // The parts tile the soup in file order (MeshData.h), so the opaque remainder is the runs
+    // between the translucent parts, merged where they touch.
+    std::uint32_t runStart = 0;
+    for (const Neuron::MeshSubMesh& part : data.subMeshes)
+    {
+      if (!blendedPart(part))
+        continue;
+      if (part.firstVertex > runStart)
+        _renderer.DrawMeshInstancedRange(_gpu, bucket.mesh, bucket.instances, runStart, part.firstVertex - runStart);
+      runStart = part.firstVertex + part.vertexCount;
+    }
+    const std::uint32_t total = static_cast<std::uint32_t>(data.verts.size());
+    if (total > runStart)
+      _renderer.DrawMeshInstancedRange(_gpu, bucket.mesh, bucket.instances, runStart, total - runStart);
+  }
 
   // The bodies: every terrain, then every outline. Two passes rather than two draws per body, so
   // there is one pipeline switch per pass and body A's outline tests against body B's depth
@@ -1850,6 +1941,28 @@ void UniverseView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRendere
     {
       if (m_bodyVisible[i] && !m_bodies[i].textured)
         m_bodyRenderer->DrawOverlay(_gpu, m_bodies[i].terrainLod[m_bodyLod[i]], m_bodyWorlds[i]);
+    }
+  }
+
+  // The hulls' translucent parts, after the opaque hulls AND the bodies: they test depth against
+  // the settled world and write none, so a gate's aperture film blends over whatever stands or
+  // flies behind it -- drawn any earlier, a body would overwrite the film wherever the film had
+  // declined to write depth. This is the blended overlay pass the format has always named
+  // (Design/Archive/NmoFormat.md 5.5); the explosion fragments and sprites below blend over it in
+  // turn. BeginScene again first, because the body pass swapped in its own root signature.
+  if (anyBlended)
+  {
+    _renderer.BeginScene(_gpu, frame);
+    for (const MeshBucket& bucket : m_meshBuckets)
+    {
+      if (bucket.instances.empty())
+        continue;
+      const Neuron::MeshData& data = m_meshes->Data(bucket.mesh);
+      for (const Neuron::MeshSubMesh& part : data.subMeshes)
+      {
+        if (blendedPart(part) && part.vertexCount > 0)
+          _renderer.DrawMeshInstancedBlended(_gpu, bucket.mesh, bucket.instances, part.firstVertex, part.vertexCount, part.alpha);
+      }
     }
   }
 
@@ -1903,8 +2016,6 @@ void UniverseView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRendere
     _text.DrawScreenRect(left, top, left + 1.0f, bottom, edge);
     _text.DrawScreenRect(right - 1.0f, top, right, bottom, edge);
   }
-  if (m_orderDragActive)
-    _text.DrawScreenLine(m_orderX0Px, m_orderY0Px, m_orderX1Px, m_orderY1Px, 2.0f, MARKER_COLOUR);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -2173,6 +2284,35 @@ void UniverseView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const
         m_glowSamples.push_back(
           Neuron::GlowSample{.posWorld = at, .radiusMetres = GUN_TRACER_RADIUS_METRES * fade * SHIP_SCALE, .colour = colour});
       }
+    }
+
+    // --- the jump wink ----------------------------------------------------------------------
+    // A crossing blooms where the hull was: a white core inside an azure halo that swells to
+    // JUMP_FLASH_EXPAND times its birth radius as it dies, and a streak along the hull's last
+    // heading that collapses into the bloom, so the wink reads as something LEAVING rather than a
+    // flash bulb. Same billboards, same clock, same pass as the gunfire above.
+    for (const JumpFlash& flash : m_jumpFlashes)
+    {
+      const float k = std::clamp(flash.ageSec / JUMP_FLASH_SEC, 0.0f, 1.0f);
+      const float fade = (1.0f - k) * (1.0f - k);
+      if (fade <= 0.002f)
+        continue;
+      const float radius = JUMP_FLASH_RADIUS_METRES * (1.0f + (JUMP_FLASH_EXPAND - 1.0f) * k) * SHIP_SCALE;
+      const Rgba halo{JUMP_FLASH_COLOUR.r, JUMP_FLASH_COLOUR.g, JUMP_FLASH_COLOUR.b, fade};
+      m_glowSamples.push_back(Neuron::GlowSample{.posWorld = flash.posWorld, .radiusMetres = radius, .colour = halo});
+      m_glowSamples.push_back(
+        Neuron::GlowSample{.posWorld = flash.posWorld, .radiusMetres = radius * 0.45f, .colour = Rgba{1.0f, 1.0f, 1.0f, fade}});
+
+      const float alongX = std::sin(flash.headingRad) * JUMP_FLASH_STREAK_METRES * SHIP_SCALE * (1.0f - k);
+      const float alongZ = std::cos(flash.headingRad) * JUMP_FLASH_STREAK_METRES * SHIP_SCALE * (1.0f - k);
+      m_glowSamples.push_back(
+        Neuron::GlowSample{.posWorld = XMFLOAT3(flash.posWorld.x + alongX, flash.posWorld.y, flash.posWorld.z + alongZ),
+                           .radiusMetres = radius * 0.4f,
+                           .colour = Rgba{halo.r, halo.g, halo.b, fade * 0.7f}});
+      m_glowSamples.push_back(
+        Neuron::GlowSample{.posWorld = XMFLOAT3(flash.posWorld.x - alongX, flash.posWorld.y, flash.posWorld.z - alongZ),
+                           .radiusMetres = radius * 0.4f,
+                           .colour = Rgba{halo.r, halo.g, halo.b, fade * 0.7f}});
     }
 
     if (!m_glowSamples.empty())

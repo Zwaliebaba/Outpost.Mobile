@@ -88,10 +88,9 @@ ShipId Universe::SpawnShipAs(EntityId _entity, const UniversePos& _posUniverse, 
 
   // Only an immovable can change the static set. A spawn appends, so no existing id moves and
   // nothing already in the store is disturbed -- which is why this needs no id-shift caveat and the
-  // despawn below does (Design/Archive/MmoScalabilityReview.md U4). The gate is deliberately looser than
-  // the store's own filter, which is immovable *and* collidable: a Stargate costs one rebuild it did
-  // not need, and a gate that is a superset of the filter cannot miss one that was needed, which is
-  // the direction to be wrong in if the two ever drift apart.
+  // despawn below does (Design/Archive/MmoScalabilityReview.md U4). This gate and the store's filter
+  // are now the same predicate -- every immovable is in the store since the wire's interest started
+  // being drawn from it -- so nothing is over- or under-invalidated.
   if (HullSpecOf(_hullId).immovable)
     m_staticIndexDirty = true;
   return id;
@@ -1603,10 +1602,25 @@ void Universe::StepFleets()
       }
     }
 
-    // What the combatants are chasing, if anything. The defense outranks the standing order for as
-    // long as it lasts; an ordered attack is what they chase when nothing is chasing them.
+    // What the combatants are chasing, if anything. The defense outranks a STANDING order for as
+    // long as it lasts; an ordered attack is what they chase when nothing is chasing them. An
+    // explicit travel order still under way outranks the chase instead (owner decision, 2026-09-02):
+    // Move means leave, so a landed hit no longer turns the combatants around -- the threat stays
+    // in the row, so the guns' first priority answers it over the shoulder and the alert still
+    // burns -- and a fleet that has ARRIVED, every member Idle at its slot, defends its ground
+    // exactly as before.
+    bool underWay = false;
+    if (fleet.orderKind == FleetOrderKind::Move || fleet.orderKind == FleetOrderKind::Dock || fleet.orderKind == FleetOrderKind::Jump)
+    {
+      for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+      {
+        const ShipId member = Resolve(fleet.members[at]);
+        underWay = underWay || (member != INVALID_SHIP_ID && m_ships[member].order != OrderState::Idle);
+      }
+    }
+
     ShipId chase = INVALID_SHIP_ID;
-    if (engaged)
+    if (engaged && !underWay)
     {
       chase = Resolve(fleet.threat);
     }
@@ -1743,6 +1757,17 @@ ShipId Universe::ChooseMountTarget(ShipId _ship, const DeviceSpec& _device, cons
       if (MountTargetStands(_ship, ordered, _device))
         return ordered;
     }
+
+    // A member still flying an explicit travel order holds everything below: the order said leave,
+    // and a gun that kept its grudge or picked off passers-by would keep alive the fight the order
+    // was given to walk away from (owner decision, 2026-09-02). The two priorities above outrank
+    // this -- a stated act still rouses the fleet and an ordered target is still shot -- and the
+    // hold is on the journey, not on the order's memory: a member that has ARRIVED is Idle at its
+    // slot and stands guard exactly as before.
+    const bool travelling =
+      row.orderKind == FleetOrderKind::Move || row.orderKind == FleetOrderKind::Dock || row.orderKind == FleetOrderKind::Jump;
+    if (travelling && m_ships[_ship].order != OrderState::Idle)
+      return INVALID_SHIP_ID;
   }
 
   // 3 is a protector's, and it is a protector's whole life: it is in no fleet, and the station that
@@ -2023,20 +2048,30 @@ void Universe::RebuildStaticIfDirty()
   if (!m_staticIndexDirty)
     return;
   {
+    // Every immovable, the non-collidable Stargate included. The store answers "what stands here",
+    // and the wire's interest is drawn from it (InterestSet::Update): a store that required
+    // collidable too put every gate outside every QueryCircle, so no subscriber was ever sent one
+    // and a fleet parked on a gate's threshold saw empty space. What collides and what obstructs
+    // filter below and in the passes, each on its own terms.
     m_staticEntries.clear();
     for (ShipId id = 0; id < m_ships.size(); ++id)
     {
       const HullSpec& hull = HullSpecOf(m_ships[id].hullId);
-      if (hull.immovable && hull.collidable)
+      if (hull.immovable)
         m_staticEntries.push_back({id, m_ships[id].posUniverse, hull.BoundingRadiusMetres()});
     }
     m_index.RebuildStatic(m_staticEntries);
 
-    // The obstacle set is the static store: nothing mobile is ever an obstacle. Ships route around
+    // The obstacle set is the COLLIDABLE half of the store: nothing mobile is ever an obstacle, and
+    // neither is a gate -- it is flown through on purpose, so a router that walled it off would
+    // forbid the door's own threshold (Design/Archive/Collision.md 18.2). Ships route around
     // architecture and avoid each other, and keeping the two apart is what keeps both small.
     m_obstacleScratch.clear();
     for (const SpatialIndex::Entry& entry : m_staticEntries)
-      m_obstacleScratch.push_back({entry.pos, entry.boundingRadiusMetres});
+    {
+      if (HullSpecOf(m_ships[entry.id].hullId).collidable)
+        m_obstacleScratch.push_back({entry.pos, entry.boundingRadiusMetres});
+    }
     m_pathIslands.Rebuild(m_obstacleScratch);
     m_staticIndexDirty = false;
   }
@@ -2100,6 +2135,14 @@ void Universe::GatherNeighbours()
         continue;
       const ShipState& neighbour = m_ships[other];
       const HullSpec& neighbourHull = HullSpecOf(neighbour.hullId);
+
+      // In the index -- the wire's interest is drawn from it -- but never a neighbour: a Stargate
+      // is flown through on purpose, and AvoidNeighbours steers around everything in the list, so
+      // a gate record here would make every hull shy off the door it was sent through. Separation
+      // and blocking filter on collidable themselves and the guns cannot hurt a door; excluding it
+      // here keeps every consumer of the list exactly as it was (Design/Archive/Collision.md 18.2).
+      if (neighbourHull.immovable && !neighbourHull.collidable)
+        continue;
 
       // The offsets and the squared distance first, because the pair can be rejected on those
       // alone. The query radius is one circle wide enough for the worst pairing in the

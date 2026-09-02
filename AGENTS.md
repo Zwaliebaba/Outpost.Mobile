@@ -27,8 +27,10 @@ station's ledger (ADR 0062). There is one owner today, named `OWNER_LOCAL` becau
 to ask; ownership gates compare it and standing gates still compare the faction. Five slots, at most eight ships each, composed at a station out of what the player has docked
 there and poured out of the dock one hull per cadence; ordered as one thing by a message that names
 a slot and carries no ship list at all; cruising at the slowest member's speed so they arrive
-together; defending themselves against a stated hostile act, the armed hulls turning while the
-Miners carry on with their orders (ADR 0050); and dismantled back into the ledger by docking. The
+together; defending themselves against a stated hostile act while they hold ground -- the armed
+hulls turning while the Miners carry on with their orders (ADR 0050), though a fleet flying an
+explicit travel order obeys it and answers over the shoulder; and dismantled back into the ledger by
+docking. The
 boot scene is Fleet 1, three hulls in open space: order it somewhere in formation and watch it route
 around architecture, give way to itself, and arrive without passing through anything — and F4
 shatters a selected hull into tumbling debris, a fireball and smoke. Every hull
@@ -41,10 +43,12 @@ hull declares as livery -- the plating and the canopy are the model's own paint 
 (ADR 0036) -- and counted as contacts, and they cannot
 be selected or ordered — the simulation refuses an order from the wrong faction and the client does
 not offer one. The government is here too: the starting solar system is laid out from a seed
-(`Game::LayOutSystem`, ADR 0037), and at each of its three planets stands a station of Core Vanguard
-Command, azure in the scene and a hollow diamond on the minimap from the first frame — the nearest
-inside the 4 km half-range, a farther one clamped to the map's edge, because a mark is static
-content and not a record. A
+(`Game::LayOutSystem`, ADR 0037), and in it stands one station of Core Vanguard Command, pulled in
+from the first planet's site toward the star (`VanguardStationSite`) so it sits inside the interest
+radius beside the starting fleet — azure in the scene and a hollow diamond on the minimap from the
+first frame, because a mark is static content and not a record. The system's jump gates wear the
+Stargate hull, and the minimap marks them amber, clamped to its edge; a tap on the minimap itself
+is a move order at the spot it names. A
 station is a Structure with a row in `Universe`'s station table (ADR 0038); the Vandal base is a row
 in the same table. Tap a station with a fleet selected and it flies in and docks — the ships leave
 the universe, the fleet is dismantled into the station's ledger, and the log says so. Hold a station
@@ -61,7 +65,11 @@ no client message declares one and none ever will (ADR 0041, ADR 0052). `CONTACT
 update header's mask (ADR 0039), which at boot is the Vandal four and never a Vanguard station.
 Combat is here, and it is one number deep. Hulls carry authored mounts, a mount carries a device, and
 a device fires when range, arc, a settled aim and a spent cooldown all allow it -- no dice anywhere,
-so a miss is a turret that lost a crossing target and a player can see why (ADR 0052). Damage is one
+so a miss is a turret that lost a crossing target and a player can see why (ADR 0052). A fleet member
+still flying an explicit travel order holds its held target and its opportunistic sense until it
+arrives -- a Move means leave -- while a stated act against the fleet and an ordered target still
+outrank the hold (Universe::ChooseMountTarget); the same act no longer suspends the travel order
+either, so the combatants answer without turning back (Universe::StepFleets). Damage is one
 unsigned number per ship, a hull at zero leaves through the despawn door every death already used, and
 an indestructible hull discards its damage while the act it provoked still counts. The wire carries a
 hull fraction in every ship record and gunfire as its own loss-tolerant datagram (ADR 0053), which is

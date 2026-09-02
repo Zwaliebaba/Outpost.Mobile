@@ -385,8 +385,9 @@ The smallest client that makes the galaxy real, and no more:
   to a point — because a server asking the same question would otherwise need its own copy, and
   because that is the only half of it a suite can reach (`Universe-slice-4b.md` §7). The trigger is
   where the camera **is**, not that a jump happened, so a galaxy map or a reloaded save gets it
-  free. The wink-out a `JumpedOut` departure draws landed as a plain removal, stated as the
-  placeholder it is.
+  free. The wink-out a `JumpedOut` departure draws landed first as a plain removal, stated as the
+  placeholder it was; the flash paid that debt later, on both ends of the crossing
+  (`UniverseView`, ViewTuning.h's jump-wink block).
 - **The sky stays one sky**, and slice 4b turned that from an assumption into an argument: a
   crossing moves the camera from one system's gate ring to the other's — 43 km at the guaranteed
   minimum, 117 km on the shipped lattice pitch — and a background that visibly turned over at that

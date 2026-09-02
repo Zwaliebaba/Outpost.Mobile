@@ -19,12 +19,13 @@ namespace
 // draws hulls out of a station's ledger, and there is no ledger at tick zero.
 void SpawnStartingFleet(Universe& _universe)
 {
-  constexpr std::size_t HULL_COUNT = std::size(STARTING_FLEET);
+  // Named apart from HullSpec.h's HULL_COUNT, which is in scope here and would be shadowed (C4459).
+  constexpr std::size_t STARTING_HULL_COUNT = std::size(STARTING_FLEET);
   std::vector<ShipId> ships;
-  ships.reserve(HULL_COUNT);
-  for (std::size_t at = 0; at < HULL_COUNT; ++at)
+  ships.reserve(STARTING_HULL_COUNT);
+  for (std::size_t at = 0; at < STARTING_HULL_COUNT; ++at)
   {
-    const float x = (static_cast<float>(at) - static_cast<float>(HULL_COUNT - 1) * 0.5f) * STARTING_FLEET_SPACING_METRES;
+    const float x = (static_cast<float>(at) - static_cast<float>(STARTING_HULL_COUNT - 1) * 0.5f) * STARTING_FLEET_SPACING_METRES;
     ships.push_back(_universe.SpawnShip(LocalPos(x, 0.0f), 0.0f, static_cast<std::uint32_t>(STARTING_FLEET[at]), FACTION_PLAYER));
   }
 
@@ -33,7 +34,8 @@ void SpawnStartingFleet(Universe& _universe)
   (void)_universe.FormFleet(Issuer{OWNER_LOCAL, FACTION_PLAYER}, 0, ships);
 }
 
-// One Vanguard station at every planet site of every system in the galaxy.
+// One Vanguard station in every system of the galaxy, at VanguardStationSite -- the first planet's
+// bearing, pulled in toward the star (StartingUniverse.h says why one, and why there).
 //
 // Every system is laid out here, from its own seed alone, and the layout is not kept: what the
 // universe needs is the positions. What a CLIENT needs is its local system's, and it lays that one
@@ -50,17 +52,18 @@ void SpawnVanguardStations(const GalaxyLayout& _galaxy, Universe& _universe)
   for (const SystemSite& site : _galaxy.systems)
   {
     const SystemLayout system = LayOutGalaxySystem(site, STARTING_GALAXY, GALAXY_PINS);
-    for (const PlanetSite& planet : system.planets)
-    {
-      const ShipId structure =
-        _universe.SpawnShip(planet.posUniverse, 0.0f, static_cast<std::uint32_t>(HullId::Structure), FACTION_VANGUARD);
-      _universe.MakeStation(structure, desc);
-    }
+    const ShipId structure =
+      _universe.SpawnShip(VanguardStationSite(system), 0.0f, static_cast<std::uint32_t>(HullId::Structure), FACTION_VANGUARD);
+    _universe.MakeStation(structure, desc);
   }
 }
 
 // A gate at each end of every link, each naming the other by the identity that already survives
 // leaving a universe (ADR 0047, ADR 0056).
+//
+// On the Stargate hull, which was authored for exactly this -- immovable, indestructible and flown
+// through on purpose (HullSpec.h, Design/Archive/Collision.md 18.2) -- so a gate looks like a door
+// rather than a second station when the client draws it.
 //
 // Two passes, and it has to be two: the row carries the far gate's EntityId, and the far gate does
 // not exist while the near one is being spawned. So the structures go down first and the rows are
@@ -76,9 +79,9 @@ void SpawnGates(const GalaxyLayout& _galaxy, Universe& _universe)
   {
     const SystemSite& a = _galaxy.systems[link.systemA];
     const SystemSite& b = _galaxy.systems[link.systemB];
-    ends.push_back(_universe.SpawnShip(GateSite(a, b, STARTING_GALAXY), GateHeadingRad(a, b), static_cast<std::uint32_t>(HullId::Structure),
+    ends.push_back(_universe.SpawnShip(GateSite(a, b, STARTING_GALAXY), GateHeadingRad(a, b), static_cast<std::uint32_t>(HullId::Stargate),
                                        FACTION_VANGUARD));
-    ends.push_back(_universe.SpawnShip(GateSite(b, a, STARTING_GALAXY), GateHeadingRad(b, a), static_cast<std::uint32_t>(HullId::Structure),
+    ends.push_back(_universe.SpawnShip(GateSite(b, a, STARTING_GALAXY), GateHeadingRad(b, a), static_cast<std::uint32_t>(HullId::Stargate),
                                        FACTION_VANGUARD));
   }
 
@@ -134,7 +137,7 @@ void BuildStartingUniverse(const GalaxyLayout& _galaxy, ShardId _shard, Universe
   SpawnHostileBase(_outUniverse);
 
   // Settled, because the next thing a caller does with this is write it, and a universe that has
-  // spawned 307 things and never ticked is not at rest. Without this the file is a faithful record
+  // spawned 197 things and never ticked is not at rest. Without this the file is a faithful record
   // of an intermediate state: identical in its bytes, and one tick later a different universe
   // (Universe::SettleDerivedState).
   _outUniverse.SettleDerivedState();

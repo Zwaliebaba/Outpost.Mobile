@@ -436,6 +436,27 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
       _text.DrawScreenLine(x, y + half, x - half, y, line1, colour);
       _text.DrawScreenLine(x - half, y, x, y - half, line1, colour);
     }
+
+    // The gates, on the marks' terms exactly -- clamped to the edge and dimmed, direction honest
+    // and distance saturated -- and amber, because a gate is a road rather than an allegiance
+    // (UniverseView::IssueJumpOrder wears the same colour). Every gate stands past the half-range
+    // (GalaxyDesc::gateRingMetres), so without these nothing on screen says the system has doors.
+    for (const UniverseView::GateMark& mark : _view.GateMarks())
+    {
+      const float rawX = toMapX(_view.ViewX(mark.posUniverse));
+      const float rawY = toMapY(_view.ViewZ(mark.posUniverse));
+      const float x = std::clamp(rawX, map.x0 + half, map.x1 - half);
+      const float y = std::clamp(rawY, map.y0 + half, map.y1 - half);
+      const bool clamped = x != rawX || y != rawY;
+
+      Rgba colour = HUD_ACCENT_AMBER;
+      if (clamped)
+        colour = WithAlpha(colour, colour.a * HUD_MINIMAP_MARK_CLAMPED_ALPHA);
+      _text.DrawScreenLine(x, y - half, x + half, y, line1, colour);
+      _text.DrawScreenLine(x + half, y, x, y + half, line1, colour);
+      _text.DrawScreenLine(x, y + half, x - half, y, line1, colour);
+      _text.DrawScreenLine(x - half, y, x, y - half, line1, colour);
+    }
   }
 
   // The fleets, as their slot digits at the position the status block states. Between the marks and
@@ -493,6 +514,29 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
       if (own && !_view.IsSelected(i))
         colour = WithAlpha(colour, 0.7f);
       _text.DrawScreenRect(x - dot * 0.5f, y - dot * 0.5f, x + dot * 0.5f, y + dot * 0.5f, colour);
+    }
+  }
+
+  // Order markers, as fading crosses, last so they read over everything: the scene's ground ring
+  // usually lands outside the camera's view when the order came off the map, and a tap with no
+  // visible answer reads as a tap that did not work. Clipped rather than clamped: an order is a
+  // point, and a cross pinned to the edge would claim one where the player never put one.
+  {
+    const float lifeSec = std::max(0.05f, MARKER_LIFETIME_MS * 0.001f);
+    const float half = HUD_MINIMAP_MARK_PX * 0.35f * s;
+    const float line1 = std::max(1.0f, std::floor(s));
+    for (const UniverseView::OrderMarker& marker : _view.Markers())
+    {
+      const float x = toMapX(marker.posUniverse.x);
+      const float y = toMapY(marker.posUniverse.z);
+      if (x < map.x0 + half || x > map.x1 - half || y < map.y0 + half || y > map.y1 - half)
+        continue;
+      const float fade = std::clamp(1.0f - marker.ageSec / lifeSec, 0.0f, 1.0f);
+      if (fade <= 0.02f)
+        continue;
+      const Rgba colour = WithAlpha(marker.colour, marker.colour.a * fade);
+      _text.DrawScreenLine(x - half, y - half, x + half, y + half, line1, colour);
+      _text.DrawScreenLine(x - half, y + half, x + half, y - half, line1, colour);
     }
   }
 }
@@ -755,8 +799,8 @@ void Hud::Draw(TextRenderer& _text, std::span<const Game::ShipSnapshot> _ships, 
 // Input. A press that starts on a panel belongs to the HUD until it lifts; nothing about it reaches
 // the tracker, so it can neither pick a hull nor lay down an order through the bar.
 
-bool Hud::HandlePointer(const PointerEvent& _event, UniverseView& _view, int& _outOpenSheet, float _dpiScale, std::uint32_t _widthPx,
-                        std::uint32_t _heightPx)
+bool Hud::HandlePointer(const PointerEvent& _event, UniverseView& _view, const Camera& _camera, int& _outOpenSheet, float _dpiScale,
+                        std::uint32_t _widthPx, std::uint32_t _heightPx)
 {
   const Layout layout = ComputeLayout(_dpiScale, _widthPx, _heightPx);
 
@@ -783,6 +827,7 @@ bool Hud::HandlePointer(const PointerEvent& _event, UniverseView& _view, int& _o
       if (layout.fleets[i].Contains(_event.xPx, _event.yPx))
         m_pressedFleet = i;
     }
+    m_pressedMinimap = layout.minimapMap.Contains(_event.xPx, _event.yPx);
     return true;
   }
 
@@ -807,9 +852,53 @@ bool Hud::HandlePointer(const PointerEvent& _event, UniverseView& _view, int& _o
       _outOpenSheet = m_pressedFleet;
   }
 
+  // A tap on the map is a move order at the spot it names: the inverse of DrawMinimap's mapping,
+  // against the same camera target and half-range, so the order lands exactly where the player
+  // pointed. Only a press that both began and lifted on the map orders anything -- sliding off
+  // cancels, the way every button here already works.
+  if (m_pressedMinimap && layout.minimapMap.Contains(_event.xPx, _event.yPx))
+  {
+    const Rect& map = layout.minimapMap;
+    const XMFLOAT3& centre = _camera.Target();
+    const float pxPerMetre = map.Width() / (2.0f * HUD_MINIMAP_HALF_RANGE);
+    const float mapCx = (map.x0 + map.x1) * 0.5f;
+    const float mapCy = (map.y0 + map.y1) * 0.5f;
+    float viewX = centre.x + (_event.xPx - mapCx) / pxPerMetre;
+    float viewZ = centre.z - (_event.yPx - mapCy) / pxPerMetre;
+
+    // A tap on or beside a station or gate mark means the THING, not the pixel: a mark clamps to
+    // the edge, so the spot under a clamped diamond names a point 4 km short of what the player is
+    // pointing at -- which read as a move order with a ceiling on it. Snapping to the mark's own
+    // position is what lets one tap send a fleet to a gate 7 km out; the map's half-range only
+    // bounds where a BARE tap can land.
+    const float half = HUD_MINIMAP_MARK_PX * 0.5f * layout.scale;
+    float bestPx = HUD_MINIMAP_MARK_PX * layout.scale; // the snap radius: one mark's width
+    const auto consider = [&](const Game::UniversePos& _pos)
+    {
+      const float rawX = mapCx + (_view.ViewX(_pos) - centre.x) * pxPerMetre;
+      const float rawY = mapCy - (_view.ViewZ(_pos) - centre.z) * pxPerMetre;
+      const float x = std::clamp(rawX, map.x0 + half, map.x1 - half);
+      const float y = std::clamp(rawY, map.y0 + half, map.y1 - half);
+      const float distancePx = std::hypot(x - _event.xPx, y - _event.yPx);
+      if (distancePx < bestPx)
+      {
+        bestPx = distancePx;
+        viewX = _view.ViewX(_pos);
+        viewZ = _view.ViewZ(_pos);
+      }
+    };
+    for (const UniverseView::StationMark& mark : _view.StationMarks())
+      consider(mark.posUniverse);
+    for (const UniverseView::GateMark& mark : _view.GateMarks())
+      consider(mark.posUniverse);
+
+    _view.OrderMoveAt(viewX, viewZ);
+  }
+
   m_captured = false;
   m_pressedRail = -1;
   m_pressedFleet = -1;
+  m_pressedMinimap = false;
   return true;
 }
 } // namespace Outpost

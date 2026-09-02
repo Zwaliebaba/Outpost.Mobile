@@ -125,8 +125,8 @@ public:
   // _outOpenSheet is set to the slot a long press asked to read, or left alone. Reported rather
   // than acted on, because a panel is the composition root's to own and this class's job ends at
   // saying where a contact landed.
-  [[nodiscard]] bool HandlePointer(const Neuron::PointerEvent& _event, UniverseView& _view, int& _outOpenSheet, float _dpiScale,
-                                   std::uint32_t _widthPx, std::uint32_t _heightPx);
+  [[nodiscard]] bool HandlePointer(const Neuron::PointerEvent& _event, UniverseView& _view, const Neuron::Camera& _camera,
+                                   int& _outOpenSheet, float _dpiScale, std::uint32_t _widthPx, std::uint32_t _heightPx);
 
   // Drops a capture this class is holding, for PointerTracker::CancelContacts's reason: a contact
   // that went down on a panel and lifts after something modal has taken the pointer away never
@@ -137,6 +137,7 @@ public:
     m_captured = false;
     m_pressedRail = -1;
     m_pressedFleet = -1;
+    m_pressedMinimap = false;
   }
 
 private:
@@ -199,6 +200,7 @@ private:
   std::int64_t m_downQpc = 0;
   int m_pressedRail = -1;
   int m_pressedFleet = -1;
+  bool m_pressedMinimap = false;
   int m_activeRail = -1;
 
   // The under-attack pulse's clock, and the edge it is read against.
