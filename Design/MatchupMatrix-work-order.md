@@ -117,13 +117,16 @@ tables do the following, and every cell below is what `MatchupTests.cpp` pins:
 | Bomber | wins 6.2 s | stalemate | loses 20.2 s | loses 13.0 s | loses 11.0 s | loses 16.4 s |
 | Corvette | wins 12.2 s | wins 20.2 s | both 42.9 s | loses 17.0 s | loses 12.9 s | loses 20.8 s |
 | Frigate | wins 9.5 s | wins 13.0 s | wins 17.0 s | both 48.5 s | loses 23.0 s | loses 30.0 s |
-| Battleship | wins 8.8 s | wins 11.0 s | wins 12.9 s | wins 23.0 s | both 120.5 s | wins 154.0 s |
-| Carrier | wins 11.8 s | wins 16.4 s | wins 20.9 s | wins 30.0 s | loses 154.0 s | stalemate |
+| Battleship | wins 8.8 s | wins 11.0 s | wins 12.9 s | wins 23.0 s | both 120.5 s | wins 169.9 s |
+| Carrier | wins 11.8 s | wins 16.4 s | wins 20.9 s | wins 30.0 s | loses 154.1 s | stalemate |
+
+The Carrier's two rows against the Battleship are not a mirror of each other: the hull named first
+spawns at the origin and is ordered first, so the two cells are different fights.
 
 And the groups: eight Corvettes delete an Interceptor in 4.2 s from 300 m with no loss; two
 Interceptors lose to a Frigate in 12.1 s and two Bombers lose to one in 24.9 s; a mixed eight of
 two each loses to a Battleship in 75.6 s with nothing left, and beats a Carrier in 91.8 s with
-five left.
+four left.
 
 Three of those are worth a sentence each, because they are the cells a designer will want to
 change and the review's C13 already names them. **Two fixed-gun hulls under mutual attack orders
@@ -139,11 +142,24 @@ them. The Battleship's 3,800 points stand between "the fleet wins" and "the Batt
 geometry as much as by number, which is the narrowness slice 5 warned about, now with a second
 data point.
 
-**Everything above was measured on Linux with clang**, from the same `GameLogic` the suite links,
-behind the shim slice 1 used. The band exists for this: MSVC's transcendentals differ from
-glibc's by an ulp, slice 1 measured 110 bytes of drift in a genesis file, and a fight's end tick
-may move by a handful of ticks between the two. Fifteen percent is far wider than that and far
-narrower than a retune.
+**The table in the tree is CI's, and the numbers above are too.** They were drafted on Linux with
+clang, from the same `GameLogic` the suite links, behind the shim slice 1 used, and then corrected
+to what MSVC measured -- the same authority slice 1's fixture answers to, and for the same reason:
+MSVC is the only compiler this tree builds with. Three of the forty-one cells differed between the
+two toolchains, all by ulp-level drift compounded over a long fight, and none of them changed who
+won:
+
+| cell | clang | MSVC | apart |
+|---|---|---|---|
+| Battleship against Carrier | 9,240 ticks | 10,193 ticks | +10.3% |
+| a mixed eight against a Carrier | 5,510 ticks, five left | 5,613 ticks, four left | +1.9%, one ship |
+| Carrier against Battleship | 9,241 ticks | 9,242 ticks | +0.01% |
+
+**Fifteen percent is thinner headroom than it looks.** Within MSVC the tree's determinism contract
+makes every cell exact, so the band absorbs nothing on a normal run and exists only for a runner
+image that brings a different build of the compiler. The Battleship-against-Carrier drift above was
+10.3% of it, which is most of what there is, and that cell is the one to read first if this file
+ever goes red on a day nobody touched a number.
 
 **The row logs every cell whether or not it fails**, rather than only on failure as §1 said: a
 green run's log is then the matrix as CI measured it, which is the number a designer wants and
@@ -156,9 +172,12 @@ the number this table would otherwise be the only record of.
 a typo and proves nothing about the framework. `python Build/CheckFormat.py` and
 `python Build/CheckProjectFiles.py` pass.
 
-**Run by CI and nobody here:** the three rows. The table is clang's; if MSVC's end ticks land
-outside the band on a cell, the log carries every cell as MSVC measured it, the table is corrected
-to those numbers in a commit that says so, and the band is reconsidered only if the drift is
-larger than an ulp explains. The runtime on the Debug|x64 runner is not known until it runs;
-§4.5's "well under a minute" is an estimate from 1.8 s at `-O1` against the suite's existing
-300-ship rows.
+**Run by CI (Debug|x64, run 233 on the pull request, 2026-09-02): 548 of 549 tests passed.** All
+thirty-six duel cells held their outcome, thirty-four held their tick unchanged, and the two that
+drifted stayed inside the band. Four of the five group rows held exactly. The one failure was
+`TheGroupRowsAreWhatTheyWere` on the mixed eight against a Carrier, which came back with four
+survivors where the draft had five -- the marginal row named above, failing on the survivor count
+rather than on the outcome or the band, which is the instrument reporting the one place it is
+fragile. The table was corrected to CI's numbers in the commit after this slice's. That is twice in
+two slices that the CI log was the instrument the tree needed: slice 1's fixture came back the same
+way, and both rows were built to hand back the right answer rather than only to fail.
