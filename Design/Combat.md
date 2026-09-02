@@ -380,6 +380,13 @@ wire — *who* destroyed you — is deliberately absent this design (§14); the 
 the record's width and the new message kind, `outpost-3` → `outpost-4`, so two builds that disagree
 refuse at the handshake rather than misparse — both rules already written, both merely obeyed.
 
+The ALPN is `outpost-6` as of slice 2 of [`GameDesignPlan.md`](GameDesignPlan.md), which re-laid the
+fleet status block: a kind byte, a flags byte and a reserved stance byte where there was one byte
+holding all three ([`FleetStatus-work-order.md`](FleetStatus-work-order.md)). The rule is unchanged
+and this is it being obeyed a sixth time. What that slice did *not* do is bump the state format: the
+block rides the snapshot header and no field of `Universe` moved, which is the distinction ADR 0057
+drew between the two version bytes and the first time it has paid.
+
 ## 10. The view
 
 ### 10.1 The parts finally pay

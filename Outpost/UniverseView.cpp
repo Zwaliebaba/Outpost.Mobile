@@ -558,16 +558,19 @@ const char* UniverseView::FleetActivity(int _slot) const noexcept
   if (!IsFleetHeld(_slot))
     return "EMPTY";
 
-  const std::uint8_t bits = FleetStatusBits(_slot);
   // Engaged outranks the standing order in what is SAID, because it is the thing that changes what
   // the fleet is doing right now; the order is still there underneath and resumes (Design/Archive/Fleets.md 7.4).
-  if ((bits & Game::FLEET_STATUS_ENGAGED) != 0)
+  if ((FleetStatusFlags(_slot) & Game::FLEET_FLAG_ENGAGED) != 0)
     return "DEFENDING";
 
-  switch (bits & Game::FLEET_STATUS_KIND_MASK)
-  {
-  case Game::FLEET_STATUS_LAUNCHING:
+  // Launching outranks it in turn, for the reason the block states both: a fleet still pouring out
+  // of a dock is doing that and its standing order, and the launch is the one a player has no other
+  // way to see.
+  if ((FleetStatusFlags(_slot) & Game::FLEET_FLAG_LAUNCHING) != 0)
     return "LAUNCHING";
+
+  switch (FleetStatusKind(_slot))
+  {
   case static_cast<std::uint8_t>(Game::FleetOrderKind::Move):
     return "MOVING";
   case static_cast<std::uint8_t>(Game::FleetOrderKind::Dock):
@@ -576,6 +579,10 @@ const char* UniverseView::FleetActivity(int _slot) const noexcept
     return "ATTACKING";
   case static_cast<std::uint8_t>(Game::FleetOrderKind::Mine):
     return "MINING";
+  // Never drawn until this slice: Jump shared its value with LAUNCHING, so a jumping fleet said it
+  // was launching (Design/FleetStatus-work-order.md).
+  case static_cast<std::uint8_t>(Game::FleetOrderKind::Jump):
+    return "JUMPING";
   default:
     return "IDLE";
   }
@@ -719,15 +726,15 @@ void UniverseView::ReportFleetEvents()
 
     if (held)
     {
-      const std::uint8_t bits = FleetStatusBits(slot);
-      const bool alert = (bits & Game::FLEET_STATUS_UNDER_ATTACK) != 0;
+      const std::uint8_t bits = FleetStatusFlags(slot);
+      const bool alert = (bits & Game::FLEET_FLAG_UNDER_ATTACK) != 0;
       // The rising edge only. The bit holds for ten seconds and a fight keeps refilling it, so a
       // line per update would bury everything else the log has to say (Design/Archive/Fleets.md 7.3).
       if (alert && !m_wasUnderAttack[slot] && m_log)
         m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "FLEET %d UNDER ATTACK", slot + 1);
       m_wasUnderAttack[slot] = alert;
 
-      const bool launching = (bits & Game::FLEET_STATUS_KIND_MASK) == Game::FLEET_STATUS_LAUNCHING;
+      const bool launching = (bits & Game::FLEET_FLAG_LAUNCHING) != 0;
       // The falling edge of launching is the manifest emptying, which is the moment the fleet is
       // whole -- the one thing about a launch that is worth a line rather than a number ticking up.
       if (!launching && m_wasLaunching[slot] && m_log)
@@ -1221,9 +1228,18 @@ std::uint32_t UniverseView::SendToSelectedFleets(const Game::FleetOrder& _order)
       continue;
     order.slot = static_cast<std::uint8_t>(slot);
     // A refused send is the queue being full, which Transport.h calls normal: that fleet's order is
-    // dropped and the rest still go. Nothing is retried, exactly as a ship-list order was not.
+    // dropped and the rest still go. Nothing is retried, exactly as a ship-list order was not -- but
+    // it is no longer silent. The player pressed a button and that fleet will not move, and until
+    // an order is answered on the wire (Design/GameDesignPlan.md 4, decision 1) this line is the
+    // only thing that says so.
     if (Game::WriteFleetOrder(order, *m_transport))
+    {
       ++sent;
+    }
+    else if (m_log != nullptr)
+    {
+      m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "ORDER DROPPED | FLEET %d", slot + 1);
+    }
   }
   return sent;
 }

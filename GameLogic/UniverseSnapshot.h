@@ -204,20 +204,38 @@ struct ComposeOrder
 // (Design/Archive/Fleets.md 8.2).
 struct FleetStatus
 {
-  UniversePos position;    // the centroid of live members, or the launch station while none is out
-  std::uint8_t status = 0; // bits 0-2 the kind shown, bit 6 engaged, bit 7 under attack
-  std::uint8_t count = 0;  // members in space plus manifest
+  UniversePos position; // the centroid of live members, or the launch station while none is out
+
+  // What the fleet is doing, as a whole FleetOrderKind byte rather than a field of a shared one.
+  //
+  // It was three bits with a seventh value borrowed for LAUNCHING, and that borrowing was the
+  // defect slice 2 of Design/GameDesignPlan.md repaired: FLEET_STATUS_LAUNCHING was 6 because 6 was
+  // "the first value no FleetOrderKind uses", which stopped being true the day Jump was appended as
+  // 6 -- so a fleet holding a Jump order drew as LAUNCHING on both readers. A byte also has room for
+  // the verbs the order grammar is scheduled to grow, where three bits had one value left
+  // (Design/FleetStatus-work-order.md).
+  std::uint8_t kind = 0;
+
+  // Everything that is true ALONGSIDE the kind rather than instead of it, which is why a launching
+  // fleet can now state both. Bits 3 to 7 are reserved: written zero, read as zero, and the room
+  // this block was re-laid once to leave rather than three times to find.
+  std::uint8_t flags = 0;
+
+  // Reserved for the fleet's rules of engagement, which the order grammar's design owns. Written
+  // zero and read as zero until it means something; it rides here rather than arriving in its own
+  // ALPN bump, which is the whole argument for laying the block once.
+  std::uint8_t stance = 0;
+
+  std::uint8_t count = 0; // members in space plus manifest
 };
 
-// The status byte's low three bits, when the fleet is still pouring out of a dock.
+// Bits of FleetStatus::flags.
 //
-// 6, which is the first value no FleetOrderKind uses. It is not a FleetOrderKind and must not
-// become one: nobody can issue it, IssueFleetOrder would have to refuse it, and putting it in the
-// enum would make the fleet order codec's own "kind > Mine" gate accept a value no order may carry.
-inline constexpr std::uint8_t FLEET_STATUS_LAUNCHING = 6;
-inline constexpr std::uint8_t FLEET_STATUS_KIND_MASK = 0x07;
-inline constexpr std::uint8_t FLEET_STATUS_ENGAGED = 0x40;
-inline constexpr std::uint8_t FLEET_STATUS_UNDER_ATTACK = 0x80;
+// LAUNCHING is a flag and not a kind because a fleet pouring out of a dock is also doing whatever
+// it was ordered to do, and the old byte could hold only one of the two.
+inline constexpr std::uint8_t FLEET_FLAG_LAUNCHING = 0x01;
+inline constexpr std::uint8_t FLEET_FLAG_ENGAGED = 0x02;
+inline constexpr std::uint8_t FLEET_FLAG_UNDER_ATTACK = 0x04;
 
 // How many ships fit in one snapshot fragment. Derived from MAX_DATAGRAM_BYTES rather than chosen,
 // so the day the record grows this follows it.

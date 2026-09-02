@@ -236,6 +236,53 @@ public:
     Assert::IsTrue(receiver.Docked().empty(), L"a jump was stated as a docking");
   }
 
+  TEST_METHOD(AJumpingFleetSaysSoAndNotLaunching)
+  {
+    // The assertion whose absence let a display bug ship. FLEET_STATUS_LAUNCHING was 6 -- "the first
+    // value no FleetOrderKind uses" -- and then Jump was appended to the enum as 6, so a fleet
+    // holding a jump order wrote 6 and both readers drew LAUNCHING. Seven rows in JumpTests covered
+    // what a jump DOES and not one covered what it SHOWS, and the collision lived in the gap
+    // (Design/FleetStatus-work-order.md).
+    //
+    // It sits here rather than in JumpTests because the status block is decoded here: this is the
+    // only suite with a publisher, a receiver and a wire between them.
+    Game::Universe universe;
+    const Game::UniversePos nearPos = Game::LocalPos(0.0f, 0.0f);
+    const GatePair gates = MakeGatePair(universe, nearPos, Game::LocalPos(60000.0f, 0.0f));
+
+    // Far enough from the gate that the fleet is still flying to it while the block is read: the
+    // fleet must be HOLDING the jump order, since crossing it clears the slot.
+    std::vector<Game::ShipId> ships;
+    for (int at = 0; at < 2; ++at)
+      ships.push_back(SpawnAt(universe, 20.0f * static_cast<float>(at), 1200.0f));
+    (void)universe.FormFleet(Game::FACTION_PLAYER, 0, ships);
+
+    Link link;
+    Game::Publisher publisher;
+    Game::Publisher::Desc desc;
+    desc.transport = &link.server;
+    desc.interest.radiusMetres = 3000.0f;
+    (void)publisher.Add(desc);
+
+    Game::SnapshotReceiver receiver;
+    std::uint64_t tick = 0;
+    for (; tick < 10; ++tick)
+      RunTick(universe, publisher, link, tick, &receiver);
+
+    Game::Universe::FleetCommand command;
+    command.kind = Game::FleetOrderKind::Jump;
+    command.gate = gates.nearStructure;
+    Assert::IsTrue(Game::Universe::FleetOrderResult::Ordered == universe.IssueFleetOrder(Game::FACTION_PLAYER, 0, command),
+                   L"the jump order was refused");
+    for (std::uint64_t at = 0; at < 10; ++at, ++tick)
+      RunTick(universe, publisher, link, tick, &receiver);
+
+    Assert::AreEqual(static_cast<std::uint32_t>(Game::FleetOrderKind::Jump), static_cast<std::uint32_t>(receiver.FleetStatusOf(0).kind),
+                     L"a fleet holding a jump order does not say Jump");
+    Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).flags & Game::FLEET_FLAG_LAUNCHING),
+                     L"a jumping fleet says it is launching -- the collision is back");
+  }
+
   TEST_METHOD(AFireEventReachesBothEnds)
   {
     // A real battle rather than a hand-built log: the point of this row is that the shot the fire
@@ -699,9 +746,8 @@ public:
     // Launching, and counting the whole composed set -- so the button says three from the moment
     // the fleet exists rather than climbing as the hulls appear.
     Assert::AreEqual(0x01u, static_cast<std::uint32_t>(receiver.FleetMask()), L"the composed slot is not held");
-    Assert::AreEqual(static_cast<std::uint32_t>(Game::FLEET_STATUS_LAUNCHING),
-                     static_cast<std::uint32_t>(receiver.FleetStatusOf(0).status & Game::FLEET_STATUS_KIND_MASK),
-                     L"a pouring fleet is not launching");
+    Assert::AreNotEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).flags & Game::FLEET_FLAG_LAUNCHING),
+                        L"a pouring fleet is not launching");
     Assert::AreEqual(3u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).count), L"the count is not the whole composed set");
 
     // The door, which is where a fleet with nobody in space is stated. Reachable exactly here: the
@@ -730,8 +776,10 @@ public:
     const Game::UniversePos second = universe.Ship(universe.Resolve(universe.FleetOf(id).members[1])).posUniverse;
     Game::Translate(centre, OffsetX(centre, second) * 0.5f, OffsetZ(centre, second) * 0.5f);
     Assert::IsTrue(Distance(receiver.FleetStatusOf(0).position, centre) < 0.2f, L"the stated position is not the fleet's centroid");
-    Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).status & Game::FLEET_STATUS_KIND_MASK),
+    Assert::AreEqual(static_cast<std::uint32_t>(Game::FleetOrderKind::Idle), static_cast<std::uint32_t>(receiver.FleetStatusOf(0).kind),
                      L"a fleet with nothing to do is not idle");
+    Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).flags & Game::FLEET_FLAG_LAUNCHING),
+                     L"a fleet that finished launching still says it is");
 
     Game::Universe::FleetCommand move;
     move.kind = Game::FleetOrderKind::Move;
@@ -740,9 +788,8 @@ public:
                    L"the order was refused");
     RunTick(universe, publisher, link, tick++);
     link.DrainInto(receiver);
-    Assert::AreEqual(static_cast<std::uint32_t>(Game::FleetOrderKind::Move),
-                     static_cast<std::uint32_t>(receiver.FleetStatusOf(0).status & Game::FLEET_STATUS_KIND_MASK),
-                     L"the standing order does not reach the status byte");
+    Assert::AreEqual(static_cast<std::uint32_t>(Game::FleetOrderKind::Move), static_cast<std::uint32_t>(receiver.FleetStatusOf(0).kind),
+                     L"the standing order does not reach the kind byte");
 
     // An act lights both bits. Close enough to be inside the engagement leash, because a threat
     // already past it stands the fleet down on the same tick it was recorded -- which is the case
@@ -753,9 +800,9 @@ public:
     universe.RecordHostileAct(universe.HandleOf(raider), universe.FleetOf(id).members[0]);
     RunTick(universe, publisher, link, tick++);
     link.DrainInto(receiver);
-    Assert::AreNotEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).status & Game::FLEET_STATUS_UNDER_ATTACK),
+    Assert::AreNotEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).flags & Game::FLEET_FLAG_UNDER_ATTACK),
                         L"an act did not light the under-attack bit");
-    Assert::AreNotEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).status & Game::FLEET_STATUS_ENGAGED),
+    Assert::AreNotEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).flags & Game::FLEET_FLAG_ENGAGED),
                         L"an act did not light the engaged bit");
 
     // The attacker gone stands the fleet down while the alert is still burning, which is the one
@@ -763,10 +810,17 @@ public:
     Assert::IsTrue(universe.DespawnShip(universe.HandleOf(raider)), L"the despawn failed");
     RunTick(universe, publisher, link, tick++);
     link.DrainInto(receiver);
-    Assert::AreNotEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).status & Game::FLEET_STATUS_UNDER_ATTACK),
+    Assert::AreNotEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).flags & Game::FLEET_FLAG_UNDER_ATTACK),
                         L"the alert went out with the fight");
-    Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).status & Game::FLEET_STATUS_ENGAGED),
+    Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).flags & Game::FLEET_FLAG_ENGAGED),
                      L"a fleet with nothing to chase is still engaged");
+    // The room this block was re-laid to leave. Zero on the wire and zero on read, so the day one of
+    // them carries something this row says what it was (Design/FleetStatus-work-order.md 5).
+    Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).stance), L"the reserved stance byte came back set");
+    constexpr std::uint8_t RESERVED_FLAGS =
+      static_cast<std::uint8_t>(~(Game::FLEET_FLAG_LAUNCHING | Game::FLEET_FLAG_ENGAGED | Game::FLEET_FLAG_UNDER_ATTACK));
+    Assert::AreEqual(0u, static_cast<std::uint32_t>(receiver.FleetStatusOf(0).flags & RESERVED_FLAGS),
+                     L"a reserved flag bit came back set");
 
     // Five at once: the widest the block ever is, and every slot decoded on its own terms.
     for (std::uint8_t slot = 1; slot < Game::FLEET_SLOTS; ++slot)

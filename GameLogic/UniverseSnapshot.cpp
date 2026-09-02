@@ -79,7 +79,7 @@ constexpr std::uint32_t SNAPSHOT_HEADER_BYTES = 1 + 1 + 4 + 4 + 4 + 8 + 4 + 1;
 // WORST case rather than against what an update happens to carry -- one number that every caller
 // and every test agree on, rather than the truer number nobody can state. It costs one record a
 // fragment: 22 rather than 23 (Design/Archive/Fleets-slice-5.md 2.2).
-constexpr std::uint32_t FLEET_STATUS_BYTES = 4 + 4 + 2 + 2 + 1 + 1;
+constexpr std::uint32_t FLEET_STATUS_BYTES = 4 + 4 + 2 + 2 + 1 + 1 + 1 + 1;
 constexpr std::uint32_t FLEET_BLOCK_MAX_BYTES = 1 + FLEET_SLOTS * FLEET_STATUS_BYTES;
 
 // kind, tick, leaveCount, destroyedCount, dockedCount, jumpedCount
@@ -526,7 +526,8 @@ void WriteShipRecord(ByteWriter& _out, const Universe& _universe, ShipId _id)
 void WriteFleetBlock(ByteWriter& _out, const Universe& _universe, FactionId _viewer)
 {
   UniversePos positions[FLEET_SLOTS];
-  std::uint8_t statuses[FLEET_SLOTS] = {};
+  std::uint8_t kinds[FLEET_SLOTS] = {};
+  std::uint8_t flags[FLEET_SLOTS] = {};
   std::uint8_t counts[FLEET_SLOTS] = {};
   std::uint8_t mask = 0;
 
@@ -573,18 +574,22 @@ void WriteFleetBlock(ByteWriter& _out, const Universe& _universe, FactionId _vie
       centre = _universe.Ships()[structure].posUniverse;
     }
 
-    // Launching outranks the standing order in what is SHOWN, not in what is done: a fleet ordered
-    // to move mid-launch is both, and the launch is the fact the player has no other way to see.
-    std::uint8_t status = (fleet.manifestCount != 0) ? FLEET_STATUS_LAUNCHING : static_cast<std::uint8_t>(fleet.orderKind);
+    // The kind and the launch are both stated, which is what splitting them bought: a fleet ordered
+    // to move mid-launch is doing both, and the old byte could say only one. Which of the two a
+    // reader leads with is the reader's business (UniverseView::FleetActivity).
+    std::uint8_t kind = static_cast<std::uint8_t>(fleet.orderKind);
+    std::uint8_t bits = 0;
+    if (fleet.manifestCount != 0)
+      bits |= FLEET_FLAG_LAUNCHING;
 
     // Engaged is the threat surviving this tick's stand-down check, which Universe has already run --
     // so the row holds a threat only while the alert, the leash and the target all still hold. The
     // two bits therefore differ exactly when the alert outlives the fight, which is what buying two
     // of them was for (Design/Archive/Fleets.md 7.2, 7.3).
     if (fleet.threat.generation != 0)
-      status |= FLEET_STATUS_ENGAGED;
+      bits |= FLEET_FLAG_ENGAGED;
     if (fleet.alertTicks > 0)
-      status |= FLEET_STATUS_UNDER_ATTACK;
+      bits |= FLEET_FLAG_UNDER_ATTACK;
 
     // Members in space plus manifest, so the count is the fleet's composed size throughout a launch
     // and does not climb as the hulls appear. The roster's own count is how many are out, and the
@@ -597,7 +602,8 @@ void WriteFleetBlock(ByteWriter& _out, const Universe& _universe, FactionId _vie
 
     mask |= static_cast<std::uint8_t>(1u << slot);
     positions[slot] = centre;
-    statuses[slot] = status;
+    kinds[slot] = kind;
+    flags[slot] = bits;
     counts[slot] = static_cast<std::uint8_t>(total);
   }
 
@@ -611,7 +617,11 @@ void WriteFleetBlock(ByteWriter& _out, const Universe& _universe, FactionId _vie
     _out.I32(ToWireSector(pos.sectorZ));
     _out.U16(pos.stepX);
     _out.U16(pos.stepZ);
-    _out.U8(statuses[slot]);
+    _out.U8(kinds[slot]);
+    _out.U8(flags[slot]);
+    // The stance, reserved. Written from a literal rather than from a variable so that the day it
+    // carries something, the compiler names this line.
+    _out.U8(0);
     _out.U8(counts[slot]);
   }
 }
@@ -841,7 +851,9 @@ bool SnapshotReceiver::Accept(std::span<const std::uint8_t> _datagram)
     const std::uint16_t stepX = in.U16();
     const std::uint16_t stepZ = in.U16();
     fleets[slot].position = FromLattice(sectorX, sectorZ, stepX, stepZ);
-    fleets[slot].status = in.U8();
+    fleets[slot].kind = in.U8();
+    fleets[slot].flags = in.U8();
+    fleets[slot].stance = in.U8();
     fleets[slot].count = in.U8();
   }
 

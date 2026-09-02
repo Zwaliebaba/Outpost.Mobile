@@ -327,15 +327,24 @@ public:
     return IsFleetHeld(_slot) ? static_cast<int>(m_receiver.FleetStatusOf(static_cast<std::uint8_t>(_slot)).count) : 0;
   }
 
-  // Bits 0-2 the kind shown, bit 6 engaged, bit 7 under attack (Design/Archive/Fleets.md 8.2).
-  [[nodiscard]] std::uint8_t FleetStatusBits(int _slot) const noexcept
+  // What the fleet is doing, as a FleetOrderKind byte (Design/Archive/Fleets.md 8.2).
+  //
+  // Two accessors and not one. There was one, returning "the status byte", and a byte that meant
+  // both a kind and a set of flags is how a kind value and a flag value came to be the same number
+  // for a while (Design/FleetStatus-work-order.md 7).
+  [[nodiscard]] std::uint8_t FleetStatusKind(int _slot) const noexcept
   {
-    return IsFleetHeld(_slot) ? m_receiver.FleetStatusOf(static_cast<std::uint8_t>(_slot)).status : std::uint8_t{0};
+    return IsFleetHeld(_slot) ? m_receiver.FleetStatusOf(static_cast<std::uint8_t>(_slot)).kind : std::uint8_t{0};
+  }
+
+  [[nodiscard]] std::uint8_t FleetStatusFlags(int _slot) const noexcept
+  {
+    return IsFleetHeld(_slot) ? m_receiver.FleetStatusOf(static_cast<std::uint8_t>(_slot)).flags : std::uint8_t{0};
   }
 
   [[nodiscard]] bool IsFleetUnderAttack(int _slot) const noexcept
   {
-    return (FleetStatusBits(_slot) & Game::FLEET_STATUS_UNDER_ATTACK) != 0;
+    return (FleetStatusFlags(_slot) & Game::FLEET_FLAG_UNDER_ATTACK) != 0;
   }
 
   // Where the server says the fleet is: the centroid of its live members, or its launch station
