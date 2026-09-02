@@ -87,12 +87,20 @@ public:
     }
   }
 
-  // **Called after a save that HAPPENED, and after no other kind.** That is the whole of ADR 0066:
-  // an acknowledgement asserts the entry is in this shard's file, so a save that was refused makes
-  // nothing durable and a link told otherwise would ack a fleet into a file that does not contain
-  // it. The call site is `ShardApp::SaveUniverse`, past the refusal's early return.
-  void NoteDurableThrough(std::uint64_t _tick) noexcept
+  // A save was attempted; _wrote says whether it happened. **That is the whole of ADR 0066**: an
+  // acknowledgement asserts the entry is in this shard's file, so a save that was REFUSED makes
+  // nothing durable, and a link told otherwise would acknowledge a fleet into a file that does not
+  // contain it -- after which the departing shard forgets an entry nothing holds.
+  //
+  // The flag is taken rather than the caller being trusted to skip the call, which is the whole
+  // reason this function has this shape. `ShardApp::SaveUniverse` used to satisfy the rule by
+  // returning early on a refusal, and that was correct and fragile in equal measure: the tidying
+  // edit that moves a call to the end of a function reads identically and silently undoes it. Here
+  // the rule is a line of code a suite can execute, not an ordering somebody has to notice.
+  void NoteSaved(bool _wrote, std::uint64_t _tick) noexcept
   {
+    if (!_wrote)
+      return;
     for (Link& link : m_links)
       link.link.NoteDurableThrough(_tick);
   }

@@ -140,19 +140,28 @@ public:
     Assert::IsFalse(links.Attach(Game::ShardId{9}, &here), L"attaching to a shard this one does not border was accepted");
   }
 
-  TEST_METHOD(NothingIsDurableUntilTheLinksAreToldAndThenAllOfThemAre)
+  TEST_METHOD(ARefusedSaveMakesNothingDurable)
   {
-    // ADR 0066's rule as this class holds it. The half that lives in ShardApp::SaveUniverse -- that
-    // this is called past the refused-save return and nowhere else -- is a code read, because a
-    // refused write is a filesystem this suite does not have; that gap is stated in
-    // Design/ShardServer-slice-3.md 9.
+    // ADR 0066's rule, executed rather than read. ShardLinks is handed WHETHER the write happened
+    // rather than trusted to be called only when it did, which is what makes this row possible: a
+    // refused write needs a filesystem that refuses, and this suite has none.
     Galaxy world = BuildGalaxy(3);
     Shard::ShardLinks links;
     Assert::AreEqual(2u, links.Open(world.shards[1]), L"the middle shard of three does not border two others");
     Assert::AreEqual(std::uint64_t{0}, links.DurableTick(), L"a link was durable through something before any save");
 
-    links.NoteDurableThrough(4242);
-    Assert::AreEqual(std::uint64_t{4242}, links.DurableTick(), L"the links were not told what had been saved");
+    // A save that was REFUSED makes nothing durable. This is the row ADR 0066 exists for, and until
+    // ShardLinks took the flag it could not be written at all: the rule lived in ShardApp's control
+    // flow, a refused write needs a filesystem that refuses, and the guard was a comment.
+    links.NoteSaved(false, 4242);
+    Assert::AreEqual(std::uint64_t{0}, links.DurableTick(), L"a refused save made something durable");
+
+    links.NoteSaved(true, 4242);
+    Assert::AreEqual(std::uint64_t{4242}, links.DurableTick(), L"a save that happened made nothing durable");
+
+    // And a later refusal does not walk it back either: what is on disk stays on disk.
+    links.NoteSaved(false, 9999);
+    Assert::AreEqual(std::uint64_t{4242}, links.DurableTick(), L"a refused save moved what was already durable");
   }
 
   TEST_METHOD(AFleetCrossesThroughTheServersOwnLinksAndNothingIsLost)
@@ -197,7 +206,7 @@ public:
 
       // Everything the arriving shard has is on disk in this test, so it may acknowledge what it
       // receives -- which is what a real deployment's save cadence buys it (ADR 0066).
-      in.NoteDurableThrough(world.shards[arriving].Tick() + 100000);
+      in.NoteSaved(true, world.shards[arriving].Tick() + 100000);
       out.Pump(world.shards[departing]);
       in.Pump(world.shards[arriving]);
       arrivedThere = world.shards[arriving].DrainInbox() > 0;
@@ -219,7 +228,7 @@ public:
       there.AdvanceTo(world.shards[departing].Tick());
       here.Poll();
       there.Poll();
-      in.NoteDurableThrough(world.shards[arriving].Tick() + 100000);
+      in.NoteSaved(true, world.shards[arriving].Tick() + 100000);
       in.Pump(world.shards[arriving]);
       out.Pump(world.shards[departing]);
     }

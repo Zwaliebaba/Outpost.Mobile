@@ -270,21 +270,23 @@ void ShardApp::SaveUniverse()
 
   std::vector<std::uint8_t> file;
   Game::WriteSaveFile(m_universe, header, file);
-  if (!Neuron::BinaryFile::WriteFileAtomic(m_savePath, file))
+  const bool wrote = Neuron::BinaryFile::WriteFileAtomic(m_savePath, file);
+
+  // Told either way, and ShardLinks is what decides. An acknowledgement asserts the entry is in this
+  // shard's FILE, so nothing is durable until a write has actually succeeded (ADR 0066) -- and the
+  // flag is handed over rather than this function being trusted to skip the call, so no later
+  // rearrangement of the lines below can undo the rule.
+  m_links.NoteSaved(wrote, m_universe.Tick());
+
+  if (!wrote)
   {
     // Said and carried on, for the game's reason: a running shard should not end because a save did,
     // and the previous save is still there.
     Say(std::format("SAVE REFUSED | tick {} | the previous save still stands", m_universe.Tick()));
     return;
   }
-  m_lastSaveTick = m_universe.Tick();
 
-  // **Here, and nowhere else.** An acknowledgement asserts the entry is in this shard's FILE, so
-  // nothing is durable until a write has actually succeeded (ADR 0066). The refusal above returns
-  // before this line and that is the whole guard: a link told it was durable when the save was
-  // refused would acknowledge a fleet into a file that does not contain it, and the departing shard
-  // would then forget an entry nothing holds.
-  m_links.NoteDurableThrough(m_universe.Tick());
+  m_lastSaveTick = m_universe.Tick();
   Say(std::format("SAVE | tick {} | {} bytes", m_universe.Tick(), file.size()));
 }
 

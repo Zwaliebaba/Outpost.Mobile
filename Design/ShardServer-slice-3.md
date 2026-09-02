@@ -164,11 +164,16 @@ never had to:
   strictly better: the server never loads a layout, so it cannot disagree with its own save. The
   design's sentence is the one that was imprecise, not this order's.
 
-- **`NoteDurableThrough` needed no guard, because the refusal already returns.** `SaveUniverse`'s
-  refused-write path returns before the success path, so the call sits after `m_lastSaveTick` and is
-  unreachable from a refusal. That is the right shape and it is also the fragile one: the easy edit is
-  to move the call to the end of the function "for tidiness", which reads identically and quietly
-  undoes ADR 0066. The comment at the call site says so in those words.
+- **ADR 0066's rule moved out of `SaveUniverse`'s control flow and into a line a suite can run.** The
+  first version satisfied the rule by returning early on a refused write, so the durability call sat
+  past it and was unreachable from a refusal. Correct, and fragile in equal measure: the tidying edit
+  that moves a call to the end of a function reads identically and silently undoes it — and it could
+  not be tested at all, because a refused write needs a filesystem that refuses and no suite here has
+  one. `ShardLinks::NoteSaved(bool _wrote, tick)` now takes **whether the write happened** rather
+  than trusting its caller to skip the call. `SaveUniverse` tells it either way, before it decides
+  what to print. The rule is three rows in `ServerTests` instead of a comment: a refused save makes
+  nothing durable, a save that happened does, and a later refusal does not walk back what is already
+  on disk.
 - **The local harness could no longer run the server at all, and now can again.** Slice 2 put
   `QuicApi` and `QuicListener` into `ShardApp`, and MsQuic is a Windows package -- so from slice 2
   onward `runshard` did not link off Windows and slice 1's "run it" acceptance had quietly lapsed. A
@@ -187,7 +192,7 @@ never had to:
 LinkTests::LinksAreOnePerNeighbourAndAShardAloneHasNone          pass
 LinkTests::ALinkWithNoTransportPumpsNothingAndIsNotAnError       pass
 LinkTests::AttachNamesAShardThisOneBorders                       pass
-LinkTests::NothingIsDurableUntilTheLinksAreToldAndThenAllOfThemAre  pass
+LinkTests::ARefusedSaveMakesNothingDurable                       pass
 LinkTests::AFleetCrossesThroughTheServersOwnLinksAndNothingIsLost   pass
 SessionTests (slice 2's five)                                    pass
 ```
@@ -221,11 +226,10 @@ number in one `Server.cfg`. On Windows the second and third would be refused and
 which is the correct behaviour and not a bug — but it makes the address decision §3 deferred concrete:
 a deployment of N shards needs N ports, and the shard number is already an argument.
 
-**The gap, stated.** Two things here run only on CI, and one thing runs nowhere. `ShardApp::Boot`'s
-link-opening and the run loop's `Pump` are exercised by the runs above through a **stubbed** QUIC, so
-the accept path is still untested off Windows — unchanged from slice 2 and the same gap. What runs
-nowhere is the half of ADR 0066 that lives in `SaveUniverse`: that `NoteDurableThrough` is reached
-only past the refused-write return. A refused write needs a filesystem that refuses, this suite has
-none, and the ordering is a code read. It is the single most consequential line in the slice and it
-is guarded by a comment; slice 4, which puts real messages on a real wire, is where that should stop
-being true.
+**The gap, stated.** `ShardApp::Boot`'s link-opening and the run loop's `Pump` are exercised by the
+runs above through a **stubbed** QUIC, so the accept path is still untested off Windows — unchanged
+from slice 2, and the same gap. What is no longer a gap is ADR 0066: it was going to be recorded here
+as a code read, because the rule lived in `SaveUniverse`'s control flow and a refused write needs a
+filesystem that refuses. Rather than write that down, the rule was moved — `NoteSaved` takes whether
+the write happened — and it is now three rows. That is the better answer to a gap than stating it,
+where the gap is reachable.
