@@ -241,13 +241,20 @@ was added without moving anything (§8).
   committed fixture's, which was written from the unchanged tree: the format did not move.
 - `python Build/CheckFormat.py` and `python Build/CheckProjectFiles.py` pass.
 
-**Compiled by CI and run by nobody here:** the four suites, `Outpost`, and clang-tidy. The rows
-this slice adds to `UniverseStateTests` — the two-ended window refusal for both bytes, the fixture
-that loads, counts, re-saves idempotently and replays 600 ticks, and the identity row — have not
-been executed on any machine at the time this section is written; CI-green is the gate the owner
-accepted on 2026-09-02, and this section is amended with the run's outcome. The mutation check in
-§5 (a local bump to 8 with one gated field) cannot be run here either, for the same reason, and
-is owed by the first slice that actually bumps.
+**Run by CI (Debug|x64, run 231 on the pull request, 2026-09-02):** the build, clang-tidy over
+`GameLogic` and `NeuronServer`, and 546 tests, of which 545 passed. The one that failed was
+`TheNewestFixtureIsTheToolsOutput`, and it failed exactly as designed: MSVC's `WriteSaveFile` for
+the shipped galaxy differs from the clang-built fixture in **110 of 124,438 bytes** — last-bit
+floating-point drift in positions and headings, the two compilers' transcendentals disagreeing by
+an ulp — and the log carried MSVC's bytes behind the `FIXTURE-BASE64|` marker. The fixture was
+replaced from that dump in the commit after the slice's, which is the regeneration path §7
+describes, used once before anybody needed it. The fixture in the tree is therefore what MSVC
+writes, and the identity row is what says so on every later commit. The window-refusal rows and
+the fixture's load, count, re-save and 600-tick replay all passed on the clang-written fixture,
+and run again on the MSVC one in the same commit's CI.
+
+**The mutation check in §5** (a local bump to 8 with one gated field) cannot be run here, since
+nothing here runs the suite, and is owed by the first slice that actually bumps.
 
 **The disk half** — the `SAVE | FORMAT` line, the sidecar, the refusal sentence — is `Outpost`,
 compiled by CI and demonstrated by nobody, as slice 5's was. It cannot be exercised until slice 3
