@@ -80,7 +80,12 @@ ground: the scene pass draws no plane and has no grid
 rather than geometry. D3D12 renderer, WM_POINTER input covering mouse and touch — including a long
 press, which the tracker learned when there was finally a menu to open — a main-screen HUD whose five
 buttons are the five fleet slots, a fleet sheet a hold opens over the bar and a modal assembly screen
-a station's hold opens, all drawn through one overlay pipeline (bitmap font atlases, coverage-mask
+a station's hold opens, and a modal galaxy map the function rail's `UNIVRS` button opens -- all 54
+systems at their real `starPos` under an isotropic fit, every gate as a line, the system the camera
+is in marked and each of the player's fleets drawn as its slot digit; tapping a system flies the
+camera there and closes it, and the other three rail buttons are not built
+([`Design/GalaxyMap.md`](Design/GalaxyMap.md)). All of it is
+drawn through one overlay pipeline (bitmap font atlases, coverage-mask
 icons, untextured quads),
 textured FX pipelines for the explosion's fragments and sprites, a two-pass body pipeline, an
 additive sky pass, NMO hulls, DXC-compiled shader model 6.7 shaders.
@@ -108,9 +113,11 @@ The save header carries a shard count, and `ShardOfSystem` cuts the galaxy into 
 tool can write one file each for. A crossing has machinery now — a `Universe` has an outbox and an
 inbox, both in the save, and `ShardLink` pumps them over a `Transport` at-least-once onto an
 idempotent apply, acknowledging only what the far end has made durable (ADRs 0065, 0066) — and
-`Server.exe` boots one shard with no window at all and serves a session over QUIC (ADR 0067). But
-**nothing runs more than one shard yet**: the two ends have never been two processes, no link is
-wired to a real transport, and the shipped count is one (ADR 0063). The
+`Server.exe` boots one shard with no window at all, serves a session over QUIC, and opens one
+`ShardLink` per neighbouring shard -- derived from its own save's gates, so it cannot disagree with
+its own file about who it borders (ADR 0067). But **nothing runs more than one shard yet**: no link
+has a transport, the two ends have never been two processes, and the shipped count is one
+(ADR 0063). The
 content pipeline is still NMO and DDS, with `Tools/DdsBake.py` baking the DDS half's mips and BC
 compression offline. Tuning is `constexpr` in `SimTuning.h`, `HullSpec.h`, `DeviceSpec.h` and
 `ViewTuning.h` (§5); what a *deployment* may change without a rebuild — the port, the backlog, one
@@ -137,8 +144,10 @@ over the same seam the game talks to itself over, reading the same `Server.cfg` 
 parser (ADRs 0043, 0067). It serves exactly one: there is no login, so a second connection is refused
 with a stated reason rather than handed the same player's fleets, and a session's interest set
 follows the centroid of its own fleets because a server has no camera to read
-([`Design/ShardServer.md`](Design/ShardServer.md) §5.4, §5.5). What it still has is no link to another
-shard and no client that dials it -- slices 3 to 5.
+([`Design/ShardServer.md`](Design/ShardServer.md) §5.4, §5.5). It also opens one link per neighbouring
+shard and tells them what it has saved, so an acknowledgement means "durable" and a refused save makes
+nothing durable (ADR 0066). What it still has is **no transport on any of those links** and no client
+that dials it -- slices 4 and 5, which are where two shards first become two processes.
 The client sees the universe through the seam, filtered to what one subscriber can see (§2).
 Where the HUD shows a number the simulation does not yet have, it is a placeholder supplied by the
 composition root, and it says so at the definition.
@@ -361,7 +370,7 @@ does not have.
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives. |
 | `Outpost/` | The game executable and the first of the tree's two composition roots (ADR 0067): presentation state, the HUD and its event log, the modal `AssemblyScreen` a station long-press opens and the modal `GalaxyScreen` the rail's `UNIVRS` button opens, boot and shutdown ordering, and `TickStats` -- what a tick cost, timed here because the simulation may not read a clock. `Outpost/Assets/` is the content the MSIX package deploys. |
 | `Server/` | The shard server: a second executable and the tree's **second composition root** ([ADR 0067](Design/Decisions/0067-the-tree-has-a-second-composition-root.md)). `ShardApp` boots one shard from `Universe.sav` (or `Universe.<n>.sav`), ticks it through `ServerHost`, saves on a cadence, and binds a `QuicListener` it serves one session from; `ShardSimulation` is the `Simulation` it drives and the one place a `Publisher::Desc` is filled on this side of the tree. It sees `NeuronCore`, `NeuronServer` and `GameLogic` and **not** `NeuronClient` — nothing here may name a graphics type, and `CheckProjectFiles.py` holds that as it holds it for the two engine libraries. [`Design/ShardServer.md`](Design/ShardServer.md). |
-| `Tests/*Tests/` | VS CppUnitTestFramework suites, one per library. |
+| `Tests/*Tests/` | VS CppUnitTestFramework suites: one per library, and `ServerTests` over the shard server's own logic. That last one is the exception to the rule and it is deliberate ([`Design/ShardServer.md`](Design/ShardServer.md) §5.6) — `Outpost` has no suite because its logic is D3D12- and WinRT-bound and untestable off a device, and `Server`'s is not. It shares no source file with `Server`: the testable half of that project is header-only by construction and `ShardApp.cpp` is the root, which is run rather than tested. **A testable thing that lands in a `.cpp` under `Server/` has landed in the wrong file.** |
 | `NeuronClient/Shaders/` | HLSL (§3). DXC compiles it, as shader model 6.7 DXIL, into `NeuronClient/CompiledShaders/`, which is build output and not in source control. |
 | `Build/` | The checks CI runs and you can run: `CheckProjectFiles.py`, `CheckFormat.py`, and `Projects.py`, which both read the project list out of the solution (§6). `CheckViewAccess.py` is here too and deliberately **not** in CI: it checks every member call `Outpost/OutpostApp.cpp` makes against the public surface of the six classes that root owns, which is a thing a Linux box can decide about a file MSVC is the only compiler for. Run it when you touch the root. |
 | `Tools/` | `UniverseGen/`, the C++ console tool that writes `Universe.sav` (ADR 0058) and the one program allowed `argv` (§5); and the content tools, stdlib Python only: the NMO ship-mesh codec and Blender add-on (`BlenderNmo/`), the OBJ→NMO converter (`ObjToNmo.py`), the DDS mip-and-BC baker (`DdsBake.py`), and their tests (`Nmo*Test.py` — the codec test needs bare python3, the Blender one the `bpy` wheel, and `NmoShippedArtTest.py` reads the shipping hulls in `Outpost/Assets/Meshes/` to assert what the game's art guarantees a consumer: every part named, bounded and collision-free under FNV-1a, which is what lets a client address one part of a hull, [`Design/Archive/Combat-slice-3.md`](Design/Archive/Combat-slice-3.md) §2.6). None of the three runs in CI, so run the one your change touches by hand. [`Design/Archive/NmoFormat.md`](Design/Archive/NmoFormat.md) is the format; nothing here is engine code, and no `.vcxproj` names it. The shipping corpus is *not* converted here: the hulls are authored as GLB in `Art/Meshes/` and converted by `Art/Meshes/GlbToNmo.py`, which sits beside them because that is where an artist looks for it ([ADR 0035](Design/Decisions/0035-ship-hulls-are-authored-in-glb-and-converted-to-nmo.md)). `ObjToNmo.py` stays as the OBJ path's record and the Blender test's fixture source. |
@@ -636,7 +645,8 @@ msbuild Outpost.slnx /p:Configuration=Debug   /p:Platform=x64
 msbuild Outpost.slnx /p:Configuration=Release /p:Platform=x64
 
 vstest.console.exe x64\Debug\NeuronCoreTests.dll x64\Debug\GameLogicTests.dll ^
-                   x64\Debug\NeuronClientTests.dll x64\Debug\NeuronServerTests.dll
+                   x64\Debug\NeuronClientTests.dll x64\Debug\NeuronServerTests.dll ^
+                   x64\Debug\ServerTests.dll
 ```
 
 The projects use `packages.config`, not `PackageReference`, so `msbuild -t:restore` does nothing
@@ -674,13 +684,13 @@ tree to the Visual Studio 2026 toolset on purpose. Two things about it are worth
 change it:
 
 - v143 will not build this tree as spelled, so a machine with only Visual Studio 2022 needs the
-  pin changed — deliberately, in all ten projects, not worked around with a condition.
+  pin changed — deliberately, in all twelve projects, not worked around with a condition.
 - Leaving `PlatformToolset` empty is **not** the portable fallback it looks like.
   `Microsoft.Cpp.Default.props` drops all the way to `v100` and the build stops with `MSB8020`
   naming Visual Studio 2010, on a runner that has 2026 installed. That is measured, not read: it is
   what a CI run did.
 
-The cost of all this is duplication — ten projects, four configurations each, the same
+The cost of all this is duplication — twelve projects, four configurations each, the same
 values written out longhand. That is the deliberate trade, and it is checked rather than trusted:
 [`Build/CheckProjectFiles.py`](Build/CheckProjectFiles.py) reads the settings that must agree out
 of every project's XML and fails the build, before anything is compiled, if one has drifted. It
@@ -693,7 +703,7 @@ in for the sheet now. A setting that drifts is always the one that mattered.
 
 ### CI
 
-[`.github/workflows/build.yml`](.github/workflows/build.yml) builds **Debug|x64** and runs all four
+[`.github/workflows/build.yml`](.github/workflows/build.yml) builds **Debug|x64** and runs all five
 test suites on every pull request, on every push to `main`, and on demand — a push to a branch with
 no pull request open runs nothing, so that a branch under review does not build twice. **It gates**
 — a red job means the branch does not
@@ -715,8 +725,27 @@ build or a test failed. Three things about it are worth knowing before you read 
 [`Build/CheckProjectFiles.py`](Build/CheckProjectFiles.py) checks that every project file is
 well-formed XML, that every source file is registered in both its `.vcxproj` and its `.filters`
 and that nothing listed is missing from disk, that file names are unique repo-wide, and that no
-engine project names the game, that no graphics header reaches the headless libraries, and that
-the settings which must agree across the ten projects (§6) do agree.
+engine project names the game, that no graphics header reaches the headless projects, and that
+the settings which must agree across the twelve projects (§6) do agree.
+
+Four more rules were added while the shard server landed, and **each exists because CI found the
+defect it now holds** — every one of them in a file only MSVC compiles, which is the seam a Linux
+box cannot see across:
+
+- **Every quoted `#include` resolves** on the including file's own directory or its project's
+  include path. A rename that edits the include as well as the type — `#include "Game::ServerConfig.h"`
+  — is invisible to everything else here. A project whose include path reaches outside the tree, as
+  the suites do for `CppUnitTest.h`, is not judged.
+- **Every `SHOUTING_CASE` constant `GameLogic` publishes is written `Game::`-qualified outside it.**
+  Only constants: a type is almost always already spelled that way, and a nested `Desc` would make
+  it noise instead of a check.
+- **Every `..\packages\` path counts the right number of directories to the tree root** for the
+  project's depth. A project written by copying one from `Tests/` keeps its `..\..\` and restores
+  nothing.
+- **A project that LINKS and names a package-backed header carries that package.** Static libraries
+  are exempt, because a `.lib` is not linked. `Server` compiled clean and failed with two unresolved
+  MsQuic symbols the first time something in it called `QuicApi::Open`.
+
 Each of those fails, unguarded, at a point that names something other than the mistake — the step
 exists because a `--` inside an XML comment cost a CI run and reported as nine identical `MSB4024`
 errors, none of which mentioned the comment. Run it yourself before you push; it takes no arguments

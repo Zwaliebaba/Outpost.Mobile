@@ -1,9 +1,23 @@
 # Shard server — a universe with no window
 
-**Status: drafted and agreed with the owner on 2026-09-02. All three of §5's decisions were put and
-taken the same day — two roots, the in-process server stays, and a client is redirected — and §5
-records each with what it costs. Slice 1 is cut ([`ShardServer-slice-1.md`](ShardServer-slice-1.md));
-slices 2 to 5 are listed in §7 and are cut one at a time, when each is next.**
+**Status: drafted and agreed with the owner on 2026-09-02, and **slices 1 to 3 have landed the same
+day** ([`ShardServer-slice-1.md`](ShardServer-slice-1.md),
+[`ShardServer-slice-2.md`](ShardServer-slice-2.md), [`ShardServer-slice-3.md`](ShardServer-slice-3.md),
+[ADR 0067](Decisions/0067-the-tree-has-a-second-composition-root.md)). Six decisions have been put and
+taken, all recorded in §5 with what each costs: two roots, the in-process server stays, a client is
+redirected, one session and the rest refused, an interest centre derived from a session's own fleets,
+and a test project for a composition root. Slices 4 and 5 are listed in §7 and are cut one at a time,
+when each is next.**
+
+**§3.4 is the one sentence this design got wrong**, and slice 3 says so: it asked for the neighbour
+set to be derived from the layout, and it is derived from the **save's own gates** — which is
+strictly better, because a server that never loads a layout cannot disagree with its own file.
+
+**What slice 4 opens with is a decision this design has not taken**: how a shard finds where its
+neighbours are listening. Three shard servers were run during slice 3 and all three bound
+`127.0.0.1:30081`, because the port is one number in one `Server.cfg`. On Windows the second and third
+would be refused and would exit non-zero — correct behaviour, and the demonstration that a deployment
+of N shards needs N addresses.
 
 The player-facing sentence is that there isn't one: **nobody sees this, and that is the point.**
 What a player eventually gets from it is a universe that is still there when they close the game,
@@ -37,15 +51,29 @@ This is a **composition root**, not a system. Almost every part exists and has e
   comment that has been waiting for this document since it was written: *"A dedicated server would
   call `Publisher::Add` once per session instead, which is the whole of what changes there."*
 - **`ServerConfig` and `Server.cfg`** — port, backlog, interest, orders per tick, save cadence,
-  read by the composition root alone (ADR 0043).
+  read by the composition root alone (ADR 0043). *Amended by slice 1: it lives in `GameLogic` now,
+  not in `Outpost`, because two roots reading one deployment's file must not have two parsers of it
+  ([ADR 0067](Decisions/0067-the-tree-has-a-second-composition-root.md)). Reading the file is still
+  the root's and only the root's.*
 - **`UniverseGen` writing one file per shard**, and a save that carries its shard and refuses a file
   whose header and body disagree (ADR 0057, 0058, 0063).
 - **`ShardLink`**, and a handoff that crosses a transport, acknowledges when durable, and re-sends
-  until it does (ADR 0065, 0066).
+  until it does (ADR 0065, 0066). *Amended by slice 3: it needed one change after all. It sent the
+  whole outbox down every link, which is correct only while a shard has one neighbour, so `Pump` now
+  takes the peer's `ShardId` and carries only what is for it.*
 - **QUIC, a listener, a reliable lane**, and a boot that fails rather than falling back (ADR 0028).
 
 **What is missing is an executable and the ordering inside it.** That is genuinely all — which is
 why this design is short and why its risk is not "can it be built" but "does it duplicate `Outpost`".
+
+**Amended 2026-09-02, with slices 1 to 3: the executable now exists**, and the paragraph above turned
+out to be right about the size and wrong about one thing. Nothing in `NeuronServer` needed changing —
+`ServerHost` ran without a window on the first attempt, and a universe it ticked is byte-identical to
+one ticked directly. What did need changing was in `GameLogic`, which this section listed as done:
+`ServerConfig` moved into it, `Universe` gained the neighbour derivation, and `ShardLink` gained the
+peer filter above. **The risk this section named was the wrong one.** It said the risk was duplicating
+`Outpost`, and no duplication has appeared; the actual cost has been four defects that only MSVC
+could see, each now held by a check in `Build/CheckProjectFiles.py`.
 
 ## 3. The shape
 

@@ -58,9 +58,10 @@ five fleets, and everything below follows from that. You can:
 - **Read the universe** through the HUD: minimap with the sector pair, your fleets' digits on it
   wherever they are, contact count, event log, and a function rail. `UNIVRS` on the rail opens the
   galaxy map — all 54 systems at their real positions, every gate as a line, the system you are in
-  marked, and each of your fleets as its digit on the system it is in. It is a map to read, not yet a
-  map to point at: tapping a system does nothing until the next slice. `Esc` or the button closes it;
-  the other three rail screens are not built yet.
+  marked, and each of your fleets as its digit on the system it is in. **Tapping a system flies the
+  camera there and closes the map**; tapping empty space does nothing, and there is no way yet to send
+  a fleet across several gates from here. `Esc` or the button closes it; the other three rail screens
+  are not built yet.
 
 A second faction lives 1.2 km northeast: a Vandal station with three Interceptors walking a ring
 around it. They are drawn red, they count as contacts, and they cannot be selected or ordered — the
@@ -110,8 +111,9 @@ without a rebuild lives in `Outpost/Assets/Server.cfg`. The networking is real Q
 stack, and it is still one client in one process on `127.0.0.1` with a self-signed certificate the
 client does not validate. `Server.exe` runs a shard without a window, reads the same `Server.cfg`
 through the same parser, and serves **one** session over the same seam — there is no login, so a
-second connection is refused rather than handed the same player's fleets. It still talks to no other
-shard, and nothing yet dials it but a test harness.
+second connection is refused rather than handed the same player's fleets. It opens one link per
+neighbouring shard, worked out from its own save's gates, but none of those links has a transport
+yet: nothing dials it but a test harness, and two shards have never been two processes.
 
 **The save survives the build.** `Universe.sav` is a versioned file: a boot restores it or stops
 naming why, and a file in an older format is migrated on read rather than refused, with the file it
@@ -154,7 +156,7 @@ even name a graphics type, and `Build/CheckProjectFiles.py` holds that (ADR 0067
 | `NeuronClient/` | Everything that names a graphics type: D3D12 device, scene and text renderers, the planet and star-field pipelines, the explosion FX, the content readers |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives |
 | `Outpost/` | The game executable: composition root, presentation state, HUD, the fleet sheet, the station assembly screen and the galaxy map, and `Outpost/Assets/` |
-| `Server/` | The shard server: the second composition root, a console executable that boots one shard, ticks it, saves it and serves one session over QUIC, with no window anywhere in it (ADR 0067) |
+| `Server/` | The shard server: the second composition root, a console executable that boots one shard, ticks it, saves it, serves one session over QUIC and opens a link to each neighbouring shard, with no window anywhere in it (ADR 0067) |
 | `Tools/UniverseGen/` | The console tool that writes `Universe.sav` — the one thing in the tree that authors a universe (ADR 0058) |
 
 The simulation ticks at a fixed rate, is bit-identical across two runs of the same seed, and depends
@@ -180,11 +182,12 @@ nuget restore Outpost\packages.config -PackagesDirectory packages    (and one pe
 msbuild Outpost.slnx /p:Configuration=Debug /p:Platform=x64
 
 vstest.console.exe x64\Debug\NeuronCoreTests.dll x64\Debug\GameLogicTests.dll ^
-                   x64\Debug\NeuronClientTests.dll x64\Debug\NeuronServerTests.dll
+                   x64\Debug\NeuronClientTests.dll x64\Debug\NeuronServerTests.dll ^
+                   x64\Debug\ServerTests.dll
 ```
 
 The projects use `packages.config`, so `msbuild -t:restore` does nothing for them — restore is
-`nuget restore` per config file. CI builds `Debug|x64` and runs all four suites on every pull
+`nuget restore` per config file. CI builds `Debug|x64` and runs all five suites on every pull
 request and every push to `main`, and it gates.
 
 A good boot prints `LINK | QUIC` in the event log. There is no fallback link: a boot that cannot
