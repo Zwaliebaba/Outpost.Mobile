@@ -163,3 +163,69 @@ never had to:
   derived from the layout, as `ShardServer.md` §3.4 did. It is derived from the **gates**, which is
   strictly better: the server never loads a layout, so it cannot disagree with its own save. The
   design's sentence is the one that was imprecise, not this order's.
+
+- **`NoteDurableThrough` needed no guard, because the refusal already returns.** `SaveUniverse`'s
+  refused-write path returns before the success path, so the call sits after `m_lastSaveTick` and is
+  unreachable from a refusal. That is the right shape and it is also the fragile one: the easy edit is
+  to move the call to the end of the function "for tidiness", which reads identically and quietly
+  undoes ADR 0066. The comment at the call site says so in those words.
+- **The local harness could no longer run the server at all, and now can again.** Slice 2 put
+  `QuicApi` and `QuicListener` into `ShardApp`, and MsQuic is a Windows package -- so from slice 2
+  onward `runshard` did not link off Windows and slice 1's "run it" acceptance had quietly lapsed. A
+  scratch stub for the two classes restores it. It is worth recording that the first version of that
+  stub linked against a stale object and produced a `free()` of a stack address inside `Boot`, which
+  looked exactly like a real memory bug in tree code and was not one: `QuicApi` has an out-of-line
+  constructor and destructor (its `DevCertificate` is behind a `unique_ptr`), the stub did not supply
+  them, and a stale `ShardApp.o` had been linked against something else. Rebuilding every object from
+  one set of flags found it.
+
+## 9. What was verified, and how
+
+**Ten rows in `ServerTests`, run against the real `ShardLinks` and the real `GameLogic`:**
+
+```
+LinkTests::LinksAreOnePerNeighbourAndAShardAloneHasNone          pass
+LinkTests::ALinkWithNoTransportPumpsNothingAndIsNotAnError       pass
+LinkTests::AttachNamesAShardThisOneBorders                       pass
+LinkTests::NothingIsDurableUntilTheLinksAreToldAndThenAllOfThemAre  pass
+LinkTests::AFleetCrossesThroughTheServersOwnLinksAndNothingIsLost   pass
+SessionTests (slice 2's five)                                    pass
+```
+
+The last one is the slice end to end: two shards, each with its links opened off its own gates and
+attached to the two ends of one wire, a fleet ordered through a gate, and the crossing driven by
+`ShardLinks::Pump` rather than by the test's own plumbing.
+
+**A census row failed first, and again the test was wrong rather than the code — in the opposite
+direction to last time.** `CrossShard-slice-4.md` §9 records a row that read LOW because ships sat in
+the outbox, delivered nowhere, and the fix was to add the held count. So this row's helper added it
+too, and read HIGH: measured at the moment of arrival, three ships and three held entries, which is
+six added and three not. After delivery the ships exist on the arriving side and the outbox entry is
+a **duplicate** held only until it is acknowledged — which is what at-least-once means. Whether an
+outbox entry counts depends entirely on when you ask, and the helper now says which moment it is for.
+
+**Three shard servers, run:** a real three-shard set written by a tool, and each server deriving its
+own neighbours from its own file.
+
+```
+SHARD 0 | ... 118 ships 54 gates | LINKS | 1 | shard 0 borders 1
+SHARD 1 | ... 101 ships 43 gates | LINKS | 2 | shard 1 borders 0, 2
+SHARD 2 | ...  88 ships 39 gates | LINKS | 1 | shard 2 borders 1
+```
+
+That is §4.2's symmetry and §2.1's path, produced by three processes reading three files rather than
+by a test asserting about a data structure.
+
+**A finding for slice 4, from that run:** all three bound `127.0.0.1:30081`, because the port is one
+number in one `Server.cfg`. On Windows the second and third would be refused and would exit non-zero,
+which is the correct behaviour and not a bug — but it makes the address decision §3 deferred concrete:
+a deployment of N shards needs N ports, and the shard number is already an argument.
+
+**The gap, stated.** Two things here run only on CI, and one thing runs nowhere. `ShardApp::Boot`'s
+link-opening and the run loop's `Pump` are exercised by the runs above through a **stubbed** QUIC, so
+the accept path is still untested off Windows — unchanged from slice 2 and the same gap. What runs
+nowhere is the half of ADR 0066 that lives in `SaveUniverse`: that `NoteDurableThrough` is reached
+only past the refused-write return. A refused write needs a filesystem that refuses, this suite has
+none, and the ordering is a code read. It is the single most consequential line in the slice and it
+is guarded by a comment; slice 4, which puts real messages on a real wire, is where that should stop
+being true.

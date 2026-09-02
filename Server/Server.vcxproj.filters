@@ -15,6 +15,9 @@
     <ClInclude Include="ShardSimulation.h">
       <Filter>Project Files</Filter>
     </ClInclude>
+    <ClInclude Include="ShardLinks.h">
+      <Filter>Project Files</Filter>
+    </ClInclude>
     <ClInclude Include="ShardSession.h">
       <Filter>Project Files</Filter>
     </ClInclude>

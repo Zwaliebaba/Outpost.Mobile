@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ShardLinks.h"
 #include "ShardSimulation.h"
 
 #include "ServerHost.h"
@@ -69,6 +70,11 @@ private:
   Game::Universe m_universe;
   ShardSimulation m_simulation{m_universe};
   Neuron::ServerHost m_host;
+
+  // One per neighbouring shard, from the save's own gates. Every one of them has no transport this
+  // slice, so they pump nothing: slice 4 is what dials a neighbour, and this slice is the wiring and
+  // the durability rule that has to be right before there is anything on the wire to get wrong.
+  ShardLinks m_links;
 
   Neuron::QuicApi m_quic;
   Neuron::QuicListener m_listener;

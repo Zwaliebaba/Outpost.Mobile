@@ -17,6 +17,9 @@
     <ClCompile Include="pch.cpp">
       <Filter>Project Files</Filter>
     </ClCompile>
+    <ClCompile Include="LinkTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="SessionTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

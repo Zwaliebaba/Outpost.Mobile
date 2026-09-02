@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <format>
 #include <span>
+#include <string>
 
 namespace Shard
 {
@@ -149,6 +150,23 @@ bool ShardApp::Boot(std::uint16_t _shard)
     Say(std::format("MIGRATED | state format {} to {} | the next save writes the newer one", static_cast<unsigned>(header.stateFormat),
                     static_cast<unsigned>(Game::UNIVERSE_STATE_FORMAT)));
 
+  // The links, from the universe's own gates rather than from a layout this process does not have
+  // (Design/ShardServer-slice-3.md 2.1). None of them has a transport yet, so none of them pumps
+  // anything; slice 4 is what dials a neighbour.
+  const std::uint32_t neighbours = m_links.Open(m_universe);
+  if (neighbours == 0)
+  {
+    Say("LINKS | none | this shard borders no other, so nothing can cross");
+  }
+  else
+  {
+    std::string peers;
+    for (std::uint32_t at = 0; at < neighbours; ++at)
+      peers += std::format("{}{}", at ? ", " : "", static_cast<unsigned>(m_links.PeerAt(at)));
+    Say(std::format("LINKS | {} | shard {} borders {} | no transport yet, so nothing crosses", neighbours, static_cast<unsigned>(m_shard),
+                    peers));
+  }
+
   // Last, because a port bound before the universe was read is a port held open by a process about
   // to exit -- and because everything above can fail without anything to close.
   return OpenListener();
@@ -260,6 +278,13 @@ void ShardApp::SaveUniverse()
     return;
   }
   m_lastSaveTick = m_universe.Tick();
+
+  // **Here, and nowhere else.** An acknowledgement asserts the entry is in this shard's FILE, so
+  // nothing is durable until a write has actually succeeded (ADR 0066). The refusal above returns
+  // before this line and that is the whole guard: a link told it was durable when the save was
+  // refused would acknowledge a fleet into a file that does not contain it, and the departing shard
+  // would then forget an entry nothing holds.
+  m_links.NoteDurableThrough(m_universe.Tick());
   Say(std::format("SAVE | tick {} | {} bytes", m_universe.Tick(), file.size()));
 }
 
@@ -282,6 +307,12 @@ std::uint64_t ShardApp::Run()
     // Every tick it runs applies this pass's orders and publishes to every session, because that is
     // what ShardSimulation::Step does; nothing here reaches a subscriber directly.
     const int steps = m_host.Advance(frameClock.Tick());
+
+    // After the ticks, which is the order Design/ShardServer.md 3.5 states: a handoff received here
+    // lands in the inbox and is drained by the first tick of the next pass, on a stated tick. Once
+    // per pass and not per tick, for the same reason the listener is: a transport's timing has no
+    // business inside the replay contract.
+    m_links.Pump(m_universe);
 
     // Between ticks, which is the codec's whole contract: Advance ran every tick this pass owed and
     // the next cannot start until the next Advance, so the universe is at rest here.

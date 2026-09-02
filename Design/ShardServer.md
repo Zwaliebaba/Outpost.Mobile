@@ -179,7 +179,7 @@ Cut one at a time, when each is next.
 |---|---|---|---|---|---|
 | 1 | [The executable: config, save, run loop, clean shutdown. **One shard, no clients, no links**](ShardServer-slice-1.md) | `Server` | M | — | [0067](Decisions/0067-the-tree-has-a-second-composition-root.md) — **landed 2026-09-02** |
 | 2 | [Sessions: the listener, one publisher subscriber per connection](ShardServer-slice-2.md) | `Server` | M | 1 | §5.4, §5.5 |
-| 3 | [Links: a `ShardLink` per neighbour, derived from the save's own gates; `NoteDurableThrough` after each save, and a twelfth project to test it in](ShardServer-slice-3.md) | `Server`+`GameLogic`+`Tests` | M | 1, 2 | §5.6 |
+| 3 | [Links: a `ShardLink` per neighbour, derived from the save's own gates; `NoteDurableThrough` after each save, and a twelfth project to test it in](ShardServer-slice-3.md) | `Server`+`GameLogic`+`Tests` | M | 1, 2 | §5.6 — **landed 2026-09-02** |
 | 4 | Two shards, two processes, a fleet crossing between them — **`CrossShard.md`'s slice 5, server half** | `Server` | M | 2, 3 | — |
 | 5 | The client follows its camera across: the redirect §5.3 chose, and a reconnect on a crossing | `Server`+`Outpost` | L | 4 | ADR: a client is redirected, not configured |
 
