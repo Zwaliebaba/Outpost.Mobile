@@ -652,6 +652,13 @@ public:
   // fleet that survives a tick, because a FleetId is an index and rows retire.
   [[nodiscard]] FleetId FleetInSlot(OwnerId _owner, std::uint8_t _slot) const noexcept;
 
+  // A faction is not an owner, and the compiler is what says so. OwnerId is a u64 and FactionId a
+  // u8, so a faction passed here would convert silently and compare a 0 against an owner that is
+  // never 0 -- which is exactly what happened once: the jump pass looked its fleet up by
+  // ownerFaction, found nothing, and the crossing fleet retired on the tick it arrived. Two suites
+  // caught it and no compiler did (Design/OwnerKey-work-order.md 6).
+  FleetId FleetInSlot(FactionId, std::uint8_t) const = delete;
+
   // The fleet a ship is in, or INVALID_FLEET_ID. StationAt's shape and StationAt's reason: through
   // Resolve rather than by comparing stored ids, because swap-and-pop moves ids and a row holding a
   // raw one would name whichever ship arrived in that index (ADR 0005).
@@ -995,6 +1002,7 @@ private:
   // both refuse a slot past the fifth and a slot already held, and neither may invent its own answer
   // to that question.
   [[nodiscard]] bool CanTakeSlot(OwnerId _owner, std::uint8_t _slot) const noexcept;
+  bool CanTakeSlot(FactionId, std::uint8_t) const = delete;
 
   // Puts a fleet's standing order onto the ships that are out, through the same calls a player's
   // click has always gone through. Called when the order is given and again whenever a launch adds
@@ -1225,6 +1233,11 @@ private:
     std::uint32_t hullId = 0;
     FactionId factionId = FACTION_PLAYER;
     std::uint32_t hullPoints = 0;
+
+    // Whose fleet this is, carried beside the faction because the far side looks the row up by the
+    // OWNER and a faction cannot answer that (ADR 0062). Cross-shard, this is what a handoff has to
+    // carry for the arriving universe to find the slot at all (Design/CrossShard.md 5).
+    OwnerId owner = OWNER_NOBODY;
 
     // Where this ship is going, carried per jumper rather than per pass. Two fleets can cross
     // through two different gates on one tick, and a single destination held on the pass would send

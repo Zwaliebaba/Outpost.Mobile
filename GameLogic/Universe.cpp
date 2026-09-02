@@ -1165,7 +1165,7 @@ void Universe::StepJumps()
 
       const ShipState& ship = m_ships[member];
       m_jumpScratch.push_back(Jumper{fleet.members[at], EntityIdOf(fleet.members[at]), ship.hullId, ship.factionId, ship.hullPoints,
-                                     arrival, exitRad, fleet.ownerFaction, fleet.slot, at});
+                                     fleet.owner, arrival, exitRad, fleet.ownerFaction, fleet.slot, at});
       ++placed;
     }
 
@@ -1202,7 +1202,7 @@ void Universe::StepJumps()
     // holding handles that no longer resolve, StepFleets prunes every one of them at the end of this
     // same tick, and the fleet retires on the tick it arrived -- the ships would be there and the
     // fleet would not (Design/Universe.md 6.2).
-    const FleetId fleetId = FleetInSlot(jumper.ownerFaction, jumper.slot);
+    const FleetId fleetId = FleetInSlot(jumper.owner, jumper.slot);
     if (fleetId != INVALID_FLEET_ID && jumper.memberIndex < m_fleets[fleetId].memberCount)
       m_fleets[fleetId].members[jumper.memberIndex] = HandleOf(born);
   }

@@ -153,3 +153,33 @@ fixture row now exercises a real migration for the first time, and
 `TheNewestFixtureIsTheToolsOutput` correctly stands down, because the newest fixture is a format
 behind and that row is written to skip exactly then. CI-green is the gate the owner set on
 2026-09-02.
+
+---
+
+## 8. What CI caught that nothing here did
+
+**The jump pass looked its fleet up by the faction, and the compiler was happy.** `Jumper` — the
+record a crossing carries from the near side to the far one — stored `ownerFaction` and nothing
+else about who owned the fleet, so `FleetInSlot(jumper.ownerFaction, jumper.slot)` passed a
+`FactionId` where an `OwnerId` was wanted. `FACTION_PLAYER` is 0 and `OWNER_LOCAL` is 1, so the
+lookup found nothing, the arriving members were never written back into their row, `StepFleets`
+pruned every handle at the end of the same tick, and the fleet retired on the tick it arrived. Two
+`JumpTests` rows said so — `AFleetJumpsWholeOrNotAtAll` and `AJumpClearsIntentAndTheAlert` — out of
+551 tests, and everything else passed.
+
+**This is the exact hazard ADR 0062 names as the reason for the `Issuer` pair, and the pair did not
+cover it.** The pair guards a *call* that needs both halves; this call site needed one half, read
+out of a stored record, and a `u8` converts to a `u64` in silence. So the fix is in two parts:
+`Jumper` carries the owner — which cross-shard needs anyway, since a handoff has to tell the
+arriving universe whose slot to find — and `FleetInSlot` and `CanTakeSlot` each gain a **deleted
+`FactionId` overload**, so that passing a faction where an owner belongs is now a compile error
+rather than a lookup that quietly answers nothing.
+
+**What this says about the local checks.** Everything in §7 passed both before and after the bug:
+the library compiled, the matchup matrix was unchanged, the migration round-tripped, every test
+file syntax-checked. None of them exercises a gate crossing, and the one instrument that would have
+is the suite this container cannot run. The fix was verified here by writing the failing row out as
+a standalone program against the same `GameLogic` — a fleet of three, one straggler outside the
+gate, ordered through it — which now crosses whole at tick 1,828 with all three members and its
+row alive. That is the row CI failed, reproduced and passing, rather than an argument that it
+should.
