@@ -238,6 +238,9 @@
     <None Include="Assets\Meshes\Structure.nmo">
       <Filter>Assets\Meshes</Filter>
     </None>
+    <None Include="Assets\Universe.sav">
+      <Filter>Assets</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <AppxManifest Include="Package.appxmanifest">
