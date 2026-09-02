@@ -28,7 +28,9 @@ void SpawnStartingFleet(Universe& _universe)
     ships.push_back(_universe.SpawnShip(LocalPos(x, 0.0f), 0.0f, static_cast<std::uint32_t>(STARTING_FLEET[at]), FACTION_PLAYER));
   }
 
-  (void)_universe.FormFleet(FACTION_PLAYER, 0, ships);
+  // The single player this build has, which genesis has to name because there is no login to ask
+  // (Design/OwnerKey-work-order.md). A grep for OWNER_LOCAL finds every place that assumes one.
+  (void)_universe.FormFleet(Issuer{OWNER_LOCAL, FACTION_PLAYER}, 0, ships);
 }
 
 // One Vanguard station at every planet site of every system in the galaxy.

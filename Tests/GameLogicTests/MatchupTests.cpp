@@ -6,6 +6,13 @@ namespace GameLogicTests
 {
 namespace
 {
+// One owner per faction, which is what every row here means: these suites were written when the key
+// WAS the faction, and this keeps each of them saying exactly what it said (Design/OwnerKey-work-order.md).
+[[nodiscard]] Game::Issuer IssuerFor(Game::FactionId _faction)
+{
+  return Game::Issuer{(_faction == Game::FACTION_PLAYER) ? Game::OWNER_LOCAL : Game::OwnerId{_faction} + 1u, _faction};
+}
+
 // The matchup matrix: every combatant hull against every other under the shipped tables, with the
 // outcome of each cell written down (Design/MatchupMatrix-work-order.md). It moves no number. It is
 // the instrument combat slice 5 measured with and did not commit, brought into the suite so that a
@@ -161,7 +168,7 @@ void OrderAttack(Game::Universe& _universe, Game::FactionId _faction, Game::Ship
   Game::Universe::FleetCommand command;
   command.kind = Game::FleetOrderKind::Attack;
   command.target = _target;
-  Assert::IsTrue(_universe.IssueFleetOrder(_faction, 0, command) == Game::Universe::FleetOrderResult::Ordered,
+  Assert::IsTrue(_universe.IssueFleetOrder(IssuerFor(_faction), 0, command) == Game::Universe::FleetOrderResult::Ordered,
                  L"an attack order was refused");
 }
 
@@ -227,11 +234,11 @@ void Arrange(Game::Universe& _universe, std::span<const Game::HullId> _mine, Gam
   }
   const Game::ShipId theirs = Spawn(_universe, 0.0f, _apartMetres, DirectX::XM_PI, _theirs, Game::FACTION_VANDAL);
   const Game::ShipId theirFleet[] = {theirs};
-  Assert::IsTrue(_universe.FormFleet(Game::FACTION_PLAYER, 0, std::span<const Game::ShipId>(mine.data(), mine.size())) !=
-                   Game::Universe::INVALID_FLEET_ID,
+  Assert::IsTrue(_universe.FormFleet(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 0,
+                                     std::span<const Game::ShipId>(mine.data(), mine.size())) != Game::Universe::INVALID_FLEET_ID,
                  L"the player's fleet did not form");
-  Assert::IsTrue(_universe.FormFleet(Game::FACTION_VANDAL, 0, std::span<const Game::ShipId>(theirFleet, 1)) !=
-                   Game::Universe::INVALID_FLEET_ID,
+  Assert::IsTrue(_universe.FormFleet(Game::Issuer{Game::OwnerId{2}, Game::FACTION_VANDAL}, 0,
+                                     std::span<const Game::ShipId>(theirFleet, 1)) != Game::Universe::INVALID_FLEET_ID,
                  L"the hostile fleet did not form");
   OrderAttack(_universe, Game::FACTION_PLAYER, theirs);
   OrderAttack(_universe, Game::FACTION_VANDAL, mine.front());

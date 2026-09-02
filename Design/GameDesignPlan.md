@@ -1,6 +1,6 @@
 # The game design plan — the review as slices, under the pillars
 
-**Status: drafted 2026-09-02; phase 0 is cut, slices 1, 2, 4 and 5 have their work orders, and nothing has landed.** This plan converts
+**Status: drafted 2026-09-02; phase 0 is cut, every slice has its work order, and nothing has landed.** This plan converts
 [`GameDesignReview.md`](GameDesignReview.md) (tree at `caf9814`) into ordered work in the shape
 `Design/README.md` defines: one slice, one branch, one pull request. It is filtered through
 [ADR 0060](Decisions/0060-the-game-is-its-own-benchmark.md), the owner's pillars of 2026-09-02, so
@@ -97,7 +97,7 @@ Cut now. Five slices, no feature, each leaving one door.
 |---|---|---|---|---|---|---|
 | 1 | [The save migrates forward](SaveMigration-work-order.md) | `GameLogic` + `Outpost` | M | — | E14 (migration half) | ADR |
 | 2 | [The wire is laid once: the status collision, a flags byte, a reserved byte, a dropped-send log line](FleetStatus-work-order.md) | `GameLogic` + `Outpost` | M | 1 | C1 slice 0, cross-cutting | |
-| 3 | An owner key beside the faction, with one owner | `GameLogic` | M | 1 | E1 (key half) | ADR |
+| 3 | [An owner key beside the faction, with one owner](OwnerKey-work-order.md) | `GameLogic` + `Outpost` | M | 1, 2 | E1 (key half) | ADR |
 | 4 | [The tick is measured: a per-tick statistics block beside the save](TickTelemetry-work-order.md) | `Outpost` | S | — | C5 slice 0, E7 counters | |
 | 5 | [The matchup matrix test pins the balance](MatchupMatrix-work-order.md) | `Tests/GameLogicTests` | S | — | C13 slice 0 | |
 

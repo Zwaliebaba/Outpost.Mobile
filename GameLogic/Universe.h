@@ -80,6 +80,12 @@ public:
   struct Docking
   {
     ShipHandle station;
+
+    // Who this ship is docking FOR, carried from the order to the ledger row it becomes. A ship has
+    // a faction and no owner (ADR 0013), so without this the row could only be attributed by
+    // guessing, and a guess would put every hull a player ever docked into one faction-wide pile --
+    // which is exactly what slice 3 exists to stop (Design/OwnerKey-work-order.md).
+    OwnerId owner = OWNER_NOBODY;
     bool active = false;
   };
 
@@ -96,7 +102,13 @@ public:
   struct DockedShip
   {
     std::uint32_t hullId = 0;
+
+    // Whose hull this is. The faction is what it FLIES AS when it launches -- its identity on the
+    // wire, ADR 0013 -- and the owner is who may draw it back out. They were one byte until slice 3
+    // of Design/GameDesignPlan.md, which meant one ledger for every player who shared a faction
+    // (Design/OwnerKey-work-order.md).
     FactionId factionId = FACTION_PLAYER;
+    OwnerId owner = OWNER_NOBODY;
   };
 
   // What a station is made with. All content, passed in by whoever makes the station, the way a
@@ -244,7 +256,10 @@ public:
   // before there is a test that can reach it.
   struct Fleet
   {
+    // What its ships fly as, and who commands it. The faction decides who shoots at them and who
+    // takes their dock; the owner decides whose five slots this is one of and whose orders it obeys.
     FactionId ownerFaction = FACTION_PLAYER;
+    OwnerId owner = OWNER_NOBODY;
 
     // Which of the owner's FLEET_SLOTS this one holds: unique among that owner's live fleets.
     std::uint8_t slot = 0;
@@ -531,7 +546,7 @@ public:
   // An accepted order clears each ship's patrol (an explicit order outranks a standing behavior) and
   // issues the first approach leg immediately, so an order feels like an order rather than like a
   // next-tick suggestion.
-  DockOrderResult IssueDockOrder(std::span<const ShipId> _ships, ShipId _station, FactionId _issuerFaction);
+  DockOrderResult IssueDockOrder(std::span<const ShipId> _ships, ShipId _station, const Issuer& _issuer);
 
   // A ship's docking intent. Server-side only, like a route and like a patrol: an intent is what the
   // snapshot exists to withhold. Exposed for tests and for a debug overlay.
@@ -631,11 +646,11 @@ public:
   // starting fleet needs. A composed fleet begins with no members at all, so it cannot go through
   // this function -- what the two share is the slot gate, and they share it by both asking
   // CanTakeSlot rather than by one calling the other.
-  FleetId FormFleet(FactionId _ownerFaction, std::uint8_t _slot, std::span<const ShipId> _ships);
+  FleetId FormFleet(const Issuer& _owner, std::uint8_t _slot, std::span<const ShipId> _ships);
 
   // The fleet in one of an owner's slots, or INVALID_FLEET_ID. This pair is the only reference to a
   // fleet that survives a tick, because a FleetId is an index and rows retire.
-  [[nodiscard]] FleetId FleetInSlot(FactionId _ownerFaction, std::uint8_t _slot) const noexcept;
+  [[nodiscard]] FleetId FleetInSlot(OwnerId _owner, std::uint8_t _slot) const noexcept;
 
   // The fleet a ship is in, or INVALID_FLEET_ID. StationAt's shape and StationAt's reason: through
   // Resolve rather than by comparing stored ids, because swap-and-pop moves ids and a row holding a
@@ -666,7 +681,7 @@ public:
   // A station id past the table, or one whose structure is gone, reads zeros too. That is what a
   // ledger request over the wire is answered with, and it is the honest reading: an absent station
   // holds nothing.
-  void LedgerFor(StationId _station, FactionId _asker, std::span<std::uint32_t> _outCounts) const noexcept;
+  void LedgerFor(StationId _station, const Issuer& _asker, std::span<std::uint32_t> _outCounts) const noexcept;
 
   // What happened to a compose. Returned for the local host's log and for tests; nothing returns
   // over the wire, because an order is fire-and-forget and the client's affordance already knew --
@@ -702,7 +717,7 @@ public:
   // business, which is the line Design/Archive/Stations.md 6.2 drew around the ledger. The rows leave
   // the ledger now rather than one per launch, so a second compose cannot claim them and a screen
   // that offered them cannot disagree with what the launch finds.
-  ComposeResult ComposeFleet(StationId _station, std::uint8_t _slot, std::span<const std::uint32_t> _hullCounts, FactionId _issuerFaction);
+  ComposeResult ComposeFleet(StationId _station, std::uint8_t _slot, std::span<const std::uint32_t> _hullCounts, const Issuer& _issuer);
 
   // What happened to a fleet order. Returned for the local host's log and for tests, like every
   // other order result here; nothing returns over the wire.
@@ -757,7 +772,7 @@ public:
   // An accepted order replaces whatever standing order was there. Stop is the one kind that leaves
   // the row Idle rather than holding one: it is a brake, and "order the fleet to where it already
   // is" is a formation shuffle rather than a stop.
-  FleetOrderResult IssueFleetOrder(FactionId _issuerFaction, std::uint8_t _slot, const FleetCommand& _command);
+  FleetOrderResult IssueFleetOrder(const Issuer& _issuer, std::uint8_t _slot, const FleetCommand& _command);
 
   // One fixed tick. The only thing in the game that advances simulation state.
   //
@@ -979,7 +994,7 @@ private:
   // Whether _ownerFaction could take _slot right now. The one gate FormFleet and ComposeFleet share:
   // both refuse a slot past the fifth and a slot already held, and neither may invent its own answer
   // to that question.
-  [[nodiscard]] bool CanTakeSlot(FactionId _ownerFaction, std::uint8_t _slot) const noexcept;
+  [[nodiscard]] bool CanTakeSlot(OwnerId _owner, std::uint8_t _slot) const noexcept;
 
   // Puts a fleet's standing order onto the ships that are out, through the same calls a player's
   // click has always gone through. Called when the order is given and again whenever a launch adds
@@ -1138,6 +1153,11 @@ private:
     StationId station = INVALID_STATION_ID;
     std::uint32_t hullId = 0;
     FactionId factionId = FACTION_PLAYER;
+
+    // Whose the hull is, carried from the docking order rather than derived here: the order knew
+    // who asked, and by the time a ship is captured that is the only place it was ever written
+    // (Design/OwnerKey-work-order.md).
+    OwnerId owner = OWNER_NOBODY;
 
     // A garrison ship coming home writes no ledger row: a garrison is not a guest, and the hull
     // returns to the complement by simply no longer being counted (Design/Archive/Stations.md 8.3).

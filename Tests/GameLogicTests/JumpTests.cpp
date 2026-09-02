@@ -50,7 +50,7 @@ struct GatePair
     Game::Translate(where, 20.0f * static_cast<float>(at) - 20.0f, 30.0f);
     ships.push_back(_universe.SpawnShip(where, 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette), Game::FACTION_PLAYER));
   }
-  (void)_universe.FormFleet(Game::FACTION_PLAYER, 0, ships);
+  (void)_universe.FormFleet(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 0, ships);
   return ships;
 }
 
@@ -59,7 +59,7 @@ struct GatePair
   Game::Universe::FleetCommand command;
   command.kind = Game::FleetOrderKind::Jump;
   command.gate = _gate;
-  return _universe.IssueFleetOrder(Game::FACTION_PLAYER, 0, command);
+  return _universe.IssueFleetOrder(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 0, command);
 }
 } // namespace
 
@@ -106,7 +106,7 @@ public:
     (void)universe.MakeStation(stationShip, Game::Universe::StationDesc{});
     Assert::IsTrue(Game::Universe::FleetOrderResult::NotAGate == OrderJump(universe, stationShip), L"a jump at a station was accepted");
 
-    const Game::Universe::FleetId id = universe.FleetInSlot(Game::FACTION_PLAYER, 0);
+    const Game::Universe::FleetId id = universe.FleetInSlot(Game::OWNER_LOCAL, 0);
     Assert::IsTrue(Game::FleetOrderKind::Jump == universe.FleetOf(id).orderKind,
                    L"a refused jump replaced the standing order it should have left alone");
 
@@ -114,7 +114,8 @@ public:
     Game::Universe::FleetCommand command;
     command.kind = Game::FleetOrderKind::Jump;
     command.gate = pair.nearStructure;
-    Assert::IsTrue(Game::Universe::FleetOrderResult::NoSuchFleet == universe.IssueFleetOrder(Game::FACTION_PLAYER, 3, command),
+    Assert::IsTrue(Game::Universe::FleetOrderResult::NoSuchFleet ==
+                     universe.IssueFleetOrder(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 3, command),
                    L"a jump was accepted for a slot holding no fleet");
   }
 
@@ -141,7 +142,7 @@ public:
     Game::UniversePos away = nearPos;
     Game::Translate(away, 1500.0f, 0.0f);
     ships.push_back(universe.SpawnShip(away, 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette), Game::FACTION_PLAYER));
-    (void)universe.FormFleet(Game::FACTION_PLAYER, 0, ships);
+    (void)universe.FormFleet(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 0, ships);
     Assert::IsTrue(Game::Distance(universe.Ship(ships[2]).posUniverse, universe.Ship(pair.nearStructure).posUniverse) > 1000.0f,
                    L"the straggler is not actually outside the gate, so this row would prove nothing");
     // GateRangeMetres(Structure, Corvette) is 665 m: 251.8 + 13.1 of skin, plus GATE_CAPTURE_METRES.
@@ -170,7 +171,7 @@ public:
     for (int tick = 0; tick < 6000 && !crossed; ++tick)
     {
       universe.Step();
-      const Game::Universe::FleetId id = universe.FleetInSlot(Game::FACTION_PLAYER, 0);
+      const Game::Universe::FleetId id = universe.FleetInSlot(Game::OWNER_LOCAL, 0);
       if (id == Game::Universe::INVALID_FLEET_ID)
         break;
       const Game::Universe::Fleet& fleet = universe.FleetOf(id);
@@ -207,7 +208,7 @@ public:
       Game::Translate(where, 40.0f * static_cast<float>(at), 1200.0f);
       ships.push_back(universe.SpawnShip(where, 0.0f, static_cast<std::uint32_t>(Game::HullId::Miner), Game::FACTION_PLAYER));
     }
-    (void)universe.FormFleet(Game::FACTION_PLAYER, 0, ships);
+    (void)universe.FormFleet(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 0, ships);
 
     std::vector<Game::EntityId> before;
     for (const Game::ShipId ship : ships)
@@ -301,14 +302,14 @@ public:
       universe.SpawnShip(Game::LocalPos(300.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
     universe.RecordHostileAct(universe.HandleOf(raider), universe.HandleOf(ships[0]));
 
-    const Game::Universe::FleetId before = universe.FleetInSlot(Game::FACTION_PLAYER, 0);
+    const Game::Universe::FleetId before = universe.FleetInSlot(Game::OWNER_LOCAL, 0);
     Assert::IsTrue(universe.FleetOf(before).alertTicks > 0, L"the fleet was not roused, so this row proves nothing");
 
     const Game::EntityId first = universe.EntityIdOf(ships[0]);
     Assert::IsTrue(Game::Universe::FleetOrderResult::Ordered == OrderJump(universe, pair.nearStructure), L"the jump order was refused");
     universe.Step();
 
-    const Game::Universe::FleetId id = universe.FleetInSlot(Game::FACTION_PLAYER, 0);
+    const Game::Universe::FleetId id = universe.FleetInSlot(Game::OWNER_LOCAL, 0);
     Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID, id, L"the fleet did not survive its own jump");
     const Game::Universe::Fleet& fleet = universe.FleetOf(id);
     Assert::IsTrue(Game::FleetOrderKind::Idle == fleet.orderKind, L"the jump order outlived the jump");
@@ -367,7 +368,7 @@ public:
     Assert::IsTrue(universe.DespawnShip(universe.HandleOf(pair.nearStructure)), L"the near structure did not despawn");
     universe.Step();
 
-    const Game::Universe::FleetId id = universe.FleetInSlot(Game::FACTION_PLAYER, 0);
+    const Game::Universe::FleetId id = universe.FleetInSlot(Game::OWNER_LOCAL, 0);
     Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID, id, L"the fleet was lost with its gate");
     Assert::IsTrue(Game::FleetOrderKind::Idle == universe.FleetOf(id).orderKind, L"an order naming a dead gate is still standing");
   }

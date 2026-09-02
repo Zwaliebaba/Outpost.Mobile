@@ -96,3 +96,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0059](0059-a-route-is-scoped-to-the-island-that-planned-it.md) | A route is scoped to the island that planned it (supersedes 0034) | accepted |
 | [0060](0060-the-game-is-its-own-benchmark.md) | The game is its own benchmark: one persistent plane, at fleet grain, with an economy under it | accepted |
 | [0061](0061-the-save-is-migrated-on-read.md) | The save is migrated on read, and a format is retired only by record | accepted |
+| [0062](0062-an-owner-is-not-a-faction-and-not-an-entity.md) | An owner is not a faction and not an entity | accepted |

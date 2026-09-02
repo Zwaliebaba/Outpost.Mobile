@@ -700,7 +700,8 @@ public:
     // a mask written by one and not the other desynchronises the reader on the first full snapshot
     // -- and nothing else in this file would notice, because every other test here uses one path.
     CaptureTransport whole;
-    Assert::IsTrue(writer.Write(universe, whole, Game::FACTION_PLAYER) > 0, L"the full snapshot did not send");
+    Assert::IsTrue(writer.Write(universe, whole, Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}) > 0,
+                   L"the full snapshot did not send");
     Game::SnapshotReceiver fromWhole;
     for (const std::vector<std::uint8_t>& datagram : whole.sent)
       (void)fromWhole.Accept(datagram);
@@ -708,7 +709,8 @@ public:
     Assert::IsFalse(fromWhole.IsHostileToMe(Game::FACTION_VANGUARD), L"Write reported the Vanguard hostile before it was");
 
     CaptureTransport atBoot;
-    Assert::IsTrue(writer.WriteInterest(universe, held, {}, {}, {}, {}, atBoot, Game::FACTION_PLAYER) > 0, L"the update did not send");
+    Assert::IsTrue(writer.WriteInterest(universe, held, {}, {}, {}, {}, atBoot, Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}) > 0,
+                   L"the update did not send");
     Game::SnapshotReceiver player;
     for (const std::vector<std::uint8_t>& datagram : atBoot.sent)
       (void)player.Accept(datagram);
@@ -720,7 +722,8 @@ public:
     universe.Step();
 
     CaptureTransport afterwards;
-    Assert::IsTrue(writer.WriteInterest(universe, held, {}, {}, {}, {}, afterwards, Game::FACTION_PLAYER) > 0,
+    Assert::IsTrue(writer.WriteInterest(universe, held, {}, {}, {}, {}, afterwards, Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}) >
+                     0,
                    L"the second update did not send");
     for (const std::vector<std::uint8_t>& datagram : afterwards.sent)
       (void)player.Accept(datagram);
@@ -730,7 +733,8 @@ public:
     // about the player, not about itself. One row of the table, never the table.
     universe.Step();
     CaptureTransport vandalLink;
-    Assert::IsTrue(writer.WriteInterest(universe, held, {}, {}, {}, {}, vandalLink, Game::FACTION_VANDAL) > 0,
+    Assert::IsTrue(writer.WriteInterest(universe, held, {}, {}, {}, {}, vandalLink, Game::Issuer{Game::OwnerId{2}, Game::FACTION_VANDAL}) >
+                     0,
                    L"the Vandal update did not send");
     Game::SnapshotReceiver vandal;
     for (const std::vector<std::uint8_t>& datagram : vandalLink.sent)
@@ -1049,7 +1053,8 @@ public:
       const Game::ShipId ship = SpawnAt(full, static_cast<float>(slot) * 200.0f, 0.0f);
       members.push_back(ship);
       const Game::ShipId one[] = {ship};
-      Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID, full.FormFleet(Game::FACTION_PLAYER, slot, one), L"a fleet was refused");
+      Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID,
+                          full.FormFleet(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, slot, one), L"a fleet was refused");
     }
 
     CaptureTransport fiveFleets;

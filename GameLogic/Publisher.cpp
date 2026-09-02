@@ -22,13 +22,13 @@ namespace
   return false;
 }
 
-// Whether a faction holds any slot at all. What decides that an update with no records is still
+// Whether an owner holds any slot at all. What decides that an update with no records is still
 // worth sending, because its header carries the status block.
-[[nodiscard]] bool HasAnyFleet(const Universe& _universe, FactionId _faction) noexcept
+[[nodiscard]] bool HasAnyFleet(const Universe& _universe, OwnerId _owner) noexcept
 {
   for (std::uint8_t slot = 0; slot < FLEET_SLOTS; ++slot)
   {
-    if (_universe.FleetInSlot(_faction, slot) != Universe::INVALID_FLEET_ID)
+    if (_universe.FleetInSlot(_owner, slot) != Universe::INVALID_FLEET_ID)
       return true;
   }
   return false;
@@ -56,7 +56,7 @@ Publisher::Handle Publisher::Add(const Desc& _desc)
 
   Subscriber& added = m_subscribers.emplace_back();
   added.transport = _desc.transport;
-  added.faction = _desc.faction;
+  added.issuer = _desc.issuer;
   added.ordersPerTick = _desc.ordersPerTick;
   added.centre = _desc.centre;
   added.interest.Configure(_desc.interest);
@@ -200,7 +200,7 @@ void Publisher::ApplyOrders(Universe& _universe)
           command.station = _universe.ResolveEntity(fleetOrder.station);
           command.target = _universe.ResolveEntity(fleetOrder.target);
           command.gate = _universe.ResolveEntity(fleetOrder.gate);
-          (void)_universe.IssueFleetOrder(subscriber.faction, fleetOrder.slot, command);
+          (void)_universe.IssueFleetOrder(subscriber.issuer, fleetOrder.slot, command);
         }
         else if (ReadLedgerRequest(message, ledgerRequest))
         {
@@ -215,16 +215,16 @@ void Publisher::ApplyOrders(Universe& _universe)
           // The screen has to open on something, and a reply that never comes is indistinguishable
           // from a lost one -- which would leave a player looking at a spinner over a dead dock.
           const ShipId structure = _universe.ResolveEntity(ledgerRequest.station);
-          _universe.LedgerFor(_universe.StationAt(structure), subscriber.faction, reply.hullCounts);
+          _universe.LedgerFor(_universe.StationAt(structure), subscriber.issuer, reply.hullCounts);
           (void)WriteLedgerReply(reply, *subscriber.transport);
         }
         else if (ReadComposeOrder(message, composeOrder))
         {
           // Every gate is Universe's, including the standing gate and the slot gate, for ADR 0014's
-          // reason; the issuing faction is the subscriber's and never the message's, so a client
-          // cannot compose out of somebody else's ledger by saying it is somebody else.
+          // reason; the issuer is the subscriber's and never the message's, so a client cannot
+          // compose out of somebody else's ledger by saying it is somebody else.
           const ShipId structure = _universe.ResolveEntity(composeOrder.station);
-          (void)_universe.ComposeFleet(_universe.StationAt(structure), composeOrder.slot, composeOrder.hullCounts, subscriber.faction);
+          (void)_universe.ComposeFleet(_universe.StationAt(structure), composeOrder.slot, composeOrder.hullCounts, subscriber.issuer);
         }
         // A message this half does not understand is dropped, not fatal.
       }
@@ -279,7 +279,7 @@ void Publisher::PublishRosters(const Universe& _universe, Subscriber& _subscribe
     roster.slot = slot;
     roster.members.clear();
 
-    const Universe::FleetId id = _universe.FleetInSlot(_subscriber.faction, slot);
+    const Universe::FleetId id = _universe.FleetInSlot(_subscriber.issuer.owner, slot);
     if (id != Universe::INVALID_FLEET_ID)
     {
       const Universe::Fleet& fleet = _universe.FleetOf(id);
@@ -351,13 +351,14 @@ void Publisher::PublishOne(const Universe& _universe, Subscriber& _subscriber)
   // empty space would be told nothing about any of them. A zero-record fragment carrying a status
   // block is 28 to 98 bytes at the update rate, and it is the only thing that says where they are
   // (Design/Archive/Fleets.md 8.2, Design/Archive/Fleets-slice-5.md 2.8).
-  if (m_sendScratch.empty() && _subscriber.interest.Left().empty() && !HasAnyFleet(_universe, _subscriber.faction))
+  if (m_sendScratch.empty() && _subscriber.interest.Left().empty() && !HasAnyFleet(_universe, _subscriber.issuer.owner))
     return;
 
-  // The subscriber's faction is what the header's hostileMask is stated for. The publisher is the
-  // only thing that knows whose view an update is; this is not a second authority check.
+  // Whose view this update is: the faction states the header's hostileMask and the owner states the
+  // fleet status block's five slots. The publisher is the only thing that knows; this is not a
+  // second authority check.
   (void)_subscriber.writer.WriteInterest(_universe, m_sendScratch, m_leftScratch, m_destroyedScratch, m_dockedScratch, m_jumpedScratch,
-                                         *_subscriber.transport, _subscriber.faction);
+                                         *_subscriber.transport, _subscriber.issuer);
 }
 
 void Publisher::SplitTheLost(const Universe& _universe, Subscriber& _subscriber)

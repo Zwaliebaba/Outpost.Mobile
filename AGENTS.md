@@ -21,7 +21,9 @@ changes in the same commit.
 
 **Built and tested.** Five projects and four test suites, Debug|x64, gating in CI (§6). The game
 is played at **fleet** grain: a fleet is the unit of command and nothing smaller can be held (ADR
-0049). Five slots, at most eight ships each, composed at a station out of what the player has docked
+0049), and a fleet belongs to an **owner** -- an account, not a faction -- as does every row in a
+station's ledger (ADR 0062). There is one owner today, named `OWNER_LOCAL` because there is no login
+to ask; ownership gates compare it and standing gates still compare the faction. Five slots, at most eight ships each, composed at a station out of what the player has docked
 there and poured out of the dock one hull per cadence; ordered as one thing by a message that names
 a slot and carries no ship list at all; cruising at the slowest member's speed so they arrive
 together; defending themselves against a stated hostile act, the armed hulls turning while the

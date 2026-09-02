@@ -67,7 +67,7 @@ Scene BuildScene(Game::Universe& _universe)
   const Game::ShipId visitor =
     _universe.SpawnShip(Game::LocalPos(-260.0f, 1120.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette), Game::FACTION_PLAYER);
   const Game::ShipId dockOrder[] = {visitor};
-  (void)_universe.IssueDockOrder(dockOrder, post, Game::FACTION_PLAYER);
+  (void)_universe.IssueDockOrder(dockOrder, post, Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER});
 
   // And an aggressor, so the standings table is not the authored one and the protector response has
   // something to hunt.
@@ -402,11 +402,12 @@ public:
       Game::Translate(where, 30.0f * static_cast<float>(at), 400.0f);
       ships.push_back(original.SpawnShip(where, 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette), Game::FACTION_PLAYER));
     }
-    (void)original.FormFleet(Game::FACTION_PLAYER, 0, ships);
+    (void)original.FormFleet(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 0, ships);
     Game::Universe::FleetCommand command;
     command.kind = Game::FleetOrderKind::Jump;
     command.gate = nearShip;
-    Assert::IsTrue(Game::Universe::FleetOrderResult::Ordered == original.IssueFleetOrder(Game::FACTION_PLAYER, 0, command),
+    Assert::IsTrue(Game::Universe::FleetOrderResult::Ordered ==
+                     original.IssueFleetOrder(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 0, command),
                    L"the jump order was refused, so there is no order to round-trip");
 
     std::vector<std::uint8_t> saved;
@@ -422,7 +423,7 @@ public:
     Assert::AreEqual(static_cast<std::uint32_t>(original.GateOf(1u).ownerFaction),
                      static_cast<std::uint32_t>(reloaded.GateOf(1u).ownerFaction), L"a gate's owner did not survive");
 
-    const Game::Universe::FleetId id = reloaded.FleetInSlot(Game::FACTION_PLAYER, 0);
+    const Game::Universe::FleetId id = reloaded.FleetInSlot(Game::OWNER_LOCAL, 0);
     Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID, id, L"the fleet did not survive");
     Assert::IsTrue(Game::FleetOrderKind::Jump == reloaded.FleetOf(id).orderKind, L"the standing jump order did not survive");
     Assert::IsTrue(original.FleetOf(id).orderGate == reloaded.FleetOf(id).orderGate, L"the order's gate handle did not survive");

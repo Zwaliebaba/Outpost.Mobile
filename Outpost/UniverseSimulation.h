@@ -47,7 +47,10 @@ public:
   {
     Game::Publisher::Desc desc;
     desc.transport = &_transport;
-    desc.faction = m_subscriberFaction;
+    // Both halves of who this subscriber is. The owner is a placeholder for what a login will
+    // supply and is named as one: OWNER_LOCAL is the single player this build has, and a grep for it
+    // finds every place that assumes there is only one (Design/OwnerKey-work-order.md).
+    desc.issuer = Game::Issuer{m_subscriberOwner, m_subscriberFaction};
     desc.interest.radiusMetres = _config.interestRadiusMetres;
     desc.interest.updateEveryTicks = _config.interestUpdateEveryTicks;
     desc.ordersPerTick = _config.ordersPerTick;
@@ -142,6 +145,11 @@ private:
   // Whose orders this subscriber may give. One subscriber today, so it is the player's; the day a
   // login exists it arrives with the session and only Connect changes.
   Game::FactionId m_subscriberFaction = Game::FACTION_PLAYER;
+
+  // Who this client is, as against what it is. There is no login and no account, so the one player
+  // this executable serves is named by a constant; a dedicated server would take it from whatever
+  // authenticated the session, which is the one thing that has to arrive before a second player can.
+  Game::OwnerId m_subscriberOwner = Game::OWNER_LOCAL;
 
   // Where the camera is looking, as of the last frame that said. The universe origin until one
   // does, which is where the boot scene stands.

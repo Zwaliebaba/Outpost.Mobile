@@ -523,7 +523,7 @@ void WriteShipRecord(ByteWriter& _out, const Universe& _universe, ShipId _id)
 // A fleet with neither is the one tick between a manifest being dropped for a dead station and the
 // next tick's retire freeing the slot; clearing the bit there says the truth one tick early rather
 // than stating a position that means nothing.
-void WriteFleetBlock(ByteWriter& _out, const Universe& _universe, FactionId _viewer)
+void WriteFleetBlock(ByteWriter& _out, const Universe& _universe, const Issuer& _viewer)
 {
   UniversePos positions[FLEET_SLOTS];
   std::uint8_t kinds[FLEET_SLOTS] = {};
@@ -533,7 +533,7 @@ void WriteFleetBlock(ByteWriter& _out, const Universe& _universe, FactionId _vie
 
   for (std::uint32_t slot = 0; slot < FLEET_SLOTS; ++slot)
   {
-    const Universe::FleetId id = _universe.FleetInSlot(_viewer, static_cast<std::uint8_t>(slot));
+    const Universe::FleetId id = _universe.FleetInSlot(_viewer.owner, static_cast<std::uint8_t>(slot));
     if (id == Universe::INVALID_FLEET_ID)
       continue;
     const Universe::Fleet& fleet = _universe.FleetOf(id);
@@ -627,7 +627,7 @@ void WriteFleetBlock(ByteWriter& _out, const Universe& _universe, FactionId _vie
 }
 } // namespace
 
-std::uint32_t SnapshotWriter::Write(const Universe& _universe, Neuron::Transport& _transport, FactionId _viewer)
+std::uint32_t SnapshotWriter::Write(const Universe& _universe, Neuron::Transport& _transport, const Issuer& _viewer)
 {
   const std::span<const ShipState> ships = _universe.Ships();
   const std::uint32_t perFragment = ShipsPerSnapshotFragment();
@@ -655,7 +655,7 @@ std::uint32_t SnapshotWriter::Write(const Universe& _universe, Neuron::Transport
     out.U32(fragmentCount);
     out.U64(_universe.Tick());
     out.U32(count);
-    out.U8(_universe.HostileMaskFor(_viewer));
+    out.U8(_universe.HostileMaskFor(_viewer.faction));
     WriteFleetBlock(out, _universe, _viewer);
 
     for (std::uint32_t at = 0; at < count; ++at)
@@ -736,7 +736,7 @@ bool SnapshotWriter::WriteLeaves(std::uint64_t _tick, std::span<const EntityId> 
 
 std::uint32_t SnapshotWriter::WriteInterest(const Universe& _universe, std::span<const ShipHandle> _sent, std::span<const EntityId> _left,
                                             std::span<const EntityId> _destroyed, std::span<const EntityId> _docked,
-                                            std::span<const EntityId> _jumped, Neuron::Transport& _transport, FactionId _viewer)
+                                            std::span<const EntityId> _jumped, Neuron::Transport& _transport, const Issuer& _viewer)
 {
   m_lastBytes = 0;
   m_lastRecords = 0;
@@ -788,7 +788,7 @@ std::uint32_t SnapshotWriter::WriteInterest(const Universe& _universe, std::span
     out.U32(fragmentCount);
     out.U64(_universe.Tick());
     out.U32(count);
-    out.U8(_universe.HostileMaskFor(_viewer));
+    out.U8(_universe.HostileMaskFor(_viewer.faction));
     WriteFleetBlock(out, _universe, _viewer);
 
     for (const ShipId id : m_resolvedScratch)
@@ -1249,6 +1249,7 @@ void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _o
   for (const Universe::Docking& docking : _universe.m_dockings)
   {
     out.Handle(docking.station);
+    out.U64(docking.owner);
     out.Bool(docking.active);
   }
 
@@ -1315,6 +1316,7 @@ void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _o
     {
       out.U32(docked.hullId);
       out.U8(docked.factionId);
+      out.U64(docked.owner);
     }
   }
 
@@ -1336,6 +1338,7 @@ void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _o
   for (const Universe::Fleet& fleet : _universe.m_fleets)
   {
     out.U8(fleet.ownerFaction);
+    out.U64(fleet.owner);
     out.U8(fleet.slot);
     out.U32(fleet.memberCount);
     for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
@@ -1368,9 +1371,8 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
   //   value = (format >= N) ? in.U32() : <the value it had before it existed>;
   //
   // at the point in the stream where it lives, and nowhere else. That gate is the entire migration
-  // (ADR 0061), and there is none yet -- the first lands with the first bump after this reader
-  // learned the window, which is why the byte is kept and not yet consulted.
-  [[maybe_unused]] const std::uint8_t format = in.U8();
+  // (ADR 0061). Format 8's owner fields are the first two, below.
+  const std::uint8_t format = in.U8();
   if (magic != UNIVERSE_STATE_MAGIC || format < UNIVERSE_STATE_FORMAT_OLDEST || format > UNIVERSE_STATE_FORMAT)
     return false;
 
@@ -1443,6 +1445,9 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
   for (Universe::Docking& docking : dockings)
   {
     docking.station = in.Handle();
+    // Format 8, on the fleet row's terms: a docking in flight when an older file was written was
+    // the player's if anybody's, because nothing else in that build could issue one.
+    docking.owner = (format >= 8) ? in.U64() : OWNER_LOCAL;
     docking.active = in.Bool();
   }
 
@@ -1540,6 +1545,10 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
     {
       docked.hullId = in.U32();
       docked.factionId = in.U8();
+      // Format 8 added it. A file written before it has rows that meant "the player's" when the
+      // faction was the player's and "somebody else's" otherwise, and that is what they come back
+      // as -- the row is the same row, read by a build that can now say more about it (ADR 0061).
+      docked.owner = (format >= 8) ? in.U64() : ((docked.factionId == FACTION_PLAYER) ? OWNER_LOCAL : OWNER_NOBODY);
     }
   }
 
@@ -1563,27 +1572,41 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
       return false;
   }
 
-  // An exact bound rather than a heuristic one: every slot of every faction is the most fleets a
-  // universe can legitimately hold, so a count past it is a corrupt file and not a big universe.
+  // Bounded against what is left in the buffer rather than by an exact ceiling. It was
+  // FACTION_LIMIT * FLEET_SLOTS -- every slot of every faction -- and that was exact only while a
+  // fleet's owner was a faction. Owners are u64 and unbounded by design (Design/OwnerKey-work-order.md),
+  // so the most fleets a universe may hold is the most a player base may have, and the honest bound
+  // is the one every other count in this codec uses: a fleet row is more than a byte, so a count
+  // past Remaining() is a corrupt file however many players a shard carries.
   const std::uint32_t fleetCount = in.U32();
-  if (!in.Ok() || fleetCount > FACTION_LIMIT * FLEET_SLOTS)
+  if (!in.Ok() || fleetCount > in.Remaining())
     return false;
 
   // Two live fleets claiming one slot would make FleetInSlot's answer depend on which row came
   // first, which is an invariant corrupted rather than a value -- the same kind of defect as a slot
   // naming a ship that is not there, and refused for the same reason.
   std::vector<Universe::Fleet> fleets(fleetCount);
-  bool slotTaken[FACTION_LIMIT][FLEET_SLOTS] = {};
+
+  // (owner, slot) pairs, checked for duplicates after the read rather than during it. The array of
+  // flags this replaces was indexed by faction, which cannot hold an owner: a u64 has no array to
+  // be a subscript of, and the pairs are collected and sorted instead. O(n log n) rather than the
+  // O(n^2) a pairwise sweep would cost on a file claiming a large count.
+  std::vector<std::uint64_t> claims;
+  claims.reserve(fleetCount);
+
   for (Universe::Fleet& fleet : fleets)
   {
     fleet.ownerFaction = in.U8();
+    fleet.owner = (format >= 8) ? in.U64() : ((fleet.ownerFaction == FACTION_PLAYER) ? OWNER_LOCAL : OWNER_NOBODY);
     fleet.slot = in.U8();
     fleet.memberCount = in.U32();
     if (!in.Ok() || fleet.ownerFaction >= FACTION_LIMIT || fleet.slot >= FLEET_SLOTS || fleet.memberCount > MAX_FLEET_SHIPS)
       return false;
-    if (slotTaken[fleet.ownerFaction][fleet.slot])
-      return false;
-    slotTaken[fleet.ownerFaction][fleet.slot] = true;
+    // Packed rather than paired, so the sort below needs no comparator: FLEET_SLOTS is 5 and a slot
+    // is already bounded above, so the low three bits hold it and the owner keeps the rest. An owner
+    // past 2^61 would collide, and no minting scheme in this tree can reach one.
+    static_assert(FLEET_SLOTS <= 8, "the slot no longer fits the low three bits of a fleet claim");
+    claims.push_back((fleet.owner << 3) | fleet.slot);
     // The handles themselves are not checked against the slot table, and deliberately: Resolve
     // bounds-checks a slot and compares a generation, so a handle this file invented resolves to
     // nothing and the fleet pass prunes it on the first tick. That is the fail-closed direction
@@ -1617,6 +1640,17 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
     fleet.threat = in.Handle();
     fleet.threatAnchorPos = in.Pos();
     fleet.alertTicks = in.U32();
+  }
+
+  // Two live fleets claiming one owner's slot would make FleetInSlot's answer depend on which row
+  // came first, which is an invariant corrupted rather than a value -- the same kind of defect as a
+  // slot naming a ship that is not there, and refused for the same reason. Sorted and swept for
+  // adjacent equals, which is the whole check.
+  std::sort(claims.begin(), claims.end());
+  for (std::size_t at = 1; at < claims.size(); ++at)
+  {
+    if (claims[at] == claims[at - 1])
+      return false;
   }
 
   if (!in.Ok())

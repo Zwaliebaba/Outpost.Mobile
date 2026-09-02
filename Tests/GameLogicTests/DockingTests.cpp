@@ -56,7 +56,8 @@ public:
     const Game::ShipHandle shipHandle = universe.HandleOf(ship);
     const std::uint32_t hullId = universe.Ship(ship).hullId;
 
-    Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, structure, Game::FACTION_PLAYER) == Game::Universe::DockOrderResult::Ordered,
+    Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, structure, Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}) ==
+                     Game::Universe::DockOrderResult::Ordered,
                    L"the dock order was refused");
 
     // The order is an order, not a next-tick suggestion: the first leg is issued immediately.
@@ -93,7 +94,8 @@ public:
       const float expected =
         Game::DockRangeMetres(Game::HullSpecOf(universe.Ship(structure).hullId), Game::HullSpecOf(universe.Ship(ship).hullId));
 
-      Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, structure, Game::FACTION_PLAYER) == Game::Universe::DockOrderResult::Ordered,
+      Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, structure, Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}) ==
+                       Game::Universe::DockOrderResult::Ordered,
                      L"the dock order was refused");
 
       // Captured on the first tick it is within range, and never before: a hull that docked early
@@ -125,7 +127,8 @@ public:
     const Game::Universe::StationId station = BuildDockScene(universe, structure, ship);
     const Game::ShipHandle shipHandle = universe.HandleOf(ship);
 
-    Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, structure, Game::FACTION_PLAYER) == Game::Universe::DockOrderResult::Ordered,
+    Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, structure, Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}) ==
+                     Game::Universe::DockOrderResult::Ordered,
                    L"the dock order was refused");
     for (int tick = 0; tick < 60; ++tick)
       universe.Step();
@@ -159,7 +162,7 @@ public:
     vandalDesc.ownerFaction = Game::FACTION_VANDAL;
     (void)universe.MakeStation(base, vandalDesc);
 
-    Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, base, Game::FACTION_PLAYER) ==
+    Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, base, Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}) ==
                      Game::Universe::DockOrderResult::RefusedStanding,
                    L"the player was allowed to dock at the pirates");
 
@@ -170,14 +173,15 @@ public:
     // A target that is not a station at all.
     const Game::ShipId scenery =
       universe.SpawnShip(Game::LocalPos(0.0f, 900.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Structure), Game::FACTION_VANGUARD);
-    Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, scenery, Game::FACTION_PLAYER) == Game::Universe::DockOrderResult::NotAStation,
+    Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, scenery, Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}) ==
+                     Game::Universe::DockOrderResult::NotAStation,
                    L"a Structure that is only scenery accepted a dock");
     Assert::IsFalse(universe.DockingOf(ship).active, L"an order at scenery set a docking intent");
 
     // Somebody else's ship is dropped from an otherwise good order, and the rest of it still goes.
     const Game::ShipId theirs =
       universe.SpawnShip(Game::LocalPos(100.0f, 100.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
-    Assert::IsTrue(universe.IssueDockOrder(std::array{ship, theirs}, structure, Game::FACTION_PLAYER) ==
+    Assert::IsTrue(universe.IssueDockOrder(std::array{ship, theirs}, structure, Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}) ==
                      Game::Universe::DockOrderResult::Ordered,
                    L"a mixed order was refused outright");
     Assert::IsTrue(universe.DockingOf(ship).active, L"the issuer's own ship was dropped from its order");
@@ -195,7 +199,8 @@ public:
     const Game::Universe::StationId station = BuildDockScene(universe, structure, ship);
     const Game::ShipHandle shipHandle = universe.HandleOf(ship);
 
-    Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, structure, Game::FACTION_PLAYER) == Game::Universe::DockOrderResult::Ordered,
+    Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, structure, Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}) ==
+                     Game::Universe::DockOrderResult::Ordered,
                    L"the dock order was refused");
 
     // Mid-flight, well clear of capture range.
@@ -233,7 +238,8 @@ public:
     const Game::ShipId second = universe.SpawnShip(Game::LocalPos(0.0f, 100.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Corvette));
     const Game::ShipHandle secondHandle = universe.HandleOf(second);
 
-    Assert::IsTrue(universe.IssueDockOrder(std::array{second}, structure, Game::FACTION_PLAYER) == Game::Universe::DockOrderResult::Ordered,
+    Assert::IsTrue(universe.IssueDockOrder(std::array{second}, structure, Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}) ==
+                     Game::Universe::DockOrderResult::Ordered,
                    L"the dock order was refused");
     Assert::IsFalse(universe.DockingOf(first).active, L"the wrong ship took the order");
 
@@ -298,7 +304,8 @@ public:
     (void)BuildDockScene(universe, structure, ship);
     const Game::ShipHandle shipHandle = universe.HandleOf(ship);
 
-    Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, structure, Game::FACTION_PLAYER) == Game::Universe::DockOrderResult::Ordered,
+    Assert::IsTrue(universe.IssueDockOrder(std::array{ship}, structure, Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}) ==
+                     Game::Universe::DockOrderResult::Ordered,
                    L"the dock order was refused");
     for (int tick = 0; tick < 60; ++tick)
       universe.Step();
@@ -322,7 +329,7 @@ public:
       const Game::Universe::StationId station = BuildDockScene(universe, structure, ship);
       const Game::ShipId second = universe.SpawnShip(Game::LocalPos(-120.0f, 60.0f), 0.0f,
                                                      static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_PLAYER);
-      (void)universe.IssueDockOrder(std::array{ship, second}, structure, Game::FACTION_PLAYER);
+      (void)universe.IssueDockOrder(std::array{ship, second}, structure, Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER});
 
       for (int tick = 0; tick < 4000; ++tick)
       {

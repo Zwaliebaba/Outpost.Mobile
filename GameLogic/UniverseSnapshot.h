@@ -258,10 +258,17 @@ inline constexpr std::uint8_t FLEET_FLAG_UNDER_ATTACK = 0x04;
 class SnapshotWriter
 {
 public:
-  // _viewer is whose standing the header's hostileMask states. It is defaulted because Write is the
-  // whole-universe path -- a benchmark and a test harness, with no subscriber to speak of -- while
-  // WriteInterest is always written for somebody, and Publisher is the only caller that knows who.
-  std::uint32_t Write(const Universe& _universe, Neuron::Transport& _transport, FactionId _viewer = FACTION_PLAYER);
+  // _viewer is who this is written FOR, and it takes both halves because the header states both: the
+  // hostileMask is that viewer's faction's standing, and the fleet status block is that viewer's
+  // OWNER's five slots. They were one byte until slice 3 of Design/GameDesignPlan.md, which is why
+  // this parameter grew rather than gained a neighbour (Design/OwnerKey-work-order.md).
+  //
+  // It is defaulted because Write is the whole-universe path -- a benchmark and a test harness, with
+  // no subscriber to speak of -- while WriteInterest is always written for somebody, and Publisher is
+  // the only caller that knows who. The default names the single player this build has, the same
+  // assumption the faction default always made.
+  std::uint32_t Write(const Universe& _universe, Neuron::Transport& _transport,
+                      const Issuer& _viewer = Issuer{OWNER_LOCAL, FACTION_PLAYER});
 
   // One subscriber's update. _sent are handles to carry in full -- entered and refreshed together,
   // because the wire cannot tell them apart and the receiver upserts either way. _left are dropped.
@@ -276,7 +283,7 @@ public:
   // log carries one (ADR 0047).
   std::uint32_t WriteInterest(const Universe& _universe, std::span<const ShipHandle> _sent, std::span<const EntityId> _left,
                               std::span<const EntityId> _destroyed, std::span<const EntityId> _docked, std::span<const EntityId> _jumped,
-                              Neuron::Transport& _transport, FactionId _viewer = FACTION_PLAYER);
+                              Neuron::Transport& _transport, const Issuer& _viewer = Issuer{OWNER_LOCAL, FACTION_PLAYER});
 
   // The leave and destroyed lists, as one message on the reliable lane. Public because a caller
   // that is not sending an interest update -- a subscriber leaving, a universe shutting down -- still
@@ -566,7 +573,8 @@ struct SaveHeader
 // commit, so that the reader below is proven against a file and not against itself.
 //
 // 2: the fleet table. 3: its manifest. 4: its order. 5: its threat. 6: the guns. 7: the plan stamp.
-inline constexpr std::uint8_t UNIVERSE_STATE_FORMAT = 7;
+// 8: the owner, on a fleet and on a ledger row.
+inline constexpr std::uint8_t UNIVERSE_STATE_FORMAT = 8;
 
 // The oldest format ReadUniverseState still accepts. A file in a format between this and the
 // current one is read with every later field gated on the byte the file carries and defaulted where
