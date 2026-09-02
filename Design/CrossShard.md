@@ -1,10 +1,13 @@
 # Cross-shard — the same door, with a wire in the middle
 
 **Status: agreed with the owner on 2026-09-02, as drafted — the design had no open decisions to
-put, and §9 states what would make it wrong rather than leaving a question. Slice 1 has landed
-([`CrossShard-slice-1.md`](CrossShard-slice-1.md), [ADR 0063](Decisions/0063-the-partition-is-a-function-of-the-layout.md));
-slices 2 to 5 are listed in §8 and are cut one at a time, when each is next. §2 is amended to say
-what was built.**
+put, and §9 states what would make it wrong rather than leaving a question. Slices 1 and 2 have
+landed ([`CrossShard-slice-1.md`](CrossShard-slice-1.md), [`CrossShard-slice-2.md`](CrossShard-slice-2.md),
+[ADR 0063](Decisions/0063-the-partition-is-a-function-of-the-layout.md),
+[ADR 0065](Decisions/0065-a-handoff-is-at-least-once-delivery-onto-an-idempotent-apply.md));
+slices 3 to 5 are listed in §8 and are cut one at a time, when each is next. §2 and §4 are amended to
+say what was built. **All three of §9's ways this design could be wrong have now been answered by
+measurement**, and none of them was.**
 
 Slice 5 waits on something no design in this tree owns yet: a headless process. The seam, the
 configuration file and the shard in the save are all in place (§1), and what is missing is a root
@@ -104,17 +107,27 @@ deterministic.** Those pull against each other.
   having if a handoff arrives on a *stated* tick. So a handoff is applied the way an order is: taken
   at a tick boundary, in a fixed order, never inside a `Step`.
 
-The shape this design proposes:
+The shape this design proposes, **and which slice 2 built**
+([ADR 0065](Decisions/0065-a-handoff-is-at-least-once-delivery-onto-an-idempotent-apply.md)):
 
 1. **An outbox on the departing shard**, written in the same tick as the despawn, and part of the
    saved state. A shard that dies after the despawn and before the send still has the ship, in its
    file, in the outbox — which is the property that makes "lost" recoverable rather than final.
+   **It is in memory as of slice 2 and joins the state codec in slice 3**, so that recoverability is
+   a property of this design and not yet of the build.
 2. **An inbox on the arriving shard**, drained at a tick boundary in entity order.
 3. **`SpawnShipAs` refuses an entity that is already live**, so a replayed handoff is a no-op rather
    than a duplicate.
 4. **An acknowledgement clears the outbox entry.** Until then it is re-sent. At-least-once delivery
    plus idempotent apply is exactly-once in effect, and it is the only combination of the three that
-   does not require a distributed transaction.
+   does not require a distributed transaction. `AcknowledgeHandoffs` exists and nothing calls it:
+   the re-send loop needs a transport that can lose a message, which is slice 4.
+
+**One thing this section did not foresee, and slice 2 had to answer: the handoff names the far GATE
+rather than an arrival position.** The departing shard cannot compute a pose — it is read off the far
+gate's heading and position, and that gate is in another universe — so the arriving shard derives it
+from its own copy. That is ADR 0056's "every intent is re-derived on the far side" reaching one field
+further than the local jump path ever needed it to.
 
 **The ship is in the outbox and nowhere else for the duration.** That is the honest statement of what
 a player would see: a fleet mid-handoff is not in either universe. It is one tick under any healthy
@@ -167,7 +180,7 @@ to watch two at once. Nothing here forecloses it.
 | # | Slice | Layer | Size | Depends on | ADR |
 |---|---|---|---|---|---|
 | 1 | [`ShardOfSystem`, the shard count in `GalaxyDesc` and the save header, and `UniverseGen` writing one file per shard](CrossShard-slice-1.md) — **landed**: a q-column block split, `SAVE_FILE_FORMAT` 1 → 2, `BuildStartingGalaxy` building every shard in one pass so a gate can name the shard it leads to | `GameLogic`+`Tools` | M | — | [0063](Decisions/0063-the-partition-is-a-function-of-the-layout.md) |
-| 2 | The outbox, the inbox, `SpawnShipAs` refusing a live entity, and **two `Universe`s handed off between in one process** | `GameLogic` | L | 1 | ADR: a handoff is at-least-once delivery onto an idempotent apply |
+| 2 | [The outbox, the inbox, `SpawnShipAs` refusing a live entity, and **two `Universe`s handed off between in one process**](CrossShard-slice-2.md) — **landed**: one branch in `StepJumps`, a `Handoff` the wire will carry unchanged, and a drain in entity order | `GameLogic` | L | 1 | [0065](Decisions/0065-a-handoff-is-at-least-once-delivery-onto-an-idempotent-apply.md) |
 | 3 | Both in the state codec, so a shard that dies mid-handoff still holds the ship | `GameLogic` | M | 2 | — |
 | 4 | The handoff on the wire: a message on the reliable lane, the ack, the re-send | `NeuronCore`+`GameLogic` | L | 3 | — |
 | 5 | Two shard processes, and a client that follows its camera across | `Outpost` | L | 4 | — |
@@ -182,11 +195,22 @@ which is the only place in this tree where a thing can be proved rather than arg
 
 Stated so it can be checked rather than discovered:
 
+All three have now been answered, and the answers are measurements rather than arguments. They are
+kept as they were written, with what was found beneath each.
+
 - **If a handoff cannot be made deterministic**, the replay gates fail and this design is not
   compatible with the tree's central property. The proposed answer is that an inbox drained at a tick
   boundary in entity order is exactly as deterministic as the order queue already is — if that turns
   out to be false, everything above is unsafe.
+  → **It is.** The same batch delivered forwards and reversed produces byte-identical state six
+  hundred ticks later (slice 2).
 - **If `SpawnShipAs` cannot refuse a live entity** without disturbing the local jump path, the
   idempotence has no home and at-least-once delivery becomes at-least-once *spawning*.
+  → **It can, and it always could.** The refusal was written a design ago and commented for this;
+  slice 2 is its first caller. Applying a batch three times spawns nothing after the first, and a
+  local jump is byte-identical to what it was before the slice — compared against an actual build of
+  the previous commit, not asserted.
 - **If the partition cannot keep neighbours together**, most gates become wire crossings and the cost
   this design bounds is not bounded.
+  → **It does.** 90%, 81% and 71% of gates stay in-shard at two, three and four shards
+  ([ADR 0063](Decisions/0063-the-partition-is-a-function-of-the-layout.md)).

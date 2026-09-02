@@ -1103,12 +1103,22 @@ void Universe::StepJumps()
       continue;
     }
 
+    // Does this road leave the shard? An EntityId carries its shard, so this IS the test, with no new
+    // field anywhere -- ADR 0047 chose that layout for identity across a despawn and it turns out to
+    // answer routing across a process too (Design/CrossShard.md 3).
+    //
+    // Asked BEFORE the resolve, because a cross-shard destination is not a failure to resolve. It is
+    // a different answer, and treating it as the same one is how a fleet would sit at a gate for ever
+    // waiting for a far side that is not in this universe and never will be.
+    const EntityId destination = m_gates[row].destination;
+    const bool leavesTheShard = destination != INVALID_ENTITY_ID && EntityShardOf(destination) != Shard();
+
     // Where the road leads, resolved before anybody is despawned. A destination that no longer names
     // a live gate strands nobody: the fleet holds at the near gate with its order standing, and the
     // moment the far side exists again it crosses. Losing a fleet into a gate that leads nowhere is
     // the one failure this pass must not have (Design/Archive/Universe-slice-2.md 4.6).
-    const ShipId farGate = ResolveEntity(m_gates[row].destination);
-    if (farGate == INVALID_SHIP_ID || farGate == gate || GateAt(farGate) == INVALID_GATE_ID)
+    const ShipId farGate = leavesTheShard ? INVALID_SHIP_ID : ResolveEntity(destination);
+    if (!leavesTheShard && (farGate == INVALID_SHIP_ID || farGate == gate || GateAt(farGate) == INVALID_GATE_ID))
       continue;
 
     // Whole or not at all, and the test is over every LIVE member: a member that died on the way is
@@ -1136,8 +1146,11 @@ void Universe::StepJumps()
     // The fleet arrives pointed the way the far gate faces. Which way that is away from a star is a
     // genesis concept this library does not have, and a heading is content the structure already
     // carries -- so using it keeps this pass free of any layout knowledge.
-    const float exitRad = m_ships[farGate].headingRad;
-    const UniversePos farPos = m_ships[farGate].posUniverse;
+    //
+    // Read here only for a LOCAL crossing. A fleet leaving the shard carries the gate's identity
+    // instead and the arriving universe reads its own copy, because this one does not hold it.
+    const float exitRad = leavesTheShard ? 0.0f : m_ships[farGate].headingRad;
+    const UniversePos farPos = leavesTheShard ? UniversePos{} : m_ships[farGate].posUniverse;
 
     // How many are crossing, counted before anything is captured, so the spread below can be centred
     // on the gate rather than starting at it.
@@ -1165,7 +1178,8 @@ void Universe::StepJumps()
 
       const ShipState& ship = m_ships[member];
       m_jumpScratch.push_back(Jumper{fleet.members[at], EntityIdOf(fleet.members[at]), ship.hullId, ship.factionId, ship.hullPoints,
-                                     fleet.owner, arrival, exitRad, fleet.ownerFaction, fleet.slot, at});
+                                     fleet.owner, arrival, exitRad, fleet.ownerFaction, fleet.slot, at, destination, leavesTheShard, placed,
+                                     crossing});
       ++placed;
     }
 
@@ -1184,6 +1198,26 @@ void Universe::StepJumps()
   {
     if (!DespawnShip(jumper.ship, DespawnCause::JumpedOut))
       continue;
+
+    // Leaving the shard: handed to the outbox instead of respawned, in the same tick as the despawn.
+    // That ordering is the property that makes "lost" recoverable rather than final -- a shard that
+    // dies after this line still has the ship, in its outbox, and (from slice 3) in its file
+    // (Design/CrossShard.md 4).
+    if (jumper.leavesTheShard)
+    {
+      m_outbox.push_back(Handoff{.entity = jumper.entity,
+                                 .gate = jumper.gate,
+                                 .hullId = jumper.hullId,
+                                 .factionId = jumper.factionId,
+                                 .hullPoints = jumper.hullPoints,
+                                 .owner = jumper.owner,
+                                 .ownerFaction = jumper.ownerFaction,
+                                 .slot = jumper.slot,
+                                 .memberIndex = jumper.placeIndex,
+                                 .crossingCount = jumper.crossingCount,
+                                 .sequence = m_nextHandoff++});
+      continue;
+    }
 
     // SpawnShipAs under the SAME identity is the whole of what a jump is: the ship that left is the
     // ship that arrives, and every client that holds it goes on holding it. It is also, exactly, a
@@ -1207,6 +1241,155 @@ void Universe::StepJumps()
       m_fleets[fleetId].members[jumper.memberIndex] = HandleOf(born);
   }
   m_jumpScratch.clear();
+}
+
+void Universe::DeliverHandoff(const Handoff& _handoff)
+{
+  if (_handoff.entity == INVALID_ENTITY_ID)
+    return;
+
+  // Idempotent at this end too. At-least-once delivery means the same entry can arrive twice, and a
+  // re-send that landed between a deliver and a drain would otherwise queue the same ship twice --
+  // which SpawnShipAs would catch, but only after the arrival spread had been computed for a phantom.
+  for (const Handoff& queued : m_inbox)
+  {
+    if (queued.entity == _handoff.entity)
+      return;
+  }
+  m_inbox.push_back(_handoff);
+}
+
+void Universe::AcknowledgeHandoffs(std::span<const std::uint64_t> _sequences)
+{
+  for (const std::uint64_t sequence : _sequences)
+  {
+    for (std::size_t at = 0; at < m_outbox.size(); ++at)
+    {
+      if (m_outbox[at].sequence != sequence)
+        continue;
+      // Order-preserving erase, not swap-and-pop. The outbox is walked by whatever re-sends it, and
+      // a list whose order changed under an ack would re-send in a different order every time -- which
+      // is a difference no test could see and every replay would.
+      m_outbox.erase(m_outbox.begin() + static_cast<std::ptrdiff_t>(at));
+      break;
+    }
+  }
+}
+
+std::uint32_t Universe::DrainInbox()
+{
+  if (m_inbox.empty())
+    return 0;
+
+  // Entity order, and that is the whole of the determinism argument. Two shards that delivered one
+  // batch in two orders drain it in one, so the universe they produce does not depend on the wire's
+  // scheduling -- exactly as the order queue is already sorted before it is applied
+  // (Design/CrossShard.md 4, and 9's first "what would make this wrong").
+  std::sort(m_inbox.begin(), m_inbox.end(), [](const Handoff& _a, const Handoff& _b) { return _a.entity < _b.entity; });
+
+  m_arrivalScratch.clear();
+  m_heldScratch.clear();
+  std::uint32_t spawned = 0;
+
+  for (const Handoff& arriving : m_inbox)
+  {
+    // The gate it arrives at, in THIS universe's table. A handoff naming a gate this shard does not
+    // hold is not applied and is not dropped either: it stays queued, so a partition that was in
+    // flight when the layout changed arrives when the gate does rather than deleting a fleet.
+    const ShipId gate = ResolveEntity(arriving.gate);
+    if (gate == INVALID_SHIP_ID || GateAt(gate) == INVALID_GATE_ID)
+    {
+      m_heldScratch.push_back(arriving); // stays queued rather than being dropped
+      continue;
+    }
+
+    // The arrival pose, derived HERE from the gate this universe holds -- the departing shard stated
+    // which gate and nothing about where (Design/CrossShard.md 4). The spread is the local jump
+    // path's arithmetic, per entry rather than per batch, so one ship can arrive without the rest.
+    const float exitRad = m_ships[gate].headingRad;
+    const float across =
+      JUMP_ARRIVAL_SPACING_METRES * (static_cast<float>(arriving.memberIndex) - 0.5f * static_cast<float>(arriving.crossingCount - 1u));
+    UniversePos arrival = m_ships[gate].posUniverse;
+    Translate(arrival, std::cos(exitRad) * across + std::sin(exitRad) * JUMP_ARRIVAL_STANDOFF_METRES,
+              -std::sin(exitRad) * across + std::cos(exitRad) * JUMP_ARRIVAL_STANDOFF_METRES);
+
+    // The idempotence the whole scheme rests on. SpawnShipAs refuses an entity this universe already
+    // holds, so a replayed handoff is a no-op rather than a second ship -- which is what turns
+    // at-least-once delivery plus this apply into exactly-once in effect, with no distributed
+    // transaction anywhere (Design/CrossShard.md 4).
+    const ShipId born = SpawnShipAs(arriving.entity, arrival, exitRad, arriving.hullId, arriving.factionId);
+    if (born == INVALID_SHIP_ID)
+      continue; // already here: applied before, and applying it again changes nothing
+
+    // Damage rides across; intent does not, exactly as a local jump (ADR 0056).
+    m_ships[born].hullPoints = arriving.hullPoints;
+    m_arrivalScratch.push_back(arriving); // kept for the fleet pass below, which needs owner and slot
+    ++spawned;
+  }
+
+  // What could not be applied stays queued; everything else is spent. Swapped rather than erased per
+  // entry so the common case -- every entry applied -- costs one swap and one clear.
+  m_inbox.swap(m_heldScratch);
+  m_heldScratch.clear();
+
+  if (spawned > 0)
+    ReformArrivedFleets();
+  m_arrivalScratch.clear();
+  return spawned;
+}
+
+void Universe::ReformArrivedFleets()
+{
+  // After every member exists, not during the spawn walk: a fleet is formed from a list of live
+  // ships, and forming it one arrival at a time would make the first member a fleet of one that the
+  // second could not join (Universe::FormFleet refuses a taken slot).
+  //
+  // The fleet is re-formed from the OWNER and the SLOT the handoff carried, which is precisely why
+  // Universe slice 2 put them on a Jumper -- to survive a local despawn -- and the same three fields
+  // do both jobs (Design/CrossShard.md 5).
+  for (std::size_t lead = 0; lead < m_arrivalScratch.size(); ++lead)
+  {
+    const OwnerId owner = m_arrivalScratch[lead].owner;
+    const std::uint8_t slot = m_arrivalScratch[lead].slot;
+    const FactionId faction = m_arrivalScratch[lead].ownerFaction;
+    if (owner == OWNER_NOBODY)
+      continue; // spent by an earlier group
+
+    // Every arrival of this owner and slot, in the order they were applied -- which is entity order,
+    // which is why the drain sorted. A fleet's member list is therefore the same on both shards.
+    m_arrivalShipScratch.clear();
+    for (std::size_t at = lead; at < m_arrivalScratch.size(); ++at)
+    {
+      Handoff& row = m_arrivalScratch[at];
+      if (row.owner != owner || row.slot != slot)
+        continue;
+      const ShipId id = ResolveEntity(row.entity);
+      if (id != INVALID_SHIP_ID && FleetAt(id) == INVALID_FLEET_ID)
+        m_arrivalShipScratch.push_back(id);
+      row.owner = OWNER_NOBODY; // struck off, so the outer walk does not re-form this group
+    }
+    if (m_arrivalShipScratch.empty())
+      continue;
+
+    const FleetId existing = FleetInSlot(owner, slot);
+    if (existing == INVALID_FLEET_ID)
+      (void)FormFleet(Issuer{owner, faction}, slot, m_arrivalShipScratch);
+    else if (m_fleets[existing].owner == owner)
+    {
+      // A slot this owner already holds takes the arrivals as members -- which is what a partial
+      // delivery looks like once there is a wire, and is why the apply is per entry (slice 4).
+      Fleet& fleet = m_fleets[existing];
+      for (const ShipId id : m_arrivalShipScratch)
+      {
+        if (fleet.memberCount >= MAX_FLEET_SHIPS)
+          break;
+        fleet.members[fleet.memberCount++] = HandleOf(id);
+      }
+    }
+    // A slot held by somebody else refuses: the ships are in space, in no fleet, which is the honest
+    // answer. Overwriting another owner's row would be this universe deciding a question the design
+    // gives to whoever holds the slot.
+  }
 }
 
 void Universe::StepPatrols()

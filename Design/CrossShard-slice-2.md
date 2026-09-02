@@ -119,3 +119,79 @@ wrong, all three of which are questions a suite can answer and a wire cannot.
   in batches would have to be rewritten then.
 - **The arriving shard owns the arrival pose.** It reads its own gate. The departing shard states
   which gate and nothing about where.
+
+---
+
+## 7. What changed on contact
+
+- **The handoff names the far gate, and §4 of the design did not foresee that.** §2.2 of this order
+  did, because writing it forced the question: the arrival pose is read off the far gate's heading
+  and position, and the departing shard does not hold that gate. So `Handoff` carries an `EntityId`
+  and the arriving shard derives the pose itself — ADR 0056's rule reaching one field further than
+  the local jump path ever needed it to. `CrossShard.md` §4 is amended to say so.
+- **The outbound test is asked before the resolve, not after it.** A cross-shard destination is not a
+  failure to resolve; it is a different answer. Treating the two the same is how a fleet would sit at
+  a gate for ever waiting for a far side that is not in this universe and never will be.
+- **`ReformArrivedFleets` groups from a scratch, not from `ShipState`.** A first cut put
+  `arrivalOwner` and `arrivalSlot` on the ship — which would have put two transient fields into the
+  state codec and bumped the format for something cleared within the same call. The drain keeps the
+  applied handoffs instead and groups from those, so `ShipState` gains nothing and no format moves.
+- **`Handoff` is a public type.** It started private beside `Jumper` and did not compile: `Outbox()`
+  returns a span of it. That is right anyway — slice 4's transport has to name it.
+- **An acknowledgement erases in order rather than swap-and-popping.** The outbox is walked by
+  whatever re-sends it, and a list whose order changed under an ack would re-send in a different
+  order every time — a difference no test would see and every replay would.
+
+## 8. What was verified, and how — and the honest gap
+
+`Tests/GameLogicTests/HandoffTests.cpp`, eight rows, **all eight run rather than only compiled**.
+That distinction is deliberate: the stub this environment normally syntax-checks suites against has
+no-op assertions, so a clean parse says nothing about behaviour — which is exactly how an ambiguous
+overload reached CI on this branch two commits ago. An asserting stand-in was built and every row was
+executed against the real `GameLogic`.
+
+```
+AFleetCrossingOutOfItsShardIsInTheOutboxAndNowhereElse   pass
+TheFleetArrivesWholeInItsOwnSlot                         pass
+ApplyingAHandoffTwiceIsApplyingItOnce                    pass
+TheOrderABatchIsDeliveredInDoesNotChangeTheUniverse      pass
+AHandoffNamingAGateThisShardDoesNotHoldStaysQueued       pass
+ARepeatedDeliveryDoesNotQueueTheSameShipTwice            pass
+AnAcknowledgementClearsTheOutboxAndKeepsItsOrder         pass
+AOneShardGalaxyHandsOffNothing                           pass
+```
+
+Against a four-shard galaxy, the crossing itself:
+
+```
+307 ships in four shards; the starting fleet is in shard 1, 3 members
+shard 1 has 15 gate ends leading out; ordered through one, to shard 2
+outbox holds 3 after 14 129 ticks
+census mid-handoff: 304 in universes + 3 in the outbox = 307
+drain spawned 3; shard 2 slot 0 holds a 3-member fleet; census 307, conserved
+applied twice: spawned 0 more, census unchanged -- idempotent
+delivered forwards vs reversed, 600 ticks later: byte-identical
+```
+
+**The no-regression claim was measured against an actual before**, not asserted: the previous commit
+was checked out into a worktree, its `GameLogic` built separately, and the same local-jump scenario
+run through both.
+
+```
+before  ships 306 fleets 1 | state 126 630 bytes | fnv1a bf94cb6da752004c
+after   ships 306 fleets 1 | state 126 630 bytes | fnv1a bf94cb6da752004c
+```
+
+**One row failed first, and it was the test that was wrong.** `AOneShardGalaxyHandsOffNothing`
+asserted a conserved global census and got 307 → 306. Rather than adjust the number, the question was
+which: with no order issued at all the census does not move for 30 000 ticks, so it was not drift —
+and a per-faction breakdown showed **player 3, Vanguard 300, Vandal 4 → 3**. The fleet flying across
+the home system takes it past the hostile base, a fight happens at tick 1842, and a Vandal Interceptor
+dies. Combat is not this slice's business. Every row now counts the **player's** ships, which is the
+invariant a handoff actually owns, and the row additionally proves the fleet *went* somewhere rather
+than stalling at the gate for thirty thousand ticks — which the original census assertion would have
+passed either way.
+
+**The gap:** the outbox and inbox are in memory, so a shard that dies mid-handoff loses them. That is
+slice 3's, it is named in §3 rather than implied, and until it lands the recoverability ADR 0065
+claims is a property of the design and not yet of the build.

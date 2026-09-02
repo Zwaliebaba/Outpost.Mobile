@@ -424,6 +424,76 @@ public:
   // in the tree that ever saved at tick zero (Design/Archive/Universe-slice-5b.md 7).
   void SettleDerivedState();
 
+  // --- cross-shard handoff -------------------------------------------------------------------------
+
+  // One ship handed off to another shard: everything the arriving universe needs and nothing it can
+  // derive (Design/CrossShard.md 4).
+  //
+  // This is the message slice 4 will put on a wire, written now as a struct so that the wire is a
+  // transport for a shape that already exists rather than a design of its own -- the tree's pattern,
+  // and the reason QUIC ran across 127.0.0.1 before there was a second machine (ADR 0021, 0028).
+  //
+  // What it deliberately does NOT carry is an arrival position. The departing shard cannot compute
+  // one: the pose is read off the far gate's heading and position, and that gate is in another
+  // universe. So the handoff names the GATE and the arriving shard derives the pose from its own
+  // copy of it -- which is ADR 0056's "every intent is re-derived on the far side" applied to the one
+  // thing the local jump path could take for granted.
+  struct Handoff
+  {
+    // Who this is. The identity that survives leaving a universe, and the key the apply is idempotent
+    // on: SpawnShipAs refuses an entity already here, so a re-delivered entry is a no-op.
+    EntityId entity = INVALID_ENTITY_ID;
+
+    // Which gate it arrives at, in the ARRIVING shard's own table. Resolved there, never here.
+    EntityId gate = INVALID_ENTITY_ID;
+
+    std::uint32_t hullId = 0;
+    FactionId factionId = FACTION_PLAYER;
+    std::uint32_t hullPoints = 0;
+
+    // What the far side re-forms the fleet from (Design/CrossShard.md 5). The owner is an OwnerId and
+    // not the faction, because the slot is the owner's -- and the first version of that key lost a
+    // fleet through a gate for exactly this reason (Design/Archive/OwnerKey-work-order.md 8).
+    OwnerId owner = OWNER_NOBODY;
+    FactionId ownerFaction = FACTION_PLAYER;
+    std::uint8_t slot = 0;
+
+    // Where in the arrival spread this ship goes, and how wide the spread is. Carried per entry so
+    // that an entry can be applied ALONE: a batch-only apply would have to be rewritten the day a
+    // wire can deliver half of one, which is slice 4.
+    std::uint32_t memberIndex = 0;
+    std::uint32_t crossingCount = 1;
+
+    // Which send this was. Written here and cleared by nothing this slice -- the ack that clears it
+    // needs a transport that can lose a message, and there is none yet (slice 4).
+    std::uint64_t sequence = 0;
+  };
+
+  // What has left this universe and not yet been applied. The caller is whatever moves a handoff
+  // between shards: a test in this slice, a transport in slice 4.
+  [[nodiscard]] std::span<const Handoff> Outbox() const noexcept
+  {
+    return m_outbox;
+  }
+
+  // Drops the entries the far side has acknowledged, by sequence. Nothing calls it this slice -- the
+  // ack needs a transport that can lose a message -- and it is here because the outbox would
+  // otherwise be a list with no way out, which is a leak that reads as a design (slice 4).
+  void AcknowledgeHandoffs(std::span<const std::uint64_t> _sequences);
+
+  // Accepts a handoff into this universe's inbox. Idempotent at this end too: an entry whose entity
+  // is already queued is dropped, so a re-send between the deliver and the drain does not queue the
+  // same ship twice.
+  void DeliverHandoff(const Handoff& _handoff);
+
+  // Applies every queued handoff, in entity order. Called at a tick boundary by whatever owns the
+  // stepping -- never inside Step, because a handoff has to arrive on a STATED tick or the replay
+  // gates stop meaning anything (Design/CrossShard.md 4).
+  //
+  // Returns how many ships it spawned. Applying the same batch twice spawns nothing the second time,
+  // which is the idempotence the whole scheme rests on: SpawnShipAs refuses an entity already here.
+  std::uint32_t DrainInbox();
+
   [[nodiscard]] ShardId Shard() const noexcept
   {
     return m_shard;
@@ -931,6 +1001,10 @@ private:
   // cannot say, and the reason the trickle was turned down (ADR 0056, Design/Archive/Universe.md 6.2).
   void StepJumps();
 
+  // Forms or joins the fleets the last drain's arrivals belong to, from the owner and slot each
+  // handoff carried. After every member exists, never during the spawn walk.
+  void ReformArrivedFleets();
+
   void StepPatrols();
 
   // The protector response, third in the standing-intent slot.
@@ -1254,8 +1328,49 @@ private:
     FactionId ownerFaction = FACTION_PLAYER;
     std::uint8_t slot = 0;
     std::uint32_t memberIndex = 0;
+
+    // Where this ship is going when it is leaving the shard: the far gate's identity, which the
+    // arriving universe resolves in its own table. arrivalPos and headingRad above are meaningless
+    // in that case and are not read -- the far side derives both from the gate it is handed.
+    EntityId gate = INVALID_ENTITY_ID;
+    bool leavesTheShard = false;
+
+    // Where in the arrival spread, and how wide it is. Held for the same reason the handoff holds
+    // them: so the far side can place one arriving ship without the rest of its fleet.
+    std::uint32_t placeIndex = 0;
+    std::uint32_t crossingCount = 1;
   };
   std::vector<Jumper> m_jumpScratch;
+
+  // Ships that have left this universe and have not been applied anywhere yet.
+  //
+  // **The ship is here and nowhere else for the duration**, which is the honest statement of what a
+  // player sees: a fleet mid-handoff is in neither universe. One tick under any healthy condition,
+  // and unbounded while the far shard is unreachable -- which is why the design says a gate to a
+  // shard that is not answering refuses the jump at the ORDER rather than losing a fleet into this
+  // (Design/CrossShard.md 4, 6).
+  //
+  // In memory this slice, which means a shard that dies here loses them. That hole is slice 3's and
+  // is named rather than hidden: the outbox joins the state codec there.
+  std::vector<Handoff> m_outbox;
+
+  // Handoffs delivered to this universe and not yet applied. Drained at a tick boundary in ENTITY
+  // order -- not inside Step, for the reason an order is not, and not in arrival order, so two shards
+  // that delivered one batch in two orders produce the same universe.
+  std::vector<Handoff> m_inbox;
+
+  // What the next handoff out of here is numbered. Monotonic per universe and saved with it in
+  // slice 3, so a re-send after a reload cannot reuse a number the far side has already seen.
+  std::uint64_t m_nextHandoff = 1;
+
+  // Ships spawned by one DrainInbox, grouped so the fleets can be formed after every member exists.
+  // Reused between drains, like every other scratch here.
+  std::vector<Handoff> m_arrivalScratch;
+  std::vector<ShipId> m_arrivalShipScratch;
+
+  // Entries one drain could not apply, because the gate they name is not in this universe. Held
+  // rather than dropped: a handoff in flight when a layout changed arrives when its gate does.
+  std::vector<Handoff> m_heldScratch;
 
   // The fleets, of every faction. Dense and walked in array order like everything else here, and
   // deliberately NOT parallel to m_ships: a fleet is a thing ships belong to, where a patrol is
