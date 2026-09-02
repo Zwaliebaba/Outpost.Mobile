@@ -95,3 +95,65 @@ So this slice draws. It sends no order, changes no simulation state, and adds no
   drawn on the system it is in, which is what `SystemAt` answers and what the status block carries.
 - **The map is read at human cadence.** Drawing 54 nodes and 68 edges through the overlay pipeline
   every frame is not a number worth optimising, and this slice does not.
+
+---
+
+## 7. What changed on contact, and what is deliberately not here
+
+- **The map sits behind the HUD in the pointer chain, not ahead of it, and §2.1 and §4.1 were in
+  tension about that.** They said both "consumes every pointer event while open" and "the rail button
+  toggles it", and those cannot both be true of a screen whose switch is a HUD button: a modal that
+  swallows its own switch is a modal you can only leave with Escape. The chain is now assembly →
+  sheet → HUD → map → tracker, with the HUD narrowed to its rail while the map is up
+  (`Hud::HandlePointer`'s `_railOnly`). The minimap, the bottom bar and the fleet buttons are under
+  the map's scrim and take nothing; the map consumes everything the rail did not, which is what the
+  modal contract meant.
+- **The rail button is the state, and the screen follows it.** `Hud::ActiveRail` was already a toggle
+  that lit itself, so pushing the screen's open state into the HUD would have been a second truth
+  that could drift from it. The composition root reads the rail each frame and opens or closes the
+  map to match; Escape and a ledger reply both call `Hud::ClearActiveRail`, because closing the screen
+  without unlighting the button would have the sync reopen it on the next frame.
+- **The projection is `Neuron::FitBoxIsotropic` in `NeuronClient`, not a private function of the
+  screen.** §5 asked for a test of the projection alone and there is no `Outpost`-side suite to put
+  one in — `TickStats` from an earlier slice has the same gap. The fit is arithmetic over two
+  rectangles with no game type and no graphics type in it, so it belongs in the presentation library
+  beside `ViewCulling`, where `NeuronClientTests` can reach it. That is where the isotropy claim is
+  actually proved rather than looked at.
+- **A digit is drawn for every held slot, and `SystemAt` is why there is no "in no system" case.**
+  §4.3 asked for a fleet in no system to draw nothing. `Game::SystemAt` is a *nearest* and always has
+  an answer, so a fleet mid-crossing draws on the system it is closest to instead of vanishing — which
+  is better, and is what the design's own §1 says the function is for. The only no-digit case is a
+  slot the server does not hold, which `IsFleetHeld` answers.
+- **No system is named and no tap does anything**, per §3. The pointer handler takes an unnamed
+  parameter, which is the honest spelling of a screen that looks at nothing about the event yet.
+
+## 8. What was verified, and how — and the honest gap
+
+`Neuron::FitBoxIsotropic` was run against every case its suite asserts, and the numbers match the
+test to the digit: one scale for both axes, the source inside the destination with no slack left in
+both axes at once, the panel's offset carried, a flat source fitted by the axis that has extent and
+centred in the one that does not, a single point at scale 1 in the middle, and an empty destination
+at a non-positive scale that draws nothing rather than inside out.
+
+The projection was then run over the **shipped galaxy** at four window sizes, through the screen's own
+layout arithmetic:
+
+```
+systems 54 links 68 | bounds x 1300550 m across, z 1167623 m down
+1280x720   dpi 1.0 | 100 km reads 43.16 px across and 43.16 px down | every node inside the plot
+1920x1080  dpi 1.0 | 100 km reads 74.00 px across and 74.00 px down | every node inside the plot
+2560x1440  dpi 1.5 | 100 km reads 95.58 px across and 95.58 px down | every node inside the plot
+ 800x1400  dpi 1.0 | 100 km reads 46.44 px across and 46.44 px down | every node inside the plot
+```
+
+Landscape fits to the height and portrait to the width, which is the fit choosing the tighter axis.
+At 1920x1080 the closest two stars a galaxy of this description can hold — 56,930 m by
+`MinimumStarSeparationMetres` — are 42 px apart, so the nodes are separable at every size a window
+takes.
+
+**The gap, and it is the acceptance criterion:** §5 asks for screenshots at two window sizes, and
+nothing in this container can produce one — there is no MSVC, no D3D12 and no window. `GalaxyScreen.cpp`
+was compiled clean at `-Wall -Wextra` against stubbed presentation types, which proves it is
+well-formed and proves nothing about what it looks like. The owner waived Windows-only manual checks
+on 2026-09-02 and made CI-green the gate; this is the slice where that waiver costs the most, because
+a screen is the one thing a suite cannot accept.

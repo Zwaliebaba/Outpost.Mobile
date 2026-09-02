@@ -105,6 +105,9 @@
     <ClInclude Include="ViewCulling.h">
       <Filter>Render</Filter>
     </ClInclude>
+    <ClInclude Include="BoxFit.h">
+      <Filter>Render</Filter>
+    </ClInclude>
     <ClInclude Include="SkyRenderer.h">
       <Filter>Render</Filter>
     </ClInclude>

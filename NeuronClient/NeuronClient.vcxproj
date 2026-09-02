@@ -246,6 +246,7 @@
     <ClInclude Include="FxRenderer.h" />
     <ClInclude Include="GlowBillboards.h" />
     <ClInclude Include="ViewCulling.h" />
+    <ClInclude Include="BoxFit.h" />
     <ClInclude Include="SkyRenderer.h" />
     <ClInclude Include="BitmapFont.h" />
     <ClInclude Include="ScreenImage.h" />

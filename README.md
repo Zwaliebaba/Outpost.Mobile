@@ -56,7 +56,11 @@ five fleets, and everything below follows from that. You can:
   keeping every identity and every point of damage, and the camera crosses with it. The far side's
   worlds, rocks and minimap marks are the far side's.
 - **Read the universe** through the HUD: minimap with the sector pair, your fleets' digits on it
-  wherever they are, contact count, event log, and a function rail whose screens are not built yet.
+  wherever they are, contact count, event log, and a function rail. `UNIVRS` on the rail opens the
+  galaxy map — all 54 systems at their real positions, every gate as a line, the system you are in
+  marked, and each of your fleets as its digit on the system it is in. It is a map to read, not yet a
+  map to point at: tapping a system does nothing until the next slice. `Esc` or the button closes it;
+  the other three rail screens are not built yet.
 
 A second faction lives 1.2 km northeast: a Vandal station with three Interceptors walking a ring
 around it. They are drawn red, they count as contacts, and they cannot be selected or ordered — the

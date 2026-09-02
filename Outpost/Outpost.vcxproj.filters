@@ -28,6 +28,9 @@
     <ClCompile Include="AssemblyScreen.cpp">
       <Filter>View</Filter>
     </ClCompile>
+    <ClCompile Include="GalaxyScreen.cpp">
+      <Filter>View</Filter>
+    </ClCompile>
     <ClCompile Include="FleetSheet.cpp">
       <Filter>View</Filter>
     </ClCompile>
@@ -56,6 +59,9 @@
       <Filter>View</Filter>
     </ClInclude>
     <ClInclude Include="AssemblyScreen.h">
+      <Filter>View</Filter>
+    </ClInclude>
+    <ClInclude Include="GalaxyScreen.h">
       <Filter>View</Filter>
     </ClInclude>
     <ClInclude Include="FleetSheet.h">

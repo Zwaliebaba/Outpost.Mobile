@@ -587,6 +587,26 @@ inline constexpr float HUD_ASSEMBLY_LEFT_FRACTION = 0.52f;
 inline constexpr Neuron::Rgba HUD_ASSEMBLY_SCRIM{0.0f, 0.0f, 0.0f, 0.55f};
 inline constexpr float HUD_ASSEMBLY_DISABLED_ALPHA = 0.35f;
 
+// --- the galaxy map -------------------------------------------------------------------------------
+// The whole galaxy on one screen, drawn from the layout the client already holds (Design/GalaxyMap.md).
+// Modal and near-full-screen, unlike the assembly panel: it is a MAP, and a map in a 520-pixel box is
+// a map you have to squint at. The margins are what keep it off the window edge at any size.
+inline constexpr float HUD_MAP_MARGIN_PX = 48.0f;
+inline constexpr float HUD_MAP_HEADER_PX = 44.0f;
+inline constexpr float HUD_MAP_PAD_PX = 24.0f;
+// The plot's own inset inside the panel, so a node at the extreme of the bounding box still has its
+// dot and its digit drawn rather than clipped by the frame. Sized off the largest thing drawn at a
+// node, which is the fleet digit.
+inline constexpr float HUD_MAP_INSET_PX = 26.0f;
+inline constexpr float HUD_MAP_NODE_PX = 5.0f;
+inline constexpr float HUD_MAP_HERE_PX = 13.0f; // the ring around the system the camera is in
+inline constexpr float HUD_MAP_EDGE_PX = 1.0f;
+// The gate graph, drawn under the nodes. Dim on purpose: 68 edges at the node colour is a mesh the
+// systems disappear into, and the edges are context while the nodes are the content.
+inline constexpr Neuron::Rgba HUD_MAP_EDGE_COLOUR{0.28f, 0.36f, 0.44f, 0.55f};
+inline constexpr Neuron::Rgba HUD_MAP_NODE_COLOUR{0.60f, 0.70f, 0.80f, 1.0f};
+inline constexpr Neuron::Rgba HUD_MAP_SCRIM{0.0f, 0.0f, 0.0f, 0.70f};
+
 // --- the fleet sheet ------------------------------------------------------------------------------
 // One fleet's panel, held over the bottom bar by a long press on its button (Design/Archive/Fleets.md 9.3).
 // Anchored to the bar rather than centred, because unlike the assembly screen it is not modal: the

@@ -822,6 +822,14 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
     // that Escape does not close is a modal a player gets stuck in.
     if (m_assembly.IsOpen())
       m_assembly.Close();
+    else if (m_map.IsOpen())
+    {
+      // The rail button is the map's switch, so closing the map by any other route has to unlight
+      // it: a lit button over a closed screen would reopen the map on the next frame's sync below,
+      // and Escape would look like it had done nothing.
+      m_map.Close();
+      m_hud.ClearActiveRail();
+    }
     else if (m_sheet.IsOpen())
       m_sheet.Close();
     // Drops the selection next; only quits once nothing is selected. By fleets rather than by
@@ -912,16 +920,42 @@ void OutpostApp::Update()
     if (m_sheet.HandlePointer(event, m_view, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx()))
       continue;
 
+    // The HUD before the map, and narrowed to its rail while the map is up. That inversion is
+    // deliberate and is the one place the map differs from the assembly screen: the rail's Universe
+    // button is what opened the map, so it has to stay reachable to close it, while everything else
+    // the HUD owns is behind the map's scrim and must not take a press through it. The map then
+    // takes every event the rail did not, which is what modal means here.
     int openSheet = -1;
-    const bool usedByHud = m_hud.HandlePointer(event, m_view, openSheet, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
+    const bool usedByHud =
+      m_hud.HandlePointer(event, m_view, openSheet, m_map.IsOpen(), m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
     if (openSheet >= 0)
       m_sheet.Open(openSheet);
     if (usedByHud)
+      continue;
+    if (m_map.HandlePointer(event))
       continue;
     m_pointers.Apply(event, m_camera, m_view);
   }
   m_pendingEvents.clear();
   m_camera.Update(); // input may have moved it again
+
+  // The rail's Universe button IS the map's open state, followed rather than mirrored. The button is
+  // a toggle the HUD already owned and lights itself; making the screen follow it keeps one truth
+  // instead of two that can drift, and Escape unlights the button rather than closing the screen
+  // behind its back (OnKeyDown).
+  const bool wantsMap = m_hud.ActiveRail() == static_cast<int>(Hud::RailIcon::Universe);
+  if (wantsMap && !m_map.IsOpen())
+  {
+    m_map.Open();
+    // Modal from this frame on, so a contact the tracker is still holding would never be released to
+    // it -- the assembly screen's reason, below. The HUD's capture is NOT dropped here and must not
+    // be: this ran because a rail press completed, which released that capture itself, and cancelling
+    // it again would be cancelling the next one if the sync ever stopped being immediate.
+    m_pointers.CancelContacts();
+    m_sheet.Close();
+  }
+  else if (!wantsMap && m_map.IsOpen())
+    m_map.Close();
 
   // A pan gives the camera back to the player, and this is the only place that can see one: pan,
   // orbit and zoom reach Camera straight out of PointerTracker and never touch the listener, so
@@ -952,6 +986,11 @@ void OutpostApp::Update()
     m_pointers.CancelContacts();
     m_hud.CancelCapture();
     m_sheet.Close(); // one panel at a time; the modal one wins
+
+    // And the map, whose switch is a rail button: closing it without unlighting the button would
+    // have the sync above reopen it under the assembly screen on the next frame.
+    m_map.Close();
+    m_hud.ClearActiveRail();
   }
 
   // Where the player is looking becomes what the server sends. The composition root is the only
@@ -1010,9 +1049,15 @@ void OutpostApp::Render()
     frame.contacts += m_view.IsHostileToMe(ship.factionId) ? 1 : 0;
   m_hud.Draw(m_textRenderer, m_view.Ships(), m_view, m_camera, m_log, frame, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
 
-  // The sheet sits over the bar, then the assembly screen over everything: it is modal and draws
-  // its own scrim, the bar and the sheet included.
+  // The sheet sits over the bar, then the map, then the assembly screen over everything: both
+  // screens are modal and draw their own scrim, the bar and the sheet included. The assembly screen
+  // is last because it is the one that can open while the map is up -- a ledger reply closes the map
+  // below, and drawing it last means it is on top on the frame that happens.
   m_sheet.Draw(m_textRenderer, m_view, HULL_NAMES, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
+  // Guarded rather than left to Draw's own early return, because the argument is work: SystemAtCamera
+  // walks all 54 stars, and a closed screen must cost nothing per frame (GalaxyMap-slice-1.md 4.5).
+  if (m_map.IsOpen())
+    m_map.Draw(m_textRenderer, m_galaxy, m_view, SystemAtCamera(), m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
   m_assembly.Draw(m_textRenderer, m_view, HULL_NAMES, FACTION_NAMES, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
 
   m_textRenderer.Flush(m_gpu); // the overlay goes on last, before the frame is presented

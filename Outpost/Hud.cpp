@@ -178,6 +178,16 @@ Hud::Layout Hud::ComputeLayout(float _dpiScale, std::uint32_t _widthPx, std::uin
   return layout;
 }
 
+bool Hud::OverRail(const Layout& _layout, float _xPx, float _yPx) const noexcept
+{
+  for (const Rect& rect : _layout.rail)
+  {
+    if (rect.Contains(_xPx, _yPx))
+      return true;
+  }
+  return false;
+}
+
 bool Hud::OverAnyPanel(const Layout& _layout, float _xPx, float _yPx) const noexcept
 {
   for (const Rect& rect : _layout.resources)
@@ -185,12 +195,7 @@ bool Hud::OverAnyPanel(const Layout& _layout, float _xPx, float _yPx) const noex
     if (rect.Contains(_xPx, _yPx))
       return true;
   }
-  for (const Rect& rect : _layout.rail)
-  {
-    if (rect.Contains(_xPx, _yPx))
-      return true;
-  }
-  return _layout.minimap.Contains(_xPx, _yPx) || _layout.bar.Contains(_xPx, _yPx);
+  return OverRail(_layout, _xPx, _yPx) || _layout.minimap.Contains(_xPx, _yPx) || _layout.bar.Contains(_xPx, _yPx);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -755,17 +760,23 @@ void Hud::Draw(TextRenderer& _text, std::span<const Game::ShipSnapshot> _ships, 
 // Input. A press that starts on a panel belongs to the HUD until it lifts; nothing about it reaches
 // the tracker, so it can neither pick a hull nor lay down an order through the bar.
 
-bool Hud::HandlePointer(const PointerEvent& _event, UniverseView& _view, int& _outOpenSheet, float _dpiScale, std::uint32_t _widthPx,
-                        std::uint32_t _heightPx)
+bool Hud::HandlePointer(const PointerEvent& _event, UniverseView& _view, int& _outOpenSheet, bool _railOnly, float _dpiScale,
+                        std::uint32_t _widthPx, std::uint32_t _heightPx)
 {
   const Layout layout = ComputeLayout(_dpiScale, _widthPx, _heightPx);
 
+  // While a modal screen is up the HUD's interest is its rail and nothing else. The panels are still
+  // drawn -- they are behind the screen's scrim -- and a press on one of them belongs to the screen
+  // in front of them, which takes everything this returns false for.
+  const auto interested = [&](float _xPx, float _yPx)
+  { return _railOnly ? OverRail(layout, _xPx, _yPx) : OverAnyPanel(layout, _xPx, _yPx); };
+
   if (_event.kind == PointerEvent::Kind::Wheel)
-    return OverAnyPanel(layout, _event.xPx, _event.yPx); // no zooming the universe through the minimap
+    return interested(_event.xPx, _event.yPx); // no zooming the universe through the minimap
 
   if (_event.kind == PointerEvent::Kind::Down)
   {
-    if (m_captured || !OverAnyPanel(layout, _event.xPx, _event.yPx))
+    if (m_captured || !interested(_event.xPx, _event.yPx))
       return false;
 
     m_captured = true;
@@ -778,7 +789,7 @@ bool Hud::HandlePointer(const PointerEvent& _event, UniverseView& _view, int& _o
       if (layout.rail[i].Contains(_event.xPx, _event.yPx))
         m_pressedRail = i;
     }
-    for (int i = 0; i < UniverseView::FLEET_SLOTS; ++i)
+    for (int i = 0; i < UniverseView::FLEET_SLOTS && !_railOnly; ++i)
     {
       if (layout.fleets[i].Contains(_event.xPx, _event.yPx))
         m_pressedFleet = i;

@@ -4,6 +4,7 @@
 #include "EventLog.h"
 #include "AssemblyScreen.h"
 #include "FleetSheet.h"
+#include "GalaxyScreen.h"
 #include "Hud.h"
 #include "ServerConfig.h"
 #include "UniverseSimulation.h"
@@ -236,6 +237,12 @@ private:
   // One fleet's sheet, over the bar. Not modal, so it takes only what lands on itself and sits
   // between the assembly screen and the HUD in the chain (Design/Archive/Fleets.md 9.3).
   FleetSheet m_sheet;
+
+  // The galaxy map, opened by the rail's Universe button. Modal, and it sits BEHIND the HUD in the
+  // pointer chain rather than ahead of it, which is the one place it differs from the assembly
+  // screen: the rail button that opens it has to be able to close it, so the HUD's rail runs first
+  // and the map takes everything the rail did not (Design/GalaxyMap-slice-1.md 7).
+  GalaxyScreen m_map;
   Neuron::FrameClock m_clock;
 
   // One ramp per class, indexed by BodyClass. A ramp that fails to load leaves its class drawing the

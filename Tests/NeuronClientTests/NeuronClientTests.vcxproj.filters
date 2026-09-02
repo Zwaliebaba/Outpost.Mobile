@@ -65,6 +65,9 @@
     <ClCompile Include="ViewCullingTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="BoxFitTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="SkyFieldTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
