@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Game::ServerConfig.h"
+#include "ServerConfig.h"
 #include "TickStats.h"
 
 #include "Publisher.h"

@@ -301,7 +301,7 @@ void OutpostApp::LoadServerConfig()
   // executable ships one stating exactly the defaults, so both paths through here are exercised by
   // somebody: the shipped file by every run, and the missing-file path by a checkout that has not
   // deployed assets.
-  const std::string text = TextFile::ReadFileA(SERVER_CONFIG_FILE);
+  const std::string text = TextFile::ReadFileA(Game::SERVER_CONFIG_FILE);
   if (text.empty())
     return; // no file, or an empty one: the defaults are what the game booted on before it existed
 

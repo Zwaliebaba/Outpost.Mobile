@@ -6,7 +6,7 @@
 #include "FleetSheet.h"
 #include "GalaxyScreen.h"
 #include "Hud.h"
-#include "Game::ServerConfig.h"
+#include "ServerConfig.h"
 #include "UniverseSimulation.h"
 #include "UniverseView.h"
 
