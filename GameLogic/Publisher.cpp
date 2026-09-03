@@ -123,6 +123,12 @@ void Publisher::SetCentre(Handle _handle, const UniversePos& _centre) noexcept
     found->centre = _centre;
 }
 
+void Publisher::SetRadiusMetres(Handle _handle, float _radiusMetres) noexcept
+{
+  if (Subscriber* const found = Resolve(_handle))
+    found->interest.SetRadiusMetres(_radiusMetres);
+}
+
 std::uint32_t Publisher::ThrottledTickCount(Handle _handle) const noexcept
 {
   const Subscriber* const found = Resolve(_handle);

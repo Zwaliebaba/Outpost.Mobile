@@ -15,6 +15,12 @@ void InterestSet::Configure(const Desc& _desc) noexcept
   m_desc.minWeight = std::clamp(_desc.minWeight, 1.0f / 64.0f, 1.0f);
 }
 
+void InterestSet::SetRadiusMetres(float _radiusMetres) noexcept
+{
+  if (_radiusMetres > 0.0f)
+    m_desc.radiusMetres = _radiusMetres;
+}
+
 bool InterestSet::IsDueOn(std::uint64_t _tick, std::uint32_t _phase) const noexcept
 {
   // The phase is taken modulo the period rather than asserted to be inside it, so a caller that

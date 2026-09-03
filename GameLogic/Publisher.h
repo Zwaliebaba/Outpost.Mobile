@@ -94,6 +94,13 @@ public:
 
   void SetCentre(Handle _handle, const UniversePos& _centre) noexcept;
 
+  // How far one subscriber sees, after it subscribed. Its neighbour above moves the centre and this
+  // moves the edge; both are the same kind of statement -- what this subscriber is looking at -- and
+  // neither is on the wire or in the replay contract. The caller owns the ceiling: this refuses a
+  // radius that is not positive and enforces nothing else, because how much one subscriber may cost
+  // is a deployment question and not this class's (Design/Archive/MmoScalabilityReview.md E4).
+  void SetRadiusMetres(Handle _handle, float _radiusMetres) noexcept;
+
   [[nodiscard]] std::uint32_t Count() const noexcept
   {
     return static_cast<std::uint32_t>(m_subscribers.size());

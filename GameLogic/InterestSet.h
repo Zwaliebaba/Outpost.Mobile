@@ -36,6 +36,21 @@ public:
 
   void Configure(const Desc& _desc) noexcept;
 
+  // The radius alone, for a subscriber whose view widened after it subscribed. Separate from
+  // Configure because the period and the floor are deployment configuration and the radius, once a
+  // camera can zoom, is not: restating all three every time the player turned a wheel would make it
+  // one mistake to silently reset the other two.
+  //
+  // Refused on the same terms Configure refuses one, so a radius that would empty the set cannot be
+  // set by arithmetic that went wrong upstream. Changing it changes what is sent and never what is
+  // simulated, which is this whole class's standing.
+  void SetRadiusMetres(float _radiusMetres) noexcept;
+
+  [[nodiscard]] float RadiusMetres() const noexcept
+  {
+    return m_desc.radiusMetres;
+  }
+
   // True on the ticks an update is due. The rate is counted in ticks rather than seconds so that a
   // measurement reproduces and a test can assert "ten updates in sixty ticks" exactly.
   //

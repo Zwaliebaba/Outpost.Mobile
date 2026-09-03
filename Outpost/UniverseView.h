@@ -210,6 +210,13 @@ public:
     // is: the sheet asks about a member after the record that answered has been superseded.
     std::uint8_t hullFraction = 255;
 
+    // Whether the last Render drew this hull as a mark instead of a mesh. It is not the opposite of
+    // visible: an icon ship passed the frustum test and is on screen, it just is not geometry any
+    // more. Read by DrawFeedback, which skips the ground rings, the plume and the running lights for
+    // one -- all three are drawn at the hull's own scale, and at a range where the hull is four
+    // pixels they are wasted work that renders as nothing.
+    bool asIcon = false;
+
     bool selected = false;
     float ringFade = 0.0f;  // 0..1 alpha ramp on select and deselect
     float ringScale = 0.0f; // chases the selected state through a spring, so it overshoots
@@ -217,6 +224,45 @@ public:
     float hoverAmount = 0.0f;
     float bankRad = 0.0f;
     float thrusterIntensity = 0.0f;
+  };
+
+  // What a hull is drawn as once it is too small to be drawn as a hull.
+  //
+  // The vocabulary is deliberately three marks and not ten. It has to be readable at nine pixels
+  // through a 1.6 px line, and at that size the only things a shape can say are "which way is it
+  // pointing" and "roughly what is it": a chevron is a ship and carries its heading, a box is a
+  // civilian hull that has none worth reading, and a diamond is something that does not move -- the
+  // same diamond the minimap already draws a station with, because a player who has learned one mark
+  // should not have to learn a second for the same thing (Design/Archive/Stations.md 9.3).
+  enum class IconShape : std::uint8_t
+  {
+    Chevron,
+    Box,
+    Diamond
+  };
+
+  // One mark, in screen pixels, as the last Render worked it out.
+  //
+  // It holds an entity and not an index on purpose. Picking runs on the pointer events of the NEXT
+  // frame, and a snapshot applied in between can move a ship's array index -- despawn is a
+  // swap-and-pop (ADR 0005) -- so an index kept here would quietly start naming a different ship.
+  struct ShipIcon
+  {
+    Game::EntityId entity = Game::INVALID_ENTITY_ID;
+    float xPx = 0.0f;
+    float yPx = 0.0f;
+    // The hull's heading as a unit vector on the screen, from the projection rather than from the
+    // yaw: which way a heading points on screen depends on where the camera is standing.
+    float forwardXPx = 0.0f;
+    float forwardYPx = -1.0f;
+    float sizePx = 0.0f;
+    // How far off the hull was. Carried only so that a frame with more marks than the overlay's
+    // vertex budget can afford drops the farthest rather than whichever the walk reached last.
+    float eyeDistanceMetres = 0.0f;
+    Neuron::Rgba colour{1.0f, 1.0f, 1.0f, 1.0f};
+    IconShape shape = IconShape::Chevron;
+    bool selected = false;
+    float hoverAmount = 0.0f;
   };
 
   // A station of the layout, for the minimap: where it is and whose it is. Static content handed in
@@ -263,6 +309,18 @@ public:
   void SetOwnFaction(Game::FactionId _faction) noexcept
   {
     m_ownFaction = _faction;
+  }
+
+  // What one logical pixel is worth on this window, pushed in each frame the way the HUD's own Draw
+  // is handed it -- a monitor change moves it, so it is not a boot-time fact.
+  //
+  // The ship marks are the only thing here that needs it, and they need it for both halves of what
+  // they do: a nine-pixel chevron is half the size it should be on a 200 % display, and a tap radius
+  // in raw pixels is half the finger it was measured for. One value so those two cannot disagree --
+  // a mark that is drawn bigger than it can be hit is worse than one that is drawn small.
+  void SetDpiScale(float _scale) noexcept
+  {
+    m_dpiScale = (_scale > 0.0f) ? _scale : 1.0f;
   }
 
   // Drains the transport and applies whatever snapshots arrived. Called once per tick from the
@@ -667,6 +725,63 @@ private:
   // need it -- they are shaped entirely in the pixel shader from root constants.
   void DrawFeedback(Neuron::SceneRenderer& _renderer, Neuron::GpuDevice& _gpu, const Neuron::SceneFrame& _frame);
 
+  // The mark one hull draws as, by the hull it is: which shape, and how big in LOGICAL pixels --
+  // the DPI scale is applied where the mark is built, not here. Both are total over Game::HULL_COUNT,
+  // so a hull added to the table gets a mark rather than nothing.
+  [[nodiscard]] static IconShape IconShapeOfHull(std::uint32_t _hullId) noexcept;
+  [[nodiscard]] static float IconSizeOfHull(std::uint32_t _hullId) noexcept;
+
+  // Appends record _index's mark to this frame's list. Takes what the walk in Render has already
+  // worked out -- where the hull's bounds are, which way it is pointing, how far off it is and what
+  // paint it wears -- rather than deriving any of it again, so a mark cannot end up anywhere but
+  // where the hull it replaced would have drawn.
+  void PushShipIcon(std::size_t _index, const DirectX::XMFLOAT3& _boundsCentre, float _headingRad, float _eyeDistanceMetres,
+                    Neuron::Rgba _livery, float _alpha);
+
+  // This frame's marks, in the order Render built them. Queued into the overlay at the end of Render
+  // so the HUD, which draws afterwards, is on top of them.
+  void DrawShipIcons(Neuron::TextRenderer& _text) const;
+
+  // The mark nearest a pointer among the records _accept admits, or -1.
+  //
+  // Every picker below runs it, and the same one, so they cannot disagree about how close a tap has
+  // to land -- which is the property RayHitDistance already buys them for hulls. It exists because a
+  // hull too small to draw is a hull too small to hit: the box ray test cannot be made to catch a
+  // four-pixel hull, and a fleet that cannot be selected at the zoom it was zoomed out to see is a
+  // fleet the zoom took away.
+  //
+  // Nearest on the SCREEN and not along the ray: a mark is a picture rather than a body, and what a
+  // player aimed at is what their finger landed closest to.
+  //
+  // A fallback and never a widening. Every caller runs its ray first and only reaches this when the
+  // ray hit nothing at all, so a tap that lands on a real hull always takes that hull -- which
+  // matters in the fade band, where a hull is drawn as both and a nearer ship's mark must not steal a
+  // tap that landed on a farther ship's hull.
+  //
+  // The radius is a parameter and not read from ViewTuning.h, because a template body has to live in
+  // this header and this header does not see those constants -- the rule HullPointToWorld is out of
+  // line for. Squared throughout, so it needs no <cmath> either.
+  template <typename Accept> [[nodiscard]] int NearestIcon(float _xPx, float _yPx, float _radiusPx, Accept _accept) const
+  {
+    int best = -1;
+    float bestSqPx = _radiusPx * _radiusPx;
+    for (const ShipIcon& icon : m_shipIcons)
+    {
+      const std::size_t index = IndexOfEntity(icon.entity);
+      if (index >= m_ships.size() || !_accept(index))
+        continue;
+      const float dx = icon.xPx - _xPx;
+      const float dy = icon.yPx - _yPx;
+      const float distanceSqPx = dx * dx + dy * dy;
+      if (distanceSqPx <= bestSqPx)
+      {
+        bestSqPx = distanceSqPx;
+        best = static_cast<int>(index);
+      }
+    }
+    return best;
+  }
+
   // Where a screen ray meets record _index's hull, as a distance along the ray, or a negative
   // number for a miss. Against the oriented box of the hull as drawn, widened by _padding: the
   // pickers below are filters over it and nothing else, so they cannot disagree about what a hull
@@ -896,6 +1011,12 @@ private:
   };
   std::vector<PosedHull> m_posed;
 
+  // The hulls this frame that were replaced by a mark, in the order the walk found them. Rebuilt
+  // every frame and kept across them for m_meshBuckets' reason -- a steady fleet allocates nothing
+  // after the first -- and read a frame late by the pickers, which is what the entity in a ShipIcon
+  // is for.
+  std::vector<ShipIcon> m_shipIcons;
+
   // The record this client last ordered an attack on, for the bracket bar (Design/Archive/Combat.md 10.3).
   // Client-local and nowhere on the wire: the fleet status block says a fleet is attacking, never
   // what, and a target that leaves the interest set drops out of here rather than pointing at a
@@ -981,6 +1102,10 @@ private:
 
   EventLog* m_log = nullptr;
   std::span<const char* const> m_factionNames;
+
+  // What one logical pixel is worth on this window (SetDpiScale). One until the composition root
+  // says otherwise, which is what a test or a headless double gets.
+  float m_dpiScale = 1.0f;
 
   int m_hoverShip = -1;
   bool m_boxActive = false;

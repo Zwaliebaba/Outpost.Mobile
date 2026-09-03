@@ -85,7 +85,14 @@ stand where the layout put a station. All of it is
 presentation only and a ship flies straight through a rock (`Design/Decisions/0016`). There is no
 ground: the scene pass draws no plane and has no grid
 (`Design/Decisions/0025`), and the flat y = 0 plane a move order lands on is arithmetic in `Camera`
-rather than geometry. D3D12 renderer, WM_POINTER input covering mouse and touch — including a long
+rather than geometry. The camera pulls back far enough to frame a whole sector — 8 192 m, the pair
+the HUD names and the boundaries the minimap draws — and a hull too small to read at that range is
+replaced by a screen-space mark in its own livery, a chevron carrying its heading, a box for a
+civilian hull or the minimap's own diamond for something that does not move; a mark is tappable
+where the hull under it is not, and the interest set widens with the zoom under a half-sector
+ceiling so the sector the player is shown is the sector the wire brings
+([ADR 0068](Design/Decisions/0068-the-cameras-zoom-decides-the-interest-radius.md)).
+D3D12 renderer, WM_POINTER input covering mouse and touch — including a long
 press, which the tracker learned when there was finally a menu to open — a main-screen HUD whose five
 buttons are the five fleet slots, a fleet sheet a hold opens over the bar and a modal assembly screen
 a station's hold opens, and a modal galaxy map the function rail's `UNIVRS` button opens -- all 54

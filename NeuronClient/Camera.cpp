@@ -36,10 +36,15 @@ void Camera::Update() noexcept
   XMStoreFloat3(&m_right, right);
   XMStoreFloat3(&m_up, XMVector3Cross(forward, right));
 
+  // The near plane rides the zoom where the caller asked for it (Desc::nearFractionOfDistance): the
+  // orbit distance is a lower bound on how far the eye is from anything it can see, so a camera a
+  // sector back can afford a near plane a sector's worth of depth precision wants.
+  m_nearPlane = std::max(0.01f, std::max(m_desc.nearPlane, distance * m_desc.nearFractionOfDistance));
+
   const float aspect = static_cast<float>(m_viewWidthPx) / static_cast<float>(std::max(1u, m_viewHeightPx));
   const XMMATRIX view = XMMatrixLookAtLH(eye, target, XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f));
-  const XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(std::clamp(m_desc.fovDeg, 5.0f, 170.0f)), aspect,
-                                                 std::max(0.01f, m_desc.nearPlane), std::max(1.0f, m_desc.farPlane));
+  const XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(std::clamp(m_desc.fovDeg, 5.0f, 170.0f)), aspect, m_nearPlane,
+                                                 std::max(m_nearPlane + 1.0f, m_desc.farPlane));
   const XMMATRIX viewProj = view * proj;
   XMStoreFloat4x4(&m_viewProj, viewProj);
   XMStoreFloat4x4(&m_invViewProj, XMMatrixInverse(nullptr, viewProj));

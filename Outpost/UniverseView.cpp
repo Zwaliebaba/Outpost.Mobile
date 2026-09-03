@@ -1282,7 +1282,9 @@ int UniverseView::PickShip(float _xPx, float _yPx) const
       best = static_cast<int>(i);
     }
   }
-  return best;
+  // Only where the ray found no hull at all: a hull drawn as a mark has none to find, and this is
+  // what keeps it selectable at the zoom the mark exists for (NearestIcon).
+  return (best >= 0) ? best : NearestIcon(_xPx, _yPx, ICON_PICK_RADIUS_PX * m_dpiScale, [this](std::size_t _i) { return IsOwn(_i); });
 }
 
 int UniverseView::PickStation(float _xPx, float _yPx) const
@@ -1307,7 +1309,9 @@ int UniverseView::PickStation(float _xPx, float _yPx) const
       best = static_cast<int>(i);
     }
   }
-  return best;
+  return (best >= 0) ? best
+                     : NearestIcon(_xPx, _yPx, ICON_PICK_RADIUS_PX * m_dpiScale,
+                                   [&state](std::size_t _i) { return (state[_i].flags & Game::SHIP_FLAG_STATION) != 0; });
 }
 
 int UniverseView::PickGate(float _xPx, float _yPx) const
@@ -1330,7 +1334,9 @@ int UniverseView::PickGate(float _xPx, float _yPx) const
       best = static_cast<int>(i);
     }
   }
-  return best;
+  return (best >= 0) ? best
+                     : NearestIcon(_xPx, _yPx, ICON_PICK_RADIUS_PX * m_dpiScale,
+                                   [&state](std::size_t _i) { return (state[_i].flags & Game::SHIP_FLAG_GATE) != 0; });
 }
 
 void UniverseView::IssueJumpOrder(std::size_t _gate)
@@ -1386,7 +1392,9 @@ int UniverseView::PickHostile(float _xPx, float _yPx) const
       best = static_cast<int>(i);
     }
   }
-  return best;
+  return (best >= 0) ? best
+                     : NearestIcon(_xPx, _yPx, ICON_PICK_RADIUS_PX * m_dpiScale,
+                                   [this, &state](std::size_t _i) { return IsHostileToMe(state[_i].factionId); });
 }
 
 // One message per selected slot, and nothing in any of them names a ship. A selection of five
@@ -1887,6 +1895,7 @@ void UniverseView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRendere
   for (MeshBucket& bucket : m_meshBuckets)
     bucket.instances.clear();
   m_posed.clear(); // here as well as after the walk, so an early return cannot leave a stale frame's hulls in it
+  m_shipIcons.clear();
 
   XMFLOAT4X4 world;
 
@@ -1988,32 +1997,60 @@ void UniverseView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRendere
     const XMFLOAT3 boundsCentre(x + (view.pickCentre.x * std::cos(heading) + view.pickCentre.z * std::sin(heading)) * SHIP_SCALE,
                                 SHIP_HOVER_HEIGHT + (view.restY + view.pickCentre.y) * SHIP_SCALE,
                                 z + (-view.pickCentre.x * std::sin(heading) + view.pickCentre.z * std::cos(heading)) * SHIP_SCALE);
-    const float boundsRadius = std::sqrt(view.halfExtents.x * view.halfExtents.x + view.halfExtents.y * view.halfExtents.y +
-                                         view.halfExtents.z * view.halfExtents.z) *
-                                 SHIP_SCALE +
-                               CULL_RADIUS_PAD_METRES;
-    view.visible = Neuron::IsSphereVisible(frustum, boundsCentre, boundsRadius);
+    const float hullRadius = std::sqrt(view.halfExtents.x * view.halfExtents.x + view.halfExtents.y * view.halfExtents.y +
+                                       view.halfExtents.z * view.halfExtents.z) *
+                             SHIP_SCALE;
+    view.visible = Neuron::IsSphereVisible(frustum, boundsCentre, hullRadius + CULL_RADIUS_PAD_METRES);
+    view.asIcon = false;
     if (view.visible)
     {
+      // Counted as submitted even when what gets submitted is a mark. These two numbers measure the
+      // CULLER -- what the frustum accepted against what it rejected -- and folding a second
+      // decision into them would make a working culler and a broken one look alike again, which is
+      // the failure the pair exists to catch (Hud::Stats).
       ++m_submittedCount;
-      // A hull with a turret off rest cannot be instanced: its parts each need a matrix and an
-      // instance carries one. Collected here with how far away it is and settled after the walk, so
-      // the nearest MAX_POSED_HULLS get their turrets and the rest go through the bucket -- the
-      // decision cannot be taken in submission order, because a hull that flickered in and out of
-      // the cap as another ship moved would flicker its turrets with it.
-      if (AnyMountOffRest(view))
+
+      // How big this hull actually is on screen, as a diameter in pixels: the same projected-size
+      // test the bodies above choose their level of detail by, against the hull's own extent rather
+      // than the padded culling sphere -- CULL_RADIUS_PAD_METRES is a trail length and would make an
+      // Interceptor read five times its size.
+      const float eyeDx = boundsCentre.x - frame.cameraPos.x;
+      const float eyeDy = boundsCentre.y - frame.cameraPos.y;
+      const float eyeDz = boundsCentre.z - frame.cameraPos.z;
+      const float eyeDistance = std::max(1.0f, std::sqrt(eyeDx * eyeDx + eyeDy * eyeDy + eyeDz * eyeDz));
+      const float hullPx = 2.0f * hullRadius / eyeDistance * projScalePx;
+
+      // The mark fades in across the band and takes over below it, so the swap is a dissolve rather
+      // than a pop (ViewTuning.h, ICON_FADE_FROM_PX).
+      //
+      // Both ends of the band scale with the DPI, because "too small to read" is a claim about how
+      // big something is on the glass and not about how many framebuffer pixels it covers: six of
+      // them on a 200 % display is three pixels' worth of hull, which is further past the threshold
+      // rather than short of it.
+      const float iconBelowPx = ICON_HULL_BELOW_PX * m_dpiScale;
+      const float fadeFromPx = ICON_FADE_FROM_PX * m_dpiScale;
+      const float iconAlpha = std::clamp((fadeFromPx - hullPx) / std::max(1.0f, fadeFromPx - iconBelowPx), 0.0f, 1.0f);
+      view.asIcon = hullPx < iconBelowPx;
+      if (iconAlpha > 0.002f)
+        PushShipIcon(i, boundsCentre, heading, eyeDistance, livery, iconAlpha);
+
+      // Replaced, not annotated: past the threshold the mesh is not submitted at all, so a sector
+      // full of ships costs its marks and not its hulls.
+      if (!view.asIcon)
       {
-        const float dx = boundsCentre.x - frame.cameraPos.x;
-        const float dy = boundsCentre.y - frame.cameraPos.y;
-        const float dz = boundsCentre.z - frame.cameraPos.z;
-        m_posed.push_back(PosedHull{.ship = i, .distanceSq = dx * dx + dy * dy + dz * dz});
-      }
-      else
-      {
-        // Bucketed by mesh rather than drawn, so a fleet of one hull is one draw. Bucketing by the
-        // mesh handle and not the hull id is what makes two hull ids sharing a mesh share a draw, and
-        // the handle is what the draw needs anyway.
-        Bucket(view.mesh).push_back(Neuron::MeshInstance{.world = world, .tint = {livery.r, livery.g, livery.b, highlight}});
+        // A hull with a turret off rest cannot be instanced: its parts each need a matrix and an
+        // instance carries one. Collected here with how far away it is and settled after the walk, so
+        // the nearest MAX_POSED_HULLS get their turrets and the rest go through the bucket -- the
+        // decision cannot be taken in submission order, because a hull that flickered in and out of
+        // the cap as another ship moved would flicker its turrets with it.
+        //
+        // Bucketed by mesh rather than drawn otherwise, so a fleet of one hull is one draw. Bucketing
+        // by the mesh handle and not the hull id is what makes two hull ids sharing a mesh share a
+        // draw, and the handle is what the draw needs anyway.
+        if (AnyMountOffRest(view))
+          m_posed.push_back(PosedHull{.ship = i, .distanceSq = eyeDistance * eyeDistance});
+        else
+          Bucket(view.mesh).push_back(Neuron::MeshInstance{.world = world, .tint = {livery.r, livery.g, livery.b, highlight}});
       }
     }
     else
@@ -2051,6 +2088,18 @@ void UniverseView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRendere
     DrawPosedHull(_renderer, _gpu, view);
   }
   m_posed.clear();
+
+  // The marks, trimmed to what the overlay can afford. They are queued before the HUD, and past
+  // TextRenderer::MAX_VERTS a quad is dropped with nothing said -- so a sector crowded enough to
+  // fill the budget would take the HUD down with it rather than lose a few specks. The farthest go,
+  // by nth_element rather than a sort because the order among the ones that stay does not matter and
+  // the whole step is skipped on every frame under the cap (ICON_MAX_PER_FRAME).
+  if (m_shipIcons.size() > ICON_MAX_PER_FRAME)
+  {
+    std::nth_element(m_shipIcons.begin(), m_shipIcons.begin() + static_cast<std::ptrdiff_t>(ICON_MAX_PER_FRAME), m_shipIcons.end(),
+                     [](const ShipIcon& _a, const ShipIcon& _b) { return _a.eyeDistanceMetres < _b.eyeDistanceMetres; });
+    m_shipIcons.resize(ICON_MAX_PER_FRAME);
+  }
 
   // One draw per hull family present. Order within the opaque pass does not matter -- it writes and
   // tests depth -- so grouping by mesh costs nothing and buys everything. A mesh with translucent
@@ -2176,6 +2225,11 @@ void UniverseView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRendere
     m_fx->DrawSpritesAdd(_gpu, m_fxSpriteVerts);
   }
 
+  // The marks that stood in for hulls this frame. Through the text pipeline, so they land over the
+  // scene; queued before the selection box below and before the HUD, which the composition root
+  // draws afterwards, so neither is ever hidden behind a ship (OutpostApp::Render).
+  DrawShipIcons(_text);
+
   // Screen-space feedback for whatever the pointer is in the middle of. These go through the text
   // pipeline, so they land on top of everything when it flushes.
   if (m_boxActive)
@@ -2191,6 +2245,178 @@ void UniverseView::Render(SceneRenderer& _renderer, GpuDevice& _gpu, TextRendere
     _text.DrawScreenRect(left, bottom - 1.0f, right, bottom, edge);
     _text.DrawScreenRect(left, top, left + 1.0f, bottom, edge);
     _text.DrawScreenRect(right - 1.0f, top, right, bottom, edge);
+  }
+}
+
+// ------------------------------------------------------------------------------------------------
+// Ship icons: what a hull is once it is too small to be a hull. Screen-space marks through the
+// overlay pipeline the HUD and the minimap already draw through, so they cost no texture, no
+// pipeline and no pass of their own (ViewTuning.h's icon block).
+
+UniverseView::IconShape UniverseView::IconShapeOfHull(std::uint32_t _hullId) noexcept
+{
+  switch (static_cast<Game::HullId>(_hullId))
+  {
+  case Game::HullId::Structure:
+  case Game::HullId::Stargate:
+    return IconShape::Diamond;
+  case Game::HullId::Miner:
+  case Game::HullId::Hauler:
+    return IconShape::Box;
+  default:
+    return IconShape::Chevron;
+  }
+}
+
+float UniverseView::IconSizeOfHull(std::uint32_t _hullId) noexcept
+{
+  switch (static_cast<Game::HullId>(_hullId))
+  {
+  case Game::HullId::Structure:
+  case Game::HullId::Stargate:
+    return ICON_STRUCTURE_PX;
+  case Game::HullId::Battleship:
+  case Game::HullId::Carrier:
+    return ICON_CAPITAL_PX;
+  case Game::HullId::Corvette:
+  case Game::HullId::Frigate:
+    return ICON_LINE_PX;
+  default:
+    return ICON_LIGHT_PX;
+  }
+}
+
+void UniverseView::PushShipIcon(std::size_t _index, const XMFLOAT3& _boundsCentre, float _headingRad, float _eyeDistanceMetres,
+                                Rgba _livery, float _alpha)
+{
+  float xPx = 0.0f;
+  float yPx = 0.0f;
+  if (!m_camera->WorldToScreen(_boundsCentre, xPx, yPx))
+    return; // behind the eye: the frustum test let a straddling sphere through, the projection will not
+
+  // Which way the heading points ON SCREEN, taken from the projection rather than from the yaw,
+  // because that answer depends on where the camera is standing. The probe is a fraction of how far
+  // away the hull is, so it lands about the same number of pixels from the hull at every range: a
+  // fixed probe in metres is a hair at one end of the zoom and a sixth of the view at the other, and
+  // at that end the perspective bends the direction it is supposed to be measuring.
+  const float probeMetres = std::max(1.0f, _eyeDistanceMetres * 0.01f);
+  const XMFLOAT3 ahead(_boundsCentre.x + std::sin(_headingRad) * probeMetres, _boundsCentre.y,
+                       _boundsCentre.z + std::cos(_headingRad) * probeMetres);
+
+  float forwardXPx = 0.0f;
+  float forwardYPx = -1.0f; // up the screen, for a hull whose bow will not project
+  float aheadXPx = 0.0f;
+  float aheadYPx = 0.0f;
+  if (m_camera->WorldToScreen(ahead, aheadXPx, aheadYPx))
+  {
+    const float dx = aheadXPx - xPx;
+    const float dy = aheadYPx - yPx;
+    const float length = std::sqrt(dx * dx + dy * dy);
+    if (length > 1e-3f)
+    {
+      forwardXPx = dx / length;
+      forwardYPx = dy / length;
+    }
+  }
+
+  const std::span<const Game::ShipSnapshot> state = Ships();
+  if (_index >= state.size())
+    return; // the walk in Render already bounds this; the guard is what keeps the record read below in range
+
+  const ShipView& view = m_ships[_index];
+  const std::uint32_t hullId = state[_index].hullId;
+
+  m_shipIcons.push_back(ShipIcon{.entity = state[_index].entity,
+                                 .xPx = xPx,
+                                 .yPx = yPx,
+                                 .forwardXPx = forwardXPx,
+                                 .forwardYPx = forwardYPx,
+                                 .sizePx = IconSizeOfHull(hullId) * m_dpiScale,
+                                 .eyeDistanceMetres = _eyeDistanceMetres,
+                                 .colour = Rgba{_livery.r, _livery.g, _livery.b, _livery.a * _alpha},
+                                 .shape = IconShapeOfHull(hullId),
+                                 .selected = view.selected,
+                                 .hoverAmount = view.hoverAmount});
+}
+
+void UniverseView::DrawShipIcons(TextRenderer& _text) const
+{
+  for (const ShipIcon& icon : m_shipIcons)
+  {
+    // Perpendicular to the heading, on the screen.
+    const float rightXPx = -icon.forwardYPx;
+    const float rightYPx = icon.forwardXPx;
+    const float half = icon.sizePx * 0.5f;
+    const float line = std::max(1.0f, ICON_LINE_THICKNESS_PX * m_dpiScale);
+
+    // Hover lifts the mark toward white rather than changing its hue, for the reason a selected hull
+    // does the same: the colour is the allegiance and must go on saying so (SELECTED_HIGHLIGHT_LIFT).
+    const float lift = icon.hoverAmount * ICON_HOVER_LIFT;
+    const Rgba colour{icon.colour.r + (1.0f - icon.colour.r) * lift, icon.colour.g + (1.0f - icon.colour.g) * lift,
+                      icon.colour.b + (1.0f - icon.colour.b) * lift, icon.colour.a};
+
+    // A point on the mark's own axes: _along the bow, _across to starboard, both in pixels. One
+    // lambda so a shape is written in the language of a ship and drawn at whatever angle the hull
+    // happens to lie at on the screen.
+    const auto at = [&](float _along, float _across) {
+      return XMFLOAT2(icon.xPx + icon.forwardXPx * _along + rightXPx * _across, icon.yPx + icon.forwardYPx * _along + rightYPx * _across);
+    };
+
+    switch (icon.shape)
+    {
+    case IconShape::Chevron:
+    {
+      // An open arrowhead rather than a closed triangle: at nine pixels a filled or outlined
+      // triangle is a blob, and two strokes meeting at the bow read as a ship pointing somewhere.
+      const XMFLOAT2 bow = at(half, 0.0f);
+      const XMFLOAT2 port = at(-half * 0.7f, half * 0.85f);
+      const XMFLOAT2 starboard = at(-half * 0.7f, -half * 0.85f);
+      _text.DrawScreenLine(bow.x, bow.y, port.x, port.y, line, colour);
+      _text.DrawScreenLine(bow.x, bow.y, starboard.x, starboard.y, line, colour);
+      break;
+    }
+
+    case IconShape::Box:
+    {
+      const XMFLOAT2 bowPort = at(half * 0.7f, half * 0.7f);
+      const XMFLOAT2 bowStarboard = at(half * 0.7f, -half * 0.7f);
+      const XMFLOAT2 sternStarboard = at(-half * 0.7f, -half * 0.7f);
+      const XMFLOAT2 sternPort = at(-half * 0.7f, half * 0.7f);
+      _text.DrawScreenLine(bowPort.x, bowPort.y, bowStarboard.x, bowStarboard.y, line, colour);
+      _text.DrawScreenLine(bowStarboard.x, bowStarboard.y, sternStarboard.x, sternStarboard.y, line, colour);
+      _text.DrawScreenLine(sternStarboard.x, sternStarboard.y, sternPort.x, sternPort.y, line, colour);
+      _text.DrawScreenLine(sternPort.x, sternPort.y, bowPort.x, bowPort.y, line, colour);
+      break;
+    }
+
+    case IconShape::Diamond:
+      // Screen-aligned, not heading-aligned, and the same hollow diamond the minimap marks a
+      // station with: the thing does not move, so an orientation on it would be a claim.
+      _text.DrawScreenLine(icon.xPx, icon.yPx - half, icon.xPx + half, icon.yPx, line, colour);
+      _text.DrawScreenLine(icon.xPx + half, icon.yPx, icon.xPx, icon.yPx + half, line, colour);
+      _text.DrawScreenLine(icon.xPx, icon.yPx + half, icon.xPx - half, icon.yPx, line, colour);
+      _text.DrawScreenLine(icon.xPx - half, icon.yPx, icon.xPx, icon.yPx - half, line, colour);
+      break;
+    }
+
+    if (!icon.selected)
+      continue;
+
+    // Four corner ticks rather than a ring or a box. The scene's own selection mark is a ground
+    // decal at the hull's feet and at this range it is a sub-pixel smear, so selection has to be
+    // said in screen space; corners say it without being mistaken for the box a Miner draws as.
+    const float bracket = half * ICON_SELECT_BRACKET_SCALE;
+    const float tick = bracket * 0.45f;
+    const Rgba ring{SEL_RING_COLOUR.r, SEL_RING_COLOUR.g, SEL_RING_COLOUR.b, SEL_RING_COLOUR.a * icon.colour.a};
+    for (int corner = 0; corner < 4; ++corner)
+    {
+      const float sx = (corner == 0 || corner == 3) ? -1.0f : 1.0f;
+      const float sy = (corner < 2) ? -1.0f : 1.0f;
+      const float x = icon.xPx + bracket * sx;
+      const float y = icon.yPx + bracket * sy;
+      _text.DrawScreenLine(x, y, x - tick * sx, y, line, ring);
+      _text.DrawScreenLine(x, y, x, y - tick * sy, line, ring);
+    }
   }
 }
 
@@ -2222,7 +2448,11 @@ void UniverseView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const
     const ShipView& view = m_ships[i];
     // A ring is drawn around a hull and is smaller than the sphere that hull was tested with, so
     // the hull's answer is the ring's answer and there is nothing to test again.
-    if (!view.visible)
+    //
+    // A hull drawn as a mark has no ring: the ring is a decal at the hull's own scale and at the
+    // range a mark replaces a hull it is a sub-pixel smear. Selection is said by the mark's own
+    // bracket instead (DrawShipIcons).
+    if (!view.visible || view.asIcon)
       continue;
 
     const float hullRadius = std::max(view.halfExtents.x, view.halfExtents.z) * SHIP_SCALE;
@@ -2368,7 +2598,12 @@ void UniverseView::DrawFeedback(SceneRenderer& _renderer, GpuDevice& _gpu, const
       // A hull the frustum rejected has no plume and no running lights worth building. The trail
       // streams behind the ship rather than around it, which is why CULL_RADIUS_PAD_METRES is a
       // trail length: the sphere that decided this has to have covered the ribbon, not just the hull.
-      if (!view.visible)
+      //
+      // Nor has one drawn as a mark: a nozzle glow and a running light are metres wide and the hull
+      // they belong to is four pixels, so every one of them is a billboard built to render as
+      // nothing. That is the saving the substitution is actually for -- a sector of ships costs its
+      // marks, not its plumes.
+      if (!view.visible || view.asIcon)
         continue;
 
       // Navigation lights burn whether or not the ship is under way, so they come before the thrust

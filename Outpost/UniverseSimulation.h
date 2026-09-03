@@ -74,6 +74,7 @@ public:
 
     const TickStats::Clock::time_point stepped = TickStats::Clock::now();
     m_publisher.SetCentre(m_subscriber, m_viewCentre);
+    m_publisher.SetRadiusMetres(m_subscriber, m_viewRadiusMetres);
     m_publisher.Publish(m_universe);
     const TickStats::Clock::time_point published = TickStats::Clock::now();
 
@@ -116,6 +117,19 @@ public:
     m_viewCentre = _centre;
   }
 
+  // How far it is looking, on SetViewCentre's terms exactly and pushed by the same caller each
+  // frame. It exists because the camera can now pull back far enough to frame a whole sector, and a
+  // wide frame over a fixed 2 km bubble is a sector drawn with its ships left out.
+  //
+  // The ceiling belongs to the caller, not here (Publisher::SetRadiusMetres). Zero and below are
+  // refused further down and leave the subscriber on whatever it had, which is what makes the ticks
+  // before the first frame -- and any root that never calls this -- run on the configured radius
+  // rather than on nothing.
+  void SetViewRadiusMetres(float _radiusMetres) noexcept
+  {
+    m_viewRadiusMetres = _radiusMetres;
+  }
+
   [[nodiscard]] std::uint64_t Tick() const override
   {
     return m_universe.Tick();
@@ -154,5 +168,9 @@ private:
   // Where the camera is looking, as of the last frame that said. The universe origin until one
   // does, which is where the boot scene stands.
   Game::UniversePos m_viewCentre;
+
+  // And how far. Zero until a frame says otherwise, which the publisher refuses -- so the subscriber
+  // keeps the radius it was configured with until the first frame that has a camera to read.
+  float m_viewRadiusMetres = 0.0f;
 };
 } // namespace Outpost

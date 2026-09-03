@@ -27,6 +27,15 @@ public:
     float targetHeight = 3.0f;
     float fovDeg = 45.0f;
     float nearPlane = 0.5f;
+    // A floor, not the near plane: the plane used is max(nearPlane, distance * nearFractionOfDistance),
+    // so a camera that can pull a long way back does not have to buy that reach with the whole depth
+    // buffer. Depth here is a plain D32_FLOAT with no reversal, and its resolution falls off with the
+    // ratio between the two planes; a zoom that grows the far plane while the near one stays put pays
+    // for the extra range everywhere, including up close where nothing needed it.
+    //
+    // Zero is off and is the default, so a camera that never leaves its own scale gets the fixed near
+    // plane it always had and this field costs it nothing.
+    float nearFractionOfDistance = 0.0f;
     float farPlane = 8000.0f;
     float minPitchDeg = 5.0f;
     float maxPitchDeg = 89.0f;
@@ -109,6 +118,14 @@ public:
   {
     return m_distance;
   }
+  // The near plane the last Update actually projected through, which is the floor only while
+  // nearFractionOfDistance says so. Exposed because it is a derived value a caller cannot recover
+  // from Desc alone, and a test that asserted the ratio by recomputing it would be asserting its own
+  // arithmetic.
+  [[nodiscard]] float NearPlane() const noexcept
+  {
+    return m_nearPlane;
+  }
 
 private:
   Desc m_desc;
@@ -126,6 +143,7 @@ private:
   DirectX::XMFLOAT3 m_shakeOffset{0.0f, 0.0f, 0.0f};
   float m_shakeAmount = 0.0f;
   float m_shakeTimeSec = 0.0f;
+  float m_nearPlane = 0.5f;
 
   DirectX::XMFLOAT4X4 m_viewProj;
   DirectX::XMFLOAT4X4 m_invViewProj;

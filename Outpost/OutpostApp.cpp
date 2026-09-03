@@ -123,11 +123,14 @@ void OutpostApp::Init(HINSTANCE _instance)
 
   Camera::Desc cameraDesc;
   cameraDesc.minZoom = CAMERA_MIN_ZOOM;
-  cameraDesc.maxZoom = CAMERA_MAX_ZOOM;
+  // Both derived from CAMERA_MAX_ZOOM_SECTORS rather than stated, so the reach and the draw distance
+  // that has to cover it cannot drift apart (ViewTuning.h).
+  cameraDesc.maxZoom = CameraMaxZoomMetres();
   cameraDesc.targetHeight = CAMERA_TARGET_HEIGHT;
   cameraDesc.fovDeg = CAMERA_FOV_DEG;
   cameraDesc.nearPlane = CAMERA_NEAR_PLANE;
-  cameraDesc.farPlane = CAMERA_FAR_PLANE;
+  cameraDesc.nearFractionOfDistance = CAMERA_NEAR_FRACTION_OF_DISTANCE;
+  cameraDesc.farPlane = CameraFarPlaneMetres();
   cameraDesc.minPitchDeg = CAMERA_MIN_PITCH_DEG;
   cameraDesc.maxPitchDeg = CAMERA_MAX_PITCH_DEG;
   cameraDesc.rotateSpeedDegPerPx = CAMERA_ROTATE_SPEED_DEG_PER_PX;
@@ -1041,7 +1044,18 @@ void OutpostApp::Update()
   // Where the player is looking becomes what the server sends. The composition root is the only
   // thing holding both halves, so it is the only thing that can say so; a dedicated server reads it
   // off the session instead (UniverseSimulation::SetViewCentre).
+  //
+  // How MUCH it is sent follows the zoom for the same reason it follows the pan: a sector-wide frame
+  // over a 2 km bubble is a view of the sector with the ships left out. The radius is floored at what
+  // Server.cfg configured and capped at half a sector, and the cap is the server's word rather than
+  // the camera's -- what a subscriber may ask for is not the client's to decide
+  // (CameraInterestRadiusMetres).
   m_simulation.SetViewCentre(m_view.UniversePosAt(m_camera.Target().x, m_camera.Target().z));
+  m_simulation.SetViewRadiusMetres(CameraInterestRadiusMetres(m_camera.Distance(), m_config.interestRadiusMetres));
+
+  // Pushed every frame rather than at boot, for the reason the HUD is handed it every Draw: a window
+  // dragged onto a second monitor changes it (UniverseView::SetDpiScale).
+  m_view.SetDpiScale(m_window.DpiScale());
 }
 
 void OutpostApp::Render()

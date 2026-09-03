@@ -7,6 +7,10 @@
 #include "SimTuning.h"
 #include "UniverseLayout.h"
 
+#include <DirectXMath.h>
+
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 
 namespace Outpost
@@ -23,11 +27,33 @@ namespace Outpost
 
 // --- camera ------------------------------------------------------------------------------------
 inline constexpr float CAMERA_MIN_ZOOM = 40.0f;
-inline constexpr float CAMERA_MAX_ZOOM = 900.0f;
+// How much of the plane the widest zoom-out frames, measured in whole sectors across the SHORT axis
+// of the window.
+//
+// A policy rather than a distance, because the distance that achieves it is a function of the field
+// of view and a number written here would be one retune of CAMERA_FOV_DEG away from meaning
+// something else -- the reason GalaxyLayout.h states MinimumStarSeparationMetres as a function too.
+// CameraMaxZoomMetres below is the only place the arithmetic is spelled.
+//
+// One sector, because the sector is already a thing the player is shown: the HUD names the pair the
+// camera target stands in and the minimap draws the boundaries (Hud::DrawMinimap). The old limit was
+// 900 m, which frames 745 m -- a tenth of a sector, and no view of the system a fleet is crossing.
+inline constexpr float CAMERA_MAX_ZOOM_SECTORS = 1.0f;
 inline constexpr float CAMERA_TARGET_HEIGHT = 3.0f;
 inline constexpr float CAMERA_FOV_DEG = 45.0f;
 inline constexpr float CAMERA_NEAR_PLANE = 0.5f;
-inline constexpr float CAMERA_FAR_PLANE = 8000.0f;
+// The near plane past that floor is this fraction of the orbit distance (Camera::Desc). Chosen so
+// that the floor wins at every distance the camera could reach before the sector zoom existed --
+// 0.5 / 900 -- which makes the projection bit-identical to the old one everywhere the old one could
+// go, and stops the near-to-far ratio growing with the zoom everywhere it could not. At the widest
+// zoom it puts the near plane at about 5.5 m, and nothing is ever that close to an eye 7.8 km above
+// the plane.
+inline constexpr float CAMERA_NEAR_FRACTION_OF_DISTANCE = 5.5e-4f;
+// How far past the camera target the frustum still draws, in sectors, on top of the eye's own
+// distance from it. Everything drawn stands well inside it: the interest set is capped at half a
+// sector (CAMERA_INTEREST_MAX_SECTORS), a system's gates stand at GalaxyDesc::gateRingMetres of
+// 7 km from its star, and its widest planet orbit is 6.5 km.
+inline constexpr float CAMERA_FAR_BEYOND_TARGET_SECTORS = 2.0f;
 inline constexpr float CAMERA_PAN_SPEED = 1.0f;
 inline constexpr float CAMERA_FOLLOW_HALF_LIFE = 0.18f;
 inline constexpr float CAMERA_LEAD_FACTOR = 0.35f;
@@ -38,6 +64,51 @@ inline constexpr float CAMERA_ROTATE_SPEED_DEG_PER_PX = 0.35f;
 inline constexpr float CAMERA_ZOOM_STEP_FACTOR = 1.12f;
 inline constexpr float CAMERA_MIN_PITCH_DEG = 5.0f;
 inline constexpr float CAMERA_MAX_PITCH_DEG = 89.0f;
+// How much of the plane the interest set is asked for, as a fraction of the orbit distance, and the
+// ceiling on it. What the player can see should be what the server sends: at the widest zoom the
+// old fixed 2 km radius put every ship this client held inside the middle sixth of the frame and
+// left the rest of the sector empty of hulls by construction, which is not a view of the sector.
+//
+// The factor is the ground half-span at the default pitch: the frame's half-width at the target is
+// distance * tan(fov/2) = 0.41 d, and the plane is oblique under it, so 0.75 d covers the visible
+// ground without chasing the trapezoid's far corners. The floor is whatever Server.cfg configured,
+// so nothing widens until the player has zoomed past about 2.7 km and a zoomed-in client costs
+// exactly what it always did.
+//
+// The ceiling is a server-side limit and not a client courtesy: interest is what one subscriber
+// converts into per-tick server work and egress (Design/Archive/MmoScalabilityReview.md E4), and a
+// camera is not allowed to ask for the universe. Half a sector is the radius whose diameter is the
+// sector the widest zoom frames, so the two limits say the same thing.
+inline constexpr float CAMERA_INTEREST_RADIUS_FACTOR = 0.75f;
+inline constexpr float CAMERA_INTEREST_MAX_SECTORS = 0.5f;
+
+// The distance at which CAMERA_MAX_ZOOM_SECTORS of the plane fills the frame.
+//
+// Against the VERTICAL field of view on purpose. The frame's half-height at the target is
+// distance * tan(fov/2) whatever the window is; the horizontal half-angle is wider on every window
+// anyone plays on, so sizing against the vertical frames the sector on a square window too and
+// over-frames it on a wide one. Not constexpr because std::tan is not, which is the whole reason
+// CAMERA_MAX_ZOOM_SECTORS is the constant and this is the derivation.
+[[nodiscard]] inline float CameraMaxZoomMetres() noexcept
+{
+  return CAMERA_MAX_ZOOM_SECTORS * Game::SECTOR_SIZE_METRES / (2.0f * std::tan(DirectX::XMConvertToRadians(CAMERA_FOV_DEG) * 0.5f));
+}
+
+// The far plane that reach needs. Derived rather than stated so that raising the zoom cannot leave a
+// draw distance behind and start clipping the far half of a system -- which is silent, because there
+// is no ground plane whose edge would show it.
+[[nodiscard]] inline float CameraFarPlaneMetres() noexcept
+{
+  return CameraMaxZoomMetres() + CAMERA_FAR_BEYOND_TARGET_SECTORS * Game::SECTOR_SIZE_METRES;
+}
+
+// The interest radius for one orbit distance: the visible ground, floored at what the server was
+// configured for and capped at the ceiling above.
+[[nodiscard]] inline float CameraInterestRadiusMetres(float _distanceMetres, float _configuredRadiusMetres) noexcept
+{
+  const float wanted = std::max(_distanceMetres * CAMERA_INTEREST_RADIUS_FACTOR, _configuredRadiusMetres);
+  return std::min(wanted, CAMERA_INTEREST_MAX_SECTORS * Game::SECTOR_SIZE_METRES);
+}
 
 // --- selection ---------------------------------------------------------------------------------
 inline constexpr float SEL_RING_FADE_IN_MS = 140.0f;
@@ -171,6 +242,56 @@ inline constexpr float CULL_RADIUS_PAD_METRES = 24.0f;
 // A body's own relief and ellipsoid stretch are already in its bounding radius, so this only covers
 // the outline pass sitting a little proud of the terrain.
 inline constexpr float CULL_BODY_RADIUS_SCALE = 1.05f;
+
+// --- ship icons ----------------------------------------------------------------------------------
+// What a hull is drawn as once it is too small to be a hull. A sector is 8 192 m across and a
+// Corvette is 10 m, so at the widest zoom a fleet is a handful of sub-pixel specks: the mesh is
+// still submitted, still costs its draw, and says nothing. Past the threshold below the hull is
+// replaced by a screen-space mark in its own livery, through the overlay pipeline the HUD and the
+// minimap already draw through -- no texture, no pipeline and no second pass (TextRenderer).
+//
+// Replaced, not annotated: the mesh stops being submitted at ICON_HULL_BELOW_PX, so the icon is
+// what the ship IS at that range rather than a badge over it. The band above the threshold is where
+// the icon fades in over a hull that is still drawn, so the swap is a dissolve and not a pop -- a
+// 12 px mark appearing over a 6 px hull in one frame is exactly the pop the band exists to stop.
+//
+// The threshold is the hull's projected diameter in pixels, and 6 is where the shape of a ship stops
+// being legible: below it a Battleship and an Interceptor are the same grey smudge, which is the
+// argument for a mark that at least says which.
+//
+// **Every pixel figure in this block is a logical pixel** and is multiplied by the window's DPI
+// scale where it is used, exactly as the HUD's are. A mark sized in framebuffer pixels would be half
+// the size it should be on a 200 % display, and a threshold in them would keep drawing a hull that
+// had already stopped being readable.
+inline constexpr float ICON_HULL_BELOW_PX = 6.0f;
+inline constexpr float ICON_FADE_FROM_PX = 14.0f;
+// How many marks one frame may draw. They share the overlay's vertex budget with the HUD, which is
+// queued after them and is therefore what would silently disappear if they filled it -- past
+// TextRenderer::MAX_VERTS a quad is dropped and nothing says so. The cap is a long way above what a
+// player can read at one glance, and the ones dropped past it are the farthest, which is the same
+// rule MAX_POSED_HULLS drops a turret by.
+inline constexpr std::size_t ICON_MAX_PER_FRAME = 256;
+// The mark's own size, by hull role. Fixed pixels, not scaled with distance: an icon that shrank
+// with range would be a worse hull, and the whole point is that it stops being one. The three sizes
+// are the same ladder the minimap draws a station bigger than a fighter on -- iconography rather
+// than cartography (HUD_MINIMAP_STRUCTURE_DOT_PX).
+inline constexpr float ICON_LIGHT_PX = 9.0f;      // Interceptor, Bomber, Miner, Hauler
+inline constexpr float ICON_LINE_PX = 12.0f;      // Corvette, Frigate
+inline constexpr float ICON_CAPITAL_PX = 16.0f;   // Battleship, Carrier
+inline constexpr float ICON_STRUCTURE_PX = 14.0f; // Structure, Stargate
+inline constexpr float ICON_LINE_THICKNESS_PX = 1.6f;
+// The selection bracket around a picked ship's mark, as a multiple of the mark's own size, and how
+// much brighter a hovered one draws. A ring would be the scene's idiom, but the scene's ring is a
+// ground decal at the hull's feet and at this range it is a sub-pixel smear; the bracket is drawn in
+// screen space with the mark, so it is legible at exactly the range the mark is.
+inline constexpr float ICON_SELECT_BRACKET_SCALE = 1.7f;
+inline constexpr float ICON_HOVER_LIFT = 0.4f;
+// How far a tap may land from a mark and still take it. A hull at icon range subtends fewer pixels
+// than a finger can hit and its box ray test cannot be made to hit one, so this is what keeps a
+// fleet selectable and orderable at the zoom the icons exist for. It is a fallback and never a
+// widening: a tap that hits a real hull takes that hull, and only a tap that hits nothing at all
+// falls through to the marks (UniverseView::PickShip).
+inline constexpr float ICON_PICK_RADIUS_PX = 22.0f;
 
 // --- snapshot interpolation --------------------------------------------------------------------
 // The server publishes at 1/INTEREST_UPDATE_EVERY_TICKS of the tick rate, so the view cannot draw
@@ -593,10 +714,10 @@ inline constexpr float HUD_MINIMAP_DOT_PX = 4.0f;
 // A structure reads bigger than a fighter without pretending to scale: to scale, a 500 m station is
 // 25 px, a quarter of the map for one base. Iconography beats cartography at 0.05 px per metre.
 inline constexpr float HUD_MINIMAP_STRUCTURE_DOT_PX = 8.0f;
-// Metres from the camera target to the map's edge. It was 1 400 -- wider than CAMERA_MAX_ZOOM sees,
-// and enough to hold the Vandal base -- until the Vanguard stations existed: the nearest stands at
-// the pinned world's 3 500 m, and a mark that is clamped to the edge from the first frame says which
-// way to fly but never how far. At 4 000 the nearest station is inside the map from boot, by the
+// Metres from the camera target to the map's edge. It was 1 400 -- wider than the 900 m zoom limit
+// of the day saw, and enough to hold the Vandal base -- until the Vanguard stations existed: the
+// nearest stands at the pinned world's 3 500 m, and a mark that is clamped to the edge from the
+// first frame says which way to fly but never how far. At 4 000 the nearest station is inside the map from boot, by the
 // owner's ask, and the two farther ones (2 500-6 500 m from the star) are inside or clamped by
 // where the layout put them. What it costs is resolution: 140 px over 8 km is 57 m per pixel, so the
 // three starting hulls draw as one cluster and the patrol ring is a 7 px circle. The map is
