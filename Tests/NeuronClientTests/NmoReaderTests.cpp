@@ -386,7 +386,7 @@ public:
   TEST_METHOD(TheFixtureKeepsItsSubMeshes)
   {
     // The reader has always parsed these and Expand used to flatten them away. What is new is that
-    // a consumer can now address one part of a hull (Design/Combat-slice-3.md 2.1).
+    // a consumer can now address one part of a hull (Design/Archive/Combat-slice-3.md 2.1).
     Neuron::MeshData mesh;
     Assert::IsTrue(Neuron::NmoReader::Load(L"", FIXTURE_NAME, mesh), L"the fixture did not load");
     Assert::AreEqual(std::size_t{2}, mesh.subMeshes.size(), L"the Gunship's two parts did not both survive");

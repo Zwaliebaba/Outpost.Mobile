@@ -203,6 +203,7 @@
     <ClCompile Include="UniverseLayoutTests.cpp" />
     <ClCompile Include="GalaxyLayoutTests.cpp" />
     <ClCompile Include="JumpTests.cpp" />
+    <ClCompile Include="HandoffTests.cpp" />
     <ClCompile Include="PublisherTests.cpp" />
     <ClCompile Include="SeparationTests.cpp" />
     <ClCompile Include="EntityIdentityTests.cpp" />
@@ -216,6 +217,9 @@
   <ItemGroup>
     <None Include="packages.config" />
     <None Include="Assets\UniverseFormat7.sav">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Assets\UniverseFormat8.sav">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

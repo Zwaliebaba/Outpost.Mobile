@@ -816,7 +816,7 @@ bool Expand(const Cursor& _cursor, const MeshView& _mesh, MeshData& _outMesh)
   {
     // Where this part's run begins. Expand has always emitted the submeshes in order and
     // contiguously; all that is new is writing down where each one started
-    // (Design/Combat-slice-3.md 2.3).
+    // (Design/Archive/Combat-slice-3.md 2.3).
     MeshSubMesh part;
     part.nameHash = sub.named ? Fnv1a(sub.name) : 0u;
     part.firstVertex = static_cast<std::uint32_t>(_outMesh.verts.size());

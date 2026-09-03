@@ -4,6 +4,7 @@
 #include "HandleStore.h"
 #include "RenderTypes.h"
 
+#include <cstddef>
 #include <span>
 
 #include "MeshData.h"
@@ -51,6 +52,35 @@ public:
   // mesh whose vertices all carry race == 0 -- the ground quad, a decal -- draws as authored
   // whatever is passed. _highlight is a lift towards white in 0..1, applied after lighting.
   void DrawMesh(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::XMFLOAT4X4& _world, Rgba _livery, float _highlight);
+
+  // One run of a mesh's vertices, under its own world matrix: a turret, posed where it is aiming
+  // rather than where it was authored.
+  //
+  // The matrix is the caller's whole answer. This renderer knows nothing about pivots or bind poses;
+  // a caller that wants a part to turn about its own centre builds translate(-pivot) * rotate *
+  // translate(pivot) * hull and hands the product over, which is what keeps the rig-shaped question
+  // out of a renderer that has no rig (Design/Archive/Combat-slice-6.md 6).
+  //
+  // A run that is empty, or that starts past the mesh, draws nothing. That is the case a hull whose
+  // art carries no turret produces, and it must cost a call and not a crash.
+  void DrawMeshRange(GpuDevice& _gpu, MeshHandle _mesh, MeshRange _range, const DirectX::XMFLOAT4X4& _world, Rgba _livery,
+                     float _highlight);
+
+  // The rest of the mesh: everything _posed does not cover, at _world, in as few draws as the runs
+  // allow.
+  //
+  // The awkward half, and the reason the pair is here rather than in every caller. _posed is sorted
+  // in place (RangeComplement's contract) and an EMPTY _posed is the common case by far -- every hull
+  // with no bound part -- which draws in exactly one call, the same one DrawMesh makes, so a hull
+  // this slice does not touch pays nothing for the entry point existing.
+  void DrawMeshComplement(GpuDevice& _gpu, MeshHandle _mesh, std::span<MeshRange> _posed, const DirectX::XMFLOAT4X4& _world, Rgba _livery,
+                          float _highlight);
+
+  // The most parts one mesh may be drawn posed in a single call, which is what sizes the gap list
+  // DrawMeshComplement keeps on the stack. Six is the largest loadout the game authors and this is
+  // the renderer's own ceiling on top of it: past it the extra runs are still excluded from the gaps,
+  // so the failure is a piece of hull that does not draw rather than one drawn twice inside a turret.
+  static constexpr std::size_t MAX_POSED_PARTS = 8;
 
   // One draw for every ship sharing a mesh. Five hundred hulls over five meshes were five hundred
   // draws, because a per-object matrix could only live in a root constant and a root constant is set

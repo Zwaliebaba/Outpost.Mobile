@@ -190,6 +190,8 @@
     <ClInclude Include="PathIslands.h" />
     <ClInclude Include="Publisher.h" />
     <ClInclude Include="SpatialIndex.h" />
+    <ClInclude Include="ServerConfig.h" />
+    <ClInclude Include="ShardLink.h" />
     <ClInclude Include="Universe.h" />
   </ItemGroup>
   <ItemGroup>
@@ -208,6 +210,8 @@
     <ClCompile Include="UniverseLayout.cpp" />
     <ClCompile Include="GalaxyLayout.cpp" />
     <ClCompile Include="StartingUniverse.cpp" />
+    <ClCompile Include="ServerConfig.cpp" />
+    <ClCompile Include="ShardLink.cpp" />
     <ClCompile Include="Universe.cpp" />
   </ItemGroup>
   <ItemGroup>

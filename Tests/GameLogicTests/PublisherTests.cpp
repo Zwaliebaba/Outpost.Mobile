@@ -296,7 +296,7 @@ public:
   {
     // A real battle rather than a hand-built log: the point of this row is that the shot the fire
     // pass recorded is the shot the client is told about, through the cursor, the filter and both
-    // codecs (Design/Combat-slice-2.md 2.3, 2.4).
+    // codecs (Design/Archive/Combat-slice-2.md 2.3, 2.4).
     Game::Universe universe;
     (void)SpawnAt(universe, 0.0f, 0.0f, Game::FACTION_PLAYER);
     (void)SpawnAt(universe, 0.0f, 120.0f, Game::FACTION_VANDAL);

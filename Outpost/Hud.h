@@ -125,8 +125,29 @@ public:
   // _outOpenSheet is set to the slot a long press asked to read, or left alone. Reported rather
   // than acted on, because a panel is the composition root's to own and this class's job ends at
   // saying where a contact landed.
+  //
+  // _railOnly narrows the HUD to its rail, and is what the composition root passes while a modal
+  // screen is up: the rail is chrome, so the button that opened a screen has to be able to close it,
+  // while the minimap, the bottom bar and the fleet buttons are underneath the screen and must not
+  // take a press through it. A modal that swallows its own switch is a modal you can only leave with
+  // Escape (Design/GalaxyMap-slice-1.md 7).
   [[nodiscard]] bool HandlePointer(const Neuron::PointerEvent& _event, UniverseView& _view, const Neuron::Camera& _camera,
-                                   int& _outOpenSheet, float _dpiScale, std::uint32_t _widthPx, std::uint32_t _heightPx);
+                                   int& _outOpenSheet, bool _railOnly, float _dpiScale, std::uint32_t _widthPx, std::uint32_t _heightPx);
+
+  // Which rail button is lit, or -1. The rail is a set of toggles and the screens they open are the
+  // composition root's, so the button's state is read from here rather than the screen's state being
+  // pushed in: one truth, and the lit button is it.
+  [[nodiscard]] int ActiveRail() const noexcept
+  {
+    return m_activeRail;
+  }
+
+  // Unlights the rail. Called when something other than the button closed the screen the button
+  // opened -- Escape, or another modal taking over.
+  void ClearActiveRail() noexcept
+  {
+    m_activeRail = -1;
+  }
 
   // Drops a capture this class is holding, for PointerTracker::CancelContacts's reason: a contact
   // that went down on a panel and lifts after something modal has taken the pointer away never
@@ -178,6 +199,9 @@ private:
   // the button and by the minimap digit, so the two cannot pulse out of step.
   [[nodiscard]] float AlertPulse() const noexcept;
   [[nodiscard]] bool OverAnyPanel(const Layout& _layout, float _xPx, float _yPx) const noexcept;
+
+  // The rail alone -- what the HUD still claims while a modal screen is in front of it.
+  [[nodiscard]] bool OverRail(const Layout& _layout, float _xPx, float _yPx) const noexcept;
 
   void DrawPanel(Neuron::TextRenderer& _text, const Rect& _rect, Neuron::Rgba _fill, Neuron::Rgba _outline, float _scale) const;
   void DrawScanlines(Neuron::TextRenderer& _text, const Rect& _rect, float _scale) const;

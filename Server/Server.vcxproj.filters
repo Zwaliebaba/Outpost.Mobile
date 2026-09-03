@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Project Files">
+      <UniqueIdentifier>{c4a90e7b-1d62-4f35-8e07-3b5a2c169d84}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="pch.h">
+      <Filter>Project Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ShardApp.h">
+      <Filter>Project Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ShardSimulation.h">
+      <Filter>Project Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ShardLinks.h">
+      <Filter>Project Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ShardSession.h">
+      <Filter>Project Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="pch.cpp">
+      <Filter>Project Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ShardMain.cpp">
+      <Filter>Project Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ShardApp.cpp">
+      <Filter>Project Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
+</Project>

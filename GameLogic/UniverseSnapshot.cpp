@@ -61,6 +61,20 @@ constexpr std::uint8_t KIND_COMPOSE_ORDER = 9;
 // flash is not a lie, while a late one draws a line into empty space (ADR 0053).
 constexpr std::uint8_t KIND_FIRE = 10;
 
+// Shard to shard, both on the reliable lane. A lost handoff is a fleet that left one universe and
+// reached no other, which is the failure this whole design exists to prevent -- so it takes the lane
+// the fire message argued its way OUT of, and for the mirror-image reason (ADR 0053, ADR 0029).
+//
+// No client sends or understands either, so the ALPN does not move: an unknown kind is refused by
+// the dispatch above rather than misread, which is the property that makes adding one cheap.
+constexpr std::uint8_t KIND_HANDOFF = 11;
+constexpr std::uint8_t KIND_HANDOFF_ACK = 12;
+
+// What one Handoff costs on the wire, which is what decides how many fit a message. Stated rather
+// than sizeof'd, for the reason the queue is written field by field: sizeof would include padding
+// the format does not carry.
+constexpr std::uint32_t HANDOFF_WIRE_BYTES = 8 + 8 + 4 + 1 + 4 + 8 + 1 + 1 + 4 + 4 + 8;
+
 // kind, complete, snapshotId, fragmentIndex, fragmentCount, tick, recordCount, hostileMask
 //
 // The mask is appended rather than inserted, so every field a reader already knew stays where it
@@ -98,7 +112,7 @@ constexpr std::uint32_t LEAVE_HEADER_BYTES = 1 + 8 + 4 + 4 + 4 + 4;
 // sector pair narrowed from i64 to i32 (ADR 0046), prevPos became a delta against posUniverse rather
 // than a second whole position, and the two angles became turns16. The record was 47 until combat
 // put a byte of hull fraction in it, which is the one place state that heals belongs
-// (Design/Combat.md 9.1) -- and the capacity below re-derived itself, which is the point of deriving
+// (Design/Archive/Combat.md 9.1) -- and the capacity below re-derived itself, which is the point of deriving
 // it. At 1,152 bytes a datagram less the header and the fleet block that rides every fragment, that
 // is 21 ship records per fragment against the 13 this replaces -- so a hundred-ship update is 5
 // fragments instead of 8, which is what finding E1 cares about: at 2% datagram loss it completes 90%
@@ -538,41 +552,14 @@ void WriteFleetBlock(ByteWriter& _out, const Universe& _universe, const Issuer& 
       continue;
     const Universe::Fleet& fleet = _universe.FleetOf(id);
 
-    // The centroid, through OffsetX/OffsetZ from the first live member rather than by averaging the
-    // fields, so it is right with a sector boundary through the middle of a fleet.
+    // The centroid, and Universe is where it is derived: a server's interest set follows the same
+    // number for a session that has no camera (Design/ShardServer-slice-2.md 2.6), and two spellings
+    // of one average is two things to keep in step. False is the one tick between a manifest being
+    // dropped for a dead station and the next tick's retire freeing the slot, and clearing the bit
+    // there says the truth one tick early rather than stating a position that means nothing.
     UniversePos centre;
-    bool anchored = false;
-    float sumX = 0.0f;
-    float sumZ = 0.0f;
-    std::uint32_t live = 0;
-    for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
-    {
-      const ShipId member = _universe.Resolve(fleet.members[at]);
-      if (member == INVALID_SHIP_ID)
-        continue;
-      const UniversePos& pos = _universe.Ships()[member].posUniverse;
-      if (!anchored)
-      {
-        centre = pos;
-        anchored = true;
-      }
-      sumX += OffsetX(centre, pos);
-      sumZ += OffsetZ(centre, pos);
-      ++live;
-    }
-
-    if (anchored)
-    {
-      Translate(centre, sumX / static_cast<float>(live), sumZ / static_cast<float>(live));
-    }
-    else
-    {
-      // Nobody out yet: the fleet is where its door is, which is where its first hull will appear.
-      const ShipId structure = _universe.Resolve(fleet.launchStructure);
-      if (structure == INVALID_SHIP_ID)
-        continue;
-      centre = _universe.Ships()[structure].posUniverse;
-    }
+    if (!_universe.TryCentreOfFleet(id, centre))
+      continue;
 
     // The kind and the launch are both stated, which is what splitting them bought: a fleet ordered
     // to move mid-launch is doing both, and the old byte could say only one. Which of the two a
@@ -598,6 +585,9 @@ void WriteFleetBlock(ByteWriter& _out, const Universe& _universe, const Issuer& 
     // only ever shrinks -- so this sum has a hard ceiling of 8 and no clamp is a guard against
     // anything reachable.
     static_assert(MAX_FLEET_SHIPS <= 0xFFu, "a fleet's size no longer fits the status block's count byte");
+    std::uint32_t live = 0;
+    for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
+      live += (_universe.Resolve(fleet.members[at]) != INVALID_SHIP_ID) ? 1u : 0u;
     const std::uint32_t total = live + fleet.manifestCount;
 
     mask |= static_cast<std::uint8_t>(1u << slot);
@@ -1176,6 +1166,70 @@ void ReadShipState(ByteReader& _in, ShipState& _outShip)
 }
 } // namespace
 
+// A handoff queue: a count and then each entry, field by field.
+//
+// Field by field and never as a struct. A Handoff has a u8 between two u32s and would carry three
+// bytes of padding into the file, which two identical universes could differ in -- the argument
+// Route already makes about waypoints past its count, one type over.
+void WriteHandoffFields(ByteWriter& _out, const Universe::Handoff& _handoff)
+{
+  _out.U64(_handoff.entity);
+  _out.U64(_handoff.gate);
+  _out.U32(_handoff.hullId);
+  _out.U8(_handoff.factionId);
+  _out.U32(_handoff.hullPoints);
+  _out.U64(_handoff.owner);
+  _out.U8(_handoff.ownerFaction);
+  _out.U8(_handoff.slot);
+  _out.U32(_handoff.memberIndex);
+  _out.U32(_handoff.crossingCount);
+  _out.U64(_handoff.sequence);
+}
+
+// The same fields back, with the bounds the fleet block checks: a slot or a faction past its limit is
+// an invariant corrupted rather than a value, and it would index past a table later.
+[[nodiscard]] bool ReadHandoffFields(ByteReader& _in, Universe::Handoff& _handoff)
+{
+  _handoff.entity = _in.U64();
+  _handoff.gate = _in.U64();
+  _handoff.hullId = _in.U32();
+  _handoff.factionId = _in.U8();
+  _handoff.hullPoints = _in.U32();
+  _handoff.owner = _in.U64();
+  _handoff.ownerFaction = _in.U8();
+  _handoff.slot = _in.U8();
+  _handoff.memberIndex = _in.U32();
+  _handoff.crossingCount = _in.U32();
+  _handoff.sequence = _in.U64();
+  return _in.Ok() && _handoff.factionId < FACTION_LIMIT && _handoff.ownerFaction < FACTION_LIMIT && _handoff.slot < FLEET_SLOTS;
+}
+
+// One writer for the save and the wire, so the two spellings of a Handoff cannot drift apart. That
+// they are the same bytes is not a coincidence to be maintained -- it is why slice 3 could say the
+// struct was already a wire format.
+void WriteHandoffQueue(ByteWriter& _out, const std::vector<Universe::Handoff>& _queue)
+{
+  _out.U32(static_cast<std::uint32_t>(_queue.size()));
+  for (const Universe::Handoff& handoff : _queue)
+    WriteHandoffFields(_out, handoff);
+}
+
+// The same shape back, bounded like every other count in this format: the smallest entry is larger
+// than a byte, so Remaining() is a sound ceiling on a corrupt length.
+[[nodiscard]] bool ReadHandoffQueue(ByteReader& _in, std::vector<Universe::Handoff>& _outQueue)
+{
+  const std::uint32_t count = _in.U32();
+  if (!_in.Ok() || count > _in.Remaining())
+    return false;
+  _outQueue.resize(count);
+  for (Universe::Handoff& handoff : _outQueue)
+  {
+    if (!ReadHandoffFields(_in, handoff))
+      return false;
+  }
+  return _in.Ok();
+}
+
 void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _outBytes)
 {
   _outBytes.clear();
@@ -1359,6 +1413,14 @@ void WriteUniverseState(const Universe& _universe, std::vector<std::uint8_t>& _o
     out.Pos(fleet.threatAnchorPos);
     out.U32(fleet.alertTicks);
   }
+
+  // The cross-shard queues, from format 9. Saved because ADR 0065's recoverability is a claim about
+  // a FILE: a shard that dies after the despawn and before the send still has the ship, in its
+  // outbox, in its save -- and without this it does not, which makes at-least-once delivery
+  // at-most-once (Design/CrossShard.md 4, Design/CrossShard-slice-3.md 1).
+  out.U64(_universe.m_nextHandoff);
+  WriteHandoffQueue(out, _universe.m_outbox);
+  WriteHandoffQueue(out, _universe.m_inbox);
 }
 
 bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUniverse)
@@ -1656,6 +1718,19 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
   if (!in.Ok())
     return false;
 
+  // The cross-shard queues, from format 9. A format-8 file loads with both empty and the sequence at
+  // its initial value, which is exactly what that file meant: it was written by a build that could
+  // not have had anything in them (ADR 0061's gate).
+  std::uint64_t nextHandoff = 1;
+  std::vector<Universe::Handoff> outbox;
+  std::vector<Universe::Handoff> inbox;
+  if (format >= 9)
+  {
+    nextHandoff = in.U64();
+    if (!in.Ok() || !ReadHandoffQueue(in, outbox) || !ReadHandoffQueue(in, inbox))
+      return false;
+  }
+
   // Committed, and not before. From here nothing can fail.
   _outUniverse.m_tick = tick;
   _outUniverse.m_shard = shard;
@@ -1674,6 +1749,9 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
   _outUniverse.m_stations = std::move(stations);
   _outUniverse.m_gates = std::move(gates);
   _outUniverse.m_fleets = std::move(fleets);
+  _outUniverse.m_nextHandoff = nextHandoff;
+  _outUniverse.m_outbox = std::move(outbox);
+  _outUniverse.m_inbox = std::move(inbox);
 
   // The two inverses of the slot table, rebuilt rather than read. m_entityRows is sorted by id
   // because that is the invariant its binary search rests on, and building it by walking the slots
@@ -1749,11 +1827,12 @@ void WriteSaveFile(const Universe& _universe, const SaveHeader& _header, std::ve
   out.U64(_header.galaxySeed);
   out.U16(static_cast<std::uint16_t>(_header.shard));
   out.U64(static_cast<std::uint64_t>(state.size()));
+  out.U32(_header.shardCount);
   // The header is exactly as long as the constant says. A field added above without moving the
   // constant would put the state at an offset the reader does not look at, and the reader's own
   // arithmetic would then be measured against the wrong place -- so it is asserted here, at compile
   // time, rather than discovered in a file somebody cannot load.
-  static_assert(SAVE_HEADER_BYTES == 4u + 1u + 8u + 2u + 8u, "the save header's length has drifted from its fields");
+  static_assert(SAVE_HEADER_BYTES == 4u + 1u + 8u + 2u + 8u + 4u, "the save header's length has drifted from its fields");
 
   _outBytes.insert(_outBytes.end(), state.begin(), state.end());
 }
@@ -1771,21 +1850,27 @@ bool ReadSaveFile(std::span<const std::uint8_t> _bytes, SaveHeader& _outHeader, 
   header.galaxySeed = in.U64();
   header.shard = static_cast<ShardId>(in.U16());
   const std::uint64_t stateBytes = in.U64();
+  // Format 2 added it. A file written before it was written by a build that had one shard and no
+  // way to say otherwise, which is exactly what 1 means (ADR 0061's gate, applied to the header).
+  header.shardCount = (fileFormat >= 2) ? in.U32() : 1u;
   if (!in.Ok())
     return false;
+  if (header.shardCount == 0u)
+    return false; // a galaxy split into no shards is not a galaxy this build can place anything in
 
   // The length must account for the file exactly. Short is a torn write; long is a file with
   // something appended, which the state codec would not notice because it stops at the end of the
   // state. Compared against the buffer rather than trusted, and computed in uint64 so a length near
   // the top of the range cannot wrap the addition into a small number that happens to match.
-  if (stateBytes != static_cast<std::uint64_t>(_bytes.size()) - static_cast<std::uint64_t>(SAVE_HEADER_BYTES))
+  const std::size_t headerBytes = SaveHeaderBytes(fileFormat);
+  if (stateBytes != static_cast<std::uint64_t>(_bytes.size()) - static_cast<std::uint64_t>(headerBytes))
     return false;
 
   // Into a local universe, not the caller's, for ReadUniverseState's own reason one level up: a
   // refusal at the LAST check below -- the shard cross-check -- must leave the caller holding the
   // universe it had, and a read straight into _outUniverse could not offer that.
   Universe loaded;
-  if (!ReadUniverseState(_bytes.subspan(SAVE_HEADER_BYTES), loaded))
+  if (!ReadUniverseState(_bytes.subspan(headerBytes), loaded))
     return false;
 
   // The one thing the header claims that the body can contradict. A file that disagrees with itself
@@ -1796,7 +1881,7 @@ bool ReadSaveFile(std::span<const std::uint8_t> _bytes, SaveHeader& _outHeader, 
 
   // The state codec has already checked this byte's magic and window, so it is read as a fact here
   // rather than parsed a second time.
-  header.stateFormat = _bytes[SAVE_HEADER_BYTES + FORMAT_BYTE_OFFSET];
+  header.stateFormat = _bytes[headerBytes + FORMAT_BYTE_OFFSET];
 
   _outHeader = header;
   _outUniverse = std::move(loaded);
@@ -1805,16 +1890,23 @@ bool ReadSaveFile(std::span<const std::uint8_t> _bytes, SaveHeader& _outHeader, 
 
 bool PeekSaveFormats(std::span<const std::uint8_t> _bytes, std::uint8_t& _outFileFormat, std::uint8_t& _outStateFormat)
 {
-  if (_bytes.size() <= SAVE_HEADER_BYTES + FORMAT_BYTE_OFFSET)
+  if (_bytes.size() <= FORMAT_BYTE_OFFSET)
     return false;
   ByteReader file(_bytes);
   if (file.U32() != SAVE_FILE_MAGIC)
     return false;
-  ByteReader state(_bytes.subspan(SAVE_HEADER_BYTES));
+
+  // The header's own length depends on the byte this function is here to read, so the file format is
+  // taken first and the state is looked for where THAT format puts it.
+  const std::uint8_t fileFormat = _bytes[FORMAT_BYTE_OFFSET];
+  const std::size_t headerBytes = SaveHeaderBytes(fileFormat);
+  if (_bytes.size() <= headerBytes + FORMAT_BYTE_OFFSET)
+    return false;
+  ByteReader state(_bytes.subspan(headerBytes));
   if (state.U32() != UNIVERSE_STATE_MAGIC)
     return false;
-  _outFileFormat = _bytes[FORMAT_BYTE_OFFSET];
-  _outStateFormat = _bytes[SAVE_HEADER_BYTES + FORMAT_BYTE_OFFSET];
+  _outFileFormat = fileFormat;
+  _outStateFormat = _bytes[headerBytes + FORMAT_BYTE_OFFSET];
   return true;
 }
 
@@ -1976,6 +2068,80 @@ bool ReadLedgerReply(std::span<const std::uint8_t> _message, LedgerReply& _outRe
   for (std::uint32_t hull = 0; hull < HULL_COUNT; ++hull)
     _outReply.hullCounts[hull] = counts[hull];
   return true;
+}
+
+bool WriteHandoffs(std::span<const Universe::Handoff> _handoffs, Neuron::Transport& _transport, std::uint32_t& _outSent)
+{
+  _outSent = 0;
+  if (_handoffs.empty())
+    return true; // nothing to say is not a failure to say it
+
+  // As many as the lane holds. The kind byte and the count are the header; the rest is entries.
+  const std::uint32_t room = (Neuron::MAX_RELIABLE_BYTES - 1u - 4u) / HANDOFF_WIRE_BYTES;
+  const std::uint32_t taking = std::min(room, static_cast<std::uint32_t>(_handoffs.size()));
+  if (taking == 0)
+    return false; // one entry does not fit the lane, which is a build mistake rather than a runtime one
+
+  std::vector<std::uint8_t> bytes;
+  ByteWriter out(bytes);
+  out.U8(KIND_HANDOFF);
+  out.U32(taking);
+  for (std::uint32_t at = 0; at < taking; ++at)
+    WriteHandoffFields(out, _handoffs[at]);
+
+  if (!_transport.SendReliable(bytes.data(), static_cast<std::uint32_t>(bytes.size())))
+    return false; // the lane refused: the caller still holds every entry, which is the point
+  _outSent = taking;
+  return true;
+}
+
+bool ReadHandoffs(std::span<const std::uint8_t> _message, std::vector<Universe::Handoff>& _outHandoffs)
+{
+  ByteReader in(_message);
+  if (in.U8() != KIND_HANDOFF)
+    return false;
+  const std::uint32_t count = in.U32();
+  if (!in.Ok() || count == 0 || count > in.Remaining())
+    return false;
+
+  _outHandoffs.resize(count);
+  for (Universe::Handoff& handoff : _outHandoffs)
+  {
+    if (!ReadHandoffFields(in, handoff))
+      return false;
+  }
+  return in.Ok();
+}
+
+bool WriteHandoffAck(std::span<const std::uint64_t> _sequences, Neuron::Transport& _transport)
+{
+  if (_sequences.empty())
+    return true;
+
+  const std::uint32_t room = (Neuron::MAX_RELIABLE_BYTES - 1u - 4u) / 8u;
+  const std::uint32_t taking = std::min(room, static_cast<std::uint32_t>(_sequences.size()));
+
+  std::vector<std::uint8_t> bytes;
+  ByteWriter out(bytes);
+  out.U8(KIND_HANDOFF_ACK);
+  out.U32(taking);
+  for (std::uint32_t at = 0; at < taking; ++at)
+    out.U64(_sequences[at]);
+  return _transport.SendReliable(bytes.data(), static_cast<std::uint32_t>(bytes.size()));
+}
+
+bool ReadHandoffAck(std::span<const std::uint8_t> _message, std::vector<std::uint64_t>& _outSequences)
+{
+  ByteReader in(_message);
+  if (in.U8() != KIND_HANDOFF_ACK)
+    return false;
+  const std::uint32_t count = in.U32();
+  if (!in.Ok() || count == 0 || count > in.Remaining())
+    return false;
+  _outSequences.resize(count);
+  for (std::uint64_t& sequence : _outSequences)
+    sequence = in.U64();
+  return in.Ok();
 }
 
 bool WriteComposeOrder(const ComposeOrder& _order, Neuron::Transport& _transport)

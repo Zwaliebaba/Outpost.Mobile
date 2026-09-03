@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EventLog.h"
+#include "HullParts.h"
 #include "ShipExplosion.h"
 
 #include "Formation.h"
@@ -105,7 +106,7 @@ public:
   // Both ends are frozen at arrival rather than followed per frame, and that is the same rule
   // ShipExplosion is built on: either ship may have died on the tick the shot landed, and a tracer
   // that chased a live record would snap to nothing halfway through its own flight
-  // (Design/Combat-slice-4.md 2.1).
+  // (Design/Archive/Combat-slice-4.md 2.1).
   struct GunShot
   {
     DirectX::XMFLOAT3 fromWorld{0.0f, 0.0f, 0.0f};
@@ -166,6 +167,25 @@ public:
     std::vector<ExhaustView> exhausts;
     std::vector<NavLightView> navLights;
 
+    // The mounts this hull's art can turn, resolved once from the mesh (ResolveMounts). Empty for
+    // every hull with no turret submesh and every fixed gun, which is most of the roster and is why
+    // this slice cannot regress a hull it does not touch: an empty list draws one instanced hull.
+    //
+    // Carried across an update with the rest of the view, not rebuilt from the snapshot, because a
+    // turret's angle is presentation state with a history -- rebuilding it every update would snap
+    // every turret back to rest four times a second.
+    std::vector<MountView> mounts;
+
+    // Where each mount's shots draw from, in mesh space, resolved from the hull's `Gun` markers.
+    // Empty for a hull whose art authors none, which is the Bomber, the Carrier and the Battleship's
+    // two light mounts -- their shots draw from the hull's origin, as they always did.
+    std::vector<MuzzleView> muzzles;
+
+    // Which of a mount's several muzzles the next shot uses. One counter for the hull rather than one
+    // per mount: a twin turret alternates its barrels, which is the whole effect, and a fleet action
+    // does not need the alternation to be per-mount exact.
+    std::uint8_t muzzleTurn = 0;
+
     // One ring buffer per exhaust, nozzle-major: nozzle n owns [n * TRAIL_SAMPLES, (n + 1) *
     // TRAIL_SAMPLES), newest at trailHead. Every nozzle is sampled on the same tick, so the head
     // and the count are shared rather than stored per nozzle.
@@ -177,6 +197,7 @@ public:
     // the moment the ship leaves the snapshot, when nothing else remembers where it was: by then
     // the new snapshot has no record for it and this ShipView is about to be discarded.
     DirectX::XMFLOAT4X4 lastWorld{};
+    float lastHighlight = 0.0f; // so a posed hull's parts wear the same lift the bucket would have given it
     DirectX::XMFLOAT3 lastVelMetresPerSec{0.0f, 0.0f, 0.0f};
     Neuron::Rgba lastLivery{1.0f, 1.0f, 1.0f, 1.0f}; // so the debris wears the paint the hull did
     bool drawn = false;                              // false until the first Render; a ship that vanishes before one does not explode
@@ -451,7 +472,7 @@ public:
 
   // How whole a fleet member is, 0..1, or -1 for one this client holds no record for -- a fleet
   // somewhere the camera has never been. A caller that could not tell those apart would draw a
-  // healthy pip for a ship it knows nothing about (Design/Combat-slice-4.md 2.3).
+  // healthy pip for a ship it knows nothing about (Design/Archive/Combat-slice-4.md 2.3).
   [[nodiscard]] float ConditionOfMember(Game::EntityId _entity) const noexcept;
 
   // The order a sheet button armed, waiting for the universe tap that supplies its target. None until
@@ -716,6 +737,25 @@ private:
   [[nodiscard]] DirectX::XMFLOAT3 HullPointToWorld(const ShipView& _view, const DisplayPose& _pose,
                                                    const DirectX::XMFLOAT3& _local) const noexcept;
 
+  // Where a shot from _mount leaves this hull, in world space: its authored muzzle, carried round by
+  // the turret's current aim if that mount turns, and the hull's origin when the art authors none
+  // (Design/Archive/Combat.md 3.1). Advances the hull's muzzle counter, which is why it is not const.
+  [[nodiscard]] DirectX::XMFLOAT3 MuzzleToWorld(ShipView& _view, const DisplayPose& _pose, std::uint32_t _mount) const noexcept;
+
+  // Turns one mount toward a shot it just fired, in the shooter's own frame. A mount index the art
+  // does not bind is ignored, which is most of them.
+  void AimMountAt(ShipView& _view, float _headingRad, std::uint32_t _mount, const DirectX::XMFLOAT3& _fromWorld,
+                  const DirectX::XMFLOAT3& _toWorld) const noexcept;
+
+  // Whether any of this hull's turrets is off its authored rest. False for every hull with no bound
+  // mount and every hull whose fight has ended, which is what keeps the instanced path the common
+  // one (ViewTuning.h's TURRET_STOWED_RAD).
+  [[nodiscard]] static bool AnyMountOffRest(const ShipView& _view) noexcept;
+
+  // One hull drawn as its complement plus its posed parts: the two or three draws a turning turret
+  // costs, against the one an instanced hull does.
+  void DrawPosedHull(Neuron::SceneRenderer& _renderer, Neuron::GpuDevice& _gpu, const ShipView& _view) const;
+
   // The matrix a hull is drawn with, from its presentation state and its displayed pose. Written
   // once and used by Render and by HullPointToWorld, so the mesh and every point authored on it
   // cannot disagree about where the hull is.
@@ -844,6 +884,23 @@ private:
     std::vector<Neuron::MeshInstance> instances;
   };
   std::vector<MeshBucket> m_meshBuckets;
+
+  // The hulls this frame that have a turret off rest, with how far away they are. Built during the
+  // walk and settled after it, so the cap is taken nearest-first rather than in submission order.
+  // A member rather than a local, for m_meshBuckets' reason: it is cleared and refilled every frame
+  // and its storage is worth keeping.
+  struct PosedHull
+  {
+    std::size_t ship = 0;
+    float distanceSq = 0.0f;
+  };
+  std::vector<PosedHull> m_posed;
+
+  // The record this client last ordered an attack on, for the bracket bar (Design/Archive/Combat.md 10.3).
+  // Client-local and nowhere on the wire: the fleet status block says a fleet is attacking, never
+  // what, and a target that leaves the interest set drops out of here rather than pointing at a
+  // record nobody holds.
+  Game::EntityId m_orderedTarget = Game::INVALID_ENTITY_ID;
 
   // The bucket for a mesh, made on first sight. Buckets are kept across frames and only their
   // contents cleared, so a steady fleet allocates nothing after the first frame.

@@ -120,7 +120,7 @@ inline constexpr Neuron::Rgba SHOCK_RING_COLOUR{1.0f, 0.86f, 0.62f, 0.6f};
 
 // A station exists in the game now (the hostile base below), and it can be shot at, but nothing can
 // destroy one: a station is an immovable hull and an immovable hull discards its damage, which is
-// how Design/Archive/Stations.md 8.5's rule is spelled (Design/Combat.md 7.2). Nor can one be
+// how Design/Archive/Stations.md 8.5's rule is spelled (Design/Archive/Combat.md 7.2). Nor can one be
 // selected, so F4 cannot reach it either. So nothing sets ShipExplosion::Spawn::shockRing on its own
 // account yet, and until something can kill a station every death carries a ring, which is the only
 // way the effect can be looked at. Whatever gives a station a lifecycle sets the flag from the
@@ -451,7 +451,7 @@ inline constexpr float GUN_TRACER_SEC = 0.33f;
 
 // The beads a tracer is drawn as. They ride the same glow billboards a running light does, so the
 // tracer costs no pipeline, no shader and nothing in the renderer's contract -- which is the whole
-// reason this half of the slice could land without the other (Design/Combat-slice-4.md 1).
+// reason this half of the slice could land without the other (Design/Archive/Combat-slice-4.md 1).
 // Sized to read at fleet zoom rather than at a hull's: the guns reach 160-420 m (DeviceSpec.h), and
 // at the camera heights a fight is watched from, the sub-metre beads this shipped with were under a
 // pixel -- gunfire the wire reported and the frame technically drew, and nobody ever saw.
@@ -467,8 +467,42 @@ inline constexpr std::size_t MAX_DRAWN_SHOTS = 64;
 
 // How long after being shot at a ship's death still reads as the player's kill. Two seconds is past
 // any cooldown in the device table except the Bomber's, so a shot that lands and kills is credited
-// while a coincidence two fights away is not (Design/Combat-slice-4.md 2.5).
+// while a coincidence two fights away is not (Design/Archive/Combat-slice-4.md 2.5).
 inline constexpr float GUN_KILL_CREDIT_SEC = 2.0f;
+
+// How long a turret keeps bearing on the last thing it fired at before it stows.
+//
+// Longer than the longest cooldown in the device table -- the Bomber's six seconds is a fixed gun and
+// does not slew, so the longest that does is the HeavyTurret's four -- because a turret that stowed
+// between two shots at the same target would swing home and back on every reload, which is the one
+// motion a turret never makes. Five seconds is that four plus a margin, and it is why the drift home
+// is only ever seen when a fight actually ends.
+inline constexpr float TURRET_HOLD_SEC = 5.0f;
+
+// The ordered target's bracket bar: a second ring just inside the selection ring, thinner than it,
+// drawn as a partial fill (Design/Archive/Combat.md 10.3).
+inline constexpr float TARGET_BAR_RADIUS_SCALE = 0.88f;
+inline constexpr float TARGET_BAR_THICKNESS_SCALE = 0.6f;
+
+// A turret whose aim is within this of rest counts as stowed, and its hull goes back through the
+// instanced path.
+//
+// The cost this buys is the whole reason it exists. A hull with a posed part cannot be instanced --
+// its parts need a matrix each and an instance carries one -- so it leaves the bucket and costs a
+// pipeline switch plus a draw per gap. Every hull in a battle doing that would undo the instancing
+// that MmoScalabilityReview G2 bought. A turret at rest is indistinguishable from an unposed one, so
+// this threshold is free accuracy: half a degree, well under a pixel of rotation at any range a
+// player watches a fight from.
+inline constexpr float TURRET_STOWED_RAD = 0.0087f;
+
+// The most hulls that may draw posed parts in one frame, nearest first.
+//
+// The backstop under the threshold above: a hundred hulls all slewing at once is a hundred hulls out
+// of the instanced path, and the frame that costs is exactly the frame a big battle is already
+// expensive in. Past this a hull draws stowed -- one instanced draw, turrets pointing where they were
+// authored -- which is a lie about a ship too far away to see a turret on, and never a lie about
+// what was hit.
+inline constexpr std::size_t MAX_POSED_HULLS = 24;
 
 // --- the jump wink -------------------------------------------------------------------------------
 // The look a JumpedOut departure draws, and its mirror on the arrival: an azure flash that blooms
@@ -509,10 +543,24 @@ inline constexpr Neuron::Rgba HUD_ALERT_RED{LIVERY_VANDAL.r, LIVERY_VANDAL.g, LI
 
 // The condition pips on the fleet sheet: the trough a pip is drawn in, and the middle of the ramp
 // between the green above and the red beside it. Amber is mixed from the two rather than authored,
-// so a palette change carries the middle with it (Design/Combat-slice-4.md 2.4).
+// so a palette change carries the middle with it (Design/Archive/Combat-slice-4.md 2.4).
 inline constexpr Neuron::Rgba HUD_PIP_EMPTY{HUD_ALERT_RED.r * 0.2f, HUD_ALERT_RED.g * 0.2f, HUD_ALERT_RED.b * 0.2f, 0.5f};
 inline constexpr Neuron::Rgba HUD_PIP_HURT{(HUD_ACCENT_GREEN.r + HUD_ALERT_RED.r) * 0.5f, (HUD_ACCENT_GREEN.g + HUD_ALERT_RED.g) * 0.5f,
                                            (HUD_ACCENT_GREEN.b + HUD_ALERT_RED.b) * 0.5f, 1.0f};
+
+// Green through amber to red, so a fleet reads at a glance and a ship about to die is the one that
+// stands out. Two segments rather than a gradient, because the HUD's palette is three named colours
+// and inventing a fourth here would put a colour in the tree that nothing else can reach.
+//
+// Here rather than in FleetSheet.cpp, where it started: the ordered target's bracket bar reads the
+// same condition and must read it in the same colours, and one condition meaning two colours
+// depending on where it is drawn is the failure this move prevents (Design/Archive/Combat-slice-6.md 2.4).
+[[nodiscard]] inline Neuron::Rgba ConditionColour(float _condition) noexcept
+{
+  if (_condition > 0.6f)
+    return HUD_ACCENT_GREEN;
+  return (_condition > 0.25f) ? HUD_PIP_HURT : HUD_ALERT_RED;
+}
 // Derived the same way, for the same reason: the blue a Vanguard record draws in on the map is the
 // azure the Vanguard flies in the scene. Only while the mask says they are not hostile -- the day
 // the law turns on the player, every Vanguard dot goes HUD_ALERT_RED with the hulls
@@ -610,6 +658,31 @@ inline constexpr float HUD_ASSEMBLY_LEFT_FRACTION = 0.52f;
 // enough that the station it belongs to is still visible behind it.
 inline constexpr Neuron::Rgba HUD_ASSEMBLY_SCRIM{0.0f, 0.0f, 0.0f, 0.55f};
 inline constexpr float HUD_ASSEMBLY_DISABLED_ALPHA = 0.35f;
+
+// --- the galaxy map -------------------------------------------------------------------------------
+// The whole galaxy on one screen, drawn from the layout the client already holds (Design/GalaxyMap.md).
+// Modal and near-full-screen, unlike the assembly panel: it is a MAP, and a map in a 520-pixel box is
+// a map you have to squint at. The margins are what keep it off the window edge at any size.
+inline constexpr float HUD_MAP_MARGIN_PX = 48.0f;
+inline constexpr float HUD_MAP_HEADER_PX = 44.0f;
+inline constexpr float HUD_MAP_PAD_PX = 24.0f;
+// The plot's own inset inside the panel, so a node at the extreme of the bounding box still has its
+// dot and its digit drawn rather than clipped by the frame. Sized off the largest thing drawn at a
+// node, which is the fleet digit.
+inline constexpr float HUD_MAP_INSET_PX = 26.0f;
+inline constexpr float HUD_MAP_NODE_PX = 5.0f;
+inline constexpr float HUD_MAP_HERE_PX = 13.0f; // the ring around the system the camera is in
+inline constexpr float HUD_MAP_EDGE_PX = 1.0f;
+// The gate graph, drawn under the nodes. Dim on purpose: 68 edges at the node colour is a mesh the
+// systems disappear into, and the edges are context while the nodes are the content.
+inline constexpr Neuron::Rgba HUD_MAP_EDGE_COLOUR{0.28f, 0.36f, 0.44f, 0.55f};
+inline constexpr Neuron::Rgba HUD_MAP_NODE_COLOUR{0.60f, 0.70f, 0.80f, 1.0f};
+inline constexpr Neuron::Rgba HUD_MAP_SCRIM{0.0f, 0.0f, 0.0f, 0.70f};
+// How near a node a finger has to land to mean it. Well above the 5-pixel dot, because the target is
+// a thumb and not a cursor, and comfortably under the 42 pixels the closest two stars are apart at
+// 1920x1080 -- so the nearest-node rule never has to break a tie a player would call wrong
+// (Design/GalaxyMap-slice-2.md 4.2).
+inline constexpr float HUD_MAP_TAP_RADIUS_PX = 18.0f;
 
 // --- the fleet sheet ------------------------------------------------------------------------------
 // One fleet's panel, held over the bottom bar by a long press on its button (Design/Archive/Fleets.md 9.3).

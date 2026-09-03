@@ -75,6 +75,12 @@
     <ClInclude Include="SpatialIndex.h">
       <Filter>Universe</Filter>
     </ClInclude>
+    <ClInclude Include="ServerConfig.h">
+      <Filter>Universe</Filter>
+    </ClInclude>
+    <ClInclude Include="ShardLink.h">
+      <Filter>Universe</Filter>
+    </ClInclude>
     <ClInclude Include="Universe.h">
       <Filter>Universe</Filter>
     </ClInclude>
@@ -117,6 +123,12 @@
       <Filter>Universe</Filter>
     </ClCompile>
     <ClCompile Include="StartingUniverse.cpp">
+      <Filter>Universe</Filter>
+    </ClCompile>
+    <ClCompile Include="ServerConfig.cpp">
+      <Filter>Universe</Filter>
+    </ClCompile>
+    <ClCompile Include="ShardLink.cpp">
       <Filter>Universe</Filter>
     </ClCompile>
     <ClCompile Include="Universe.cpp">

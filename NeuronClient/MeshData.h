@@ -2,7 +2,10 @@
 
 #include <DirectXMath.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace Neuron
@@ -62,7 +65,7 @@ struct MeshMarker
   // and one that floats where the barrel used to be.
   //
   // Nothing reads it yet, and no shipped hull sets it: every hull in the game is rigid submeshes
-  // with no rig at all (Design/Combat-slice-3.md 2.6). It is four bytes on a struct loaded once per
+  // with no rig at all (Design/Archive/Combat-slice-3.md 2.6). It is four bytes on a struct loaded once per
   // hull, against reading the format a second time the day a rigged hull is authored.
   std::int32_t parentBone = -1;
 };
@@ -109,6 +112,75 @@ struct MeshSubMesh
   }
 };
 
+// A contiguous run of vertices in a MeshData's soup: what one draw covers.
+//
+// The same two fields MeshSubMesh already carries, as a type of their own, because the interesting
+// operation is over a SET of runs and it has nothing to do with what a submesh is named or where it
+// pivots. A caller posing a turret hands the renderer the turret's run; the renderer draws the rest
+// of the hull as the complement of the runs it was given.
+struct MeshRange
+{
+  std::uint32_t firstVertex = 0;
+  std::uint32_t vertexCount = 0;
+
+  [[nodiscard]] constexpr std::uint32_t End() const noexcept
+  {
+    return firstVertex + vertexCount;
+  }
+};
+
+// The most runs the complement of _posedCount runs can need: one before each, and one after the
+// last. A caller sizes its scratch with this rather than remembering the arithmetic.
+[[nodiscard]] constexpr std::size_t ComplementCapacity(std::size_t _posedCount) noexcept
+{
+  return _posedCount + 1;
+}
+
+// The runs of [0, _vertexCount) that _posed does NOT cover, written into _outGaps, returning how
+// many were written. At most ComplementCapacity(_posed.size()), so a caller that sized its buffer
+// with that function cannot overflow it, and a smaller buffer is filled and the rest dropped.
+//
+// **_posed is SORTED IN PLACE**, which is why it is a mutable span. The alternative was a local copy
+// with a fixed cap, and a cap that silently ignored the seventh range would be the kind of quiet
+// wrongness this function exists to prevent. The caller owns that buffer, has just built it, and has
+// no use for its order.
+//
+// Runs that overlap or touch are merged, so two turrets whose submeshes happen to be adjacent leave
+// one gap on each side rather than an empty run between them. A run past the end is clamped and an
+// empty one is dropped, so a caller that asked for a part its mesh does not have gets the whole mesh
+// back rather than a hole in it.
+//
+// Pure arithmetic over integers, in the header the data lives in and not in the renderer, because
+// this is the half of the submesh draw that can be wrong silently -- a gap that overlaps a posed run
+// draws the turret twice, once turning and once not -- and the half a suite can reach without a
+// device.
+[[nodiscard]] inline std::size_t RangeComplement(std::span<MeshRange> _posed, std::uint32_t _vertexCount,
+                                                 std::span<MeshRange> _outGaps) noexcept
+{
+  std::sort(_posed.begin(), _posed.end(), [](const MeshRange& _a, const MeshRange& _b) { return _a.firstVertex < _b.firstVertex; });
+
+  std::size_t written = 0;
+  std::uint32_t at = 0; // the first vertex not yet accounted for
+  const auto emit = [&](std::uint32_t _first, std::uint32_t _end)
+  {
+    if (_end > _first && written < _outGaps.size())
+      _outGaps[written++] = MeshRange{_first, _end - _first};
+  };
+
+  for (const MeshRange& posed : _posed)
+  {
+    if (posed.vertexCount == 0 || posed.firstVertex >= _vertexCount)
+      continue; // an empty run, or one wholly past the end: it covers nothing
+    const std::uint32_t first = posed.firstVertex;
+    const std::uint32_t end = std::min(posed.End(), _vertexCount);
+    if (first > at)
+      emit(at, first);
+    at = std::max(at, end); // max, not assignment: a run inside one already walked must not reopen it
+  }
+  emit(at, _vertexCount);
+  return written;
+}
+
 // A mesh as it comes off disk: triangle soup, its bounds, the markers its author placed on it, and
 // the index of named parts over the soup that lets a consumer address one of them without a second
 // copy. Deliberately free of graphics API types, so a loader, a test and a tool can all hold one
@@ -149,6 +221,30 @@ struct MeshData
   [[nodiscard]] bool Empty() const noexcept
   {
     return verts.empty();
+  }
+
+  // The part named _nameHash, or a run of nothing if this mesh has no such part. A zero-count run
+  // rather than an index and a sentinel, because every caller wants the range and none wants the
+  // index, and a run of nothing poses nothing and complements to the whole mesh.
+  [[nodiscard]] MeshRange RangeOf(std::uint32_t _nameHash) const noexcept
+  {
+    for (const MeshSubMesh& part : subMeshes)
+    {
+      if (part.nameHash == _nameHash && _nameHash != 0)
+        return MeshRange{part.firstVertex, part.vertexCount};
+    }
+    return MeshRange{};
+  }
+
+  // What that part turns about, in mesh space, or the mesh's own centre when it has no such part.
+  [[nodiscard]] DirectX::XMFLOAT3 PivotOf(std::uint32_t _nameHash) const noexcept
+  {
+    for (const MeshSubMesh& part : subMeshes)
+    {
+      if (part.nameHash == _nameHash && _nameHash != 0)
+        return part.Pivot();
+    }
+    return BoundsCentre();
   }
 };
 } // namespace Neuron

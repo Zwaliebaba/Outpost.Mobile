@@ -186,8 +186,14 @@ phase is the one that writes the design.
 
 ### Phase 2 — the shard (not cut)
 
-What a second player and a second machine need. Every slice here waits on the headless run loop
-and the dedicated-server root, which belong to no plan yet.
+What a second player and a second machine need. Every slice here waited on the headless run loop and
+the dedicated-server root, and **both now exist**: [`ShardServer.md`](ShardServer.md) was drafted
+2026-09-02 precisely because eight slices across two designs were waiting on the same missing
+executable, and its slices 1 to 3 landed the same day. `Server.exe` boots a shard, ticks it, saves it,
+serves one session and opens a link per neighbour — so **this phase is no longer blocked on an
+executable that does not exist**. What it is now blocked on is smaller and named: two shards have
+never been two processes (`ShardServer.md` slice 4), and there is no login, so the session layer below
+still has one player to serve.
 
 | # | Slice | Layer | Size | Depends on | Items | ADR |
 |---|---|---|---|---|---|---|

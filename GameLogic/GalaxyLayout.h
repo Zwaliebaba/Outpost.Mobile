@@ -133,6 +133,15 @@ struct GalaxyDesc
   // (ADR 0037's argument, re-run).
   float gateRingMetres = 7000.0f;
 
+  // How many shards this galaxy is written for. Deployment configuration (Server.cfg, ADR 0043),
+  // and it is here rather than beside the port because it changes what a universe IS: a universe
+  // generated for four shards is not a universe four other shards can run, which is why the save
+  // header carries it too and refuses a file that disagrees (Design/CrossShard.md 2).
+  //
+  // One is the shipped galaxy and means "no partition at all": ShardOfSystem answers 0 for every
+  // system, and nothing about the file changes.
+  std::uint32_t shardCount = 1;
+
   // The orbit and radius bands an unpinned system's planets are drawn within. Its planetCount and
   // its pin fields are not read: a galaxy's system draws its own count, and pinFirstPlanet is a
   // property of an authored system rather than of a drawn one.
@@ -226,6 +235,47 @@ struct GalaxyLayout
 // have been the second opinion ADR 0037 exists to prevent. It is also the half of the client's
 // scenery machinery that a suite can actually reach (Design/Archive/Universe-slice-4b.md 4).
 [[nodiscard]] std::uint32_t SystemAt(std::span<const SystemSite> _systems, const UniversePos& _at) noexcept;
+
+// Which shard holds a system.
+//
+// A pure function of the system's world-fixed lattice cell and the description's shard count, and
+// that is the whole design decision (Design/CrossShard.md 2): every participant -- each shard, and
+// every client -- must agree on which shard owns a system and must agree WITHOUT being told, for the
+// reason the galaxy is a seed rather than a file. Two copies of an authored partition are two
+// chances to disagree, and the disagreement is a ship that arrives nowhere.
+//
+// **Contiguity is the requirement and cheapness is not.** A partition that scatters neighbours
+// across shards turns most gates into wire crossings, which is the one cost the cross-shard design
+// exists to bound. This is a block split down the lattice's q columns, cut so each shard holds a
+// near-equal number of CELLS: a shard is therefore a contiguous band of columns, and neighbours stay
+// together except across a band's edge. A hash of the same cell would balance perfectly and keep
+// nothing together, and it is rejected for exactly that (GalaxyLayoutTests measures the difference).
+//
+// Integer arithmetic throughout, and deliberately: this answer must be identical on every machine
+// and in every build, and an angle would put a transcendental in the one function that may not
+// disagree. The columns of a hex of radius R hold 2R+1-|q| cells each, which is all the arithmetic
+// there is.
+//
+// Answers 0 for every system when the count is 0 or 1. A count above the column count leaves shards
+// with nothing, which is a deployment error rather than a partition this can express; the caller
+// that writes files is where that is refused (UniverseGen), because that is where it can be said.
+[[nodiscard]] ShardId ShardOfSystem(const SystemSite& _site, const GalaxyDesc& _desc) noexcept;
+
+// The most shards a galaxy of this description can be split into and still give every shard a
+// COLUMN. A hard ceiling and a cheap one -- a band is a whole number of columns, so above this a
+// shard is certainly empty -- and it is not the answer to "is this count safe": a column can hold no
+// system, because only a fraction of the lattice's cells do (GalaxyDesc::density). Ask
+// OccupiedShardCount for that.
+[[nodiscard]] std::uint32_t MaxShardCount(const GalaxyDesc& _desc) noexcept;
+
+// How many shards hold at least one system, over the layout that was actually drawn.
+//
+// The real check, and it has to be against the layout rather than the description because occupancy
+// is **not monotonic in the count**: the shipped galaxy fills every shard at ten and leaves one
+// empty at nine, since a band's edges move with the count and the systems inside it do not. A caller
+// that wants to know whether a count is usable asks this and compares, which is what UniverseGen
+// does before it writes anything (Design/CrossShard-slice-1.md 6).
+[[nodiscard]] std::uint32_t OccupiedShardCount(std::span<const SystemSite> _systems, const GalaxyDesc& _desc) noexcept;
 
 // Where the gate that leads to _to stands, inside _from's system.
 //

@@ -116,6 +116,7 @@ struct Fixture
 
 constexpr Fixture FIXTURES[] = {
   {L"UniverseFormat7.sav", 1, 7, 54, 136, 165, 307, 1, 124438},
+  {L"UniverseFormat8.sav", 2, 8, 54, 136, 165, 307, 1, 126906},
 };
 
 // The fixtures sit under Assets\ beside the suite, the shape the app and the client suite both use.
@@ -615,6 +616,41 @@ public:
 
   // Every way a file can be wrong, and the same discipline the state codec keeps: refuse, change
   // nothing, never throw, never assert.
+  TEST_METHOD(TheShardCountSurvivesTheHeader)
+  {
+    // A universe generated for four shards is not a universe four OTHER shards can run: the
+    // partition is a function of the layout and the count, so a count that arrived wrong would move
+    // every system in silence (Design/CrossShard.md 2). It rides the header for the shard's own
+    // reason -- a header is readable without decoding the body.
+    Game::Universe source;
+    (void)BuildScene(source);
+
+    Game::SaveHeader header;
+    header.galaxySeed = 0x1234u;
+    header.shard = source.Shard();
+    header.shardCount = 4;
+
+    std::vector<std::uint8_t> file;
+    Game::WriteSaveFile(source, header, file);
+
+    Game::Universe loaded;
+    Game::SaveHeader read;
+    Assert::IsTrue(Game::ReadSaveFile(file, read, loaded), L"a four-shard file was refused");
+    Assert::AreEqual(4u, read.shardCount, L"the shard count did not survive the header");
+    Assert::AreEqual(static_cast<std::uint32_t>(Game::SAVE_FILE_FORMAT), static_cast<std::uint32_t>(read.fileFormat),
+                     L"the file was not written at the current file format");
+
+    // Zero shards is not a galaxy anything can be placed in, and is refused rather than read as one.
+    std::vector<std::uint8_t> zeroed = file;
+    zeroed[23] = 0;
+    zeroed[24] = 0;
+    zeroed[25] = 0;
+    zeroed[26] = 0;
+    Game::Universe untouched;
+    Game::SaveHeader ignored;
+    Assert::IsFalse(Game::ReadSaveFile(zeroed, ignored, untouched), L"a file claiming zero shards was accepted");
+  }
+
   TEST_METHOD(AnOlderFixtureLoadsAndReplays)
   {
     // The migration gate. Every fixture is a real file in a format this build still reads; each
@@ -678,6 +714,153 @@ public:
       Game::WriteUniverseState(reloaded, b);
       Assert::IsTrue(a == b, L"a migrated universe and its reload diverged within 600 ticks");
     }
+  }
+
+  TEST_METHOD(AUniverseMidHandoffSurvivesItsOwnSaveFile)
+  {
+    // The claim slice 3 exists for, and the one ADR 0065 made before it was true: a shard that dies
+    // between the despawn and the send still has the ship, in its file, in its outbox.
+    Game::GalaxyDesc desc = Game::STARTING_GALAXY;
+    desc.shardCount = 4;
+    const Game::GalaxyLayout galaxy = Game::LayOutGalaxy(Game::STARTING_GALAXY_SEED, Game::UniversePos{}, desc, Game::GALAXY_PINS);
+    std::vector<Game::Universe> shards(desc.shardCount);
+    Game::BuildStartingGalaxy(galaxy, desc, shards);
+
+    std::uint32_t departing = desc.shardCount;
+    for (std::uint32_t at = 0; at < shards.size(); ++at)
+    {
+      if (shards[at].FleetInSlot(Game::OWNER_LOCAL, 0) != Game::Universe::INVALID_FLEET_ID)
+        departing = at;
+    }
+    Assert::IsTrue(departing < shards.size(), L"no shard holds the starting fleet");
+
+    Game::ShipId gate = Game::INVALID_SHIP_ID;
+    for (std::uint32_t at = 0; at < shards[departing].GateCount() && gate == Game::INVALID_SHIP_ID; ++at)
+    {
+      const Game::EntityId destination = shards[departing].GateOf(at).destination;
+      if (destination != Game::INVALID_ENTITY_ID &&
+          Game::EntityShardOf(destination) != static_cast<std::uint32_t>(shards[departing].Shard()))
+        gate = shards[departing].Resolve(shards[departing].GateOf(at).structure);
+    }
+    Assert::AreNotEqual(Game::INVALID_SHIP_ID, gate, L"the fleet's shard has no gate leading out");
+
+    Game::Universe::FleetCommand command;
+    command.kind = Game::FleetOrderKind::Jump;
+    command.gate = gate;
+    Assert::IsTrue(shards[departing].IssueFleetOrder(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 0, command) ==
+                     Game::Universe::FleetOrderResult::Ordered,
+                   L"the jump order was refused");
+    for (int tick = 0; tick < 30000 && shards[departing].Outbox().empty(); ++tick)
+      shards[departing].Step();
+    Assert::IsFalse(shards[departing].Outbox().empty(), L"the fleet never reached the gate");
+
+    // The shard dies here, and comes back from its file.
+    std::vector<std::uint8_t> saved;
+    Game::WriteUniverseState(shards[departing], saved);
+    Game::Universe reloaded;
+    Assert::IsTrue(Game::ReadUniverseState(saved, reloaded), L"a universe with a handoff in flight was refused");
+
+    Assert::AreEqual(shards[departing].Outbox().size(), reloaded.Outbox().size(), L"the outbox did not survive the file");
+    for (std::size_t at = 0; at < shards[departing].Outbox().size(); ++at)
+    {
+      Assert::AreEqual(shards[departing].Outbox()[at].entity, reloaded.Outbox()[at].entity, L"an outbox entry changed identity");
+      Assert::AreEqual(shards[departing].Outbox()[at].sequence, reloaded.Outbox()[at].sequence, L"an outbox entry lost its sequence");
+      Assert::AreEqual(shards[departing].Outbox()[at].gate, reloaded.Outbox()[at].gate, L"an outbox entry lost the gate it is bound for");
+    }
+
+    // And it re-saves to the same bytes, which is the idempotence every other format row asserts.
+    std::vector<std::uint8_t> again;
+    Game::WriteUniverseState(reloaded, again);
+    Assert::IsTrue(saved == again, L"a reloaded universe with a handoff in flight saved differently");
+
+    // The recovered outbox is a real one: delivering it still lands the fleet on the far side.
+    const std::uint32_t arriving = Game::EntityShardOf(shards[departing].GateOf(shards[departing].GateAt(gate)).destination);
+    for (const Game::Universe::Handoff& handoff : reloaded.Outbox())
+      shards[arriving].DeliverHandoff(handoff);
+    Assert::AreEqual(std::uint32_t{3}, shards[arriving].DrainInbox(), L"a handoff recovered from a file did not apply");
+    Assert::AreNotEqual(Game::Universe::INVALID_FLEET_ID, shards[arriving].FleetInSlot(Game::OWNER_LOCAL, 0),
+                        L"the fleet did not re-form from a recovered handoff");
+  }
+
+  TEST_METHOD(AnUndeliveredInboxSurvivesTooAndDrainsToTheSameUniverse)
+  {
+    // The other half, and it is not symmetrical with the outbox: an inbox that did not survive would
+    // lose ships the far side has already been told are gone, which is the same failure from the
+    // other end.
+    Game::GalaxyDesc desc = Game::STARTING_GALAXY;
+    desc.shardCount = 4;
+    const Game::GalaxyLayout galaxy = Game::LayOutGalaxy(Game::STARTING_GALAXY_SEED, Game::UniversePos{}, desc, Game::GALAXY_PINS);
+    std::vector<Game::Universe> shards(desc.shardCount);
+    Game::BuildStartingGalaxy(galaxy, desc, shards);
+
+    std::uint32_t departing = desc.shardCount;
+    for (std::uint32_t at = 0; at < shards.size(); ++at)
+    {
+      if (shards[at].FleetInSlot(Game::OWNER_LOCAL, 0) != Game::Universe::INVALID_FLEET_ID)
+        departing = at;
+    }
+    Game::ShipId gate = Game::INVALID_SHIP_ID;
+    for (std::uint32_t at = 0; at < shards[departing].GateCount() && gate == Game::INVALID_SHIP_ID; ++at)
+    {
+      const Game::EntityId destination = shards[departing].GateOf(at).destination;
+      if (destination != Game::INVALID_ENTITY_ID &&
+          Game::EntityShardOf(destination) != static_cast<std::uint32_t>(shards[departing].Shard()))
+        gate = shards[departing].Resolve(shards[departing].GateOf(at).structure);
+    }
+    Game::Universe::FleetCommand command;
+    command.kind = Game::FleetOrderKind::Jump;
+    command.gate = gate;
+    (void)shards[departing].IssueFleetOrder(Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER}, 0, command);
+    for (int tick = 0; tick < 30000 && shards[departing].Outbox().empty(); ++tick)
+      shards[departing].Step();
+    Assert::IsFalse(shards[departing].Outbox().empty(), L"the fleet never reached the gate");
+
+    const std::uint32_t arriving = Game::EntityShardOf(shards[departing].GateOf(shards[departing].GateAt(gate)).destination);
+
+    // Delivered but NOT drained, then the shard dies: the queue is the only record that those ships
+    // are coming, and the departing shard has already let go of them.
+    for (const Game::Universe::Handoff& handoff : shards[departing].Outbox())
+      shards[arriving].DeliverHandoff(handoff);
+
+    std::vector<std::uint8_t> saved;
+    Game::WriteUniverseState(shards[arriving], saved);
+    Game::Universe reloaded;
+    Assert::IsTrue(Game::ReadUniverseState(saved, reloaded), L"a universe with an undrained inbox was refused");
+
+    // Both drain to the same universe, which is the claim: the file lost nothing that mattered.
+    const std::uint32_t here = shards[arriving].DrainInbox();
+    const std::uint32_t there = reloaded.DrainInbox();
+    Assert::AreEqual(here, there, L"a reloaded inbox drained a different number of ships");
+    Assert::IsTrue(here > 0, L"nothing was in the inbox to begin with");
+
+    std::vector<std::uint8_t> a;
+    std::vector<std::uint8_t> b;
+    Game::WriteUniverseState(shards[arriving], a);
+    Game::WriteUniverseState(reloaded, b);
+    Assert::IsTrue(a == b, L"a universe that drained a reloaded inbox differs from one that never saved");
+  }
+
+  TEST_METHOD(AnEmptyQueueCostsTheFormatOnlyItsCounts)
+  {
+    // Format 9 adds a sequence and two counts to a universe with nothing in flight, and nothing else
+    // may have moved. Stated as an exact size difference rather than "about the same", because a
+    // field that quietly grew would otherwise pass.
+    Game::Universe universe;
+    (void)BuildScene(universe);
+    for (int tick = 0; tick < 25; ++tick)
+      universe.Step();
+
+    std::vector<std::uint8_t> bytes;
+    Game::WriteUniverseState(universe, bytes);
+    Assert::IsTrue(universe.Outbox().empty(), L"this row needs a universe with nothing in flight");
+
+    Game::Universe reloaded;
+    Assert::IsTrue(Game::ReadUniverseState(bytes, reloaded), L"an empty-queue universe was refused");
+    Assert::IsTrue(reloaded.Outbox().empty(), L"an empty outbox came back with something in it");
+
+    std::vector<std::uint8_t> again;
+    Game::WriteUniverseState(reloaded, again);
+    Assert::IsTrue(bytes == again, L"an empty-queue universe did not round-trip");
   }
 
   TEST_METHOD(TheNewestFixtureIsTheToolsOutput)

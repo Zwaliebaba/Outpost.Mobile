@@ -92,7 +92,7 @@ struct ShipSnapshot
   // In the record rather than in an event, and ADR 0029's own question is what settles it: a lost
   // fraction is corrected by the next update six ticks later, so this is state that heals and late
   // is worse than lost. A hull that cannot be destroyed reads 255 -- undamaged is the only honest
-  // answer for a thing with nothing to lose (Design/Combat-slice-2.md 2.2).
+  // answer for a thing with nothing to lose (Design/Archive/Combat-slice-2.md 2.2).
   std::uint8_t hullFraction = 255;
 };
 
@@ -110,7 +110,7 @@ inline constexpr std::uint8_t SHIP_FLAG_GATE = 0x02;
 // It is an event rather than state, and it is the only thing on this seam that is. What it does NOT
 // carry is as deliberate as what it does: no damage number, because the fraction in the record
 // already says what happened; and no kill attribution, because a leave run states that a ship was
-// destroyed and never by whom (Design/Combat.md 9.2, 14).
+// destroyed and never by whom (Design/Archive/Combat.md 9.2, 14).
 struct FireEvent
 {
   EntityId shooter = INVALID_ENTITY_ID;
@@ -294,7 +294,7 @@ public:
 
   // The gunfire since this subscriber last heard, as one datagram. False when there was none to
   // send or the lane refused it; nothing is retried, because a lost muzzle flash is not a lie and a
-  // late one draws a line into empty space (Design/Combat-slice-2.md 2.3).
+  // late one draws a line into empty space (Design/Archive/Combat-slice-2.md 2.3).
   //
   // More than MAX_FIRE_EVENTS keeps the newest. It is a separate message rather than a block in the
   // fragment header for one reason worth stating: the fleet status block rides every fragment so it
@@ -564,6 +564,14 @@ struct SaveHeader
   // (Design/Archive/SaveMigration-work-order.md 1.2).
   std::uint8_t fileFormat = 0;
   std::uint8_t stateFormat = 0;
+
+  // How many shards the galaxy this universe belongs to was written for, and therefore how many
+  // ShardOfSystem was asked about. It is here and not only in Server.cfg because a universe
+  // generated for four shards is not a universe four OTHER shards can run: the partition is a
+  // function of the layout and the count, so a mismatch silently moves every system
+  // (Design/CrossShard.md 2). A file format 1 predates it and reads back as 1, which is what those
+  // files meant.
+  std::uint32_t shardCount = 1;
 };
 
 // The state's format: what WriteUniverseState writes, and the newest byte ReadUniverseState accepts.
@@ -573,8 +581,8 @@ struct SaveHeader
 // commit, so that the reader below is proven against a file and not against itself.
 //
 // 2: the fleet table. 3: its manifest. 4: its order. 5: its threat. 6: the guns. 7: the plan stamp.
-// 8: the owner, on a fleet and on a ledger row.
-inline constexpr std::uint8_t UNIVERSE_STATE_FORMAT = 8;
+// 8: the owner, on a fleet and on a ledger row. 9: the cross-shard handoff queues.
+inline constexpr std::uint8_t UNIVERSE_STATE_FORMAT = 9; // 9: the handoff queues
 
 // The oldest format ReadUniverseState still accepts. A file in a format between this and the
 // current one is read with every later field gated on the byte the file carries and defaulted where
@@ -593,12 +601,27 @@ static_assert(UNIVERSE_STATE_FORMAT_OLDEST <= UNIVERSE_STATE_FORMAT, "the oldest
 // and bumping either need not bump the other. The same window applies: ReadSaveFile accepts a file
 // format from SAVE_FILE_FORMAT_OLDEST to SAVE_FILE_FORMAT, for the state format's reason.
 inline constexpr std::uint32_t SAVE_FILE_MAGIC = 0x55534156u;
-inline constexpr std::uint8_t SAVE_FILE_FORMAT = 1;
+
+// 2: the shard count.
+inline constexpr std::uint8_t SAVE_FILE_FORMAT = 2;
 inline constexpr std::uint8_t SAVE_FILE_FORMAT_OLDEST = 1;
 static_assert(SAVE_FILE_FORMAT_OLDEST <= SAVE_FILE_FORMAT, "the oldest accepted file format is newer than the one written");
 
-// magic 4 + format 1 + galaxy seed 8 + shard 2 + state length 8.
-inline constexpr std::size_t SAVE_HEADER_BYTES = 23;
+// magic 4 + format 1 + galaxy seed 8 + shard 2 + state length 8, and from format 2 a shard count of
+// 4 on the end.
+//
+// A function of the format rather than one constant, because the header is what says where the state
+// begins and an older file's header is shorter. It was a constant while there was one format, and
+// the day there were two it had to stop being one -- which is the same shape ADR 0061 gave the state
+// codec, applied to the thing in front of it.
+inline constexpr std::size_t SAVE_HEADER_BYTES = 27;
+
+[[nodiscard]] constexpr std::size_t SaveHeaderBytes(std::uint8_t _fileFormat) noexcept
+{
+  return (_fileFormat >= 2) ? 27u : 23u;
+}
+
+static_assert(SaveHeaderBytes(SAVE_FILE_FORMAT) == SAVE_HEADER_BYTES, "the current header's length has drifted from its fields");
 
 // What the file is called.
 //
@@ -669,6 +692,26 @@ void WriteSaveFile(const Universe& _universe, const SaveHeader& _header, std::ve
 [[nodiscard]] bool ReadLedgerRequest(std::span<const std::uint8_t> _message, LedgerRequest& _outRequest);
 [[nodiscard]] bool WriteLedgerReply(const LedgerReply& _reply, Neuron::Transport& _transport);
 [[nodiscard]] bool ReadLedgerReply(std::span<const std::uint8_t> _message, LedgerReply& _outReply);
+
+// --- the shard-to-shard seam ----------------------------------------------------------------------
+
+// A batch of handoffs, and the acknowledgement that clears them.
+//
+// Both ride the RELIABLE lane. A lost handoff is a fleet that has left one universe and reached no
+// other, which is the one thing this design must not do -- so it is the opposite of the fire message,
+// whose argument for the datagram lane was that a lost flash is not a lie (ADR 0053, ADR 0029).
+//
+// They are shard-to-shard and no client sends or understands either, which is why the ALPN does not
+// move: a kind a reader does not know is already refused rather than misread.
+//
+// A message carries as many entries as MAX_RELIABLE_BYTES holds; the rest wait for the next send,
+// which the re-send loop was going to make anyway. WriteHandoffs reports how many it took, so a
+// caller can tell "the lane refused" from "the batch did not fit".
+[[nodiscard]] bool WriteHandoffs(std::span<const Universe::Handoff> _handoffs, Neuron::Transport& _transport, std::uint32_t& _outSent);
+[[nodiscard]] bool ReadHandoffs(std::span<const std::uint8_t> _message, std::vector<Universe::Handoff>& _outHandoffs);
+
+[[nodiscard]] bool WriteHandoffAck(std::span<const std::uint64_t> _sequences, Neuron::Transport& _transport);
+[[nodiscard]] bool ReadHandoffAck(std::span<const std::uint8_t> _message, std::vector<std::uint64_t>& _outSequences);
 
 // The draft, upward. The last of the four order kinds, and the only one that names no ship at all.
 [[nodiscard]] bool WriteComposeOrder(const ComposeOrder& _order, Neuron::Transport& _transport);

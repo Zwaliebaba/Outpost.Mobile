@@ -1,6 +1,22 @@
 # Cross-shard — the same door, with a wire in the middle
 
-Status: drafted 2026-09-01, not yet agreed with the owner.
+**Status: agreed with the owner on 2026-09-02, as drafted — the design had no open decisions to
+put, and §9 states what would make it wrong rather than leaving a question. Slices 1 to 4 have
+landed ([`CrossShard-slice-1.md`](CrossShard-slice-1.md), [`CrossShard-slice-2.md`](CrossShard-slice-2.md),
+[`CrossShard-slice-3.md`](CrossShard-slice-3.md), [`CrossShard-slice-4.md`](CrossShard-slice-4.md),
+[ADR 0063](Decisions/0063-the-partition-is-a-function-of-the-layout.md),
+[ADR 0065](Decisions/0065-a-handoff-is-at-least-once-delivery-onto-an-idempotent-apply.md),
+[ADR 0066](Decisions/0066-an-acknowledgement-means-durable-not-delivered.md));
+slice 5 has moved to [`ShardServer.md`](ShardServer.md), which is the design the headless process it
+waited on now has. §2 and §4 are amended to
+say what was built. **All three of §9's ways this design could be wrong have now been answered by
+measurement**, and none of them was.**
+
+Slice 5 waited on something no design in this tree owned: a headless process. **It has one now** —
+[`ShardServer.md`](ShardServer.md), drafted 2026-09-02 on the owner's decision that a root eight
+slices depend on should not be built as a side effect of one of them. The seam, the configuration
+file and the shard in the save were all in place (§1); what was missing was a root that runs a
+universe without a window, and that is a composition root rather than a system.
 
 [ADR 0056](Decisions/0056-a-jump-is-a-despawn-and-a-spawn-under-one-identity.md) chose the jump's
 shape for what it would make true later, and said so:
@@ -30,8 +46,9 @@ The player-facing sentence: **the frontier stops fitting in one process.**
   rather than falling back (ADR 0028).
 - **`ConfigureShard`**, a save file that records its shard, and a reader that refuses a file whose
   header and body disagree about it (ADR 0057).
-- **`UniverseGen`**, which writes a universe for a shard — and today always writes shard 0
-  (ADR 0058).
+- **`UniverseGen`**, which writes a universe for a shard — and since slice 1 writes one file per
+  shard, `Universe.0.sav` upward, refusing a count that would leave a shard empty (ADR 0058,
+  ADR 0063).
 
 ## 2. The partition
 
@@ -42,11 +59,23 @@ agree *without being told*, for the same reason the galaxy itself is a seed rath
 copies of an authored partition is two chances to disagree, and the disagreement is a ship that
 arrives nowhere.
 
-`SystemSite` already carries `cellQ`/`cellR`, which are world-fixed. `ShardOfSystem(site, count)` is
-a pure function of those and the shard count. **Contiguity matters and cheapness does not**: a
-partition that scatters neighbours across shards turns most gates into wire crossings, which is the
-one cost this whole design is trying to bound. A ring-based or block-based split keeps neighbours
-together; a hash does not, and is rejected for exactly that.
+`SystemSite` already carries `cellQ`/`cellR`, which are world-fixed. `ShardOfSystem(site, desc)` is
+a pure function of those and `GalaxyDesc::shardCount`. **Contiguity matters and cheapness does not**:
+a partition that scatters neighbours across shards turns most gates into wire crossings, which is the
+one cost this whole design is trying to bound.
+
+What was built is a contiguous block split on the lattice's q columns, and the hash it beat was
+measured rather than argued away — against the shipped galaxy's 68 gates, the block keeps 90% / 81% /
+71% of them in-shard at two, three and four shards where a hash keeps 37% / 38% / 16%
+([ADR 0063](Decisions/0063-the-partition-is-a-function-of-the-layout.md)). A ring-based split is also
+contiguous and lost for a different reason: ring areas grow with the ring index, so the shard count
+is not a free parameter and the shards are wildly unequal.
+
+`shardCount` defaults to 1, which means no partition at all — every system answers shard 0 and the
+shipped galaxy is byte-identical to what it was. `MaxShardCount(desc)` is the column ceiling
+(11 here) and is only a ceiling: occupancy against the drawn layout is not monotonic, so
+`OccupiedShardCount(systems, desc)` measures it and `UniverseGen` refuses a count that would leave a
+shard empty.
 
 The shard count is deployment configuration (`Server.cfg`, ADR 0043) and is therefore in the save
 header, because a universe generated for four shards is not a universe four *other* shards can run.
@@ -83,17 +112,34 @@ deterministic.** Those pull against each other.
   having if a handoff arrives on a *stated* tick. So a handoff is applied the way an order is: taken
   at a tick boundary, in a fixed order, never inside a `Step`.
 
-The shape this design proposes:
+The shape this design proposes, **and which slice 2 built**
+([ADR 0065](Decisions/0065-a-handoff-is-at-least-once-delivery-onto-an-idempotent-apply.md)):
 
 1. **An outbox on the departing shard**, written in the same tick as the despawn, and part of the
    saved state. A shard that dies after the despawn and before the send still has the ship, in its
    file, in the outbox — which is the property that makes "lost" recoverable rather than final.
+   **True as of slice 3**: `UNIVERSE_STATE_FORMAT` 9 carries both queues and the handoff sequence, and
+   a shard killed mid-crossing reloads with its outbox intact and delivers from it.
 2. **An inbox on the arriving shard**, drained at a tick boundary in entity order.
 3. **`SpawnShipAs` refuses an entity that is already live**, so a replayed handoff is a no-op rather
    than a duplicate.
 4. **An acknowledgement clears the outbox entry.** Until then it is re-sent. At-least-once delivery
    plus idempotent apply is exactly-once in effect, and it is the only combination of the three that
    does not require a distributed transaction.
+
+   **This sentence was underspecified and slice 4 had to finish it: an acknowledgement asserts that
+   the entry is in the acknowledging shard's FILE, not that it reached its process**
+   ([ADR 0066](Decisions/0066-an-acknowledgement-means-durable-not-delivered.md)). Acking on arrival
+   leaves a hole neither at-least-once nor idempotence covers — A forgets, B crashes before saving,
+   and the ship is in no universe and no file, with nothing left to replay. `ShardLink` is told which
+   tick its owner has saved through and acks nothing past it, so an entry lingers for at most one
+   save period and is re-sent in the meantime.
+
+**One thing this section did not foresee, and slice 2 had to answer: the handoff names the far GATE
+rather than an arrival position.** The departing shard cannot compute a pose — it is read off the far
+gate's heading and position, and that gate is in another universe — so the arriving shard derives it
+from its own copy. That is ADR 0056's "every intent is re-derived on the far side" reaching one field
+further than the local jump path ever needed it to.
 
 **The ship is in the outbox and nowhere else for the duration.** That is the honest statement of what
 a player would see: a fleet mid-handoff is not in either universe. It is one tick under any healthy
@@ -122,7 +168,10 @@ The question this design exists to answer badly if it does not answer it deliber
 
 - **A gate to a shard that is not answering refuses the jump**, at the order, with the fleet where it
   was. That is `FleetOrderResult`'s existing shape — a refusal a player reads, not a fleet that
-  vanishes.
+  vanishes. **Not built yet**: a link has no opinion about reachability until there is a real
+  connection to lose, so this lands with [`ShardServer.md`](ShardServer.md) §7 slice 4, by the
+  owner's decision of 2026-09-02. Until then a fleet ordered at an unreachable shard waits safely in
+  the outbox, which is the paragraph below and is not wrong — only silent.
 - **A fleet already in the outbox waits.** It is not lost: it is in the file. When the far shard
   returns, it arrives.
 - **A shard never invents the far side's state to keep playing.** The alternative is two universes
@@ -145,11 +194,11 @@ to watch two at once. Nothing here forecloses it.
 
 | # | Slice | Layer | Size | Depends on | ADR |
 |---|---|---|---|---|---|
-| 1 | `ShardOfSystem`, the shard count in `GalaxyDesc` and the save header, and `UniverseGen` writing one file per shard | `GameLogic`+`Tools` | M | — | ADR: the partition is a function of the layout |
-| 2 | The outbox, the inbox, `SpawnShipAs` refusing a live entity, and **two `Universe`s handed off between in one process** | `GameLogic` | L | 1 | ADR: a handoff is at-least-once delivery onto an idempotent apply |
-| 3 | Both in the state codec, so a shard that dies mid-handoff still holds the ship | `GameLogic` | M | 2 | — |
-| 4 | The handoff on the wire: a message on the reliable lane, the ack, the re-send | `NeuronCore`+`GameLogic` | L | 3 | — |
-| 5 | Two shard processes, and a client that follows its camera across | `Outpost` | L | 4 | — |
+| 1 | [`ShardOfSystem`, the shard count in `GalaxyDesc` and the save header, and `UniverseGen` writing one file per shard](CrossShard-slice-1.md) — **landed**: a q-column block split, `SAVE_FILE_FORMAT` 1 → 2, `BuildStartingGalaxy` building every shard in one pass so a gate can name the shard it leads to | `GameLogic`+`Tools` | M | — | [0063](Decisions/0063-the-partition-is-a-function-of-the-layout.md) |
+| 2 | [The outbox, the inbox, `SpawnShipAs` refusing a live entity, and **two `Universe`s handed off between in one process**](CrossShard-slice-2.md) — **landed**: one branch in `StepJumps`, a `Handoff` the wire will carry unchanged, and a drain in entity order | `GameLogic` | L | 1 | [0065](Decisions/0065-a-handoff-is-at-least-once-delivery-onto-an-idempotent-apply.md) |
+| 3 | [Both in the state codec, so a shard that dies mid-handoff still holds the ship](CrossShard-slice-3.md) — **landed**: state format 9, the sequence saved with them, and a format-8 fixture | `GameLogic` | M | 2 | — |
+| 4 | [The handoff on the wire: a message on the reliable lane, the ack, the re-send](CrossShard-slice-4.md) — **landed**: `ShardLink`, kinds 11 and 12, and an ack that means durable | `GameLogic` | L | 3 | [0066](Decisions/0066-an-acknowledgement-means-durable-not-delivered.md) |
+| 5 | Two shard processes, and a client that follows its camera across — **moved to [`ShardServer.md`](ShardServer.md) §7 slices 4 and 5**, because the root it needs is shared with seven phase-2 slices and belongs to a design of its own | `Server`+`Outpost` | L | 4 | — |
 
 **Slice 2 is where the design is proved, and it is deliberately not on a wire.** Two universes in one
 process, handing off through the same calls a wire will later carry, is the tree's own pattern: QUIC
@@ -161,11 +210,22 @@ which is the only place in this tree where a thing can be proved rather than arg
 
 Stated so it can be checked rather than discovered:
 
+All three have now been answered, and the answers are measurements rather than arguments. They are
+kept as they were written, with what was found beneath each.
+
 - **If a handoff cannot be made deterministic**, the replay gates fail and this design is not
   compatible with the tree's central property. The proposed answer is that an inbox drained at a tick
   boundary in entity order is exactly as deterministic as the order queue already is — if that turns
   out to be false, everything above is unsafe.
+  → **It is.** The same batch delivered forwards and reversed produces byte-identical state six
+  hundred ticks later (slice 2).
 - **If `SpawnShipAs` cannot refuse a live entity** without disturbing the local jump path, the
   idempotence has no home and at-least-once delivery becomes at-least-once *spawning*.
+  → **It can, and it always could.** The refusal was written a design ago and commented for this;
+  slice 2 is its first caller. Applying a batch three times spawns nothing after the first, and a
+  local jump is byte-identical to what it was before the slice — compared against an actual build of
+  the previous commit, not asserted.
 - **If the partition cannot keep neighbours together**, most gates become wire crossings and the cost
   this design bounds is not bounded.
+  → **It does.** 90%, 81% and 71% of gates stay in-shard at two, three and four shards
+  ([ADR 0063](Decisions/0063-the-partition-is-a-function-of-the-layout.md)).

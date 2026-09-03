@@ -77,6 +77,9 @@
     <ClCompile Include="JumpTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="HandoffTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="PublisherTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -110,6 +113,9 @@
       <Filter>Project Files</Filter>
     </None>
     <None Include="Assets\UniverseFormat7.sav">
+      <Filter>Assets</Filter>
+    </None>
+    <None Include="Assets\UniverseFormat8.sav">
       <Filter>Assets</Filter>
     </None>
   </ItemGroup>

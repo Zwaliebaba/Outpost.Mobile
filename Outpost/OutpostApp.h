@@ -4,6 +4,7 @@
 #include "EventLog.h"
 #include "AssemblyScreen.h"
 #include "FleetSheet.h"
+#include "GalaxyScreen.h"
 #include "Hud.h"
 #include "ServerConfig.h"
 #include "UniverseSimulation.h"
@@ -80,6 +81,10 @@ private:
   // Which system the camera is standing in. Two lines: where the camera is looking, which only the
   // view can say, and what is there, which is Game::SystemAt's.
   [[nodiscard]] std::uint32_t SystemAtCamera() const noexcept;
+
+  // Puts the camera in a system and closes the map. The map's one verb until slice 3 gives it a
+  // second (Design/GalaxyMap.md 4.2).
+  void FlyToSystem(std::uint32_t _system);
 
   // Re-lays the local system and rebuilds everything drawn from it: the worlds, the rocks and the
   // minimap's station marks.
@@ -160,7 +165,7 @@ private:
   // What this root was told to be, read once at boot and a value from then on. It is the only thing
   // in the executable that came out of a file rather than out of a header, which is AGENTS.md 5's
   // rule about where configuration is allowed to enter (ADR 0043).
-  ServerConfig m_config;
+  Game::ServerConfig m_config;
 
   Game::Universe m_universe;
   UniverseSimulation m_simulation{m_universe};
@@ -236,6 +241,12 @@ private:
   // One fleet's sheet, over the bar. Not modal, so it takes only what lands on itself and sits
   // between the assembly screen and the HUD in the chain (Design/Archive/Fleets.md 9.3).
   FleetSheet m_sheet;
+
+  // The galaxy map, opened by the rail's Universe button. Modal, and it sits BEHIND the HUD in the
+  // pointer chain rather than ahead of it, which is the one place it differs from the assembly
+  // screen: the rail button that opens it has to be able to close it, so the HUD's rail runs first
+  // and the map takes everything the rail did not (Design/GalaxyMap-slice-1.md 7).
+  GalaxyScreen m_map;
   Neuron::FrameClock m_clock;
 
   // One ramp per class, indexed by BodyClass. A ramp that fails to load leaves its class drawing the
@@ -253,7 +264,7 @@ private:
   // something to consume, and **F5 reseeds every body's look and the sky with them** -- never the
   // sites, which are the layout's (m_layout). F6 and F7 stood here and are gone: each declared an
   // act the simulation could not perform, and the fire pass performs both for real now
-  // (OutpostApp.cpp's note where they were, Design/Combat.md 6, ADR 0052).
+  // (OutpostApp.cpp's note where they were, Design/Archive/Combat.md 6, ADR 0052).
   //
   // F5 does not release the buffers the last scene's bodies are in -- BodyRenderer keeps every
   // handle for the run -- so each press costs the memory of the scene it replaced. That is acceptable

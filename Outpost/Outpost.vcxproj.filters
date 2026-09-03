@@ -10,9 +10,6 @@
     <ClCompile Include="TickStats.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="ServerConfig.cpp">
-      <Filter>Boot</Filter>
-    </ClCompile>
     <ClCompile Include="ShipExplosion.cpp">
       <Filter>View</Filter>
     </ClCompile>
@@ -28,6 +25,12 @@
     <ClCompile Include="AssemblyScreen.cpp">
       <Filter>View</Filter>
     </ClCompile>
+    <ClCompile Include="GalaxyScreen.cpp">
+      <Filter>View</Filter>
+    </ClCompile>
+    <ClCompile Include="HullParts.cpp">
+      <Filter>View</Filter>
+    </ClCompile>
     <ClCompile Include="FleetSheet.cpp">
       <Filter>View</Filter>
     </ClCompile>
@@ -39,9 +42,6 @@
     </ClInclude>
     <ClInclude Include="TickStats.h">
       <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ServerConfig.h">
-      <Filter>Boot</Filter>
     </ClInclude>
     <ClInclude Include="UniverseSimulation.h">
       <Filter>Boot</Filter>
@@ -56,6 +56,12 @@
       <Filter>View</Filter>
     </ClInclude>
     <ClInclude Include="AssemblyScreen.h">
+      <Filter>View</Filter>
+    </ClInclude>
+    <ClInclude Include="GalaxyScreen.h">
+      <Filter>View</Filter>
+    </ClInclude>
+    <ClInclude Include="HullParts.h">
       <Filter>View</Filter>
     </ClInclude>
     <ClInclude Include="FleetSheet.h">

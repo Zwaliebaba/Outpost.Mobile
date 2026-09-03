@@ -65,7 +65,7 @@ inline constexpr float MOUNT_ARC_BOW_RAD = 0.3491f;    // +/- 20 degrees
 inline constexpr float MOUNT_ARC_CANNON_RAD = 0.1745f; // +/- 10 degrees
 inline constexpr float MOUNT_ARC_TURRET_RAD = 2.6180f; // +/- 150 degrees
 
-// The authored loadouts (Design/Combat.md 13). Named rather than written into the rows below
+// The authored loadouts (Design/Archive/Combat.md 13). Named rather than written into the rows below
 // because a five-mount Battleship inside a positional aggregate is a line nobody can read, and
 // because these are the values an artist and a designer actually talk about.
 inline constexpr MountLoadout LOADOUT_NONE{};
@@ -162,7 +162,7 @@ struct HullSpec
 
   // The shortest range among the mounts that can actually traverse, which is where a pursuit holds
   // so that every turret bears. Zero when the hull has none: a bow-fixed hull takes no stand-off at
-  // all and is sent at its target, because its aiming is done by flying (Design/Combat.md 8).
+  // all and is sent at its target, because its aiming is done by flying (Design/Archive/Combat.md 8).
   [[nodiscard]] constexpr float ShortestTurretRangeMetres() const noexcept
   {
     float shortest = 0.0f;
@@ -215,10 +215,10 @@ struct HullSpec
 // radius, so slowing the capitals costs nothing there while giving the fleet the speed spread the
 // design asks for.
 inline constexpr HullSpec HULL_SPECS[HULL_COUNT] = {
-  // Hull points are measured against Design/Combat.md 13's pacing targets rather than chosen: the
+  // Hull points are measured against Design/Archive/Combat.md 13's pacing targets rather than chosen: the
   // Battleship's 3,800 is what puts a mixed eight-fleet's kill at 81.6 s against a 90 s target, and
   // it is sharply bounded on both sides -- 2,400 gives 35 s and 4,000 lets the Battleship win
-  // outright (Design/Combat-slice-5.md 2.1). Retune it and the fight changes character, not degree.
+  // outright (Design/Archive/Combat-slice-5.md 2.1). Retune it and the fight changes character, not degree.
   //
   // r         L        speed  accel  decel  turn rad/s  turn accel  auth   K   immov  collide  fights  hull pts  loadout
   {1.115f, 2.390f, 34.0f, 30.0f, 38.0f, 3.4907f, 12.2173f, 0.6f, 8, false, true, true, 60, LOADOUT_INTERCEPTOR},   // Interceptor
@@ -238,7 +238,7 @@ inline constexpr HullSpec HULL_SPECS[HULL_COUNT] = {
 // The Miner and the Hauler are deliberately unarmed and deliberately durable: they are what a
 // fleet's combatants are defending, and Design/Archive/Fleets.md 7.2 has them carry on flying their
 // orders through a fight rather than fleeing it. The mining design arms the Miner with tools on
-// these same mounts (Design/Combat.md 12), which is why it is a loadout of none rather than a hull
+// these same mounts (Design/Archive/Combat.md 12), which is why it is a loadout of none rather than a hull
 // that cannot carry one.
 [[nodiscard]] constexpr bool EveryLoadoutFitsItsMounts() noexcept
 {
@@ -252,7 +252,7 @@ inline constexpr HullSpec HULL_SPECS[HULL_COUNT] = {
 
 // Nothing that cannot move may shoot, and nothing that cannot move may die. A station that shot
 // back is a design nobody has written, and a station that could be destroyed drags a ledger, a
-// garrison and a docked fleet's manifest behind it (Design/Combat.md 7.2, 14). Both are one column
+// garrison and a docked fleet's manifest behind it (Design/Archive/Combat.md 7.2, 14). Both are one column
 // each today, and this is what keeps them that way.
 [[nodiscard]] constexpr bool NoImmovableHullIsArmed() noexcept
 {
@@ -278,7 +278,7 @@ static_assert(EveryLoadoutFitsItsMounts(), "a hull carries more mounts than MAX_
 static_assert(NoImmovableHullIsArmed(), "an immovable hull is armed, and no pass in this simulation knows how to aim a building");
 static_assert(NoImmovableHullIsDestructible(), "an immovable hull can be destroyed, which no design has yet said what to do about");
 
-// Where a pursuit holds so that its guns bear (Design/Combat.md 8).
+// Where a pursuit holds so that its guns bear (Design/Archive/Combat.md 8).
 //
 // Read off the shortest range among the mounts that can traverse, so a hull with several turrets
 // holds where ALL of them reach rather than where its longest one does. Zero for a hull whose

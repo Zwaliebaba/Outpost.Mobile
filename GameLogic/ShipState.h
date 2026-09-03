@@ -210,7 +210,7 @@ inline constexpr EntityId ENTITY_SERIAL_MASK = (EntityId{1} << ENTITY_SERIAL_BIT
 //
 // The mount index is here because the view needs to know which muzzle to flash. It is the only
 // piece of a mount that ever reaches a client -- the aim, the cooldown and the held target stay
-// server-side as the intent they are (Design/Combat.md 3.2).
+// server-side as the intent they are (Design/Archive/Combat.md 3.2).
 struct ShotRecord
 {
   EntityId shooter = INVALID_ENTITY_ID;
@@ -233,7 +233,7 @@ enum class OrderState : std::uint8_t
 // mining design and for something in the universe to mine, since a rock is presentation and a ship
 // flies through it (ADR 0016, Design/Archive/Fleets.md 6.6). Attack was refused beside it until it
 // had the protector's pursuit chassis and a combatant flag to aim with, and then until the guns it
-// aims were real; both have landed, and it now means what it says (Design/Combat.md 6).
+// aims were real; both have landed, and it now means what it says (Design/Archive/Combat.md 6).
 //
 // Stop is a kind a message carries and never a standing order a row holds: stopping is asking for
 // Idle, and what the row stores is what it was left in.

@@ -218,14 +218,221 @@ def check_dependency_rules(problems):
 # The headers that mean "there is a screen". NeuronClient may include them; the libraries the
 # server is built from may not, because the server is meant to run in a container without one.
 GRAPHICS_INCLUDE = re.compile(r'#\s*include\s*<(d3d\w*|dxgi\w*|d2d\w*|dwrite\w*|dcomp\w*)\.h>', re.I)
-HEADLESS_PROJECTS = ('NeuronCore', 'NeuronServer')
+
+# Server is here as well as the two engine projects, and it is not a library. It is the shard
+# server's composition root (ADR 0067), and the whole claim of Design/ShardServer-slice-1.md is that
+# the simulation does not want a window -- a claim a root can break in one #include. A root is
+# entitled to see several layers; this one is not entitled to see the client's
+# (Design/ShardServer-slice-1.md 5.5). ServerTests is here for the same reason and one more: a suite
+# that could name a graphics type could make the server's headlessness true only when nobody looks.
+HEADLESS_PROJECTS = ('NeuronCore', 'NeuronServer', 'Server', 'ServerTests')
+
+# What "does not see the client" means in a file: the layer's umbrella header, or any header the
+# client publishes. Read off disk for the same reason game_headers() is -- a hard-coded list is
+# wrong from the commit after the next header lands, and wrong in the permissive direction.
+def client_headers():
+    for name, directory in projects():
+        if name == 'NeuronClient' and os.path.isdir(directory):
+            return sorted(f for f in os.listdir(directory) if f.endswith('.h') and f != 'pch.h')
+    return []
+
+
+INCLUDE_QUOTED = re.compile(r'^\s*#\s*include\s*"([^"]+)"', re.M)
+
+# Written by the build rather than checked in: DXC compiles HLSL into CompiledShaders\ and the
+# C++/WinRT package generates winrt\ into the project's intermediate directory. Neither exists in a
+# fresh clone, so neither can be resolved off disk, and neither is what this check is for.
+GENERATED_INCLUDE_PREFIX = ('CompiledShaders/', 'winrt/')
+
+
+def include_dirs_of(project_text, directory):
+    """The project's AdditionalIncludeDirectories, split into what is on disk and what is not.
+
+    Returns (resolved, opaque). An entry like $(VCInstallDir)UnitTest\include -- where the test
+    suites get CppUnitTest.h -- points into the toolchain rather than into the tree, so this file
+    cannot say whether a header is under it. A project with one of those gets the benefit of the
+    doubt for the includes it cannot place; a project without one does not, which is every project
+    the tree actually owns.
+    """
+    resolved = []
+    opaque = False
+    for match in re.finditer(r'<AdditionalIncludeDirectories>([^<]*)</AdditionalIncludeDirectories>', project_text):
+        for entry in match.group(1).split(';'):
+            entry = entry.strip()
+            if not entry or entry.startswith('%('):
+                continue
+            entry = entry.replace('$(MSBuildThisFileDirectory)', directory + os.sep)
+            if '$(' in entry:
+                opaque = True
+                continue
+            resolved.append(os.path.normpath(entry.replace('\\', os.sep)))
+    return resolved, opaque
+
+
+def check_includes_resolve(problems):
+    """Every #include "X" names a file that is actually there.
+
+    A quoted include resolves against the including file's own directory first and then the project's
+    include path, and MSVC is the only compiler in this tree that ever tries. A rename that edits the
+    include as well as the type -- which is how `#include "Game::ServerConfig.h"` reached a commit --
+    is invisible to every other check here and costs a CI run to find. This is the cheapest thing
+    that finds it, and it needs no compiler.
+    """
+    for name, directory in projects():
+        if not os.path.isdir(directory):
+            continue
+        project_text = read(os.path.join(directory, '%s.vcxproj' % name))
+        search, opaque = include_dirs_of(project_text, directory)
+        if opaque:
+            continue  # see include_dirs_of: this project reaches outside the tree and cannot be judged
+        for source in sorted(os.listdir(directory)):
+            if not source.endswith(('.h', '.cpp')):
+                continue
+            path = os.path.join(directory, source)
+            for match in INCLUDE_QUOTED.finditer(read(path)):
+                included = match.group(1).replace('\\', '/')
+                if included.startswith(GENERATED_INCLUDE_PREFIX):
+                    continue
+                relative = included.replace('/', os.sep)
+                if any(os.path.isfile(os.path.join(where, relative)) for where in [directory] + search):
+                    continue
+                line = read(path)[:match.start()].count('\n') + 1
+                problems.append('%s:%d: #include "%s" names a file that is on no include path this '
+                                'project has' % (path, line, included))
+
+
+# A constant GameLogic publishes, as a name a grep can find: SHOUTING_CASE, three characters or
+# more so a stray FX or ID is not one.
+GAME_CONSTANT = re.compile(r'\b(?:inline\s+)?constexpr\b[^;=\[]*?\b([A-Z][A-Z0-9_]{2,})\s*(?:=|\[)')
+
+
+def strip_code(text):
+    """Comments and string bodies removed, so a name mentioned in prose is not a use of it."""
+    text = re.sub(r'/\*.*?\*/', ' ', text, flags=re.S)
+    text = re.sub(r'//[^\n]*', ' ', text)
+    return re.sub(r'"(\\.|[^"\\])*"', '""', text)
+
+
+def constants_of(directory):
+    found = set()
+    for source in sorted(os.listdir(directory)):
+        if source.endswith(('.h', '.cpp')):
+            found |= set(GAME_CONSTANT.findall(strip_code(read(os.path.join(directory, source)))))
+    return found
+
+
+def check_game_constants_are_qualified(problems):
+    """A constant that lives in namespace Game is named Game::THING outside GameLogic.
+
+    ServerConfig moving from Outpost/ to GameLogic/ took SERVER_CONFIG_FILE into namespace Game with
+    it, and the one use of it in OutpostApp.cpp went on saying the bare name -- which compiles
+    nowhere and was found by CI rather than here. Only SHOUTING_CASE constants are checked, because
+    they are the names a namespace move actually strands: a type is almost always already written
+    Game::Universe, and a nested Desc or Slot would make this check noise instead of a check.
+    """
+    game = None
+    for name, directory in projects():
+        if name == 'GameLogic' and os.path.isdir(directory):
+            game = constants_of(directory)
+    if not game:
+        return
+    for name, directory in projects():
+        if name == 'GameLogic' or not os.path.isdir(directory):
+            continue
+        theirs = constants_of(directory)
+        for source in sorted(os.listdir(directory)):
+            if not source.endswith(('.h', '.cpp')):
+                continue
+            body = strip_code(read(os.path.join(directory, source)))
+            if re.search(r'using\s+namespace\s+Game\s*;', body):
+                continue
+            for constant in sorted(game - theirs):
+                # Not preceded by a qualifier, a dot or an arrow: those are already spelled.
+                if re.search(r'(?<![\w:.>])' + constant + r'\b', body):
+                    problems.append('%s/%s: names the GameLogic constant %s unqualified -- it lives '
+                                    'in namespace Game' % (directory, source, constant))
+
+
+# Every NuGet package reference in a .vcxproj, wherever it appears: the props Import at the top, the
+# targets Import at the bottom, and the two Error conditions that report a missing restore.
+PACKAGE_PATH = re.compile(r"[.\\]*\\?packages\\[^'\"]+")
+
+
+def check_package_paths(problems):
+    """A project's ..\packages\ path counts the right number of directories up to the tree root.
+
+    Restore puts every package under <root>\packages, so a project one directory down says
+    ..\packages and one two down says ..\..\packages. Server.vcxproj was written by copying a
+    Tests\ project and kept its ..\..\, which restores nothing and fails the build with a message
+    about a missing package rather than about a wrong path -- a full CI run to find one character.
+    """
+    for name, directory in projects():
+        project = os.path.join(directory, '%s.vcxproj' % name)
+        if not os.path.isfile(project):
+            continue
+        up = os.path.relpath('.', directory).replace(os.sep, '\\')  # ..\.. for Tests\X, .. for X
+        want = up + '\\packages\\'
+        for match in PACKAGE_PATH.finditer(read(project)):
+            path = match.group(0)
+            if not path.startswith(want):
+                problems.append('%s: the package path %s does not start with %s, which is where '
+                                'restore puts packages for a project at this depth'
+                                % (project, path.split('build')[0].rstrip('\\'), want))
+                break
+
+
+# A header whose implementation calls into a NuGet package, and the package a project must therefore
+# carry to LINK it. Including the header is free -- no header in this tree names an MsQuic type, which
+# is Design/Archive/QuicTransport.md 3's whole point -- but a project that odr-uses what is behind it
+# pulls QuicApi.obj out of NeuronCore.lib, and that object needs msquic.lib.
+#
+# Server.vcxproj is why this exists. It compiled and passed every check here, and failed at LINK with
+# two unresolved MsQuic symbols, because slice 2 was the first thing in it to call QuicApi::Open.
+PACKAGE_BACKED_HEADERS = {
+    'Microsoft.Native.Quic.MsQuic.Schannel': ('QuicApi.h', 'QuicListener.h', 'QuicTransport.h'),
+}
+
+
+def check_native_packages(problems):
+    """A project that LINKS and names a package-backed header carries that package.
+
+    Static libraries are exempt and correctly so: a .lib is not linked, so an unresolved symbol in it
+    is the business of whoever links it. Transitive includes are not counted either -- GameLogic
+    publishes ServerConfig.h, which includes QuicListener.h for one default, and every test suite that
+    reaches the umbrella would otherwise be told to carry MsQuic it never calls.
+    """
+    for name, directory in projects():
+        project = os.path.join(directory, '%s.vcxproj' % name)
+        if not os.path.isfile(project):
+            continue
+        project_text = read(project)
+        if '<ConfigurationType>StaticLibrary</ConfigurationType>' in project_text:
+            continue
+        config = os.path.join(directory, 'packages.config')
+        declared = read(config) if os.path.isfile(config) else ''
+        for package, headers in sorted(PACKAGE_BACKED_HEADERS.items()):
+            named = sorted(h for h in headers
+                           if any('#include "%s"' % h in read(os.path.join(directory, source))
+                                  for source in os.listdir(directory) if source.endswith(('.h', '.cpp'))))
+            if not named:
+                continue
+            if package not in declared:
+                problems.append('%s: includes %s but does not carry the %s package -- it will compile '
+                                'and fail to link' % (project, ', '.join(named), package))
+            elif package not in project_text:
+                problems.append('%s: lists the %s package but does not import its targets -- restore '
+                                'will fetch it and the linker will not see it' % (project, package))
 
 
 def check_headless(problems):
-    """NeuronCore and NeuronServer never include a graphics header (AGENTS.md 2)."""
+    """NeuronCore, NeuronServer and Server never include a graphics header (AGENTS.md 2, ADR 0067)."""
+    client = client_headers()
     for name, directory in projects():
         if name not in HEADLESS_PROJECTS or not os.path.isdir(directory):
             continue
+        project_text = re.sub(r'<!--.*?-->', '', read(os.path.join(directory, '%s.vcxproj' % name)), flags=re.S)
+        if 'NeuronClient' in project_text:
+            problems.append('%s/%s.vcxproj: a headless project references NeuronClient' % (directory, name))
         for source in sorted(os.listdir(directory)):
             if not source.endswith(('.h', '.cpp')):
                 continue
@@ -234,6 +441,10 @@ def check_headless(problems):
                 line = body[:match.start()].count('\n') + 1
                 problems.append('%s/%s:%d: a headless library includes the graphics header <%s.h>'
                                 % (directory, source, line, match.group(1)))
+            for client_header in client:
+                if '#include "%s"' % client_header in body:
+                    problems.append('%s/%s: a headless project includes the client header %s'
+                                    % (directory, source, client_header))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -408,6 +619,10 @@ def main():
     check_unique_names(problems)
     check_dependency_rules(problems)
     check_headless(problems)
+    check_includes_resolve(problems)
+    check_game_constants_are_qualified(problems)
+    check_package_paths(problems)
+    check_native_packages(problems)
     check_type_names(problems)
     check_spelling_families(problems)
     check_shadowed_macros(problems)
@@ -420,7 +635,8 @@ def main():
         return 1
 
     print('project files: XML well-formed, every source registered, shared settings agree, '
-          'names unique, layers intact, headless libraries headless.')
+          'names unique, layers intact, every quoted include resolves, every Game constant is\n'
+          '               qualified, nothing headless sees a screen.')
     print('source names: no banned type affixes, no split spelling families, no shadowed Windows '
           'macros, no positional literal aggregates.')
     return 0

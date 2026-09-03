@@ -14,7 +14,7 @@ namespace
 }
 
 // A fighter's gun does 3 every half second into 60 points, so a peer kills one in about ten seconds
-// -- the first of Design/Combat.md 13's five pacing targets, and the one every other number is
+// -- the first of Design/Archive/Combat.md 13's five pacing targets, and the one every other number is
 // balanced against.
 constexpr float PEER_KILL_SECONDS = 10.0f;
 
@@ -322,7 +322,7 @@ public:
 
   TEST_METHOD(ATurretLosesACrossingFighter)
   {
-    // Design/Combat.md 4's tactical sentence as arithmetic rather than as a claim: a target crossing
+    // Design/Archive/Combat.md 4's tactical sentence as arithmetic rather than as a claim: a target crossing
     // at v subtends v/r rad/s, so a HeavyTurret at 18 deg/s holds a 34 m/s fighter beyond about
     // 108 m and cannot hold it inside that. Closing under the guns of a capital is a real tactic,
     // and it falls out of three authored numbers with no mechanism built for it.

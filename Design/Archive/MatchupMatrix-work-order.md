@@ -45,7 +45,7 @@ against every other, under the shipped tables, with the outcome of each cell wri
 3. **`GameLogicTests.vcxproj` and `.filters`** gain the file; `python Build/CheckProjectFiles.py`
    agrees.
 
-4. **`Design/Combat.md` §13** gains one paragraph, amended in place per ADR 0054: the matrix exists,
+4. **`Design/Archive/Combat.md` §13** gains one paragraph, amended in place per ADR 0054: the matrix exists,
    where it is, and that its geometry differs from slice 5's harness (§7) so its numbers are not
    that harness's numbers.
 
@@ -88,7 +88,7 @@ against every other, under the shipped tables, with the outcome of each cell wri
 - Every existing `CombatTests` row unchanged and green; `AFighterDiesUnderAPeersGun` is still the
   pacing pin and this slice does not restate it.
 - `python Build/CheckProjectFiles.py` and `python Build/CheckFormat.py` pass.
-- `Design/Combat.md` §13 names the matrix.
+- `Design/Archive/Combat.md` §13 names the matrix.
 - No decision record: a test that pins existing behaviour decides nothing.
 
 ## 6. Assumptions the implementer may make

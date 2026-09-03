@@ -212,7 +212,6 @@
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="OutpostApp.h" />
-    <ClInclude Include="ServerConfig.h" />
     <ClInclude Include="TickStats.h" />
     <ClInclude Include="ShipExplosion.h" />
     <ClInclude Include="UniverseView.h" />
@@ -221,6 +220,8 @@
     <ClInclude Include="BodyCatalogue.h" />
     <ClInclude Include="Hud.h" />
     <ClInclude Include="AssemblyScreen.h" />
+    <ClInclude Include="GalaxyScreen.h" />
+    <ClInclude Include="HullParts.h" />
     <ClInclude Include="FleetSheet.h" />
     <ClInclude Include="EventLog.h" />
   </ItemGroup>
@@ -230,13 +231,14 @@
     </ClCompile>
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="OutpostApp.cpp" />
-    <ClCompile Include="ServerConfig.cpp" />
     <ClCompile Include="TickStats.cpp" />
     <ClCompile Include="ShipExplosion.cpp" />
     <ClCompile Include="UniverseView.cpp" />
     <ClCompile Include="BodyCatalogue.cpp" />
     <ClCompile Include="Hud.cpp" />
     <ClCompile Include="AssemblyScreen.cpp" />
+    <ClCompile Include="GalaxyScreen.cpp" />
+    <ClCompile Include="HullParts.cpp" />
     <ClCompile Include="FleetSheet.cpp" />
   </ItemGroup>
   <ItemGroup>

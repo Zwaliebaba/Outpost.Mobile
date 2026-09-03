@@ -178,6 +178,16 @@ Hud::Layout Hud::ComputeLayout(float _dpiScale, std::uint32_t _widthPx, std::uin
   return layout;
 }
 
+bool Hud::OverRail(const Layout& _layout, float _xPx, float _yPx) const noexcept
+{
+  for (const Rect& rect : _layout.rail)
+  {
+    if (rect.Contains(_xPx, _yPx))
+      return true;
+  }
+  return false;
+}
+
 bool Hud::OverAnyPanel(const Layout& _layout, float _xPx, float _yPx) const noexcept
 {
   for (const Rect& rect : _layout.resources)
@@ -185,12 +195,7 @@ bool Hud::OverAnyPanel(const Layout& _layout, float _xPx, float _yPx) const noex
     if (rect.Contains(_xPx, _yPx))
       return true;
   }
-  for (const Rect& rect : _layout.rail)
-  {
-    if (rect.Contains(_xPx, _yPx))
-      return true;
-  }
-  return _layout.minimap.Contains(_xPx, _yPx) || _layout.bar.Contains(_xPx, _yPx);
+  return OverRail(_layout, _xPx, _yPx) || _layout.minimap.Contains(_xPx, _yPx) || _layout.bar.Contains(_xPx, _yPx);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -714,15 +719,25 @@ void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, std::span<co
     float speedSum = 0.0f;
     bool anyMoving = false;
     bool anyAligning = false;
+    // What the selection has left, from the records rather than from a constant. The bar showed a
+    // hard-coded whole from the day it was drawn, which was honest while nothing could be damaged and
+    // stopped being the moment gunnery landed (Design/Archive/Combat.md 10.3, cut out of slice 4).
+    //
+    // The MEAN over the selection, and 255ths of whole is what the record carries. A minimum would
+    // read as the fleet being in worse shape than it is the instant one Interceptor is scratched; a
+    // sum would mean nothing at all. One selected ship is its own mean, which is the common case.
+    std::uint32_t hullSum = 0;
     for (size_t i = 0; i < ships.size(); ++i)
     {
       if (!_view.IsSelected(i))
         continue;
       ++selected;
       speedSum += ships[i].speed;
+      hullSum += ships[i].hullFraction;
       anyMoving = anyMoving || ships[i].order == Game::OrderState::Moving;
       anyAligning = anyAligning || ships[i].order == Game::OrderState::Aligning;
     }
+    const float hullFraction = (selected > 0) ? (static_cast<float>(hullSum) / static_cast<float>(selected) / 255.0f) : _frame.hullFraction;
 
     const float row1 = bar.y0 + HUD_MARGIN_PX * 1.25f * s;
     const float row2 = row1 + textPx + HUD_PANEL_GAP_PX * 0.6f * s;
@@ -746,7 +761,7 @@ void Hud::DrawBottomBar(TextRenderer& _text, const Layout& _layout, std::span<co
         std::snprintf(percent, sizeof(percent), "-");
       _text.DrawTextLine(FontId::Ui, bx + barWidth + HUD_PANEL_GAP_PX * s, _y, HUD_TEXT_SCALE * s, HUD_COLOUR, percent);
     };
-    statBar(row1, "HULL", _frame.hullFraction, SELECTABLE_LIVERIES[PLAYER_LIVERY_INDEX]);
+    statBar(row1, "HULL", hullFraction, SELECTABLE_LIVERIES[PLAYER_LIVERY_INDEX]);
     statBar(row2, "SHIELD", _frame.shieldFraction, HUD_ACCENT_GREEN);
 
     const float column = x + HUD_STAT_COLUMN_PX * s;
@@ -799,17 +814,23 @@ void Hud::Draw(TextRenderer& _text, std::span<const Game::ShipSnapshot> _ships, 
 // Input. A press that starts on a panel belongs to the HUD until it lifts; nothing about it reaches
 // the tracker, so it can neither pick a hull nor lay down an order through the bar.
 
-bool Hud::HandlePointer(const PointerEvent& _event, UniverseView& _view, const Camera& _camera, int& _outOpenSheet, float _dpiScale,
-                        std::uint32_t _widthPx, std::uint32_t _heightPx)
+bool Hud::HandlePointer(const PointerEvent& _event, UniverseView& _view, const Camera& _camera, int& _outOpenSheet, bool _railOnly,
+                        float _dpiScale, std::uint32_t _widthPx, std::uint32_t _heightPx)
 {
   const Layout layout = ComputeLayout(_dpiScale, _widthPx, _heightPx);
 
+  // While a modal screen is up the HUD's interest is its rail and nothing else. The panels are still
+  // drawn -- they are behind the screen's scrim -- and a press on one of them belongs to the screen
+  // in front of them, which takes everything this returns false for.
+  const auto interested = [&](float _xPx, float _yPx)
+  { return _railOnly ? OverRail(layout, _xPx, _yPx) : OverAnyPanel(layout, _xPx, _yPx); };
+
   if (_event.kind == PointerEvent::Kind::Wheel)
-    return OverAnyPanel(layout, _event.xPx, _event.yPx); // no zooming the universe through the minimap
+    return interested(_event.xPx, _event.yPx); // no zooming the universe through the minimap
 
   if (_event.kind == PointerEvent::Kind::Down)
   {
-    if (m_captured || !OverAnyPanel(layout, _event.xPx, _event.yPx))
+    if (m_captured || !interested(_event.xPx, _event.yPx))
       return false;
 
     m_captured = true;
@@ -822,7 +843,7 @@ bool Hud::HandlePointer(const PointerEvent& _event, UniverseView& _view, const C
       if (layout.rail[i].Contains(_event.xPx, _event.yPx))
         m_pressedRail = i;
     }
-    for (int i = 0; i < UniverseView::FLEET_SLOTS; ++i)
+    for (int i = 0; i < UniverseView::FLEET_SLOTS && !_railOnly; ++i)
     {
       if (layout.fleets[i].Contains(_event.xPx, _event.yPx))
         m_pressedFleet = i;

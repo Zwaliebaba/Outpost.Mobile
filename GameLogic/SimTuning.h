@@ -404,7 +404,7 @@ inline constexpr float JUMP_ARRIVAL_SPACING_METRES = 45.0f;
 // It is a settle tolerance and not an arc: the arc is what a mount can bear through, authored per
 // mount, and this is how finished the slew has to be. A degree and a half is tight enough that a
 // heavy turret genuinely loses a fighter crossing at close range -- which is the tactical sentence
-// the whole resolution model rests on (Design/Combat.md 4) -- and loose enough that a turret whose
+// the whole resolution model rests on (Design/Archive/Combat.md 4) -- and loose enough that a turret whose
 // target is drifting does not stutter one tick on and one tick off.
 //
 // A FIXED mount never reads it. It has no slew to settle, so its arc is its whole gate; a value

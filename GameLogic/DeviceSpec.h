@@ -9,7 +9,7 @@ namespace Game
 // A device is the tool; a mount (HullSpec.h) is the arm that carries one. They are two tables
 // rather than one because a hull carries several mounts of the same device, and because the day a
 // mining tool cycles on the same arm as a gun, only this table gains a row
-// (Design/Combat.md 3.1, 12).
+// (Design/Archive/Combat.md 3.1, 12).
 //
 // Authored simulation content, and never read from a mesh at run time. The shipped hulls carry
 // turret submeshes and the NMO format defines a Gun marker with a muzzle direction, but what the
@@ -54,7 +54,7 @@ struct DeviceSpec
   // Zero is a FIXED mount, and that is the whole of the special case: a barrel bolted to a hull has
   // no slew to settle, so its firing gate is its arc alone and the hull's own turn is its traverse.
   // It is what makes a fighter fly attack runs without a line written for attack runs
-  // (Design/Combat.md 4, 8).
+  // (Design/Archive/Combat.md 4, 8).
   float traverseRadPerSec = 0.0f;
 
   [[nodiscard]] constexpr bool Fixed() const noexcept
@@ -63,7 +63,7 @@ struct DeviceSpec
   }
 };
 
-// The starting table (Design/Combat.md 13). Every number here serves the five pacing targets that
+// The starting table (Design/Archive/Combat.md 13). Every number here serves the five pacing targets that
 // section states -- a fighter dead in about ten seconds under one peer and about one and a half
 // under a focused fleet -- and is written to be measured against them in slice 5 rather than to be
 // admired here. All of it is in the replay contract: change a row and a recorded battle ends on a
@@ -73,7 +73,7 @@ struct DeviceSpec
 // so the hull is the turret: they must point to shoot, which is what turns a chase into a pass.
 //
 // The HeavyTurret's damage is 40 and not the 70 this table shipped with, and it was measured rather
-// than argued (Design/Combat-slice-5.md 2.1). At 70 a Battleship put out 65.8 damage a second, which
+// than argued (Design/Archive/Combat-slice-5.md 2.1). At 70 a Battleship put out 65.8 damage a second, which
 // killed an Interceptor in 0.9 s and a Corvette in 3.6 s -- so a fleet sent against one lost its own
 // damage faster than it could spend it, and the matchup had no middle: below about 3,000 hull points
 // the fleet won in 45 s, above it the Battleship wiped all eight and stood. Forty makes the capital

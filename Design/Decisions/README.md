@@ -97,3 +97,8 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0060](0060-the-game-is-its-own-benchmark.md) | The game is its own benchmark: one persistent plane, at fleet grain, with an economy under it | accepted |
 | [0061](0061-the-save-is-migrated-on-read.md) | The save is migrated on read, and a format is retired only by record | accepted |
 | [0062](0062-an-owner-is-not-a-faction-and-not-an-entity.md) | An owner is not a faction and not an entity | accepted |
+| [0063](0063-the-partition-is-a-function-of-the-layout.md) | The partition is a function of the layout, and contiguity is what decides it | accepted |
+| [0064](0064-a-mount-is-bound-to-its-art-by-a-client-table-of-submesh-names.md) | A mount is bound to its art by a client table of submesh names | accepted |
+| [0065](0065-a-handoff-is-at-least-once-delivery-onto-an-idempotent-apply.md) | A handoff is at-least-once delivery onto an idempotent apply | accepted |
+| [0066](0066-an-acknowledgement-means-durable-not-delivered.md) | An acknowledgement means "durable", not "delivered" | accepted |
+| [0067](0067-the-tree-has-a-second-composition-root.md) | The tree has a second composition root, and it is not shared with the first | accepted |

@@ -108,6 +108,14 @@ inline constexpr float HOSTILE_PATROL_RING_METRES = 400.0f;
 inline constexpr float HOSTILE_PATROL_CRUISE_MPS = 10.0f; // 29 % of an Interceptor's maximum: a lap in about 4.2 minutes
 inline constexpr std::uint32_t HOSTILE_PATROL_COUNT = 3;
 
+// The hull both ends of every gate are spawned on, named once because it is spawned in two places:
+// SpawnGates builds a whole galaxy into one universe, and BuildStartingGalaxy builds each end into
+// the universe of the shard its system belongs to, which no single-universe function can do. The
+// name is what keeps the two in step -- and it exists because they fell out of step: the hull moved
+// from Structure to Stargate on one path and not the other, and the partitioned build went on
+// spawning doors that looked like stations (Design/CrossShard-slice-1.md).
+inline constexpr HullId GATE_HULL = HullId::Stargate;
+
 // Everything above, spawned into _outUniverse: the player's fleet in slot 1, a Vanguard station in
 // every system, a gate at each end of every link, and the hostile base with its patrol.
 //
@@ -123,4 +131,26 @@ inline constexpr std::uint32_t HOSTILE_PATROL_COUNT = 3;
 // _shard is what identities are minted under (ADR 0047). Zero for the shipped single-shard game; a
 // dedicated server generating its own region passes its own, and nothing else here changes.
 void BuildStartingUniverse(const GalaxyLayout& _galaxy, ShardId _shard, Universe& _outUniverse);
+
+// The same galaxy, partitioned: one universe per shard, each holding the systems ShardOfSystem gives
+// it (Design/CrossShard-slice-1.md).
+//
+// **All of them at once, and that is the whole reason this function exists rather than a loop over
+// the one above.** A gate carries the EntityId of the gate it leads to (ADR 0056), and for a link
+// whose ends fall on two shards that identity is minted in the OTHER universe. Building the shards
+// one at a time could not name it, and predicting it would mean a second copy of the spawn order --
+// which is the drift ADR 0058 exists to refuse. Holding every shard at once makes the far end's
+// identity a thing to be read rather than computed, exactly as the single-shard build already reads
+// it across its own two passes.
+//
+// _outShards is expected to be _desc.shardCount empty universes, and each is configured with its own
+// index as its shard id. The player's fleet and the Vandal base go to whichever shard holds the home
+// system, since both stand in it; every other shard boots with stations and gates and nothing else.
+//
+// A gate whose far end is on another shard is spawned and its row points at that shard's entity, so
+// EntityShardOf(destination) != Shard() is true of it -- which is the test the handoff design uses
+// for "this gate leads out" (Design/CrossShard.md 3). Nothing here acts on that; StepJumps is
+// unchanged and a fleet ordered through such a gate strands nobody, which is the behaviour ADR 0056
+// already gives a gate whose destination does not resolve.
+void BuildStartingGalaxy(const GalaxyLayout& _galaxy, const GalaxyDesc& _desc, std::span<Universe> _outShards);
 } // namespace Game

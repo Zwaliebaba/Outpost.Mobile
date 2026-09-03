@@ -299,12 +299,12 @@ void OutpostApp::LoadServerConfig()
   // executable ships one stating exactly the defaults, so both paths through here are exercised by
   // somebody: the shipped file by every run, and the missing-file path by a checkout that has not
   // deployed assets.
-  const std::string text = TextFile::ReadFileA(SERVER_CONFIG_FILE);
+  const std::string text = TextFile::ReadFileA(Game::SERVER_CONFIG_FILE);
   if (text.empty())
     return; // no file, or an empty one: the defaults are what the game booted on before it existed
 
   std::string error;
-  if (!ParseServerConfig(text, m_config, error))
+  if (!Game::ParseServerConfig(text, m_config, error))
   {
     // Reported and not obeyed. The parser applied nothing, so m_config is still the defaults -- and
     // this root logs rather than exits because there is a window and a person in front of it. A
@@ -801,7 +801,7 @@ void OutpostApp::MarkLocalStations()
 // faction already holds hostile, which at this range is anything of the player's that comes close --
 // but their helms do not react to any of it: the ring stays a metronome by the owner's brief
 // (Design/Archive/Hostiles.md 6), because in this game senses live in the mounts and not in the helm
-// (Design/Combat.md 5.4).
+// (Design/Archive/Combat.md 5.4).
 //
 // The base is a station row too, with no garrison: its patrol is not a garrison and does not
 // change, and what the row buys is one answer path for "may I dock here" -- the player is refused
@@ -814,6 +814,38 @@ std::uint32_t OutpostApp::OwnShipCount() const noexcept
   for (const Game::ShipState& ship : m_universe.Ships())
     count += (ship.factionId == m_ownFaction) ? 1u : 0u;
   return count;
+}
+
+void OutpostApp::FlyToSystem(std::uint32_t _system)
+{
+  if (_system >= m_galaxy.systems.size())
+    return;
+
+  // SnapGoal and not SetGoal. The map is a jump in attention rather than a pan, and the distances
+  // are three orders of magnitude past what UniverseView::FollowFocusedFleet already calls "beyond
+  // any distance worth watching" -- an eased flight across a galaxy is a minute of empty space.
+  const Game::UniversePos star = m_galaxy.systems[_system].starPos;
+  m_camera.SnapGoal(m_view.ViewX(star), m_view.ViewZ(star));
+
+  // The focus goes with it. Flying somewhere is the player looking, and a fleet focus that survived
+  // the flight would drag the camera back on the very next frame (Design/GalaxyMap-slice-2.md 4.4).
+  m_view.CancelFocus();
+
+  // Closed the one way this screen closes: the rail button is its state, so unlighting the button is
+  // what closes it, and Escape runs these same two lines (OnKeyDown).
+  m_map.Close();
+  m_hud.ClearActiveRail();
+
+  // And that is the whole flight. Nothing here rebuilds the scenery, because nothing has to: the
+  // frame loop already asks SystemAtCamera once per frame, after the last thing that moves the
+  // camera and before Render, and rebuilds when the answer changes. That check was written for a
+  // fleet crossing a gate, and it covers this for free -- which is exactly the claim
+  // Design/Archive/Universe-slice-4b.md made when it put the scenery on WHERE THE CAMERA IS rather
+  // than on a jump event, and this is the first caller that tests it (Design/GalaxyMap-slice-2.md 1).
+  // By value and at 0.0f, which is what every other line the composition root pushes does. The
+  // pointer-and-SimTimeSec form belongs to UniverseView, which holds the log by pointer and is inside
+  // the class whose sim clock that is.
+  m_log.PushFormat(EventLog::Severity::Info, 0.0f, "MAP | SYSTEM %u", _system);
 }
 
 void OutpostApp::OnResize(std::uint32_t _widthPx, std::uint32_t _heightPx)
@@ -830,6 +862,14 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
     // that Escape does not close is a modal a player gets stuck in.
     if (m_assembly.IsOpen())
       m_assembly.Close();
+    else if (m_map.IsOpen())
+    {
+      // The rail button is the map's switch, so closing the map by any other route has to unlight
+      // it: a lit button over a closed screen would reopen the map on the next frame's sync below,
+      // and Escape would look like it had done nothing.
+      m_map.Close();
+      m_hud.ClearActiveRail();
+    }
     else if (m_sheet.IsOpen())
       m_sheet.Close();
     // Drops the selection next; only quits once nothing is selected. By fleets rather than by
@@ -887,7 +927,7 @@ void OutpostApp::OnKeyDown(std::uint32_t _virtualKey)
   //
   // Universe::RecordAggression and Universe::RecordHostileAct stay exactly as they are. They are the
   // simulation's own entry points, they still have no client message and never will, and the tests
-  // still drive them directly (Design/Combat-slice-4.md 2.6).
+  // still drive them directly (Design/Archive/Combat-slice-4.md 2.6).
   case '1':
     m_timeScale = 0.25f;
     break;
@@ -920,16 +960,47 @@ void OutpostApp::Update()
     if (m_sheet.HandlePointer(event, m_view, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx()))
       continue;
 
+    // The HUD before the map, and narrowed to its rail while the map is up. That inversion is
+    // deliberate and is the one place the map differs from the assembly screen: the rail's Universe
+    // button is what opened the map, so it has to stay reachable to close it, while everything else
+    // the HUD owns is behind the map's scrim and must not take a press through it. The map then
+    // takes every event the rail did not, which is what modal means here.
     int openSheet = -1;
-    const bool usedByHud = m_hud.HandlePointer(event, m_view, m_camera, openSheet, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
+    const bool usedByHud =
+      m_hud.HandlePointer(event, m_view, m_camera, openSheet, m_map.IsOpen(), m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
     if (openSheet >= 0)
       m_sheet.Open(openSheet);
     if (usedByHud)
+      continue;
+    // The map, which consumes everything the rail did not and may name a system as it does.
+    std::uint32_t tapped = static_cast<std::uint32_t>(m_galaxy.systems.size());
+    const bool usedByMap = m_map.HandlePointer(event, m_galaxy, tapped, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
+    if (tapped < m_galaxy.systems.size())
+      FlyToSystem(tapped);
+    if (usedByMap)
       continue;
     m_pointers.Apply(event, m_camera, m_view);
   }
   m_pendingEvents.clear();
   m_camera.Update(); // input may have moved it again
+
+  // The rail's Universe button IS the map's open state, followed rather than mirrored. The button is
+  // a toggle the HUD already owned and lights itself; making the screen follow it keeps one truth
+  // instead of two that can drift, and Escape unlights the button rather than closing the screen
+  // behind its back (OnKeyDown).
+  const bool wantsMap = m_hud.ActiveRail() == static_cast<int>(Hud::RailIcon::Universe);
+  if (wantsMap && !m_map.IsOpen())
+  {
+    m_map.Open();
+    // Modal from this frame on, so a contact the tracker is still holding would never be released to
+    // it -- the assembly screen's reason, below. The HUD's capture is NOT dropped here and must not
+    // be: this ran because a rail press completed, which released that capture itself, and cancelling
+    // it again would be cancelling the next one if the sync ever stopped being immediate.
+    m_pointers.CancelContacts();
+    m_sheet.Close();
+  }
+  else if (!wantsMap && m_map.IsOpen())
+    m_map.Close();
 
   // A pan gives the camera back to the player, and this is the only place that can see one: pan,
   // orbit and zoom reach Camera straight out of PointerTracker and never touch the listener, so
@@ -960,6 +1031,11 @@ void OutpostApp::Update()
     m_pointers.CancelContacts();
     m_hud.CancelCapture();
     m_sheet.Close(); // one panel at a time; the modal one wins
+
+    // And the map, whose switch is a rail button: closing it without unlighting the button would
+    // have the sync above reopen it under the assembly screen on the next frame.
+    m_map.Close();
+    m_hud.ClearActiveRail();
   }
 
   // Where the player is looking becomes what the server sends. The composition root is the only
@@ -1018,9 +1094,15 @@ void OutpostApp::Render()
     frame.contacts += m_view.IsHostileToMe(ship.factionId) ? 1 : 0;
   m_hud.Draw(m_textRenderer, m_view.Ships(), m_view, m_camera, m_log, frame, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
 
-  // The sheet sits over the bar, then the assembly screen over everything: it is modal and draws
-  // its own scrim, the bar and the sheet included.
+  // The sheet sits over the bar, then the map, then the assembly screen over everything: both
+  // screens are modal and draw their own scrim, the bar and the sheet included. The assembly screen
+  // is last because it is the one that can open while the map is up -- a ledger reply closes the map
+  // below, and drawing it last means it is on top on the frame that happens.
   m_sheet.Draw(m_textRenderer, m_view, HULL_NAMES, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
+  // Guarded rather than left to Draw's own early return, because the argument is work: SystemAtCamera
+  // walks all 54 stars, and a closed screen must cost nothing per frame (GalaxyMap-slice-1.md 4.5).
+  if (m_map.IsOpen())
+    m_map.Draw(m_textRenderer, m_galaxy, m_view, SystemAtCamera(), m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
   m_assembly.Draw(m_textRenderer, m_view, HULL_NAMES, FACTION_NAMES, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
 
   m_textRenderer.Flush(m_gpu); // the overlay goes on last, before the frame is presented

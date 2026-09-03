@@ -56,7 +56,12 @@ five fleets, and everything below follows from that. You can:
   keeping every identity and every point of damage, and the camera crosses with it. The far side's
   worlds, rocks and minimap marks are the far side's.
 - **Read the universe** through the HUD: minimap with the sector pair, your fleets' digits on it
-  wherever they are, contact count, event log, and a function rail whose screens are not built yet.
+  wherever they are, contact count, event log, and a function rail. `UNIVRS` on the rail opens the
+  galaxy map — all 54 systems at their real positions, every gate as a line, the system you are in
+  marked, and each of your fleets as its digit on the system it is in. **Tapping a system flies the
+  camera there and closes the map**; tapping empty space does nothing, and there is no way yet to send
+  a fleet across several gates from here. `Esc` or the button closes it; the other three rail screens
+  are not built yet.
 
 A second faction lives 1.2 km northeast: a Vandal station with three Interceptors walking a ring
 around it. They are drawn red, they count as contacts, and they cannot be selected or ordered — the
@@ -66,9 +71,9 @@ combatants answer, and the fight runs itself. Their helms are still a metronome 
 whatever happens — because guns react in this game and courses do not.
 
 The government is here too. The galaxy is laid out from one seed — 54 systems joined by 136 gates,
-with home where it always was — and at every planet of every system stands a Core Vanguard Command
-station — azure in the scene, a hollow diamond on the minimap from the first frame, and the place
-your ships can dock. The Vanguard takes anyone who has
+with home where it always was — and one Core Vanguard Command station stands in every system, on its
+first planet's bearing and pulled in toward the star: azure in the scene, a hollow diamond on the
+minimap from the first frame, and the place your ships can dock. The Vanguard takes anyone who has
 not attacked it; order an attack on one of its ships or its stations and it stops taking you — the
 law turns red across the map, and the provoked station launches Corvette protectors that hunt the
 aggressor until it dies.
@@ -96,13 +101,19 @@ move the camera, pinch and twist with two contacts to zoom and turn.
 ### Deliberately not here yet
 
 So nobody goes looking: no economy, no audio, no mining, no login — one player, whose owner key is
-the constant `OWNER_LOCAL` until a session says who is asking — and no turret that turns —
-a hull's guns fire and its geometry holds still. Combat is here and is one number deep: hull points,
+the constant `OWNER_LOCAL` until a session says who is asking. A Corvette's turrets, a Frigate's
+batteries and a Battleship's three swing to what they fired at and stow when the fight ends; every
+other hull's guns fire and its geometry holds still. Combat is here and is one number deep: hull
+points,
 one damage figure per device, and no shields, armour classes or resistances. Tuning is `constexpr`
 in `SimTuning.h`, `HullSpec.h`, `DeviceSpec.h` and `ViewTuning.h`; what a deployment may change
 without a rebuild lives in `Outpost/Assets/Server.cfg`. The networking is real QUIC over a real
 stack, and it is still one client in one process on `127.0.0.1` with a self-signed certificate the
-client does not validate.
+client does not validate. `Server.exe` runs a shard without a window, reads the same `Server.cfg`
+through the same parser, and serves **one** session over the same seam — there is no login, so a
+second connection is refused rather than handed the same player's fleets. It opens one link per
+neighbouring shard, worked out from its own save's gates, but none of those links has a transport
+yet: nothing dials it but a test harness, and two shards have never been two processes.
 
 **The save survives the build.** `Universe.sav` is a versioned file: a boot restores it or stops
 naming why, and a file in an older format is migrated on read rather than refused, with the file it
@@ -115,7 +126,9 @@ same numbers.
 will start, and the game says so if you forget. The two are separate executables in separate output
 directories, so give the tool the game's path — `UniverseGen 0 "…\Outpost\Assets\Universe.sav"` —
 and `UniverseGen --help` spells it out. A different first argument writes a different galaxy from the
-same code (ADR 0058).
+same code (ADR 0058). An optional third argument is a shard count: above one the tool cuts the galaxy
+into that many contiguous pieces and writes `Universe.0.sav` upward beside the path you gave, and it
+refuses a count that would leave a shard with nothing in it (ADR 0063).
 
 ---
 
@@ -125,12 +138,16 @@ Two halves that talk over a wire, in one process, on purpose — so that the day
 processes, nothing has to be rewritten to make it work.
 
 ```
-                NeuronCore
-               /     |     \
-      NeuronClient  GameLogic  NeuronServer
-               \     |     /
-                  Outpost.exe
+                        NeuronCore
+                    /       |       \
+          NeuronClient   GameLogic   NeuronServer
+                    \    /       \    /
+                 Outpost.exe     Server.exe
 ```
+
+Two executables, two composition roots, and the only things in the tree entitled to see more than one
+layer. `Outpost.exe` is the game and has a window; `Server.exe` is one shard and has none — it cannot
+even name a graphics type, and `Build/CheckProjectFiles.py` holds that (ADR 0067).
 
 | Project | What it is |
 |---|---|
@@ -138,7 +155,8 @@ processes, nothing has to be rewritten to make it work.
 | `GameLogic/` | The deterministic simulation, namespace `Game`: universe, movement, collision, formation, pathfinding islands, gunnery, the wire format and the publisher |
 | `NeuronClient/` | Everything that names a graphics type: D3D12 device, scene and text renderers, the planet and star-field pipelines, the explosion FX, the content readers |
 | `NeuronServer/` | The authoritative half — `ServerHost` and the `Simulation` interface it drives |
-| `Outpost/` | The executable: composition root, presentation state, HUD, the fleet sheet and the station assembly screen, and `Outpost/Assets/` |
+| `Outpost/` | The game executable: composition root, presentation state, HUD, the fleet sheet, the station assembly screen and the galaxy map, and `Outpost/Assets/` |
+| `Server/` | The shard server: the second composition root, a console executable that boots one shard, ticks it, saves it, serves one session over QUIC and opens a link to each neighbouring shard, with no window anywhere in it (ADR 0067) |
 | `Tools/UniverseGen/` | The console tool that writes `Universe.sav` — the one thing in the tree that authors a universe (ADR 0058) |
 
 The simulation ticks at a fixed rate, is bit-identical across two runs of the same seed, and depends
@@ -164,11 +182,12 @@ nuget restore Outpost\packages.config -PackagesDirectory packages    (and one pe
 msbuild Outpost.slnx /p:Configuration=Debug /p:Platform=x64
 
 vstest.console.exe x64\Debug\NeuronCoreTests.dll x64\Debug\GameLogicTests.dll ^
-                   x64\Debug\NeuronClientTests.dll x64\Debug\NeuronServerTests.dll
+                   x64\Debug\NeuronClientTests.dll x64\Debug\NeuronServerTests.dll ^
+                   x64\Debug\ServerTests.dll
 ```
 
 The projects use `packages.config`, so `msbuild -t:restore` does nothing for them — restore is
-`nuget restore` per config file. CI builds `Debug|x64` and runs all four suites on every pull
+`nuget restore` per config file. CI builds `Debug|x64` and runs all five suites on every pull
 request and every push to `main`, and it gates.
 
 A good boot prints `LINK | QUIC` in the event log. There is no fallback link: a boot that cannot

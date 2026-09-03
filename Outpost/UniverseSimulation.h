@@ -43,7 +43,7 @@ public:
   // is what makes them a property of the deployment instead of the build (ADR 0043). They are per
   // subscriber and not global, which is the shape Publisher::Desc already had -- so a spectator or
   // a distant region can be given different ones without touching anybody else's.
-  void Connect(Neuron::Transport& _transport, const ServerConfig& _config)
+  void Connect(Neuron::Transport& _transport, const Game::ServerConfig& _config)
   {
     Game::Publisher::Desc desc;
     desc.transport = &_transport;

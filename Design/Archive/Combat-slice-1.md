@@ -7,7 +7,7 @@ ramming it (design §3, §4, §5, §6, §7, §8).
 
 **Status: landed 2026-09-01 and in review.** §4a records the four things the implementation changed
 about this order; the decision record is
-[ADR 0052](Decisions/0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md).
+[ADR 0052](../Decisions/0052-gunnery-is-deterministic-and-the-fire-pass-states-the-acts.md).
 
 **Layer:** `GameLogic` and `GameLogicTests`.
 **Depends on:** nothing unmerged. Every socket it calls is on `main` — `RecordHostileAct` and

@@ -247,4 +247,77 @@ void LinkGates(std::span<const SystemSite> _systems, std::vector<GateLink>& _out
     }
   }
 }
+
+namespace
+{
+// How many lattice cells stand in column q of a hex of radius R, and how many stand in every column
+// left of it. A hex column holds 2R+1-|q| cells, which is the only arithmetic the partition needs.
+[[nodiscard]] std::uint32_t CellsInColumn(std::int32_t _q, std::uint32_t _ringCount) noexcept
+{
+  const std::int32_t ring = static_cast<std::int32_t>(_ringCount);
+  const std::int32_t away = (_q < 0) ? -_q : _q;
+  return (away > ring) ? 0u : static_cast<std::uint32_t>(2 * ring + 1 - away);
+}
+
+[[nodiscard]] std::uint32_t CellsLeftOfColumn(std::int32_t _q, std::uint32_t _ringCount) noexcept
+{
+  const std::int32_t ring = static_cast<std::int32_t>(_ringCount);
+  std::uint32_t before = 0;
+  for (std::int32_t column = -ring; column < _q && column <= ring; ++column)
+    before += CellsInColumn(column, _ringCount);
+  return before;
+}
+} // namespace
+
+std::uint32_t MaxShardCount(const GalaxyDesc& _desc) noexcept
+{
+  // One shard per column is the most a band split can give, since a band is a whole number of
+  // columns and a shard with no column has no systems.
+  return 2u * _desc.ringCount + 1u;
+}
+
+std::uint32_t OccupiedShardCount(std::span<const SystemSite> _systems, const GalaxyDesc& _desc) noexcept
+{
+  if (_desc.shardCount <= 1u)
+    return _systems.empty() ? 0u : 1u;
+
+  // Distinct answers, counted by looking back rather than by marking a bitset over shards. The
+  // bitset was one line shorter and was a std::vector<bool>, which allocates -- and this function is
+  // noexcept, so clang-tidy refused it (bugprone-exception-escape, run 245). A shard count is
+  // deployment configuration and a bound this function does not get to assume; the number of
+  // SYSTEMS is bounded by the galaxy and is what the work is actually proportional to, so the
+  // quadratic pass over 54 of them is both smaller than the allocation would have been and cannot
+  // throw.
+  std::uint32_t occupied = 0;
+  for (std::size_t at = 0; at < _systems.size(); ++at)
+  {
+    const ShardId mine = ShardOfSystem(_systems[at], _desc);
+    bool first = true;
+    for (std::size_t before = 0; before < at && first; ++before)
+      first = ShardOfSystem(_systems[before], _desc) != mine;
+    occupied += first ? 1u : 0u;
+  }
+  return occupied;
+}
+
+ShardId ShardOfSystem(const SystemSite& _site, const GalaxyDesc& _desc) noexcept
+{
+  if (_desc.shardCount <= 1u)
+    return 0;
+
+  // Where this column starts in the lattice's own left-to-right cell order, scaled by the shard
+  // count and divided by the total: the standard equal-mass cut, done in integers. Every cell of a
+  // column lands in the same shard, so a shard is a contiguous band of columns.
+  //
+  // The multiplication is widened because cells * shardCount overflows a u32 for no galaxy anyone
+  // will build, and the widening costs nothing to be sure of.
+  const std::uint64_t total = GalaxyCellCount(_desc.ringCount);
+  const std::uint64_t before = CellsLeftOfColumn(_site.cellQ, _desc.ringCount);
+  const std::uint64_t shard = (before * _desc.shardCount) / total;
+
+  // Clamped rather than trusted. A cell outside the lattice -- which LayOutGalaxy cannot produce and
+  // a hand-built test can -- would otherwise index past the last shard.
+  const std::uint64_t last = _desc.shardCount - 1u;
+  return static_cast<ShardId>((shard < last) ? shard : last);
+}
 } // namespace Game

@@ -287,6 +287,55 @@ void SceneRenderer::DrawMesh(GpuDevice& _gpu, MeshHandle _mesh, const DirectX::X
   cmd->DrawInstanced(drawn.vertexCount, 1, 0, 0);
 }
 
+void SceneRenderer::DrawMeshRange(GpuDevice& _gpu, MeshHandle _mesh, MeshRange _range, const DirectX::XMFLOAT4X4& _world, Rgba _livery,
+                                  float _highlight)
+{
+  const std::uint32_t mesh = m_meshSlots.SlotOf(_mesh);
+  if (mesh == HandleStore::INVALID_SLOT || m_meshes[mesh].vertexCount == 0)
+    return;
+  const GpuMesh& drawn = m_meshes[mesh];
+
+  // Clamped against the uploaded mesh and not against the MeshData the range came from. They are the
+  // same buffer today; the clamp is what makes a stale range a missing turret rather than a read past
+  // the end of a vertex buffer.
+  if (_range.firstVertex >= drawn.vertexCount || _range.vertexCount == 0)
+    return;
+  const std::uint32_t count = std::min(_range.vertexCount, drawn.vertexCount - _range.firstVertex);
+
+  const float base[4] = {_livery.r, _livery.g, _livery.b, _highlight};
+  ID3D12GraphicsCommandList* cmd = _gpu.CommandList();
+  cmd->SetPipelineState(m_scenePso.get()); // DrawMesh's reason: a batch of instanced draws may have moved it
+  cmd->SetGraphicsRoot32BitConstants(0, 16, &_world, 0);
+  cmd->SetGraphicsRoot32BitConstants(1, 4, base, 0);
+  cmd->IASetVertexBuffers(0, 1, &drawn.vbv);
+  cmd->DrawInstanced(count, 1, _range.firstVertex, 0);
+}
+
+void SceneRenderer::DrawMeshComplement(GpuDevice& _gpu, MeshHandle _mesh, std::span<MeshRange> _posed, const DirectX::XMFLOAT4X4& _world,
+                                       Rgba _livery, float _highlight)
+{
+  const std::uint32_t mesh = m_meshSlots.SlotOf(_mesh);
+  if (mesh == HandleStore::INVALID_SLOT || m_meshes[mesh].vertexCount == 0)
+    return;
+
+  // The common case, spelled out rather than falling out of the general one: nothing posed is one
+  // draw of the whole mesh, which is every hull in the game that has no bound part.
+  if (_posed.empty())
+  {
+    DrawMesh(_gpu, _mesh, _world, _livery, _highlight);
+    return;
+  }
+
+  // On the stack, sized by the contract rather than by a guess. MAX_POSED_PARTS is the ceiling a
+  // caller may pose in one draw; past it the extra runs are still EXCLUDED from the gaps -- they are
+  // in _posed, which RangeComplement walks whole -- and only the gap list is truncated, so the
+  // failure is a piece of hull that does not draw rather than a piece drawn twice.
+  MeshRange gaps[ComplementCapacity(MAX_POSED_PARTS)];
+  const std::size_t written = RangeComplement(_posed, m_meshes[mesh].vertexCount, gaps);
+  for (std::size_t at = 0; at < written; ++at)
+    DrawMeshRange(_gpu, _mesh, gaps[at], _world, _livery, _highlight);
+}
+
 void SceneRenderer::DrawMeshInstanced(GpuDevice& _gpu, MeshHandle _mesh, std::span<const MeshInstance> _instances)
 {
   const std::uint32_t mesh = m_meshSlots.SlotOf(_mesh);
