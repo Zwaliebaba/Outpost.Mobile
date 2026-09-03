@@ -97,6 +97,43 @@ public:
     Assert::AreEqual(static_cast<std::size_t>(1), interest.Entered().size(), L"the first update did not report an enter");
   }
 
+  TEST_METHOD(WideningTheRadiusEntersWhatItReachedAndNarrowingLeavesIt)
+  {
+    // The camera can now pull back far enough to frame a whole sector, and the composition root
+    // widens this subscriber's radius with it -- so what the player can see is what the wire brings
+    // (Outpost/UniverseSimulation.h, SetViewRadiusMetres). What has to hold is that a radius change
+    // is an ordinary enter and an ordinary leave: the subscriber must not be able to tell a ship
+    // that came into range from one the radius grew over, because it deals with neither
+    // differently (Design/Archive/Collision-slice-6.md 6.2).
+    Game::Universe universe;
+    const Game::ShipId nearShip = SpawnCorvetteAt(universe, 100.0f, 0.0f);
+    const Game::ShipId farShip = SpawnCorvetteAt(universe, 3000.0f, 0.0f);
+    universe.Step();
+
+    Game::InterestSet interest;
+    interest.Configure(DescWith(1000.0f));
+    interest.Update(universe, Game::LocalPos(0.0f, 0.0f));
+    Assert::IsFalse(Holds(interest.Subscribed(), universe.HandleOf(farShip)), L"a ship past the radius was subscribed");
+
+    interest.SetRadiusMetres(4000.0f);
+    Assert::AreEqual(4000.0f, interest.RadiusMetres(), 1e-3f, L"the radius did not take");
+    interest.Update(universe, Game::LocalPos(0.0f, 0.0f));
+    Assert::IsTrue(Holds(interest.Subscribed(), universe.HandleOf(farShip)), L"widening did not reach the farther ship");
+    Assert::IsTrue(Holds(interest.Entered(), universe.HandleOf(farShip)), L"the ship the radius grew over did not arrive as an enter");
+    Assert::IsTrue(Holds(interest.Subscribed(), universe.HandleOf(nearShip)), L"widening dropped a ship that was already in");
+
+    interest.SetRadiusMetres(1000.0f);
+    interest.Update(universe, Game::LocalPos(0.0f, 0.0f));
+    Assert::IsTrue(Holds(interest.Left(), universe.HandleOf(farShip)), L"narrowing did not report the farther ship as a leave");
+    Assert::IsTrue(Holds(interest.Subscribed(), universe.HandleOf(nearShip)), L"narrowing dropped a ship still in range");
+
+    // Refused rather than obeyed, on Configure's terms. A radius that arrived at zero through
+    // arithmetic gone wrong upstream would otherwise empty the set silently, and an empty set looks
+    // exactly like a disconnected client.
+    interest.SetRadiusMetres(0.0f);
+    Assert::AreEqual(1000.0f, interest.RadiusMetres(), 1e-3f, L"a non-positive radius was accepted");
+  }
+
   TEST_METHOD(AGateInsideTheRadiusIsSubscribed)
   {
     // The regression that demanded it: a Stargate is immovable and deliberately not collidable, and

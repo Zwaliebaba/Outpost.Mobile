@@ -71,7 +71,7 @@ Constraints, not preferences. Each one shaped what follows.
 | DDS only, kept as on disk; `TopMipAsBgra` reads 8-bpc texels on the CPU | `DdsImage.h:93` | The colour ramps are read on the CPU through `TopMipAsBgra` and never reach the GPU (§6). No BMP reader is written. |
 | The ramp and outline textures are already in the tree, as 32-bit BGRA DDS, one mip | `Outpost/Assets/Terrain/Landscape*.dds` (8), `Textures/TriangleOutline.dds` | No conversion step. **Eight** ramps rather than the source's twenty-three, and **no `water_*` or `waves_*`** — the ocean is a flat colour in v1 (§6.3). |
 | No threads; expensive work happens at `Init` and blocks | AGENTS.md §5; `GpuDevice::ExecuteAndWait` | Bodies are generated at boot on the main thread. A 65-grid planet is tens of milliseconds (§8.4); a background generator is a later slice and an ADR. |
-| Camera: orbit over a ground plane, zoom 40–900 m, far plane 8 000 m, `D32_FLOAT` `LESS` | `Camera.h`, `ViewTuning.h:14-19` | Bodies are placed **inside the existing frustum at metre scale** (§3). No camera rebase, no reversed-Z, no second projection. What that rules out is in §13 and §14. |
+| Camera: orbit over a ground plane, zoom 40–9 889 m, far plane 26 273 m, `D32_FLOAT` `LESS` | `Camera.h`, `ViewTuning.h` camera block | Bodies are placed **inside the existing frustum at metre scale** (§3). No camera rebase, no reversed-Z, no second projection. What that rules out is in §13 and §14. The zoom range was 40–900 m and the far plane 8 000 m when this was written; the sector zoom widened both, and the near plane now rides the orbit distance past 909 m (`Camera::Desc::nearFractionOfDistance`) so the depth range the projection spans at the far limit is *narrower* than the fixed 0.5 m near plane gave at the old one — 1:4 831 against 1:16 000. Nothing here had to change for it. |
 | A missing asset is a diagnostic, not a crash | AGENTS.md §5 | A ramp that fails to load leaves the body drawn in a flat grey; a missing outline texture leaves the overlay off. Both trace. |
 
 ---
@@ -79,8 +79,9 @@ Constraints, not preferences. Each one shaped what follows.
 ## 3. Scale: what "a planet" is in a game measured in metres
 
 The source terrain was a 2 000-unit map with 12-unit cells and 200-unit peaks, seen from a camera
-a few hundred units up. This game's hulls are 10 m across, the camera is 40–900 m from its target
-and can see 8 km. A body has to read as *big* against a Frigate and still fit in that frustum with
+a few hundred units up. This game's hulls are 10 m across, the camera is 40–9 889 m from its target
+and can see 26 km — it was 40–900 m and 8 km when this was written, and the sector zoom widened both
+without moving a body or a number below. A body has to read as *big* against a Frigate and still fit in that frustum with
 usable depth precision, and the ground quad — 4 km wide, following the camera — has to be
 somewhere sensible relative to it.
 

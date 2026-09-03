@@ -88,6 +88,39 @@ public:
     Assert::AreEqual(desc.maxZoom, camera.Distance(), 1e-3f, L"zooming out ran past the far limit");
   }
 
+  TEST_METHOD(TheNearPlaneRidesTheZoomOnlyOnceTheFloorIsPassed)
+  {
+    // The game can pull the camera back far enough to frame a whole sector, which needs a far plane
+    // three times what it was; against a fixed near plane that is depth precision spent everywhere,
+    // including up close where nothing needed it. So the near plane is max(floor, distance * f) --
+    // and the half that matters is that the floor still wins at every distance the camera reached
+    // before, because a projection that changed there would change picking and framing in a scene
+    // nobody asked to have touched.
+    Neuron::Camera::Desc desc;
+    desc.minZoom = 40.0f;
+    desc.maxZoom = 9900.0f;
+    desc.nearPlane = 0.5f;
+    desc.nearFractionOfDistance = 5.5e-4f; // the floor holds out to 909 m
+    Neuron::Camera camera;
+    camera.SetViewport(1600, 900);
+    camera.Init(desc);
+
+    for (int i = 0; i < 100; ++i)
+      camera.ZoomSteps(1.0f); // in, to the near limit
+    camera.Update();
+    Assert::AreEqual(desc.nearPlane, camera.NearPlane(), 1e-4f, L"zoomed in, the fraction beat the floor");
+
+    for (int i = 0; i < 200; ++i)
+      camera.ZoomSteps(-1.0f); // out, to the far limit
+    camera.Update();
+    Assert::AreEqual(desc.maxZoom * desc.nearFractionOfDistance, camera.NearPlane(), 1e-3f,
+                     L"zoomed out, the near plane did not follow the distance");
+
+    // And the whole point of it: the depth range the projection spans is no worse at the far limit
+    // than the fixed near plane gave at the old one.
+    Assert::IsTrue(desc.farPlane / camera.NearPlane() < desc.farPlane / desc.nearPlane, L"the near-to-far ratio did not improve");
+  }
+
   TEST_METHOD(PitchIsClampedSoTheCameraNeverFlipsOver)
   {
     Neuron::Camera camera = MakeCamera();
