@@ -1688,7 +1688,7 @@ bool ReadUniverseState(std::span<const std::uint8_t> _bytes, Universe& _outUnive
     fleet.launchCooldownTicks = in.U32();
 
     const std::uint8_t orderKind = in.U8();
-    if (!in.Ok() || orderKind > static_cast<std::uint8_t>(FleetOrderKind::Jump))
+    if (!in.Ok() || orderKind > static_cast<std::uint8_t>(FleetOrderKind::Voyage))
       return false;
     fleet.orderKind = static_cast<FleetOrderKind>(orderKind);
     fleet.orderPoint = in.Pos();

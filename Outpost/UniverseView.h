@@ -556,6 +556,19 @@ public:
   // first, unlike docking: a gate takes anyone this phase (Design/Archive/Universe.md 6.1).
   void IssueJumpOrder(std::size_t _gate);
 
+  // Sends Voyage at a star to every selected fleet: go there, across as many gates as it takes.
+  //
+  // A position and not a system index, which is the one thing worth knowing about this signature.
+  // The client's map counts systems off a layout it laid from the save header's seed; so does the
+  // simulation. Naming the star's PLACE means the two never have to agree about an ordering of an
+  // array -- the seam already carries positions and nothing else about the galaxy, and it stays that
+  // way (Design/GalaxyMap.md 6.1, ADR 0069).
+  //
+  // No marker: the destination is a system away and there is nothing on this screen to put one on.
+  // What says the order landed is the fleet's own status block, which reads VOYAGING from the next
+  // update until it arrives.
+  void IssueVoyageOrder(const Game::UniversePos& _star);
+
   [[nodiscard]] ArmedOrder Armed() const noexcept
   {
     return m_armed;

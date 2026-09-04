@@ -249,7 +249,17 @@ enum class FleetOrderKind : std::uint8_t
   // Jump: fly to a gate and cross it, whole. Appended rather than inserted, because the wire reads
   // this enum as a byte and a value that moved would make one build's Dock another's Attack
   // (Design/Archive/Universe-slice-2.md 4).
-  Jump
+  Jump,
+
+  // Voyage: reach the system a point is in, across as many gates as it takes. Appended for Jump's
+  // reason, and it is Move's verb one level up -- orderPoint is where it is going, exactly as it is
+  // for a Move, and the difference is only that the road there runs through doors.
+  //
+  // A standing order and not a message kind: a fleet holds Voyage for the whole crossing, with
+  // orderGate naming the door it is flying at now, and the row is what survives the despawn and
+  // respawn every gate performs (ADR 0056). Nothing a SHIP holds could
+  // ([ADR 0069](Design/Decisions/0069-a-voyage-lives-on-the-fleet-and-is-planned-from-where-it-is.md)).
+  Voyage
 };
 
 // One ship, as the simulation sees it. Everything here is advanced only in Universe::Step, and there

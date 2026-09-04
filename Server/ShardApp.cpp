@@ -140,6 +140,14 @@ bool ShardApp::Boot(std::uint16_t _shard)
   m_galaxySeed = header.galaxySeed;
   m_lastSaveTick = m_universe.Tick();
 
+  // The galaxy this shard's systems belong to, laid out from the seed the file carries and handed to
+  // the simulation, which needs it to plan a voyage across gates (ADR 0069). The whole galaxy and not
+  // this shard's share of it: a fleet's route is a question about the graph, and a shard that only
+  // knew its own band would answer it wrongly at the first system it does not hold. The layout is
+  // not kept here -- ShardApp has no map to draw and no scenery to build, so the universe is the only
+  // thing that reads it (Design/ShardServer.md 5.4).
+  m_universe.ConfigureGalaxy(Game::LayOutGalaxy(m_galaxySeed, Game::UniversePos{}, Game::STARTING_GALAXY, Game::GALAXY_PINS));
+
   Neuron::ServerHost::Desc hostDesc;
   m_host.Init(hostDesc, m_simulation);
 

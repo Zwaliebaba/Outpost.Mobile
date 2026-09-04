@@ -82,9 +82,19 @@ private:
   // view can say, and what is there, which is Game::SystemAt's.
   [[nodiscard]] std::uint32_t SystemAtCamera() const noexcept;
 
-  // Puts the camera in a system and closes the map. The map's one verb until slice 3 gives it a
-  // second (Design/GalaxyMap.md 4.2).
+  // Puts the camera in a system and closes the map (Design/GalaxyMap.md 4.2).
   void FlyToSystem(std::uint32_t _system);
+
+  // What a tap on the map means, which is one of those two verbs depending on what is selected: with
+  // a fleet held, ORDER it there; with nothing held, LOOK there. The two are exclusive on purpose --
+  // a fleet sent across fourteen gates arrives in minutes, and a camera that flew ahead of it would
+  // leave the player watching an empty system while the thing they ordered is behind them
+  // (Design/GalaxyMap.md 4.3).
+  //
+  // Here rather than in GalaxyScreen because it is the composition root's question in both
+  // directions: the screen says which system a contact named, and what a system MEANS is decided
+  // where the view, the camera and the map are all in scope (Design/GalaxyMap-slice-2.md 7).
+  void TapSystem(std::uint32_t _system);
 
   // Re-lays the local system and rebuilds everything drawn from it: the worlds, the rocks and the
   // minimap's station marks.

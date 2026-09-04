@@ -633,6 +633,11 @@ const char* UniverseView::FleetActivity(int _slot) const noexcept
   // was launching (Design/Archive/FleetStatus-work-order.md).
   case static_cast<std::uint8_t>(Game::FleetOrderKind::Jump):
     return "JUMPING";
+  // A fleet crossing the galaxy under one order says so for the whole crossing, including the moment
+  // it is standing at a door: the gate it is at is a step, and the thing worth telling the player is
+  // that it is still on its way (Design/GalaxyMap.md 4.3).
+  case static_cast<std::uint8_t>(Game::FleetOrderKind::Voyage):
+    return "VOYAGING";
   default:
     return "IDLE";
   }
@@ -1367,6 +1372,27 @@ void UniverseView::IssueJumpOrder(std::size_t _gate)
 
   if (m_log)
     m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "JUMPING | %d %s", static_cast<int>(sent), (sent == 1) ? "FLEET" : "FLEETS");
+}
+
+void UniverseView::IssueVoyageOrder(const Game::UniversePos& _star)
+{
+  if (m_transport == nullptr || SelectedFleetCount() == 0)
+    return;
+
+  // Every gate on the way is the simulation's to find, and every refusal is its to make: this says
+  // where, and nothing about how. The map holds the same graph the server plans over and could have
+  // walked it here, and that is exactly the second opinion ADR 0037 exists to prevent -- a client
+  // that planned a route would be a client that could disagree with the universe about which doors
+  // exist (Design/GalaxyMap.md 6.6).
+  Game::FleetOrder order;
+  order.kind = Game::FleetOrderKind::Voyage;
+  order.point = _star;
+  const std::uint32_t sent = SendToSelectedFleets(order);
+  if (sent == 0)
+    return;
+
+  if (m_log)
+    m_log->PushFormat(EventLog::Severity::Alert, SimTimeSec(), "VOYAGE | %d %s", static_cast<int>(sent), (sent == 1) ? "FLEET" : "FLEETS");
 }
 
 int UniverseView::PickHostile(float _xPx, float _yPx) const

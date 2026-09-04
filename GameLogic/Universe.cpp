@@ -732,11 +732,17 @@ void Universe::LowerFleetOrder(Fleet& _fleet)
     if (station != INVALID_SHIP_ID)
       (void)IssueDockOrder(m_fleetShipScratch, station, Issuer{_fleet.owner, _fleet.ownerFaction});
   }
-  else if (_fleet.orderKind == FleetOrderKind::Jump)
+  else if (_fleet.orderKind == FleetOrderKind::Jump || _fleet.orderKind == FleetOrderKind::Voyage)
   {
     // The approach, through the same call a player's click has always gone through. The pass below
     // does the crossing; this only gets the fleet to the door, in formation, so the members arrive
     // together rather than trickling into the radius one at a time (Design/Archive/Universe.md 6.1).
+    //
+    // A voyage is lowered by exactly this branch and nothing else: what makes it more than one jump
+    // is StepVoyages putting the next door in orderGate, not a second way of flying to one. A
+    // voyage between hops holds no gate and lowers nothing, which leaves its members where the last
+    // crossing set them down until the pass names the next door -- the same tick, since it runs
+    // immediately after the crossing.
     const ShipId gate = Resolve(_fleet.orderGate);
     if (gate != INVALID_SHIP_ID)
     {
@@ -744,7 +750,14 @@ void Universe::LowerFleetOrder(Fleet& _fleet)
       // and is a point the wall forbids (ADR 0042). The dock pass solves the same problem with
       // DockApproachPoint, and this is that call for the same reason.
       const HullSpec& gateHull = HullSpecOf(m_ships[gate].hullId);
-      const UniversePos here = m_ships[Resolve(_fleet.members[0])].posUniverse;
+
+      // The first LIVE member, off the scratch this function already filled and already returned
+      // early on if it was empty -- not members[0], which can be a handle that no longer resolves.
+      // Every caller before StepVoyages ran after the fleet pass had compacted the row, so the two
+      // were the same ship and reading the row directly was safe by accident. StepVoyages runs in
+      // the same tick as the crossing and therefore BEFORE that prune, so a member killed last tick
+      // would have indexed m_ships with INVALID_SHIP_ID.
+      const UniversePos here = m_ships[m_fleetShipScratch[0]].posUniverse;
       const UniversePos approach =
         DockApproachPoint(m_ships[gate].posUniverse, here, gateHull.BoundingRadiusMetres() + GATE_APPROACH_METRES);
       (void)IssueMoveOrder(m_fleetShipScratch, approach, false, 0.0f, _fleet.ownerFaction);
@@ -826,11 +839,41 @@ Universe::FleetOrderResult Universe::IssueFleetOrder(const Issuer& _issuer, std:
     return FleetOrderResult::Unsupported;
   }
 
+  // The first hop of a voyage, planned before the row is touched, so that a destination this fleet
+  // cannot reach leaves the standing order exactly as it was -- the rule every other gate above
+  // follows, applied to the one order whose validity is a question about the whole galaxy.
+  bool voyageArrived = false;
+  if (_command.kind == FleetOrderKind::Voyage)
+  {
+    ShipId first = INVALID_SHIP_ID;
+    switch (NextVoyageStep(m_fleets[id], _command.point, first))
+    {
+    case VoyageStep::Fly:
+      gate = HandleOf(first);
+      break;
+    case VoyageStep::Arrived:
+      // Ordering a fleet to the system it is standing in is an arrival, and an arrival spends the
+      // order. It falls through to the brake below rather than holding a voyage of no hops, because
+      // a row that holds an order it has already finished is one more state for every reader of it
+      // to have an opinion about.
+      voyageArrived = true;
+      break;
+    case VoyageStep::Waiting:
+      // Composed and still pouring out of a dock: there is nothing in space to plan from, so the
+      // order stands with no door in it and the pass names one on the first tick a hull is out.
+      // Accepted rather than refused, because the order is an intent and the fleet will exist.
+      break;
+    case VoyageStep::NoRoute:
+      return FleetOrderResult::NoRoute;
+    }
+  }
+
   Fleet& fleet = m_fleets[id];
-  if (_command.kind == FleetOrderKind::Stop || _command.kind == FleetOrderKind::Idle)
+  if (voyageArrived || _command.kind == FleetOrderKind::Stop || _command.kind == FleetOrderKind::Idle)
   {
     // A brake. Every member is left where it stands with nothing to do, and the row holds no order
-    // at all -- stopping is asking for Idle, not for a destination.
+    // at all -- stopping is asking for Idle, not for a destination. A voyage to the system the fleet
+    // is already in arrives here for the same reason: it has nowhere to go and nothing to hold.
     fleet.orderKind = FleetOrderKind::Idle;
     fleet.orderStation = ShipHandle{};
     fleet.orderTarget = ShipHandle{};
@@ -935,6 +978,19 @@ ShipId Universe::Resolve(ShipHandle _handle) const noexcept
 void Universe::ConfigureShard(ShardId _shard) noexcept
 {
   m_shard = _shard;
+}
+
+void Universe::ConfigureGalaxy(const GalaxyLayout& _galaxy)
+{
+  m_galaxySystems = _galaxy.systems;
+  m_galaxyLinks = _galaxy.links;
+}
+
+std::uint32_t Universe::SystemOf(const UniversePos& _at) const noexcept
+{
+  // The one case SystemAt cannot answer, kept here rather than pushed into it: nearest-star always
+  // has an answer, and an empty table is a universe that was never told where the stars are.
+  return m_galaxySystems.empty() ? INVALID_SYSTEM_INDEX : SystemAt(m_galaxySystems, _at);
 }
 
 EntityId Universe::EntityIdOf(ShipId _id) const noexcept
@@ -1212,14 +1268,19 @@ void Universe::StepJumps()
   // (ADR 0056).
   for (Fleet& fleet : m_fleets)
   {
-    if (fleet.orderKind != FleetOrderKind::Jump)
+    const bool voyaging = fleet.orderKind == FleetOrderKind::Voyage;
+    if (fleet.orderKind != FleetOrderKind::Jump && !voyaging)
       continue;
 
     const ShipId gate = Resolve(fleet.orderGate);
     const GateId row = (gate == INVALID_SHIP_ID) ? INVALID_GATE_ID : GateAt(gate);
     if (row == INVALID_GATE_ID)
     {
-      fleet.orderKind = FleetOrderKind::Idle; // the gate is gone, or is no longer one: stand down
+      // The gate is gone, or is no longer one. A Jump has nothing left to be and stands down; a
+      // voyage has a destination that outlives any one door, so it loses only the door and asks
+      // StepVoyages -- this same tick -- for another. That pass stands it down if there is none,
+      // which is where a voyage's stand-down actually lives (Design/GalaxyMap.md 6.5).
+      fleet.orderKind = voyaging ? FleetOrderKind::Voyage : FleetOrderKind::Idle;
       fleet.orderGate = ShipHandle{};
       continue;
     }
@@ -1239,8 +1300,22 @@ void Universe::StepJumps()
     // moment the far side exists again it crosses. Losing a fleet into a gate that leads nowhere is
     // the one failure this pass must not have (Design/Archive/Universe-slice-2.md 4.6).
     const ShipId farGate = leavesTheShard ? INVALID_SHIP_ID : ResolveEntity(destination);
-    if (!leavesTheShard && (farGate == INVALID_SHIP_ID || farGate == gate || GateAt(farGate) == INVALID_GATE_ID))
+    if (leavesTheShard ? voyaging : (farGate == INVALID_SHIP_ID || farGate == gate || GateAt(farGate) == INVALID_GATE_ID))
+    {
+      // A voyage does not wait at a door that leads nowhere, and that is the one place it parts
+      // company with a Jump. A Jump holds: the player asked for THAT gate, so standing at it until
+      // the far side comes back is the patient answer and losing the fleet into it is the failure
+      // the pass must not have. A voyage asked for a DESTINATION, so a door it cannot use is a road
+      // it has to be told about -- the gate is released and StepVoyages, this same tick, either
+      // finds another way or stands the fleet down where it is (Design/GalaxyMap.md 6.5).
+      //
+      // A road out of the shard counts as one it cannot use, for a reason that has nothing to do
+      // with the far gate resolving: a fleet ROW does not cross a shard boundary, so a voyage that
+      // stepped through would arrive with nothing to tell it where it had been going.
+      if (voyaging)
+        fleet.orderGate = ShipHandle{};
       continue;
+    }
 
     // Whole or not at all, and the test is over every LIVE member: a member that died on the way is
     // not a member any more, and the fleet pass prunes it at the end of this same tick. A fleet with
@@ -1307,7 +1382,12 @@ void Universe::StepJumps()
     // The order is spent by being obeyed, and the alert goes with it. Fleeing through a gate is
     // escape: a leash anchored a system away would never release, so the threat is dropped here
     // rather than left to time out on the far side (Design/Archive/Universe.md 6.2).
-    fleet.orderKind = FleetOrderKind::Idle;
+    //
+    // A voyage is spent one DOOR at a time: the kind survives the crossing because it is the fleet's
+    // destination that was ordered, not this gate, and the gate is what gets cleared. That is the
+    // whole of what makes a route survive its own hops -- the row lives, and every ship in it was
+    // just destroyed and recreated (ADR 0056, ADR 0069).
+    fleet.orderKind = voyaging ? FleetOrderKind::Voyage : FleetOrderKind::Idle;
     fleet.orderGate = ShipHandle{};
     fleet.threat = ShipHandle{};
     fleet.alertTicks = 0;
@@ -1362,6 +1442,110 @@ void Universe::StepJumps()
       m_fleets[fleetId].members[jumper.memberIndex] = HandleOf(born);
   }
   m_jumpScratch.clear();
+}
+
+ShipId Universe::GateBetween(std::uint32_t _from, std::uint32_t _to) const noexcept
+{
+  if (_from == INVALID_SYSTEM_INDEX || _to == INVALID_SYSTEM_INDEX || m_galaxySystems.empty())
+    return INVALID_SHIP_ID;
+
+  for (const Gate& row : m_gates)
+  {
+    // nearGate and farGate rather than near and far, which older Windows headers define as empty
+    // macros -- the one naming rule in this file that comes from outside it.
+    const ShipId nearGate = Resolve(row.structure);
+    if (nearGate == INVALID_SHIP_ID || SystemAt(m_galaxySystems, m_ships[nearGate].posUniverse) != _from)
+      continue;
+
+    // Where the road actually comes out, asked of the far structure rather than of the near one's
+    // bearing. A gate stands on the bearing toward the system it serves (GateSite), so the heading
+    // would nearly always answer the same -- and "nearly" is the word: two roads out of one system
+    // can leave on close bearings, and a fleet sent down the wrong one arrives a system away from
+    // its route with no way to know it.
+    const ShipId farGate = ResolveEntity(row.destination);
+    if (farGate == INVALID_SHIP_ID || farGate == nearGate || GateAt(farGate) == INVALID_GATE_ID)
+      continue;
+    if (SystemAt(m_galaxySystems, m_ships[farGate].posUniverse) == _to)
+      return nearGate;
+  }
+  return INVALID_SHIP_ID;
+}
+
+Universe::VoyageStep Universe::NextVoyageStep(const Fleet& _fleet, const UniversePos& _destination, ShipId& _outGate)
+{
+  _outGate = INVALID_SHIP_ID;
+  if (m_galaxySystems.empty())
+    return VoyageStep::NoRoute;
+
+  // Where the fleet is, off its first live member. Any member would do -- a fleet crosses whole and
+  // travels in formation, so no two of them are ever in different systems -- and the first is the
+  // one every other pass here reads for the same reason.
+  std::uint32_t here = INVALID_SYSTEM_INDEX;
+  for (std::uint32_t at = 0; at < _fleet.memberCount && here == INVALID_SYSTEM_INDEX; ++at)
+  {
+    const ShipId member = Resolve(_fleet.members[at]);
+    if (member != INVALID_SHIP_ID)
+      here = SystemAt(m_galaxySystems, m_ships[member].posUniverse);
+  }
+  if (here == INVALID_SYSTEM_INDEX)
+    return VoyageStep::Waiting;
+
+  const std::uint32_t destination = SystemAt(m_galaxySystems, _destination);
+  if (destination == here)
+    return VoyageStep::Arrived;
+
+  // The whole route, for the first hop of it. Planning the whole and taking one step is not waste
+  // worth removing: a breadth-first search that stopped at the first hop would have to walk the same
+  // graph to know that hop is on a shortest path at all, so the work is the search either way, and
+  // what the extra hops cost is one array a caller already owns.
+  m_voyageScratch.assign(MaxRouteHops(m_galaxySystems), 0u);
+  const std::uint32_t hops = RouteAcrossGates(m_galaxySystems, m_galaxyLinks, here, destination, m_voyageScratch);
+  if (hops == 0)
+    return VoyageStep::NoRoute;
+
+  const ShipId gate = GateBetween(here, m_voyageScratch[0]);
+  if (gate == INVALID_SHIP_ID)
+    return VoyageStep::NoRoute;
+  _outGate = gate;
+  return VoyageStep::Fly;
+}
+
+void Universe::StepVoyages()
+{
+  for (Fleet& fleet : m_fleets)
+  {
+    if (fleet.orderKind != FleetOrderKind::Voyage)
+      continue;
+
+    // Still flying at a door it already has. The jump pass clears the gate the moment the crossing
+    // is made or the door goes, so holding one means there is nothing for this pass to decide --
+    // which is what keeps it from re-lowering an approach every tick and reshuffling the formation
+    // underneath a fleet that is merely on its way (Design/Archive/Fleets.md 4.4's argument).
+    if (Resolve(fleet.orderGate) != INVALID_SHIP_ID)
+      continue;
+
+    ShipId gate = INVALID_SHIP_ID;
+    switch (NextVoyageStep(fleet, fleet.orderPoint, gate))
+    {
+    case VoyageStep::Fly:
+      fleet.orderGate = HandleOf(gate);
+      LowerFleetOrder(fleet);
+      break;
+
+    case VoyageStep::Waiting:
+      break; // nothing in space yet; the launch metronome will put a hull out and this runs again
+
+    case VoyageStep::Arrived:
+    case VoyageStep::NoRoute:
+      // Arriving and running out of road end the same way, and deliberately: the fleet is left
+      // whole, in a system, with nothing to do. A voyage that stopped somewhere that is not a system
+      // is the one failure this design would not accept, and it cannot happen here because both
+      // exits are taken with the fleet standing still (Design/GalaxyMap.md 6.5).
+      fleet.orderKind = FleetOrderKind::Idle;
+      fleet.orderGate = ShipHandle{};
+      break;
+    }
+  }
 }
 
 void Universe::DeliverHandoff(const Handoff& _handoff)
@@ -1915,7 +2099,8 @@ void Universe::StepFleets()
     // burns -- and a fleet that has ARRIVED, every member Idle at its slot, defends its ground
     // exactly as before.
     bool underWay = false;
-    if (fleet.orderKind == FleetOrderKind::Move || fleet.orderKind == FleetOrderKind::Dock || fleet.orderKind == FleetOrderKind::Jump)
+    if (fleet.orderKind == FleetOrderKind::Move || fleet.orderKind == FleetOrderKind::Dock || fleet.orderKind == FleetOrderKind::Jump ||
+        fleet.orderKind == FleetOrderKind::Voyage)
     {
       for (std::uint32_t at = 0; at < fleet.memberCount; ++at)
       {
@@ -2069,8 +2254,8 @@ ShipId Universe::ChooseMountTarget(ShipId _ship, const DeviceSpec& _device, cons
     // this -- a stated act still rouses the fleet and an ordered target is still shot -- and the
     // hold is on the journey, not on the order's memory: a member that has ARRIVED is Idle at its
     // slot and stands guard exactly as before.
-    const bool travelling =
-      row.orderKind == FleetOrderKind::Move || row.orderKind == FleetOrderKind::Dock || row.orderKind == FleetOrderKind::Jump;
+    const bool travelling = row.orderKind == FleetOrderKind::Move || row.orderKind == FleetOrderKind::Dock ||
+                            row.orderKind == FleetOrderKind::Jump || row.orderKind == FleetOrderKind::Voyage;
     if (travelling && m_ships[_ship].order != OrderState::Idle)
       return INVALID_SHIP_ID;
   }
@@ -2641,6 +2826,7 @@ void Universe::Step()
 {
   StepDockings();
   StepJumps();
+  StepVoyages();
   StepPatrols();
   StepProtectors();
   StepFleets();

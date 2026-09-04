@@ -3,6 +3,7 @@
 #include "UniverseLayout.h"
 #include "UniversePos.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -18,9 +19,14 @@ namespace Game
 // so it is content both binaries need, and content living in one executable is in the wrong one the
 // day there are two. It also buys the layout a test suite, which the executable layer does not have.
 //
-// Nothing in the simulation knows a galaxy exists. There is no record, no collision and no tick
-// cost at a cell nobody occupies; what the simulation eventually sees is the ordinary spawn input
-// this produces -- positions and seeds (Design/Archive/Universe.md 3).
+// The simulation knows a galaxy exists, and knows only this much of one. There is still no record,
+// no collision and no tick cost at a cell nobody occupies; what the simulation mostly sees is the
+// ordinary spawn input this produces -- positions and seeds (Design/Archive/Universe.md 3). What it
+// also holds, since the galaxy map's third slice, is the sites and the description themselves, so
+// that a fleet ordered across the map can be told which gate to take next
+// ([ADR 0069](Design/Decisions/0069-a-voyage-lives-on-the-fleet-and-is-planned-from-where-it-is.md)).
+// Universe::SetGalaxy is that seam, and it takes what this header produces rather than a second
+// copy of it.
 
 // Half the height of a hex row, as a fraction of the lattice pitch: sqrt(3)/2.
 //
@@ -33,6 +39,12 @@ inline constexpr float HEX_ROW_SPACING = 0.86602540378443864676f;
 // sqrt(2), for the same reason and spelled the same way: it is the diagonal of the jitter square,
 // and it is what MinimumStarSeparationMetres is proved with.
 inline constexpr float ROOT_TWO = 1.41421356237309504880f;
+
+// No system: what SystemAt would answer if it could, and what a holder of no galaxy at all answers.
+//
+// SystemAt itself never returns it -- nearest-star always has an answer, which is the property it
+// exists for -- so this names the one case above it: a caller that has no systems to ask about.
+inline constexpr std::uint32_t INVALID_SYSTEM_INDEX = 0xFFFFFFFFu;
 
 // No pin authored this system: the lattice drew it.
 inline constexpr std::uint32_t INVALID_PIN_INDEX = 0xFFFFFFFFu;
@@ -288,6 +300,47 @@ struct GalaxyLayout
 // set down on this bearing, which is what keeps arrivals clear of the structure and pointed into
 // the system rather than back at the door.
 [[nodiscard]] float GateHeadingRad(const SystemSite& _from, const SystemSite& _to) noexcept;
+
+// The most gates a shortest route between two systems of a galaxy can cross.
+//
+// A shortest path visits no system twice, so it can never be longer than the census -- which is the
+// bound a caller sizes a buffer by, and the one RouteAcrossGates fails closed against. It is stated
+// as a function of the layout rather than as a constant because the galaxy's size is a description
+// and not a compiled-in number: a caller holding a layout knows exactly how much room a route needs.
+[[nodiscard]] inline std::size_t MaxRouteHops(std::span<const SystemSite> _systems) noexcept
+{
+  return _systems.empty() ? 0u : _systems.size() - 1u;
+}
+
+// The shortest gate route from one system to another: the systems to cross to, in order.
+//
+// Breadth-first over the links, which is what "shortest" means on an unweighted graph -- a route is
+// counted in GATES and not in metres, because a gate is what a fleet spends time and risk on and the
+// distance between two stars is not something a crossing charges for.
+//
+// Deterministic, and that is the property that matters rather than a preference: neighbours are
+// discovered by walking _links in its own order, which LinkGates already fixes as ascending pairs,
+// so two runs -- and two machines -- name the same route out of the several a graph usually has.
+// It is Game::SystemAt's tie rule one level up, and it is here for the same reason: an arbitrary
+// answer is one that can differ between two runs of the same order.
+//
+// Returns how many hops were written into _outHops, EXCLUDING the system started from and including
+// the one arrived at. Zero means there is no route to fly, and it deliberately covers four cases at
+// once, because a caller does the same thing in all of them -- refuse the order:
+//
+//   * _from and _to are the same system, so there is nothing to cross;
+//   * either index is not a system of this layout;
+//   * the two are in different components, which LinkGates cannot produce -- the relative
+//     neighborhood graph contains a spanning tree (ADR 0055) -- but a hand-built set of links can;
+//   * the route does not fit _outHops, which is fail-closed rather than truncated: half a route
+//     delivered as a whole one would fly a fleet to the wrong system and report success.
+//
+// It allocates, twice, and that is admitted rather than optimised away: this runs when an ORDER is
+// given, over a galaxy of 54 systems and 68 links, and never inside a tick. The day it is called
+// per tick it belongs behind the same "once, at boot" discipline LayOutGalaxy keeps
+// (Design/GalaxyMap.md 8).
+[[nodiscard]] std::uint32_t RouteAcrossGates(std::span<const SystemSite> _systems, std::span<const GateLink> _links, std::uint32_t _from,
+                                             std::uint32_t _to, std::span<std::uint32_t> _outHops);
 
 // The gate links over a set of systems: the relative neighborhood graph.
 //

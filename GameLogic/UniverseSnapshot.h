@@ -581,8 +581,15 @@ struct SaveHeader
 // commit, so that the reader below is proven against a file and not against itself.
 //
 // 2: the fleet table. 3: its manifest. 4: its order. 5: its threat. 6: the guns. 7: the plan stamp.
-// 8: the owner, on a fleet and on a ledger row. 9: the cross-shard handoff queues.
-inline constexpr std::uint8_t UNIVERSE_STATE_FORMAT = 9; // 9: the handoff queues
+// 8: the owner, on a fleet and on a ledger row. 9: the cross-shard handoff queues. 10: a fleet's
+// order may be Voyage.
+//
+// Ten is the first bump that adds no FIELD, and it is here rather than skipped because the number
+// says what a reader may assume and not only how long the bytes are: a fleet's order byte can now
+// carry a seventh value, and a build that predates it refuses the whole fleet section rather than
+// the file. That is a format having changed, whatever the layout did -- and a stamp that named two
+// shapes would make every gate below it a guess (ADR 0061, Design/GalaxyMap-slice-3.md 7).
+inline constexpr std::uint8_t UNIVERSE_STATE_FORMAT = 10; // 10: a fleet's order may be Voyage
 
 // The oldest format ReadUniverseState still accepts. A file in a format between this and the
 // current one is read with every later field gated on the byte the file carries and defaulted where

@@ -103,3 +103,4 @@ What the decision costs and what it makes easier, including what now has to be d
 | [0066](0066-an-acknowledgement-means-durable-not-delivered.md) | An acknowledgement means "durable", not "delivered" | accepted |
 | [0067](0067-the-tree-has-a-second-composition-root.md) | The tree has a second composition root, and it is not shared with the first | accepted |
 | [0068](0068-the-cameras-zoom-decides-the-interest-radius.md) | The camera's zoom decides the interest radius, under a ceiling the server owns | accepted |
+| [0069](0069-a-voyage-lives-on-the-fleet-and-is-planned-from-where-it-is.md) | A voyage lives on the fleet, and is planned from where the fleet is | accepted |
