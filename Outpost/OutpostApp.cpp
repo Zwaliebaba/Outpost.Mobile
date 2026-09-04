@@ -231,6 +231,13 @@ void OutpostApp::Init(HINSTANCE _instance)
   }
   m_layout = Game::LayOutGalaxySystem(m_galaxy.systems[m_localSystem], Game::STARTING_GALAXY, Game::GALAXY_PINS);
 
+  // The same layout, handed to the simulation, which is the only thing in it that knows a galaxy
+  // exists -- and knows it so that a fleet ordered across the map can be told which gate is next
+  // (ADR 0069). It is the layout the file's own seed produced and never a second one: the client
+  // draws the map from these systems and the simulation plans routes over them, so the picture and
+  // the road cannot disagree (ADR 0055, ADR 0057).
+  m_universe.ConfigureGalaxy(m_galaxy);
+
   // Every ship, station and gate is already in the file. What is NOT in the file is the marks: they
   // are drawn from the layout rather than from the universe, because they are a picture of where the
   // government is and not a record of anything. So they are built here, from the same layout the
@@ -819,6 +826,25 @@ std::uint32_t OutpostApp::OwnShipCount() const noexcept
   return count;
 }
 
+void OutpostApp::TapSystem(std::uint32_t _system)
+{
+  if (_system >= m_galaxy.systems.size())
+    return;
+
+  if (m_view.SelectedFleetCount() == 0)
+  {
+    FlyToSystem(_system);
+    return;
+  }
+
+  // The order goes over the wire and the map closes on the same two lines a flight closes it with,
+  // so there is one way this screen shuts whatever the tap meant. The camera stays where it is: the
+  // player ordered a fleet, not a look, and the fleet bar and the minimap are what follow it now.
+  m_view.IssueVoyageOrder(m_galaxy.systems[_system].starPos);
+  m_map.Close();
+  m_hud.ClearActiveRail();
+}
+
 void OutpostApp::FlyToSystem(std::uint32_t _system)
 {
   if (_system >= m_galaxy.systems.size())
@@ -979,7 +1005,7 @@ void OutpostApp::Update()
     std::uint32_t tapped = static_cast<std::uint32_t>(m_galaxy.systems.size());
     const bool usedByMap = m_map.HandlePointer(event, m_galaxy, tapped, m_window.DpiScale(), m_gpu.WidthPx(), m_gpu.HeightPx());
     if (tapped < m_galaxy.systems.size())
-      FlyToSystem(tapped);
+      TapSystem(tapped);
     if (usedByMap)
       continue;
     m_pointers.Apply(event, m_camera, m_view);

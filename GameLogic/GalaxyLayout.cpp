@@ -300,6 +300,74 @@ std::uint32_t OccupiedShardCount(std::span<const SystemSite> _systems, const Gal
   return occupied;
 }
 
+std::uint32_t RouteAcrossGates(std::span<const SystemSite> _systems, std::span<const GateLink> _links, std::uint32_t _from,
+                               std::uint32_t _to, std::span<std::uint32_t> _outHops)
+{
+  const std::uint32_t census = static_cast<std::uint32_t>(_systems.size());
+  if (_from >= census || _to >= census || _from == _to)
+    return 0;
+
+  // One entry per system: the system it was first reached from, or NOT_REACHED. It is both the
+  // visited set and the path, which is what makes the walk back below possible without a second
+  // table -- and the reason the search is breadth-first rather than depth-first: the FIRST time a
+  // system is reached on a breadth-first walk is along a shortest path to it, so the parent that
+  // wins is never revised.
+  constexpr std::uint32_t NOT_REACHED = 0xFFFFFFFFu;
+  std::vector<std::uint32_t> cameFrom(census, NOT_REACHED);
+  cameFrom[_from] = _from;
+
+  // A plain array walked with a read cursor rather than a queue container: the frontier can never
+  // hold more than the census, because a system is pushed on the tick it is first reached and never
+  // again, so one reservation is the whole of the memory management.
+  std::vector<std::uint32_t> frontier;
+  frontier.reserve(census);
+  frontier.push_back(_from);
+
+  bool found = false;
+  for (std::size_t at = 0; at < frontier.size() && !found; ++at)
+  {
+    const std::uint32_t here = frontier[at];
+
+    // Over the whole link list per system, which is 68 comparisons on the shipped galaxy and is the
+    // deliberate shape: an adjacency table built first would be faster and would ALSO be a second
+    // statement of what a link is, one that a caller could hand in stale. The list is the graph.
+    for (const GateLink& link : _links)
+    {
+      std::uint32_t there = census;
+      if (link.systemA == here)
+        there = link.systemB;
+      else if (link.systemB == here)
+        there = link.systemA;
+      if (there >= census || cameFrom[there] != NOT_REACHED)
+        continue;
+
+      cameFrom[there] = here;
+      if (there == _to)
+      {
+        found = true;
+        break;
+      }
+      frontier.push_back(there);
+    }
+  }
+  if (!found)
+    return 0;
+
+  // Back along the parents, then reversed. Counted first so that a route too long for the caller's
+  // span is refused whole rather than written half -- half a route is a fleet flown to the wrong
+  // system and told it arrived.
+  std::uint32_t hops = 0;
+  for (std::uint32_t walk = _to; walk != _from; walk = cameFrom[walk])
+    ++hops;
+  if (hops > _outHops.size())
+    return 0;
+
+  std::uint32_t write = hops;
+  for (std::uint32_t walk = _to; walk != _from; walk = cameFrom[walk])
+    _outHops[--write] = walk;
+  return hops;
+}
+
 ShardId ShardOfSystem(const SystemSite& _site, const GalaxyDesc& _desc) noexcept
 {
   if (_desc.shardCount <= 1u)

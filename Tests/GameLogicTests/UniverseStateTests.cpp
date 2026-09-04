@@ -117,6 +117,11 @@ struct Fixture
 constexpr Fixture FIXTURES[] = {
   {L"UniverseFormat7.sav", 1, 7, 54, 136, 165, 307, 1, 124438},
   {L"UniverseFormat8.sav", 2, 8, 54, 136, 165, 307, 1, 126906},
+  // The station rule changed between 8 and 9 -- one per system rather than one per planet -- so the
+  // census drops by 110 stations and 110 ships here and nothing about the FORMAT did. Recorded
+  // because a reader that skipped the change would still parse this file into a plausible universe,
+  // and the count is the only thing that would say so.
+  {L"UniverseFormat9.sav", 2, 9, 54, 136, 55, 197, 1, 80502},
 };
 
 // The fixtures sit under Assets\ beside the suite, the shape the app and the client suite both use.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Formation.h"
+#include "GalaxyLayout.h"
 #include "HullSpec.h"
 #include "Movement.h"
 #include "PathIslands.h"
@@ -408,6 +409,35 @@ public:
   // under, so calling this after a spawn changes nothing that exists.
   void ConfigureShard(ShardId _shard) noexcept;
 
+  // --- the galaxy ----------------------------------------------------------------------------------
+
+  // The systems this universe stands in, and the description they were drawn to. Configured by the
+  // composition root out of the layout it laid from the save header's seed, exactly as the shard id
+  // is: a plain value from the root, never a file and never a second layout of its own (AGENTS.md 5).
+  //
+  // This is the one thing the simulation knows about a galaxy, and it is here because a VOYAGE
+  // cannot be planned without it: a fleet told to cross the map has to be told which gate is next,
+  // and "next" is a question about the graph rather than about anything in this universe
+  // ([ADR 0069](Design/Decisions/0069-a-voyage-lives-on-the-fleet-and-is-planned-from-where-it-is.md)).
+  // Nothing else reads it. There is still no galaxy in the tick: no record, no collision, no cost at
+  // a system nobody is in.
+  //
+  // Not in the save format, and that is the point of taking it from the root: it is derived from the
+  // seed the header already carries, so a universe that saved a copy would be a universe that could
+  // disagree with its own file about where the stars are (ADR 0057). A universe never given one
+  // refuses every voyage with NoRoute and is otherwise unchanged, which is the fail-closed direction:
+  // a fleet that will not leave beats a fleet sent at a gate chosen out of an empty table.
+  //
+  // The whole layout and not a description of one: what is read is where the stars are and which of
+  // them are linked, which is exactly what LayOutGalaxy produces and is not recoverable from the
+  // GalaxyDesc alone.
+  void ConfigureGalaxy(const GalaxyLayout& _galaxy);
+
+  // Which system a point is in, by this universe's own copy of the layout, or INVALID_SYSTEM_INDEX
+  // if it has none. Game::SystemAt with the systems filled in -- for the tests, and for a root that
+  // wants the same answer the voyage pass got rather than a second opinion (ADR 0037).
+  [[nodiscard]] std::uint32_t SystemOf(const UniversePos& _at) const noexcept;
+
   // Brings the derived state -- the static index and the path islands -- up to date now, rather than
   // on the next Step that needs it.
   //
@@ -688,6 +718,23 @@ public:
   // and the snapshot's to withhold until a design gives a client a map. Exposed for tests and for a
   // debug overlay.
   [[nodiscard]] const Gate& GateOf(GateId _id) const noexcept;
+
+  // The gate standing in _from that leads to _to, or INVALID_SHIP_ID if this universe holds no such
+  // door.
+  //
+  // Both ends are asked of the layout rather than of the link list: a gate is in _from if its
+  // structure's nearest star is _from's, and it leads to _to if the gate its row names resolves to
+  // one whose nearest star is _to's. That is exact and needs no tolerance, where matching a computed
+  // GateSite against a spawned position would need one -- and it is the same question SystemAt
+  // already answers for a camera and for a fleet.
+  //
+  // A gate whose destination is on another SHARD resolves to nothing here and is therefore not
+  // found, which is deliberate: a fleet row does not cross a shard boundary this phase, so a voyage
+  // that stepped through such a door would arrive with no order and no way to be told it had one.
+  // Refusing the hop stands the fleet down in a system it is whole in, which is the failure this
+  // design asked for (Design/GalaxyMap.md 6.5).
+  [[nodiscard]] ShipId GateBetween(std::uint32_t _from, std::uint32_t _to) const noexcept;
+
   [[nodiscard]] std::uint32_t GateCount() const noexcept
   {
     return static_cast<std::uint32_t>(m_gates.size());
@@ -846,6 +893,7 @@ public:
     NoSuchTarget,
     RefusedFriendly,
     NotAGate,
+    NoRoute,
     Unsupported
   };
 
@@ -883,6 +931,12 @@ public:
   //                    beside it -- a gate takes anyone this phase, and inventing half a
   //                    gate-standings design here would repeat the mistake the stations design
   //                    declined (Design/Archive/Universe.md 6.1);
+  //   NoRoute          Voyage: no sequence of gates reaches the point named, from where this fleet
+  //                    stands. One refusal for every way that can be true -- no galaxy was
+  //                    configured, the two systems are in different components, the route is longer
+  //                    than a shortest path can be -- because a caller does the same thing in all of
+  //                    them, and because the fleet has to be TOLD rather than left holding an order
+  //                    it cannot begin (Design/GalaxyMap.md 6.5);
   //   Unsupported      Mine, which waits for a design that gives it meaning and something to mine.
   //
   // An accepted order replaces whatever standing order was there. Stop is the one kind that leaves
@@ -1039,6 +1093,31 @@ private:
   // fleet is never half in one system and half in another -- which is a sentence the fleet row
   // cannot say, and the reason the trickle was turned down (ADR 0056, Design/Archive/Universe.md 6.2).
   void StepJumps();
+
+  // The voyage pass, immediately after the jump pass and for a reason that is the whole of its
+  // ordering: a fleet that crossed a gate this tick is standing in its new system by the time
+  // StepJumps returns, so the hop it takes next can be planned on the same tick it arrived rather
+  // than one later. A tick of hesitation per gate would be visible over fourteen of them.
+  //
+  // It plans from where the fleet IS, every time, rather than following a course laid down when the
+  // order was given. The graph is a pure function of the layout and cannot move under a fleet, so
+  // the two agree -- and where they could not agree, planning from the fleet's own position is the
+  // one that is right: a fleet reloaded out of a save, shoved through the wrong door, or ordered
+  // again mid-voyage is somewhere the old plan did not put it
+  // ([ADR 0069](Design/Decisions/0069-a-voyage-lives-on-the-fleet-and-is-planned-from-where-it-is.md)).
+  void StepVoyages();
+
+  // What a fleet under a Voyage order should do next, asked of the graph rather than of a stored
+  // plan. Four answers, and the order gate and the pass act on all four differently, which is why
+  // this is one function with a named result rather than a bool and a pair of out-parameters.
+  enum class VoyageStep : std::uint8_t
+  {
+    Fly,     // _outGate is the door to fly at now
+    Arrived, // the fleet already stands in the system its order points at
+    Waiting, // nothing of it is in space, so there is nowhere to plan FROM yet
+    NoRoute  // no galaxy, or no sequence of gates from here to there
+  };
+  [[nodiscard]] VoyageStep NextVoyageStep(const Fleet& _fleet, const UniversePos& _destination, ShipId& _outGate);
 
   // Forms or joins the fleets the last drain's arrivals belong to, from the owner and slot each
   // handoff carried. After every member exists, never during the spawn walk.
@@ -1212,6 +1291,17 @@ private:
   // reference. Starts at 1 so that no shard ever mints INVALID_ENTITY_ID.
   std::uint64_t m_nextEntitySerial = 1;
   ShardId m_shard = 0;
+
+  // The galaxy, as content the root handed over (ConfigureGalaxy). A copy rather than a span,
+  // because a universe outlives whatever local the root laid the galaxy into and a dangling span
+  // would be a use-after-free that only a voyage could reach.
+  std::vector<SystemSite> m_galaxySystems;
+  std::vector<GateLink> m_galaxyLinks;
+
+  // The route the last voyage planned, kept so that planning one does not allocate on every hop.
+  // Its contents mean nothing between calls: it is a buffer, not state, and nothing in the save
+  // format or the replay contract can see it.
+  std::vector<std::uint32_t> m_voyageScratch;
 
   SpatialIndex m_index;
   PathIslands m_pathIslands;

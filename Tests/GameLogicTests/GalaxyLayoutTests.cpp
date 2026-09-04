@@ -2,8 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <numeric>
 #include <set>
+#include <span>
+#include <vector>
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 
@@ -573,6 +576,119 @@ public:
   TEST_METHOD(AnEmptyGalaxyAnswersZero)
   {
     Assert::AreEqual(0u, Game::SystemAt({}, Game::LocalPos(0.0f, 0.0f)), L"an empty galaxy did not answer zero");
+  }
+
+  // Every system reaches every other, and every route is a walk along real links.
+  //
+  // The first half is ADR 0055's theorem, tested rather than trusted: the relative neighborhood
+  // graph contains a spanning tree, so a galaxy is connected for every seed by construction -- and
+  // "for every seed" is a claim only a search can check. The second half is what a fleet actually
+  // flies: a route whose consecutive pair is not a link is a fleet ordered at a door that is not
+  // there.
+  TEST_METHOD(EverySystemIsReachableFromEveryOther)
+  {
+    const Game::GalaxyDesc desc;
+    const Game::GalaxyLayout galaxy = Game::LayOutGalaxy(GALAXY_SEED, Game::UniversePos{}, desc, {});
+    const std::uint32_t census = static_cast<std::uint32_t>(galaxy.systems.size());
+    std::vector<std::uint32_t> hops(Game::MaxRouteHops(galaxy.systems));
+
+    std::uint32_t longest = 0;
+    for (std::uint32_t from = 0; from < census; ++from)
+    {
+      for (std::uint32_t to = 0; to < census; ++to)
+      {
+        if (from == to)
+        {
+          Assert::AreEqual(0u, Game::RouteAcrossGates(galaxy.systems, galaxy.links, from, to, hops),
+                           L"a route to the system it started in is not empty");
+          continue;
+        }
+
+        const std::uint32_t count = Game::RouteAcrossGates(galaxy.systems, galaxy.links, from, to, hops);
+        Assert::AreNotEqual(0u, count, L"two systems of one galaxy are not connected by gates");
+        Assert::AreEqual(to, hops[count - 1], L"a route does not end at the system it was asked for");
+
+        std::uint32_t previous = from;
+        for (std::uint32_t at = 0; at < count; ++at)
+        {
+          const std::uint32_t low = std::min(previous, hops[at]);
+          const std::uint32_t high = std::max(previous, hops[at]);
+          const bool linked = std::any_of(galaxy.links.begin(), galaxy.links.end(), [low, high](const Game::GateLink& _link)
+                                          { return _link.systemA == low && _link.systemB == high; });
+          Assert::IsTrue(linked, L"a route stepped between two systems with no gate between them");
+          previous = hops[at];
+        }
+        longest = std::max(longest, count);
+      }
+    }
+
+    // The shipped galaxy's diameter, recorded because it is the number that decides whether a
+    // voyage is a journey or a formality -- and because a density or ring change that halved it
+    // would be a change to how the map plays, made silently.
+    Logger::WriteMessage(
+      std::format(L"shipped galaxy: {} systems, {} links, diameter {} gates\n", census, galaxy.links.size(), longest).c_str());
+    Assert::AreEqual(14u, longest, L"the shipped galaxy's diameter has moved");
+  }
+
+  // Shortest, and the same length whichever end it is asked from. A breadth-first walk gives the
+  // first, and the second is what says the graph is being read as undirected -- a link walked in
+  // one direction only would make half the galaxy one-way and nothing else here would notice.
+  TEST_METHOD(ARouteIsShortestAndTheSameLengthBothWays)
+  {
+    const Game::GalaxyLayout galaxy = Game::LayOutGalaxy(GALAXY_SEED, Game::UniversePos{}, Game::GalaxyDesc{}, {});
+    std::vector<std::uint32_t> there(Game::MaxRouteHops(galaxy.systems));
+    std::vector<std::uint32_t> back(Game::MaxRouteHops(galaxy.systems));
+
+    for (const Game::GateLink& link : galaxy.links)
+    {
+      Assert::AreEqual(1u, Game::RouteAcrossGates(galaxy.systems, galaxy.links, link.systemA, link.systemB, there),
+                       L"two systems with a gate between them are more than one hop apart");
+    }
+
+    const std::uint32_t census = static_cast<std::uint32_t>(galaxy.systems.size());
+    for (std::uint32_t from = 0; from < census; ++from)
+    {
+      for (std::uint32_t to = from + 1; to < census; ++to)
+      {
+        Assert::AreEqual(Game::RouteAcrossGates(galaxy.systems, galaxy.links, from, to, there),
+                         Game::RouteAcrossGates(galaxy.systems, galaxy.links, to, from, back),
+                         L"a route is a different length depending on which end it is asked from");
+      }
+    }
+  }
+
+  // Every way a route can fail to exist, answered with zero and nothing written. Zero covers all of
+  // them because a caller does the same thing in all of them -- refuse the order -- and the one
+  // that matters most is the last: a route too long for the caller's buffer is refused whole rather
+  // than truncated, because half a route is a fleet flown somewhere it was not sent.
+  TEST_METHOD(ARouteThatCannotBeGivenIsRefusedWhole)
+  {
+    Game::GalaxyLayout galaxy;
+    for (std::uint32_t at = 0; at < 4; ++at)
+    {
+      Game::SystemSite site;
+      site.starPos = Game::LocalPos(60000.0f * static_cast<float>(at), 0.0f);
+      galaxy.systems.push_back(site);
+    }
+    galaxy.links.push_back(Game::GateLink{0, 1});
+    galaxy.links.push_back(Game::GateLink{1, 2});
+    // 3 is linked to nothing: a component of one, which LinkGates cannot produce and a hand-built
+    // layout can.
+
+    std::vector<std::uint32_t> hops(Game::MaxRouteHops(galaxy.systems));
+    Assert::AreEqual(2u, Game::RouteAcrossGates(galaxy.systems, galaxy.links, 0, 2, hops), L"a two-hop chain was not walked");
+    Assert::AreEqual(0u, Game::RouteAcrossGates(galaxy.systems, galaxy.links, 0, 3, hops), L"a route into another component was given");
+    Assert::AreEqual(0u, Game::RouteAcrossGates(galaxy.systems, galaxy.links, 0, 9, hops),
+                     L"a route to a system that is not one was given");
+    Assert::AreEqual(0u, Game::RouteAcrossGates(galaxy.systems, galaxy.links, 9, 0, hops),
+                     L"a route from a system that is not one was given");
+    Assert::AreEqual(0u, Game::RouteAcrossGates({}, galaxy.links, 0, 1, hops), L"a route across an empty galaxy was given");
+
+    // One short of what the walk needs. Nothing is written and nothing is half-answered.
+    hops.assign(hops.size(), 0xEEEEEEEEu);
+    Assert::AreEqual(0u, Game::RouteAcrossGates(galaxy.systems, galaxy.links, 0, 2, std::span<std::uint32_t>(hops.data(), 1)),
+                     L"a route longer than the buffer was not refused");
+    Assert::AreEqual(0xEEEEEEEEu, hops[0], L"a refused route wrote a hop anyway");
   }
 };
 } // namespace GameLogicTests
