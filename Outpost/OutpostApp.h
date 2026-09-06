@@ -96,6 +96,10 @@ private:
   // where the view, the camera and the map are all in scope (Design/GalaxyMap-slice-2.md 7).
   void TapSystem(std::uint32_t _system);
 
+  // Whether this client may look at a system: it holds a fleet there, or the camera is there already
+  // (ADR 0071).
+  [[nodiscard]] bool HasPresenceInSystem(std::uint32_t _system) const noexcept;
+
   // Re-lays the local system and rebuilds everything drawn from it: the worlds, the rocks and the
   // minimap's station marks.
   //

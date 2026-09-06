@@ -58,7 +58,8 @@ now do (§4.3).
   everything the rail did not.
 - **The graph, drawn**: every system as a node at its real position, every link as an edge, the
   system the camera is in marked, and each fleet on the system it is in.
-- **A tap that flies the camera** to the tapped system.
+- **A tap that flies the camera** to the tapped system, where this client has a fleet in it
+  ([ADR 0071](Decisions/0071-looking-at-a-system-costs-presence.md)).
 - **A tap that sends a fleet** across as many gates as it takes — which is the one piece that is not
   drawing, and is most of the work.
 
@@ -102,14 +103,28 @@ orders of magnitude past the distance `UniverseView::FollowFocusedFleet` already
 worth watching". The focus is released with it, or a followed fleet would drag the camera back on the
 next frame.
 
-Nothing about the simulation changes. The player is looking somewhere else, which is not an order.
+This paragraph used to end "Nothing about the simulation changes. The player is looking somewhere
+else, which is not an order." **That was wrong, and slice 3's rule below is what replaced it**
+([ADR 0071](Decisions/0071-looking-at-a-system-costs-presence.md)): the composition root pushes
+`SetViewCentre` from the camera target every frame, so putting the camera in a system is asking the
+server to describe it. Looking somewhere is not an order; it is a request, and it was free.
 
 ### 4.3 Go (slice 3)
 
 With a fleet selected, tapping a system orders it there — across as many gates as the route takes.
-With nothing selected the tap still flies the camera, and the two are exclusive: a camera that flew
-ahead of a fleet crossing fourteen gates would leave the player watching an empty system while the
-thing they ordered is behind them. §4.2 is "go and look" and this is "go".
+With nothing selected the tap flies the camera **only to a system this client has eyes in** — one
+holding one of its own fleets, or the one the camera stands in already — and refuses anything else
+with a log line ([ADR 0071](Decisions/0071-looking-at-a-system-costs-presence.md)). The two verbs
+are exclusive: a camera that flew ahead of a fleet crossing fourteen gates would leave the player
+watching an empty system while the thing they ordered is behind them. §4.2 is "go and look" and this
+is "go".
+
+The refusal is the game-design half of the screen and it arrived after slice 3 shipped. A player who
+can look into any of fifty-four systems for nothing can never be ambushed at a gate, and the hull
+that would otherwise have gone to find out is worth nothing. It is an affordance and not yet a gate:
+the camera's target is unbounded and panning reaches the same place more slowly, so the seam owes the
+other half of it — see the record's consequences, and `ShardServer.md` slice 5, which this record
+constrains.
 
 This is the only part that is not a view. What landed, in `GameLogic`:
 

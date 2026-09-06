@@ -102,7 +102,12 @@ buttons are the five fleet slots, a fleet sheet a hold opens over the bar and a 
 a station's hold opens, and a modal galaxy map the function rail's `UNIVRS` button opens -- all 54
 systems at their real `starPos` under an isotropic fit, every gate as a line, the system the camera
 is in marked and each of the player's fleets drawn as its slot digit; tapping a system with nothing
-selected flies the camera there, and tapping one with a fleet held ORDERS it there, across as many
+selected flies the camera there IF this client holds a fleet in it or is looking at it already, and
+refuses with a log line otherwise -- a camera put down in a system drags the interest circle with it,
+so a player who could look anywhere for nothing could never be ambushed at a gate
+([ADR 0071](Design/Decisions/0071-looking-at-a-system-costs-presence.md)); an affordance so far and
+not yet a gate, since the camera's target is unbounded and panning reaches the same place more
+slowly. Tapping a system with a fleet held ORDERS it there, across as many
 gates as the route takes -- one standing `Voyage` on the fleet row, planned from where the fleet is at
 every arrival, because a ship is despawned and respawned by each gate it crosses and cannot carry a
 route through one ([ADR 0069](Design/Decisions/0069-a-voyage-lives-on-the-fleet-and-is-planned-from-where-it-is.md)).
