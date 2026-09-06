@@ -1918,7 +1918,7 @@ std::wstring UniverseSaveSidecarName(std::uint8_t _stateFormat)
 // kind, orderId, station handle, handleCount -- 17 bytes, against the move order's 38.
 bool WriteFleetOrder(const FleetOrder& _order, Neuron::Transport& _transport)
 {
-  if (_order.slot >= FLEET_SLOTS || _order.kind > FleetOrderKind::Jump)
+  if (_order.slot >= FLEET_SLOTS || _order.kind > LAST_FLEET_ORDER_KIND)
     return false;
 
   std::vector<std::uint8_t> bytes;
@@ -1951,7 +1951,7 @@ bool ReadFleetOrder(std::span<const std::uint8_t> _datagram, FleetOrder& _outOrd
   const EntityId station = in.Entity();
   const EntityId target = in.Entity();
   const EntityId gate = in.Entity();
-  if (!in.Ok() || slot >= FLEET_SLOTS || kind > static_cast<std::uint8_t>(FleetOrderKind::Jump))
+  if (!in.Ok() || slot >= FLEET_SLOTS || kind > static_cast<std::uint8_t>(LAST_FLEET_ORDER_KIND))
     return false;
 
   _outOrder.slot = slot;

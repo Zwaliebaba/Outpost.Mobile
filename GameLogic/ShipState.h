@@ -262,6 +262,14 @@ enum class FleetOrderKind : std::uint8_t
   Voyage
 };
 
+// The highest value the enum above defines, and the bound every gate over the byte is written
+// against. Named rather than spelled, because spelling it is a defect that has now landed twice: the
+// wire's writer and reader both read "one past Mine" until Jump was appended after Mine, and both
+// read "one past Jump" until Voyage was appended after Jump -- which refused every voyage the galaxy
+// map issued, at the writer, before a byte was sent. A kind appended below is covered by moving this
+// one line, and there is no second place to remember (Design/Archive/Universe-slice-2.md 7).
+inline constexpr FleetOrderKind LAST_FLEET_ORDER_KIND = FleetOrderKind::Voyage;
+
 // One ship, as the simulation sees it. Everything here is advanced only in Universe::Step, and there
 // is nothing in it a renderer needs that a snapshot could not carry over a wire.
 //

@@ -316,6 +316,40 @@ public:
     Assert::IsTrue(Game::INVALID_SHIP_ID == universe.Resolve(fleet.orderGate), L"a stood-down fleet is still holding a door");
   }
 
+  // Every row above hands the command to Universe directly, which is what let the one seam a player's
+  // tap actually crosses go untested: the galaxy map writes a FleetOrder onto the reliable lane, and
+  // WriteFleetOrder refused every kind past Jump -- so a voyage was dropped at the writer, before a
+  // byte was sent, and the client logged ORDER DROPPED instead of VOYAGE. The order this row sends
+  // is the one Outpost::UniverseView::IssueVoyageOrder builds, and it goes the whole way.
+  TEST_METHOD(AVoyageOrderSurvivesTheWireAndReachesTheUniverse)
+  {
+    Game::Universe universe;
+    const Chain chain = BuildChain(universe, 4);
+
+    Neuron::LoopbackTransport server;
+    Neuron::LoopbackTransport client;
+    Neuron::LoopbackTransport::Connect(server, client, Neuron::LoopbackTransport::Desc{});
+
+    Game::Publisher publisher;
+    Game::Publisher::Desc desc;
+    desc.transport = &server;
+    desc.issuer = Game::Issuer{Game::OWNER_LOCAL, Game::FACTION_PLAYER};
+    (void)publisher.Add(desc);
+
+    Game::FleetOrder order;
+    order.slot = 0;
+    order.kind = Game::FleetOrderKind::Voyage;
+    order.point = chain.galaxy.systems[3].starPos;
+    Assert::IsTrue(Game::WriteFleetOrder(order, client), L"a voyage was refused by the writer");
+
+    publisher.ApplyOrders(universe); // polls the wire itself, which is where the message is read
+
+    Assert::IsTrue(Game::FleetOrderKind::Voyage == FleetOrder(universe), L"a voyage did not reach the universe through the seam");
+
+    Assert::IsTrue(StepUntilIdle(universe, VOYAGE_TICK_BUDGET) < VOYAGE_TICK_BUDGET, L"an ordered voyage never ended");
+    Assert::AreEqual(static_cast<std::uint32_t>(3), FleetSystem(universe), L"the voyage did not arrive in the system it named");
+  }
+
   // An explicit order outranks a voyage, exactly as it outranks every other standing order: the
   // fleet stops crossing gates and does what it was told instead. There is nothing left over,
   // because there was never anything but the row.
