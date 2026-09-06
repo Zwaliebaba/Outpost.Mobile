@@ -714,16 +714,44 @@ inline constexpr float HUD_MINIMAP_DOT_PX = 4.0f;
 // A structure reads bigger than a fighter without pretending to scale: to scale, a 500 m station is
 // 25 px, a quarter of the map for one base. Iconography beats cartography at 0.05 px per metre.
 inline constexpr float HUD_MINIMAP_STRUCTURE_DOT_PX = 8.0f;
-// Metres from the camera target to the map's edge. It was 1 400 -- wider than the 900 m zoom limit
-// of the day saw, and enough to hold the Vandal base -- until the Vanguard stations existed: the
-// nearest stands at the pinned world's 3 500 m, and a mark that is clamped to the edge from the
-// first frame says which way to fly but never how far. At 4 000 the nearest station is inside the map from boot, by the
-// owner's ask, and the two farther ones (2 500-6 500 m from the star) are inside or clamped by
-// where the layout put them. What it costs is resolution: 140 px over 8 km is 57 m per pixel, so the
-// three starting hulls draw as one cluster and the patrol ring is a 7 px circle. The map is
-// iconography, not cartography (HUD_MINIMAP_STRUCTURE_DOT_PX says the same), and a station's
-// distance is the thing the map now answers that it could not before.
+// The FLOOR on the metres from the camera target to the map's east and west edges, and no longer the
+// whole answer: the reach follows the zoom now (MinimapHalfRangeMetres, ADR 0070).
+//
+// It was 1 400 -- wider than the 900 m zoom limit of the day saw, and enough to hold the Vandal base
+// -- until the Vanguard stations existed: the nearest stands at the pinned world's 3 500 m, and a
+// mark that is clamped to the edge from the first frame says which way to fly but never how far. At
+// 4 000 the nearest station is inside the map from boot, by the owner's ask, and the two farther ones
+// (2 500-6 500 m from the star) are inside or clamped by where the layout put them. What it costs is
+// resolution: 140 px over 8 km is 57 m per pixel, so the three starting hulls draw as one cluster and
+// the patrol ring is a 7 px circle. The map is iconography, not cartography
+// (HUD_MINIMAP_STRUCTURE_DOT_PX says the same), and a station's distance is the thing the map answers
+// that it could not before.
+//
+// It is still exactly what the map shows at every zoom the player starts at: the factor below does
+// not overtake it until 5 333 m of orbit distance, which is most of the way out.
 inline constexpr float HUD_MINIMAP_HALF_RANGE = 4000.0f;
+
+// How much of the orbit distance the map reaches east and west, once the floor is behind it.
+//
+// The same 0.75 as CAMERA_INTEREST_RADIUS_FACTOR, and not by sharing it: they are two decisions that
+// happen to agree, and one constant used for both would make a retune of either silently a retune of
+// the other. The number is the camera's own horizontal reach rather than a taste -- the frame's
+// half-width at the target plane is distance * tan(fov/2) * aspect, which is 0.736 of the distance at
+// CAMERA_FOV_DEG on 16:9 -- so a map at this factor holds what the widest frame holds east to west,
+// with the rounding up as the headroom (ADR 0070).
+inline constexpr float HUD_MINIMAP_RANGE_FACTOR = 0.75f;
+
+// What the map reaches at one orbit distance: the floor, or the camera's own reach once that is
+// wider. No ceiling of its own, because CAMERA_MAX_ZOOM_SECTORS is already one -- the widest the
+// camera goes is 9 889 m, which puts this at 7 417 m and the map at 14.8 km across.
+//
+// Called by the draw AND by the tap, which is why it is a function here rather than arithmetic in
+// either: a reach that varies is a reach two sites can disagree about, and a fixed one was not
+// (Hud::ProjectMinimap is what actually holds them together).
+[[nodiscard]] inline float MinimapHalfRangeMetres(float _distanceMetres) noexcept
+{
+  return std::max(HUD_MINIMAP_HALF_RANGE, _distanceMetres * HUD_MINIMAP_RANGE_FACTOR);
+}
 // A station mark: a hollow diamond at a station of the layout, drawn from static content rather than
 // from a record, so it is there from the first frame however far away the station is. One past the
 // map's edge is clamped to the edge and dimmed rather than clipped like a dot -- direction honest,

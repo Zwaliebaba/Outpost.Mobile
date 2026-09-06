@@ -47,8 +47,8 @@ not offer one. The government is here too: the starting solar system is laid out
 from the first planet's site toward the star (`VanguardStationSite`) so it sits inside the interest
 radius beside the starting fleet — azure in the scene and a hollow diamond on the minimap from the
 first frame, because a mark is static content and not a record. The system's jump gates wear the
-Stargate hull, and the minimap marks them amber, clamped to its edge; a tap on the minimap itself
-is a move order at the spot it names. A
+Stargate hull, and the minimap marks them amber, clamped to its edge at every zoom but the widest;
+a tap on the minimap itself is a move order at the spot it names. A
 station is a Structure with a row in `Universe`'s station table (ADR 0038); the Vandal base is a row
 in the same table. Tap a station with a fleet selected and it flies in and docks — the ships leave
 the universe, the fleet is dismantled into the station's ledger, and the log says so. Hold a station
@@ -91,7 +91,11 @@ replaced by a screen-space mark in its own livery, a chevron carrying its headin
 civilian hull or the minimap's own diamond for something that does not move; a mark is tappable
 where the hull under it is not, and the interest set widens with the zoom under a half-sector
 ceiling so the sector the player is shown is the sector the wire brings
-([ADR 0068](Design/Decisions/0068-the-cameras-zoom-decides-the-interest-radius.md)).
+([ADR 0068](Design/Decisions/0068-the-cameras-zoom-decides-the-interest-radius.md)). The minimap
+widens with it, three quarters of the orbit distance east and west once that passes the 4 000 m it
+holds at every closer zoom, so the map reaches as far as the frame does and a tap can name anything
+the player can see
+([ADR 0070](Design/Decisions/0070-the-cameras-zoom-decides-the-minimaps-reach.md)).
 D3D12 renderer, WM_POINTER input covering mouse and touch — including a long
 press, which the tracker learned when there was finally a menu to open — a main-screen HUD whose five
 buttons are the five fleet slots, a fleet sheet a hold opens over the bar and a modal assembly screen

@@ -188,6 +188,21 @@ bool Hud::OverRail(const Layout& _layout, float _xPx, float _yPx) const noexcept
   return false;
 }
 
+// The map's reach follows the camera's orbit distance, floored at HUD_MINIMAP_HALF_RANGE, so what the
+// player is looking at is what the map can show and what a tap can name (ADR 0070). Everything else
+// here is the mapping that was always in DrawMinimap, moved somewhere the tap can call it.
+Hud::MinimapProjection Hud::ProjectMinimap(const Rect& _map, const Camera& _camera) noexcept
+{
+  MinimapProjection projection;
+  projection.centreXMetres = _camera.Target().x;
+  projection.centreZMetres = _camera.Target().z;
+  projection.halfRangeMetres = MinimapHalfRangeMetres(_camera.Distance());
+  projection.pxPerMetre = _map.Width() / (2.0f * projection.halfRangeMetres);
+  projection.cxPx = (_map.x0 + _map.x1) * 0.5f;
+  projection.cyPx = (_map.y0 + _map.y1) * 0.5f;
+  return projection;
+}
+
 bool Hud::OverAnyPanel(const Layout& _layout, float _xPx, float _yPx) const noexcept
 {
   for (const Rect& rect : _layout.resources)
@@ -360,13 +375,11 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
       _text.DrawScreenRect(map.x0, y, map.x1, y + line1, faint);
   }
 
-  // Universe to map: centred on the camera target, north up, east right.
-  const XMFLOAT3& centre = _camera.Target();
-  const float pxPerMetre = map.Width() / (2.0f * HUD_MINIMAP_HALF_RANGE);
-  const float mapCx = (map.x0 + map.x1) * 0.5f;
-  const float mapCy = (map.y0 + map.y1) * 0.5f;
-  const auto toMapX = [&](float _viewX) { return mapCx + (_viewX - centre.x) * pxPerMetre; };
-  const auto toMapY = [&](float _viewZ) { return mapCy - (_viewZ - centre.z) * pxPerMetre; };
+  // Universe to map: centred on the camera target, north up, east right, reaching as far as the zoom
+  // does. The same object the tap is read through, so the two cannot mean different maps.
+  const MinimapProjection projection = ProjectMinimap(map, _camera);
+  const auto toMapX = [&](float _viewX) { return projection.ToMapX(_viewX); };
+  const auto toMapY = [&](float _viewZ) { return projection.ToMapY(_viewZ); };
 
   // Sector boundaries, so the header's sector pair has an edge to read against. View metres are
   // universe metres (UniverseView::ViewX), so a boundary sits at a whole multiple of the sector size.
@@ -375,13 +388,15 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
     const Rgba boundary = WithAlpha(HUD_ACCENT_AMBER, 0.45f);
     const float size = Game::SECTOR_SIZE_METRES;
     const auto firstAfter = [](float _metres, float _size) { return std::ceil(_metres / _size) * _size; };
-    for (float x = firstAfter(centre.x - HUD_MINIMAP_HALF_RANGE, size); x <= centre.x + HUD_MINIMAP_HALF_RANGE; x += size)
+    const float centreX = projection.centreXMetres;
+    const float centreZ = projection.centreZMetres;
+    for (float x = firstAfter(centreX - projection.halfRangeMetres, size); x <= centreX + projection.halfRangeMetres; x += size)
     {
       const float px = std::floor(toMapX(x));
       if (px > map.x0 && px < map.x1 - line1)
         _text.DrawScreenRect(px, map.y0, px + line1, map.y1, boundary);
     }
-    for (float z = firstAfter(centre.z - HUD_MINIMAP_HALF_RANGE, size); z <= centre.z + HUD_MINIMAP_HALF_RANGE; z += size)
+    for (float z = firstAfter(centreZ - projection.halfRangeMetres, size); z <= centreZ + projection.halfRangeMetres; z += size)
     {
       const float py = std::floor(toMapY(z));
       if (py > map.y0 && py < map.y1 - line1)
@@ -444,8 +459,10 @@ void Hud::DrawMinimap(TextRenderer& _text, const Layout& _layout, std::span<cons
 
     // The gates, on the marks' terms exactly -- clamped to the edge and dimmed, direction honest
     // and distance saturated -- and amber, because a gate is a road rather than an allegiance
-    // (UniverseView::IssueJumpOrder wears the same colour). Every gate stands past the half-range
-    // (GalaxyDesc::gateRingMetres), so without these nothing on screen says the system has doors.
+    // (UniverseView::IssueJumpOrder wears the same colour). A gate stands at GalaxyDesc::gateRingMetres,
+    // 7 000 m, which is past the map's reach at every zoom but the widest ones and past its northern
+    // and southern edges at all of them, so without these nothing on screen would say the system has
+    // doors (ADR 0070).
     for (const UniverseView::GateMark& mark : _view.GateMarks())
     {
       const float rawX = toMapX(_view.ViewX(mark.posUniverse));
@@ -873,31 +890,28 @@ bool Hud::HandlePointer(const PointerEvent& _event, UniverseView& _view, const C
       _outOpenSheet = m_pressedFleet;
   }
 
-  // A tap on the map is a move order at the spot it names: the inverse of DrawMinimap's mapping,
-  // against the same camera target and half-range, so the order lands exactly where the player
-  // pointed. Only a press that both began and lifted on the map orders anything -- sliding off
-  // cancels, the way every button here already works.
+  // A tap on the map is a move order at the spot it names: DrawMinimap's own projection, read
+  // backwards, so the order lands exactly where the player pointed however far the zoom has pushed
+  // the map's reach. Only a press that both began and lifted on the map orders anything -- sliding
+  // off cancels, the way every button here already works.
   if (m_pressedMinimap && layout.minimapMap.Contains(_event.xPx, _event.yPx))
   {
     const Rect& map = layout.minimapMap;
-    const XMFLOAT3& centre = _camera.Target();
-    const float pxPerMetre = map.Width() / (2.0f * HUD_MINIMAP_HALF_RANGE);
-    const float mapCx = (map.x0 + map.x1) * 0.5f;
-    const float mapCy = (map.y0 + map.y1) * 0.5f;
-    float viewX = centre.x + (_event.xPx - mapCx) / pxPerMetre;
-    float viewZ = centre.z - (_event.yPx - mapCy) / pxPerMetre;
+    const MinimapProjection projection = ProjectMinimap(map, _camera);
+    float viewX = projection.ToViewX(_event.xPx);
+    float viewZ = projection.ToViewZ(_event.yPx);
 
     // A tap on or beside a station or gate mark means the THING, not the pixel: a mark clamps to
-    // the edge, so the spot under a clamped diamond names a point 4 km short of what the player is
+    // the edge, so the spot under a clamped diamond names a point short of what the player is
     // pointing at -- which read as a move order with a ceiling on it. Snapping to the mark's own
-    // position is what lets one tap send a fleet to a gate 7 km out; the map's half-range only
-    // bounds where a BARE tap can land.
+    // position is what lets one tap send a fleet to a gate 7 km out from a zoom whose map stops well
+    // inside that; the map's reach only bounds where a BARE tap can land.
     const float half = HUD_MINIMAP_MARK_PX * 0.5f * layout.scale;
     float bestPx = HUD_MINIMAP_MARK_PX * layout.scale; // the snap radius: one mark's width
     const auto consider = [&](const Game::UniversePos& _pos)
     {
-      const float rawX = mapCx + (_view.ViewX(_pos) - centre.x) * pxPerMetre;
-      const float rawY = mapCy - (_view.ViewZ(_pos) - centre.z) * pxPerMetre;
+      const float rawX = projection.ToMapX(_view.ViewX(_pos));
+      const float rawY = projection.ToMapY(_view.ViewZ(_pos));
       const float x = std::clamp(rawX, map.x0 + half, map.x1 - half);
       const float y = std::clamp(rawY, map.y0 + half, map.y1 - half);
       const float distancePx = std::hypot(x - _event.xPx, y - _event.yPx);
