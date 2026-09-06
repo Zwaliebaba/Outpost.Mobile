@@ -288,8 +288,55 @@ public:
     Assert::IsTrue(sawJump, L"no departure was logged for the jump");
   }
 
+  // A fleet under fire does not cross. The alert is the primitive and not the threat, and the row
+  // proves why in its second half: IssueFleetOrder clears the threat on every order, so a gate that
+  // read the threat would be opened by tapping the gate again, while nothing a client sends touches
+  // the alert. Held for exactly FLEET_ALERT_TICKS after the last landed hit, whatever the order says
+  // (Design/SystemLayout.md 5, ADR 0072).
+  //
+  // A Vandal Miner rouses the fleet at 300 m: it mounts nothing, and a LightTurret reaches 180 m, so
+  // nobody can land a second hit and the alert lapses on the tick this row counts to. The act is
+  // recorded directly, as every alert row records it.
+  TEST_METHOD(AGateHoldsAFleetWhoseAlertIsUp)
+  {
+    Game::Universe universe;
+    const Game::UniversePos nearPos = Game::LocalPos(0.0f, 0.0f);
+    const GatePair pair = MakeGatePair(universe, nearPos, Game::LocalPos(60000.0f, 0.0f));
+    std::vector<Game::ShipId> ships = FleetAtTheGate(universe, nearPos, 2);
+    const Game::EntityId first = universe.EntityIdOf(ships[0]);
+
+    const Game::ShipId raider =
+      universe.SpawnShip(Game::LocalPos(300.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Miner), Game::FACTION_VANDAL);
+    universe.RecordHostileAct(universe.HandleOf(raider), universe.HandleOf(ships[0]));
+    Assert::IsTrue(Game::Universe::FleetOrderResult::Ordered == OrderJump(universe, pair.nearStructure), L"the jump order was refused");
+
+    // Half the alert, and the door is shut: the fleet is where it was and still holds its order.
+    for (std::uint32_t tick = 0; tick < Game::FLEET_ALERT_TICKS / 2; ++tick)
+      universe.Step();
+    Game::ShipId held = universe.ResolveEntity(first);
+    Assert::AreNotEqual(Game::INVALID_SHIP_ID, held, L"the ship is gone: it was not held, it was lost");
+    Assert::IsTrue(UniverseX(universe.Ships()[held].posUniverse) < 30000.0f, L"a fleet under fire crossed the gate");
+    Assert::IsTrue(Game::FleetOrderKind::Jump == universe.FleetOf(universe.FleetInSlot(Game::OWNER_LOCAL, 0)).orderKind,
+                   L"the jump order was dropped rather than held");
+
+    // Tapping the gate again clears the threat -- every order does -- and must not open the door.
+    Assert::IsTrue(Game::Universe::FleetOrderResult::Ordered == OrderJump(universe, pair.nearStructure), L"the second order was refused");
+    Assert::AreEqual(Game::INVALID_SHIP_ID, universe.Resolve(universe.FleetOf(universe.FleetInSlot(Game::OWNER_LOCAL, 0)).threat),
+                     L"an order no longer clears the threat, so this row is not testing the hole it was written for");
+    for (std::uint32_t tick = 0; tick < Game::FLEET_ALERT_TICKS / 2; ++tick)
+      universe.Step();
+    held = universe.ResolveEntity(first);
+    Assert::AreNotEqual(Game::INVALID_SHIP_ID, held, L"the ship is gone after the re-order");
+    Assert::IsTrue(UniverseX(universe.Ships()[held].posUniverse) < 30000.0f, L"re-issuing the jump order opened the door");
+    Assert::AreEqual(static_cast<std::uint32_t>(0), universe.FleetOf(universe.FleetInSlot(Game::OWNER_LOCAL, 0)).alertTicks,
+                     L"the alert did not lapse when it should have, so the next row's count is wrong");
+  }
+
   // Identity and damage cross; intent does not. Every one of these is something the far side
-  // re-derives, and a fresh row's rest state is exactly what it should re-derive from.
+  // re-derives, and a fresh row's rest state is exactly what it should re-derive from. The fleet is
+  // roused first and the row waits the alert out, so what it proves is that a crossing leaves the
+  // alert and the threat behind -- the door only opens once the alert has lapsed, so a leash a
+  // system away is not merely released, it is never carried.
   TEST_METHOD(AJumpClearsIntentAndTheAlert)
   {
     Game::Universe universe;
@@ -297,9 +344,8 @@ public:
     const GatePair pair = MakeGatePair(universe, nearPos, Game::LocalPos(60000.0f, 0.0f));
     std::vector<Game::ShipId> ships = FleetAtTheGate(universe, nearPos, 2);
 
-    // Roused, so the alert and the threat are burning when the fleet reaches the door.
     const Game::ShipId raider =
-      universe.SpawnShip(Game::LocalPos(300.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Interceptor), Game::FACTION_VANDAL);
+      universe.SpawnShip(Game::LocalPos(300.0f, 0.0f), 0.0f, static_cast<std::uint32_t>(Game::HullId::Miner), Game::FACTION_VANDAL);
     universe.RecordHostileAct(universe.HandleOf(raider), universe.HandleOf(ships[0]));
 
     const Game::Universe::FleetId before = universe.FleetInSlot(Game::OWNER_LOCAL, 0);
@@ -307,6 +353,13 @@ public:
 
     const Game::EntityId first = universe.EntityIdOf(ships[0]);
     Assert::IsTrue(Game::Universe::FleetOrderResult::Ordered == OrderJump(universe, pair.nearStructure), L"the jump order was refused");
+
+    // The alert lapses on the FLEET_ALERT_TICKS-th tick's fleet pass, which runs after the jump pass;
+    // the door opens on the tick after.
+    for (std::uint32_t tick = 0; tick < Game::FLEET_ALERT_TICKS; ++tick)
+      universe.Step();
+    Assert::IsTrue(UniverseX(universe.Ships()[universe.ResolveEntity(first)].posUniverse) < 30000.0f,
+                   L"the fleet crossed on the tick the alert lapsed rather than the one after");
     universe.Step();
 
     const Game::Universe::FleetId id = universe.FleetInSlot(Game::OWNER_LOCAL, 0);
@@ -318,6 +371,7 @@ public:
 
     const Game::ShipId arrived = universe.ResolveEntity(first);
     Assert::AreNotEqual(Game::INVALID_SHIP_ID, arrived, L"the ship did not arrive");
+    Assert::IsTrue(UniverseX(universe.Ships()[arrived].posUniverse) > 30000.0f, L"the ship is still on the near side");
     Assert::IsTrue(universe.RouteOf(arrived).empty(), L"a route crossed the gate");
     Assert::IsFalse(universe.PatrolOf(arrived).active, L"a patrol crossed the gate");
     Assert::IsFalse(universe.DockingOf(arrived).active, L"a docking intent crossed the gate");

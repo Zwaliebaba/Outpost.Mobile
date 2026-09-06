@@ -1,6 +1,6 @@
 # A system is a sun, its sites, and the warp between them
 
-Status: design, no slice landed. Written 2026-09-06 against `8118956`.
+Status: design; slice 0 landed 2026-09-06 (ADR 0072). Written 2026-09-06 against `8118956`.
 
 **Supersedes, in part:** [`Design/Archive/Universe.md`](Archive/Universe.md) §11's "transit fiction" and
 §12's decisions 2 and 7, which turned down a warp order and an in-transit state on 2026-09-01. That
@@ -43,11 +43,12 @@ the three movement tiers such a system needs and not the middle one.
   everything else (`Universe.md` §6.3). The fleet row is the one thing that survives it (ADR 0069).
   **A warp is this with a delay proportional to distance and no gate at either end.** Nothing in the
   crossing has to be invented; what is new is the wait.
-- **The defense.** A fleet row already holds `threat`, `threatAnchorPos` and `alertTicks`, and the
-  tick already computes *engaged* from them — a threat that still resolves, within
-  `FLEET_ENGAGE_RANGE_METRES` of where it struck, inside the ten-second alert. That judgement is
-  the server's own, stated off shots it observed (ADR 0041, 0052), and it is the whole of the tackle
-  rule below. No new state.
+- **The defense.** A fleet row already holds `threat`, `threatAnchorPos` and `alertTicks`. The
+  *alert* is the tackle rule below, whole: `alertTicks` is set by a landed hit and by nothing else,
+  lapses ten seconds after the last one, and is touched by nothing a client sends. The threat is not
+  the primitive, and slice 0 found out why on contact: `IssueFleetOrder` clears it on every order,
+  so a rule that read it would be lifted by re-issuing the order (ADR 0072). The alert is the
+  server's own memory of being shot, stated off shots it observed (ADR 0041, 0052). No new state.
 - **The status block.** `FleetStatus` carries a position for all five slots on every update whether
   or not a member is in the interest circle, and reserved bits 3 to 7 of `flags`, laid once so a
   later bit rides in without an ALPN bump.
@@ -163,20 +164,19 @@ Two things follow from the row being the only thing in transit:
   departure until the arrival enters as an ordinary enter. In warp you see nothing, which is what
   warp is.
 
-**Tackle.** `engaged`, as the tick already computes it, is the gate on the align — nothing else.
-Any landed hit within the last ten seconds from a shooter still inside 1 000 m of where it landed is
-a tackle. That is a soft rule and it is deliberate: it needs no device, no new field and no new
-message, and a `Scrambler` device that holds a target engaged without hitting it is one row of the
-device table on the day the device design wants it. The alternative — warp interruptible only by a
-named module — is EVE's, and it is the harder rule to arrive at first, because until the module
-exists every fight ends when the loser says so.
+**Tackle.** The alert is the gate on the align — nothing else. Any landed hit within the last ten
+seconds is a tackle, and a hit that keeps landing keeps it. That is a soft rule and it is deliberate:
+it needs no device, no new field and no new message, and a `Scrambler` device that renews the alert
+without landing a hit is one row of the device table on the day the device design wants it. The
+alternative — warp interruptible only by a named module — is EVE's, and it is the harder rule to
+arrive at first, because until the module exists every fight ends when the loser says so.
 
-**Gates take the same rule, and this is a decision the owner is asked to confirm in slice 2 (§12,
-decision 4).** Today `StepJumps` crosses an engaged fleet and clears its threat on the far side, so a
-gate is a free disengage — a camp can shoot at a fleet on the doorstep and watch it leave. With the
-rule on both, a camp holds what it catches, and there is one sentence about leaving a fight rather
-than two. What it costs is stated plainly: a fleet that reaches a camped gate under fire stays at the
-gate under fire, and the way out is to win or to be the faster hull.
+**Gates take the same rule, and it landed first** (§12, decision 4; ADR 0072; slice 0). Until it,
+`StepJumps` crossed a fleet under fire and cleared its threat on the far side, so a gate was a free
+disengage — a camp could shoot at a fleet on the doorstep and watch it leave. With the rule on both, a
+camp holds what it catches, and there is one sentence about leaving a fight rather than two. What it
+costs is stated plainly: a fleet that reaches a camped gate under fire stays at the gate under fire,
+and the way out is to outlast the alert, kill what is shooting, or be the hull that dies last.
 
 ## 6. Paths, interest, and what does not change
 
@@ -281,16 +281,18 @@ Put and taken 2026-09-06, against the sector-wide zoom's first screenshot.
    galaxy for a number that was never the constraint).
 3. **Warp is interruptible from day one** — over free warp with tackle added later (every fight
    ends when the loser says so until then, which is the opposite of the camp ADR 0071 protected).
-4. **To confirm in slice 2:** a gate obeys the same rule and does not cross an engaged fleet — over
-   EVE's split, where a scram stops warp and a gate is still a door. Recommended, for one sentence
-   about leaving a fight rather than two; the cost is stated in §5.
+4. **One rule for both: a gate does not cross a fleet whose alert is up** — taken 2026-09-06 and
+   landed the same day as slice 0 (ADR 0072) — over EVE's split, where a scram stops warp and a gate
+   is still a door. The cost is stated in §5. On contact the primitive moved from the threat to the
+   alert, for the reason §2 gives.
 
 ## 13. Slices
 
 | # | Slice | Layer | Size | Depends on | ADR |
 |---|---|---|---|---|---|
+| 0 | The gate half of the rule: `StepJumps` holds a fleet whose alert is up, `JumpTests` rewritten around it — **landed 2026-09-06** | `GameLogic` | S | — | [ADR 0072](Decisions/0072-a-gate-refuses-a-fleet-whose-alert-is-up.md) |
 | 1 | The scale and the sites: `GalaxyDesc` and `SystemDesc` at §4's numbers, `SystemLayout::sites` with belts and anomalies drawn after the planets, the per-site island proof in place of the per-system one, format 11 carrying the pitch a lower format implies, `UniverseGen` re-run, `Universe.md` §3.4 and §10 named as superseded | `GameLogic` + `Tools` | L | — | yes: the lattice pitch is part of what a seed means |
-| 2 | The warp on the fleet row: the three transit states, `WarpedOut`, the align and warp columns on `HullSpec`, the tackle on the engaged bit, the same rule on `StepJumps` (decision 4), `TryCentreOfOwnedFleets` excluding a fleet in transit, `FLEET_FLAG_WARPING`, `VoyageTests` and `JumpTests` extended and a `WarpTests` beside them | `GameLogic` | L | 1 | yes: supersedes `Universe.md` §12 decisions 2 and 7 in part |
+| 2 | The warp on the fleet row: the three transit states, `WarpedOut`, the align and warp columns on `HullSpec`, the tackle on the alert (slice 0's primitive), `TryCentreOfOwnedFleets` excluding a fleet in transit, `FLEET_FLAG_WARPING`, `VoyageTests` extended and a `WarpTests` beside them | `GameLogic` | L | 0, 1 | yes: supersedes `Universe.md` §12 decision 2 in part |
 | 3 | The client: `WARPING` on the bar, the wink-out on `WarpedOut`, the transit line on the minimap, the system map as the galaxy screen's second level, a site tap as a Move | `Outpost` | M | 2 | — |
 | 4 | The sun: the `Star` body, per-body light direction from the star, the heat radius if taken | `NeuronClient` + `Outpost` (+ `GameLogic` for heat) | M | 1 | if heat lands: a star is the first thing the plane does to a hull |
 | 5 | Anomalies: `SpawnHostileBase` generalised to one per anomaly site, home's kept through the pin | `GameLogic` | S | 1 | — |

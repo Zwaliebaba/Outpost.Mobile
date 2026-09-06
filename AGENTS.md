@@ -111,6 +111,10 @@ slowly. Tapping a system with a fleet held ORDERS it there, across as many
 gates as the route takes -- one standing `Voyage` on the fleet row, planned from where the fleet is at
 every arrival, because a ship is despawned and respawned by each gate it crosses and cannot carry a
 route through one ([ADR 0069](Design/Decisions/0069-a-voyage-lives-on-the-fleet-and-is-planned-from-where-it-is.md)).
+A gate does not cross a fleet whose alert is up -- hit within the last ten seconds -- so a camp holds
+what it catches; the alert and not the threat, because every order clears the threat, and the rule
+is the one the warp `Design/SystemLayout.md` describes will share
+([ADR 0072](Design/Decisions/0072-a-gate-refuses-a-fleet-whose-alert-is-up.md)).
 Systems have no names yet and the other three rail buttons are not built
 ([`Design/GalaxyMap.md`](Design/GalaxyMap.md)). All of it is
 drawn through one overlay pipeline (bitmap font atlases, coverage-mask
