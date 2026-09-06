@@ -172,7 +172,7 @@ owner from slice 3 and migrated by slice 1. Listed so the doors are known; cut o
 
 | # | Slice | Layer | Size | Depends on | Items | ADR |
 |---|---|---|---|---|---|---|
-| 6 | Resource sites as records; the rock reopens ADR 0016 by its clause | `GameLogic` + `Tools` | L | 1, 2 | E3 | ADR |
+| 6 | Resource sites as records; the rock reopens ADR 0016 by its clause. **Where** a belt is comes from [`SystemLayout.md`](SystemLayout.md) slice 1, which this row now depends on; `Mining.md` owns the record and the verb, not the geography | `GameLogic` + `Tools` | L | 1, 2, `SystemLayout.md` 1 | E3 | ADR |
 | 7 | Items, holds and stock: per hull, addressed per fleet | `GameLogic` | L | 3, 6 | E4, C14 (record half) | |
 | 8 | The Mine order and the first `MiningTool` row, as the first effect descriptor | `GameLogic` + `Outpost` | L | 7 | E5, C10 (first row) | ADR |
 | 9 | Hull cost, a build order and an industry pass feeding the existing ledger | `GameLogic` + `Outpost` | M | 7 | E6 | |
