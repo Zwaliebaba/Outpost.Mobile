@@ -727,9 +727,10 @@ void OutpostApp::RebuildLocalSystemScenery()
 {
   m_layout = Game::LayOutGalaxySystem(m_galaxy.systems[m_localSystem], Game::STARTING_GALAXY, Game::GALAXY_PINS);
 
-  // The marks are replaced, not added to: they belong to one system, and the minimap's half-range is
-  // 4 km against a guaranteed 57 km between stars, so a mark left behind for the system the camera
-  // came from draws pinned to the edge forever.
+  // The marks are replaced, not added to: they belong to one system, and the minimap reaches 4 km at
+  // most zooms and 7.4 km at the very widest (MinimapHalfRangeMetres, ADR 0070) against a guaranteed
+  // 57 km between stars, so a mark left behind for the system the camera came from draws pinned to
+  // the edge forever at every zoom there is.
   MarkLocalStations();
 
   // The scene is released before the next one is built, which is what stops a crossing leaking the
