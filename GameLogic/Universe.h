@@ -1092,6 +1092,10 @@ private:
   // Whole or not at all. The fleet moves on the tick every live member stands inside the gate, so a
   // fleet is never half in one system and half in another -- which is a sentence the fleet row
   // cannot say, and the reason the trickle was turned down (ADR 0056, Design/Archive/Universe.md 6.2).
+  //
+  // And not while its alert is up. A fleet hit within the last ten seconds is held at the door
+  // whatever its order says, so a gate camp holds what it catches -- the same rule the warp will
+  // obey, taken once for both (Design/SystemLayout.md 5, ADR 0072).
   void StepJumps();
 
   // The voyage pass, immediately after the jump pass and for a reason that is the whole of its

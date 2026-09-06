@@ -1317,6 +1317,20 @@ void Universe::StepJumps()
       continue;
     }
 
+    // A fleet under fire does not cross. The gate reads the ALERT and not the threat, and the
+    // difference is the whole rule: IssueFleetOrder clears the threat on every order, so a gate that
+    // read it would be opened by tapping the gate again, while nothing a client sends touches
+    // alertTicks -- it is set by a landed hit and by nothing else, and lapses ten seconds after the
+    // last one (RecordHostileAct, FLEET_ALERT_TICKS). Held at the door, the approach order keeps the
+    // members at the gate under fire, and the way through is to outlast the alert or end it. One
+    // rule for the gate and for the warp SystemLayout.md 5 describes, taken as that design's decision
+    // 4 (ADR 0072); until it, fleeing through a gate was escape (Design/Archive/Universe.md 6.2).
+    //
+    // Read before StepFleets decrements it this tick, so it is last tick's count: a fleet hit on
+    // the tick it would have crossed is held one tick late, which is the direction to be wrong in.
+    if (fleet.alertTicks > 0)
+      continue;
+
     // Whole or not at all, and the test is over every LIVE member: a member that died on the way is
     // not a member any more, and the fleet pass prunes it at the end of this same tick. A fleet with
     // nobody left in space crosses nothing.

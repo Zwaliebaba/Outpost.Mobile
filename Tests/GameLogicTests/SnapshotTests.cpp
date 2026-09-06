@@ -836,8 +836,10 @@ public:
 
     // Every kind, including the one that is reserved: the byte travels whether or not the
     // simulation will act on it, which is the point of having spent it. Bounded by the LAST kind
-    // rather than by a literal, so a kind appended to the enum is covered the day it lands.
-    for (std::uint8_t kind = 0; kind <= static_cast<std::uint8_t>(Game::FleetOrderKind::Jump); ++kind)
+    // rather than by a literal, so a kind appended to the enum is covered the day it lands -- and
+    // by LAST_FLEET_ORDER_KIND rather than by whichever kind was last when this was written, which
+    // is what left Voyage uncovered and refused by the writer for a whole slice.
+    for (std::uint8_t kind = 0; kind <= static_cast<std::uint8_t>(Game::LAST_FLEET_ORDER_KIND); ++kind)
     {
       Game::FleetOrder each = sent;
       each.kind = static_cast<Game::FleetOrderKind>(kind);
@@ -864,11 +866,12 @@ public:
     Assert::IsTrue(refused.sentReliable.empty(), L"a refused fleet order put bytes on the wire");
 
     // One past the LAST kind, named by the same symbol the reader bounds itself with, so the two
-    // move together. Spelled Mine + 1 until Jump was appended after Mine -- at which point this line
-    // was corrupting the message into a perfectly valid order and asserting that it would not decode
+    // move together. Spelled Mine + 1 until Jump was appended after Mine, and Jump + 1 until Voyage
+    // was appended after Jump -- at which point this line was corrupting the message into a
+    // perfectly valid order and asserting that it would not decode. It is the enum's own bound now
     // (Design/Archive/Universe-slice-2.md 7).
     std::vector<std::uint8_t> corrupt = link.sentReliable[0];
-    corrupt[6] = static_cast<std::uint8_t>(Game::FleetOrderKind::Jump) + 1;
+    corrupt[6] = static_cast<std::uint8_t>(Game::LAST_FLEET_ORDER_KIND) + 1;
     Game::FleetOrder never;
     Assert::IsFalse(Game::ReadFleetOrder(corrupt, never), L"a kind past the last one decoded");
   }

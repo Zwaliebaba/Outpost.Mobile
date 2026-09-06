@@ -744,6 +744,12 @@ private:
   [[nodiscard]] static IconShape IconShapeOfHull(std::uint32_t _hullId) noexcept;
   [[nodiscard]] static float IconSizeOfHull(std::uint32_t _hullId) noexcept;
 
+  // How high a hull's mesh origin is lifted over the flight plane, by the hull it is: every hull
+  // rests its lowest vertex on the plane except the Stargate, which straddles it with its bounds
+  // centre on the plane -- a ring a fleet flies THROUGH and not under. Nothing else about placement
+  // is per hull, so this is the one number, read once at first sight (ShipView::restY).
+  [[nodiscard]] static float RestYOfHull(std::uint32_t _hullId, const Neuron::MeshData& _data) noexcept;
+
   // Appends record _index's mark to this frame's list. Takes what the walk in Render has already
   // worked out -- where the hull's bounds are, which way it is pointing, how far off it is and what
   // paint it wears -- rather than deriving any of it again, so a mark cannot end up anywhere but

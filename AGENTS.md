@@ -47,8 +47,9 @@ not offer one. The government is here too: the starting solar system is laid out
 from the first planet's site toward the star (`VanguardStationSite`) so it sits inside the interest
 radius beside the starting fleet — azure in the scene and a hollow diamond on the minimap from the
 first frame, because a mark is static content and not a record. The system's jump gates wear the
-Stargate hull, and the minimap marks them amber, clamped to its edge; a tap on the minimap itself
-is a move order at the spot it names. A
+Stargate hull, sunk to its waist in the plane so a fleet flies through the ring and not under it,
+and the minimap marks them amber, clamped to its edge at every zoom but the widest;
+a tap on the minimap itself is a move order at the spot it names. A
 station is a Structure with a row in `Universe`'s station table (ADR 0038); the Vandal base is a row
 in the same table. Tap a station with a fleet selected and it flies in and docks — the ships leave
 the universe, the fleet is dismantled into the station's ledger, and the log says so. Hold a station
@@ -91,17 +92,30 @@ replaced by a screen-space mark in its own livery, a chevron carrying its headin
 civilian hull or the minimap's own diamond for something that does not move; a mark is tappable
 where the hull under it is not, and the interest set widens with the zoom under a half-sector
 ceiling so the sector the player is shown is the sector the wire brings
-([ADR 0068](Design/Decisions/0068-the-cameras-zoom-decides-the-interest-radius.md)).
+([ADR 0068](Design/Decisions/0068-the-cameras-zoom-decides-the-interest-radius.md)). The minimap
+widens with it, three quarters of the orbit distance east and west once that passes the 4 000 m it
+holds at every closer zoom, so the map reaches as far as the frame does and a tap can name anything
+the player can see
+([ADR 0070](Design/Decisions/0070-the-cameras-zoom-decides-the-minimaps-reach.md)).
 D3D12 renderer, WM_POINTER input covering mouse and touch — including a long
 press, which the tracker learned when there was finally a menu to open — a main-screen HUD whose five
 buttons are the five fleet slots, a fleet sheet a hold opens over the bar and a modal assembly screen
 a station's hold opens, and a modal galaxy map the function rail's `UNIVRS` button opens -- all 54
 systems at their real `starPos` under an isotropic fit, every gate as a line, the system the camera
 is in marked and each of the player's fleets drawn as its slot digit; tapping a system with nothing
-selected flies the camera there, and tapping one with a fleet held ORDERS it there, across as many
+selected flies the camera there IF this client holds a fleet in it or is looking at it already, and
+refuses with a log line otherwise -- a camera put down in a system drags the interest circle with it,
+so a player who could look anywhere for nothing could never be ambushed at a gate
+([ADR 0071](Design/Decisions/0071-looking-at-a-system-costs-presence.md)); an affordance so far and
+not yet a gate, since the camera's target is unbounded and panning reaches the same place more
+slowly. Tapping a system with a fleet held ORDERS it there, across as many
 gates as the route takes -- one standing `Voyage` on the fleet row, planned from where the fleet is at
 every arrival, because a ship is despawned and respawned by each gate it crosses and cannot carry a
 route through one ([ADR 0069](Design/Decisions/0069-a-voyage-lives-on-the-fleet-and-is-planned-from-where-it-is.md)).
+A gate does not cross a fleet whose alert is up -- hit within the last ten seconds -- so a camp holds
+what it catches; the alert and not the threat, because every order clears the threat, and the rule
+is the one the warp `Design/SystemLayout.md` describes will share
+([ADR 0072](Design/Decisions/0072-a-gate-refuses-a-fleet-whose-alert-is-up.md)).
 Systems have no names yet and the other three rail buttons are not built
 ([`Design/GalaxyMap.md`](Design/GalaxyMap.md)). All of it is
 drawn through one overlay pipeline (bitmap font atlases, coverage-mask

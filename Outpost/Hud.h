@@ -195,6 +195,47 @@ private:
 
   [[nodiscard]] Layout ComputeLayout(float _dpiScale, std::uint32_t _widthPx, std::uint32_t _heightPx) const noexcept;
 
+  // The minimap's projection: universe metres to map pixels and back, north up and east right,
+  // centred on the camera target.
+  //
+  // One object built from the map rectangle and the camera, for the reason Layout is one object: the
+  // draw and the tap must not disagree about it. They used to derive it separately, and the tap
+  // handler's comment said so out loud -- "the inverse of DrawMinimap's mapping, against the same
+  // camera target and half-range" -- which is a promise the reader keeps rather than a thing the code
+  // holds. It held while the reach was a constant. It stopped being one when the reach started
+  // following the zoom (ADR 0070), and two sites deriving one varying number is the drift this
+  // replaces rather than documents.
+  struct MinimapProjection
+  {
+    // The camera target, in view metres. Two floats rather than the XMFLOAT3 it is read off: this is
+    // a mapping of a plane, and a height carried through it is a field somebody eventually reads.
+    float centreXMetres = 0.0f;
+    float centreZMetres = 0.0f;
+    float pxPerMetre = 0.0f;
+    float cxPx = 0.0f; // the map rectangle's centre
+    float cyPx = 0.0f;
+    float halfRangeMetres = 0.0f; // east and west; north and south follow from the rectangle's shape
+
+    [[nodiscard]] float ToMapX(float _viewX) const noexcept
+    {
+      return cxPx + (_viewX - centreXMetres) * pxPerMetre;
+    }
+    [[nodiscard]] float ToMapY(float _viewZ) const noexcept
+    {
+      return cyPx - (_viewZ - centreZMetres) * pxPerMetre;
+    }
+    [[nodiscard]] float ToViewX(float _xPx) const noexcept
+    {
+      return centreXMetres + (_xPx - cxPx) / pxPerMetre;
+    }
+    [[nodiscard]] float ToViewZ(float _yPx) const noexcept
+    {
+      return centreZMetres - (_yPx - cyPx) / pxPerMetre;
+    }
+  };
+
+  [[nodiscard]] static MinimapProjection ProjectMinimap(const Rect& _map, const Neuron::Camera& _camera) noexcept;
+
   // The alert's brightness this frame, in [HUD_FLEET_ALERT_MIN_ALPHA, 1]. One definition, read by
   // the button and by the minimap digit, so the two cannot pulse out of step.
   [[nodiscard]] float AlertPulse() const noexcept;

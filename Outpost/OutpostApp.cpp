@@ -727,9 +727,10 @@ void OutpostApp::RebuildLocalSystemScenery()
 {
   m_layout = Game::LayOutGalaxySystem(m_galaxy.systems[m_localSystem], Game::STARTING_GALAXY, Game::GALAXY_PINS);
 
-  // The marks are replaced, not added to: they belong to one system, and the minimap's half-range is
-  // 4 km against a guaranteed 57 km between stars, so a mark left behind for the system the camera
-  // came from draws pinned to the edge forever.
+  // The marks are replaced, not added to: they belong to one system, and the minimap reaches 4 km at
+  // most zooms and 7.4 km at the very widest (MinimapHalfRangeMetres, ADR 0070) against a guaranteed
+  // 57 km between stars, so a mark left behind for the system the camera came from draws pinned to
+  // the edge forever at every zoom there is.
   MarkLocalStations();
 
   // The scene is released before the next one is built, which is what stops a crossing leaking the
@@ -826,6 +827,29 @@ std::uint32_t OutpostApp::OwnShipCount() const noexcept
   return count;
 }
 
+// Where this client has eyes: a system holding one of its own fleets, or the one the camera already
+// stands in.
+//
+// Off the fleet status block, which is stamped on every update for all five slots whether or not a
+// member is inside the interest circle -- so the answer is right for a fleet a galaxy away, which is
+// exactly the case that matters (UniverseView::FleetPosition). SystemAt is nearest-star and a fleet
+// is always in some system, since a gate despawns and respawns it rather than leaving it in between
+// (ADR 0056).
+//
+// The current system is presence by definition: a player whose last fleet died must still be able to
+// re-centre on what they are looking at.
+bool OutpostApp::HasPresenceInSystem(std::uint32_t _system) const noexcept
+{
+  if (_system == m_localSystem)
+    return true;
+  for (int slot = 0; slot < UniverseView::FLEET_SLOTS; ++slot)
+  {
+    if (m_view.IsFleetHeld(slot) && Game::SystemAt(m_galaxy.systems, m_view.FleetPosition(slot)) == _system)
+      return true;
+  }
+  return false;
+}
+
 void OutpostApp::TapSystem(std::uint32_t _system)
 {
   if (_system >= m_galaxy.systems.size())
@@ -833,6 +857,21 @@ void OutpostApp::TapSystem(std::uint32_t _system)
 
   if (m_view.SelectedFleetCount() == 0)
   {
+    // Looking is not free, and this is the line that says so (ADR 0071). A camera put down in a
+    // system drags the interest circle with it -- OutpostApp::HandleInput pushes SetViewCentre from
+    // the camera target every frame -- so a flight to a system this client has nothing in is the
+    // server being asked to describe it. That is the scouting a gate camp exists to make expensive.
+    //
+    // Refused rather than silently ignored, and the map closes anyway: one tap that named a system
+    // shuts this screen whatever it meant, which is the rule the two branches below already keep,
+    // and the log is behind the scrim until it does.
+    if (!HasPresenceInSystem(_system))
+    {
+      m_map.Close();
+      m_hud.ClearActiveRail();
+      m_log.PushFormat(EventLog::Severity::Info, 0.0f, "NO EYES THERE | SYSTEM %u", _system);
+      return;
+    }
     FlyToSystem(_system);
     return;
   }
