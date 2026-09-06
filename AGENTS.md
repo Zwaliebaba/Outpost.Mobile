@@ -47,7 +47,8 @@ not offer one. The government is here too: the starting solar system is laid out
 from the first planet's site toward the star (`VanguardStationSite`) so it sits inside the interest
 radius beside the starting fleet — azure in the scene and a hollow diamond on the minimap from the
 first frame, because a mark is static content and not a record. The system's jump gates wear the
-Stargate hull, and the minimap marks them amber, clamped to its edge at every zoom but the widest;
+Stargate hull, sunk to its waist in the plane so a fleet flies through the ring and not under it,
+and the minimap marks them amber, clamped to its edge at every zoom but the widest;
 a tap on the minimap itself is a move order at the spot it names. A
 station is a Structure with a row in `Universe`'s station table (ADR 0038); the Vandal base is a row
 in the same table. Tap a station with a fleet selected and it flies in and docks — the ships leave

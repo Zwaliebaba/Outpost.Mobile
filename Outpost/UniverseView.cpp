@@ -156,7 +156,7 @@ void UniverseView::ApplySnapshot()
       if (mesh != INVALID_MESH)
       {
         const MeshData& data = m_meshes->Data(mesh);
-        view.restY = data.RestY();
+        view.restY = RestYOfHull(ship.hullId, data);
         view.pickCentre = data.BoundsCentre();
         view.halfExtents = data.HalfExtents();
         // One walk of the authored markers. Gun, Point and Unknown are carried by the file and
@@ -2291,6 +2291,22 @@ UniverseView::IconShape UniverseView::IconShapeOfHull(std::uint32_t _hullId) noe
     return IconShape::Box;
   default:
     return IconShape::Chevron;
+  }
+}
+
+float UniverseView::RestYOfHull(std::uint32_t _hullId, const MeshData& _data) noexcept
+{
+  switch (static_cast<Game::HullId>(_hullId))
+  {
+  case Game::HullId::Stargate:
+    // Sunk to its waist. The authored ring runs from 165 m below its origin to 232 m above it, so
+    // resting on its lowest vertex stood its middle 199 m over the plane and a fleet flew under the
+    // door rather than through it. The bounds centre on the plane is what the simulation already
+    // says a gate is: an object players fly through on purpose, with no hull to collide with
+    // (Design/Archive/Collision.md 18.2). The Structure keeps resting: a station is a building.
+    return -_data.BoundsCentre().y;
+  default:
+    return _data.RestY();
   }
 }
 
